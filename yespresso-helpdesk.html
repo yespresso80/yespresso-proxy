@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Yespresso - Assistenza Clienti</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: #f5f2ee; color: #2a2420; min-height: 100vh; display: flex; flex-direction: column; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid #e0d8d0; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo { font-size: 26px; }
+    .brand { font-size: 18px; font-weight: 700; color: #b8822a; }
+    .brand-sub { font-size: 10px; color: #a09080; letter-spacing: 2px; text-transform: uppercase; }
+    .refresh-btn { background: #fff; border: 1px solid #d0c8c0; color: #6a5e52; padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    .refresh-btn:hover { border-color: #b8822a; color: #b8822a; }
+    .layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 65px); }
+    .sidebar { width: 300px; border-right: 1px solid #e0d8d0; background: #fff; overflow-y: auto; display: flex; flex-direction: column; }
+    .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0e8e0; background: #faf8f5; }
+    .sidebar-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #a09080; }
+    .ticket-count { background: #b8822a; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+    .ticket-card { padding: 14px 16px; border-bottom: 1px solid #f0ebe5; cursor: pointer; transition: background 0.12s; }
+    .ticket-card:hover { background: #faf5ef; }
+    .ticket-card.active { background: #fef5e7; border-left: 3px solid #b8822a; }
+    .ticket-card.sent { opacity: 0.5; }
+    .ticket-subject { font-size: 13px; font-weight: 600; color: #2a2420; line-height: 1.4; }
+    .ticket-meta { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .meta-text { font-size: 11px; color: #a09080; }
+    .main { flex: 1; overflow-y: auto; padding: 28px; background: #f5f2ee; }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60%; gap: 12px; opacity: 0.5; text-align: center; }
+    .empty-icon { font-size: 48px; }
+    .empty-title { font-size: 18px; font-weight: 600; color: #2a2420; }
+    .empty-desc { font-size: 13px; color: #a09080; max-width: 280px; line-height: 1.6; }
+    .ticket-detail { max-width: 100%; }
+    .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; }
+    .detail-subject { font-size: 20px; font-weight: 700; color: #1a1410; margin-bottom: 6px; line-height: 1.3; }
+    .detail-meta { font-size: 12px; color: #a09080; }
+    .status-pill { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .message-box { background: #fff; border: 1px solid #e8e0d8; border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .message-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #a09080; margin-bottom: 10px; }
+    .message-text { font-size: 21px; color: #3a3028; line-height: 1.7; white-space: pre-wrap; }
+    .reply-label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .reply-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #b8822a; font-weight: 700; }
+    .regen-btn { background: #fff; border: 1px solid #d0c8c0; color: #6a5e52; padding: 4px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; font-family: inherit; }
+    .generating-box { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e8e0d8; border-radius: 10px; padding: 20px; min-height: 100px; color: #a09080; font-size: 13px; }
+    .reply-textarea { width: 100%; background: #fff; border: 1px solid #d8d0c8; border-radius: 10px; color: #2a2420; font-size: 17px; font-family: Georgia, serif; padding: 16px 18px; line-height: 1.7; resize: vertical; outline: none; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .reply-textarea:focus { border-color: #b8822a; box-shadow: 0 0 0 3px rgba(184,130,42,0.1); }
+    .action-row { display: flex; justify-content: flex-end; gap: 12px; margin-top: 14px; }
+    .cancel-btn { background: #fff; border: 1px solid #d0c8c0; color: #6a5e52; padding: 10px 22px; border-radius: 7px; cursor: pointer; font-size: 14px; font-family: inherit; }
+    .cancel-btn:hover { border-color: #a09080; }
+    .send-btn { background: #b8822a; border: none; color: #fff; padding: 10px 26px; border-radius: 7px; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+    .send-btn:hover { background: #a0701f; }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .center-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; gap: 10px; color: #a09080; font-size: 13px; }
+    .error-box { margin: 16px; background: #fff5f5; border: 1px solid #f0c0c0; border-radius: 8px; padding: 16px; font-size: 13px; color: #c04040; }
+    .retry-btn { margin-top: 10px; background: #fff; border: 1px solid #f0c0c0; color: #c04040; padding: 5px 14px; border-radius: 5px; cursor: pointer; font-size: 12px; font-family: inherit; }
+    .spinner { width: 18px; height: 18px; border: 2px solid #e0d8d0; border-top: 2px solid #b8822a; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; color: white; padding: 12px 22px; border-radius: 8px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: none; }
+  </style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<header>
+  <div class="header-left">
+    <div class="logo">☕</div>
+    <div>
+      <div class="brand">Yespresso</div>
+      <div class="brand-sub">Assistenza Clienti</div>
+    </div>
+  </div>
+  <button class="refresh-btn" onclick="loadTickets()">↻ Aggiorna</button>
+</header>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Ticket aperti</span>
+      <span class="ticket-count" id="ticket-count">0</span>
+    </div>
+    <div id="ticket-list"><div class="center-msg"><div class="spinner"></div> Caricamento...</div></div>
+  </aside>
+  <main class="main" id="main-panel">
+    <div class="empty-state">
+      <div class="empty-icon">☕</div>
+      <div class="empty-title">Seleziona un ticket</div>
+      <div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI.</div>
+    </div>
+  </main>
+</div>
+<script>
+const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
+const PROXY = "http://localhost:3001";
+
+const STATUS_LABELS = { open: "Aperto", pending: "In attesa", solved: "Risolto", closed: "Chiuso", on_hold: "In sospeso" };
+const STATUS_COLORS = { open: "#e8a020", pending: "#4a7cd4", solved: "#2a9d60", closed: "#a09080", on_hold: "#d46020" };
+const STATUS_TEXT = { open: "#7a5010", pending: "#1a3a7a", solved: "#0a5030", closed: "#5a4a40", on_hold: "#7a3010" };
+const STATUS_BG = { open: "#fef5e0", pending: "#e8f0fc", solved: "#e0f5ec", closed: "#f0ece8", on_hold: "#feeee0" };
+
+let tickets = [], selectedTicket = null, sentTickets = new Set();
+
+function showToast(msg, type) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.background = type === "error" ? "#c04040" : "#2a7a50";
+  t.style.display = "block";
+  setTimeout(function() { t.style.display = "none"; }, 3500);
+}
+
+async function hdFetch(path, options) {
+  const url = PROXY + "/api" + path;
+  const headers = Object.assign({ "Authorization": "Basic " + HD_TOKEN, "Content-Type": "application/json" }, (options || {}).headers);
+  const res = await fetch(url, Object.assign({}, options, { headers }));
+  if (!res.ok) { const b = await res.text(); throw new Error("Errore " + res.status + ": " + b.substring(0, 150)); }
+  return res.json();
+}
+
+async function loadTickets() {
+  document.getElementById("ticket-list").innerHTML = '<div class="center-msg"><div class="spinner"></div> Caricamento...</div>';
+  try {
+    const data = await hdFetch("/v1/tickets?pageSize=20");
+    tickets = Array.isArray(data) ? data : (data.tickets || data.data || []);
+    renderTicketList();
+  } catch(e) {
+    document.getElementById("ticket-list").innerHTML = '<div class="error-box"><strong>⚠ Errore</strong><br>' + e.message + '<br><button class="retry-btn" onclick="loadTickets()">Riprova</button></div>';
+  }
+}
+
+function renderTicketList() {
+  document.getElementById("ticket-count").textContent = tickets.length;
+  if (!tickets.length) { document.getElementById("ticket-list").innerHTML = '<div class="center-msg">🎉 Nessun ticket aperto!</div>'; return; }
+  document.getElementById("ticket-list").innerHTML = tickets.map(function(t) {
+    const tid = t.ID || t.id;
+    const isActive = selectedTicket && (selectedTicket.ID || selectedTicket.id) === tid;
+    const isSent = sentTickets.has(tid);
+    const color = STATUS_COLORS[t.status] || "#a09080";
+    const name = (t.requester && (t.requester.name || t.requester.email)) || "Cliente";
+    return '<div class="ticket-card ' + (isActive ? "active" : "") + " " + (isSent ? "sent" : "") + '" onclick="selectTicket(\'' + tid + '\')">' +
+      '<div class="ticket-subject">' + (t.subject || "Senza oggetto") + (isSent ? ' <span style="color:#2a9d60;font-size:10px">✓ Inviato</span>' : "") + '</div>' +
+      '<div class="ticket-meta"><span class="status-dot" style="background:' + color + '"></span><span class="meta-text">' + (STATUS_LABELS[t.status] || t.status) + '</span><span class="meta-text">·</span><span class="meta-text">' + name + '</span></div>' +
+      '</div>';
+  }).join("");
+}
+
+async function selectTicket(tid) {
+  selectedTicket = tickets.find(function(t) { return (t.ID || t.id) === tid; });
+  if (!selectedTicket) return;
+  renderTicketList();
+
+  const color = STATUS_COLORS[selectedTicket.status] || "#a09080";
+  const textColor = STATUS_TEXT[selectedTicket.status] || "#5a4a40";
+  const bgColor = STATUS_BG[selectedTicket.status] || "#f0ece8";
+  const requesterName = selectedTicket.requester && selectedTicket.requester.name || "Cliente";
+  const requesterEmail = selectedTicket.requester && selectedTicket.requester.email || "";
+  const rawMsg = (selectedTicket.events && selectedTicket.events[0] && selectedTicket.events[0].message && selectedTicket.events[0].message.text) || "";
+  const lastMsg = rawMsg.replace(/\[https?:\/\/[^\]]+\]/g, "").replace(/https?:\/\/\S+/g, "").trim();
+
+  document.getElementById("main-panel").innerHTML =
+    '<div class="ticket-detail">' +
+      '<div class="detail-header">' +
+        '<div>' +
+          '<div class="detail-subject">' + (selectedTicket.subject || "Senza oggetto") + '</div>' +
+          '<div class="detail-meta">Da: <strong>' + requesterName + '</strong>' + (requesterEmail ? ' &lt;' + requesterEmail + '&gt;' : '') + '</div>' +
+        '</div>' +
+        '<span class="status-pill" style="background:' + bgColor + ';color:' + textColor + '">' + (STATUS_LABELS[selectedTicket.status] || selectedTicket.status) + '</span>' +
+      '</div>' +
+      (lastMsg ? '<div class="message-box"><div class="message-label">Messaggio del cliente</div><div class="message-text">' + lastMsg + '</div></div>' : '') +
+      '<div class="reply-label-row"><span class="reply-label">✨ Generazione risposta AI...</span></div>' +
+      '<div class="generating-box" id="gen-box"><div class="spinner"></div> Claude sta scrivendo la risposta...</div>' +
+      '<div id="action-row" style="display:none">' +
+        '<div class="action-row">' +
+          '<button class="cancel-btn" onclick="clearDetail()">Annulla</button>' +
+          '<button class="send-btn" id="send-btn" onclick="sendReply()">📤 Approva e invia</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  generateReply(lastMsg);
+}
+
+async function generateReply(lastMsg) {
+  const t = selectedTicket;
+  const prompt = "Oggetto: " + t.subject + "\nDa: " + (t.requester && t.requester.name || "Cliente") + "\nMessaggio: " + (lastMsg || t.subject);
+  try {
+    const res = await fetch(PROXY + "/anthropic/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system: "Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffè, capsule e prodotti per il caffè. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come 'Il Team Yespresso'. Sii conciso e risolutivo.",
+        messages: [{ role: "user", content: "Genera una risposta professionale per questo ticket:\n\n" + prompt }]
+      })
+    });
+    const data = await res.json();
+    const reply = data.content && data.content[0] && data.content[0].text || "";
+    document.querySelector(".reply-label").textContent = "✨ Risposta suggerita dall'AI";
+    document.getElementById("gen-box").outerHTML = '<textarea class="reply-textarea" id="reply-text" rows="10">' + reply + '</textarea>';
+    document.getElementById("action-row").style.display = "block";
+  } catch(e) {
+    document.getElementById("gen-box").innerHTML = '<span style="color:#c04040">Errore: ' + e.message + '</span>';
+  }
+}
+
+async function sendReply() {
+  const message = document.getElementById("reply-text") && document.getElementById("reply-text").value;
+  if (!message || !selectedTicket) return;
+  const btn = document.getElementById("send-btn");
+  btn.disabled = true; btn.textContent = "Invio in corso...";
+  try {
+    const tid = selectedTicket.ID || selectedTicket.id;
+    const res = await fetch(PROXY + "/api/v1/tickets/" + tid + "/transactions", {
+      method: "POST",
+      headers: { "Authorization": "Basic " + HD_TOKEN, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: message, type: "message" })
+    });
+    if (!res.ok) { const b = await res.text(); throw new Error("Errore " + res.status + ": " + b.substring(0, 150)); }
+    sentTickets.add(tid);
+    showToast("✓ Risposta inviata con successo!");
+    clearDetail();
+    renderTicketList();
+  } catch(e) {
+    showToast("Errore: " + e.message, "error");
+    btn.disabled = false; btn.textContent = "📤 Approva e invia";
+  }
+}
+
+function clearDetail() {
+  selectedTicket = null;
+  renderTicketList();
+  document.getElementById("main-panel").innerHTML =
+    '<div class="empty-state"><div class="empty-icon">☕</div><div class="empty-title">Seleziona un ticket</div><div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI.</div></div>';
+}
+
+loadTickets();
+</script>
+</body>
+</html>
