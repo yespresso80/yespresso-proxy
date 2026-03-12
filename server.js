@@ -18,6 +18,13 @@ const server = http.createServer(function(req, res) {
     return;
   }
 
+  // Health check per Railway
+  if (req.url === "/health" || req.url === "/ping") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
+    return;
+  }
+
   // Servi il file HTML
   if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
@@ -27,7 +34,7 @@ const server = http.createServer(function(req, res) {
         res.end("File non trovato");
         return;
       }
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(data);
     });
     return;
