@@ -1,7 +1,7 @@
 const http = require("http");
 const https = require("https");
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const ANTHROPIC_KEY = "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";
 
