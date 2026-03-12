@@ -1,5 +1,7 @@
 const http = require("http");
 const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 const PORT = process.env.PORT || 3001;
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
@@ -16,19 +18,34 @@ const server = http.createServer(function(req, res) {
     return;
   }
 
+  // Servi il file HTML
+  if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
+    const filePath = path.join(__dirname, "yespresso-helpdesk.html");
+    fs.readFile(filePath, function(err, data) {
+      if (err) {
+        res.writeHead(404);
+        res.end("File non trovato");
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(data);
+    });
+    return;
+  }
+
   let targetUrl, requestHeaders;
 
   if (req.url.startsWith("/anthropic")) {
-    const path = req.url.replace("/anthropic", "");
-    targetUrl = "https://api.anthropic.com" + path;
+    const p = req.url.replace("/anthropic", "");
+    targetUrl = "https://api.anthropic.com" + p;
     requestHeaders = {
       "Content-Type": "application/json",
       "anthropic-version": "2023-06-01",
       "x-api-key": ANTHROPIC_KEY,
     };
   } else {
-    const path = req.url.replace(/^\/api/, "");
-    targetUrl = "https://api.helpdesk.com" + path;
+    const p = req.url.replace(/^\/api/, "");
+    targetUrl = "https://api.helpdesk.com" + p;
     requestHeaders = {
       "Authorization": "Basic " + HD_TOKEN,
       "Content-Type": "application/json",
@@ -66,6 +83,5 @@ const server = http.createServer(function(req, res) {
 });
 
 server.listen(PORT, function() {
-  console.log("Proxy Yespresso avviato su http://localhost:" + PORT);
-  console.log("Lascia questa finestra aperta!");
+  console.log("✅ Server Yespresso avviato su porta " + PORT);
 });
