@@ -82,6 +82,6 @@ const server = http.createServer(function(req, res) {
   });
 });
 
-server.listen(PORT, function() {
+server.listen(PORT, "0.0.0.0", function() {
   console.log("✅ Server Yespresso avviato su porta " + PORT);
 });
