@@ -21,8 +21,8 @@ async function getShopifyToken() {
 
 const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -30,29 +30,22 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // Health check per Railway
   if (req.url === "/health" || req.url === "/ping") {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("OK");
     return;
   }
 
-  // Servi il file HTML
   if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
     fs.readFile(filePath, function(err, data) {
-      if (err) {
-        res.writeHead(404);
-        res.end("File non trovato");
-        return;
-      }
+      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(data);
     });
     return;
   }
 
-  // Shopify OAuth callback
   if (req.url.startsWith("/shopify/callback")) {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("OK");
@@ -80,29 +73,37 @@ const server = http.createServer(async function(req, res) {
   } else {
     const p = req.url.replace(/^\/api/, "");
     targetUrl = "https://api.helpdesk.com" + p;
-
     requestHeaders = {
       "Authorization": "Basic " + HD_TOKEN,
-      "Content-Type": "application/json",
       "User-Agent": "Yespresso-Claude-Integration/1.0",
     };
+    // Forwarda Content-Type originale (essenziale per multipart/form-data con boundary)
+    if (req.headers["content-type"]) {
+      requestHeaders["Content-Type"] = req.headers["content-type"];
+    } else {
+      requestHeaders["Content-Type"] = "application/json";
+    }
   }
 
   console.log("[PROXY] " + req.method + " " + targetUrl);
 
-  let body = "";
-  req.on("data", function(chunk) { body += chunk; });
+  // Leggi body come Buffer binario (necessario per multipart/form-data)
+  const chunks = [];
+  req.on("data", function(chunk) { chunks.push(chunk); });
   req.on("end", function() {
+    const bodyBuffer = Buffer.concat(chunks);
     const options = { method: req.method, headers: requestHeaders };
 
     const proxyReq = https.request(targetUrl, options, function(proxyRes) {
-      let responseBody = "";
-      proxyRes.on("data", function(chunk) { responseBody += chunk; });
+      const respChunks = [];
+      proxyRes.on("data", function(chunk) { respChunks.push(chunk); });
       proxyRes.on("end", function() {
+        const responseBody = Buffer.concat(respChunks);
         console.log("[RISPOSTA] " + proxyRes.statusCode);
-        if (proxyRes.statusCode !== 200) console.log(responseBody.substring(0, 300));
-        const respHeaders = { "Content-Type": "application/json" };
-        // Forwarda header Link per paginazione cursor-based Shopify
+        if (proxyRes.statusCode !== 200 && proxyRes.statusCode !== 201) {
+          console.log(responseBody.toString().substring(0, 300));
+        }
+        const respHeaders = { "Content-Type": proxyRes.headers["content-type"] || "application/json" };
         if (proxyRes.headers["link"]) respHeaders["Link"] = proxyRes.headers["link"];
         if (proxyRes.headers["x-shopify-shop-api-call-limit"]) respHeaders["x-shopify-shop-api-call-limit"] = proxyRes.headers["x-shopify-shop-api-call-limit"];
         res.writeHead(proxyRes.statusCode, respHeaders);
@@ -116,7 +117,7 @@ const server = http.createServer(async function(req, res) {
       res.end(JSON.stringify({ error: err.message }));
     });
 
-    if (body) proxyReq.write(body);
+    if (bodyBuffer.length > 0) proxyReq.write(bodyBuffer);
     proxyReq.end();
   });
 });
