@@ -1,340 +1,619 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Yespresso - Assistenza Clienti</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; color: #1a1a2e; min-height: 100vh; display: flex; flex-direction: column; font-size: 14px; }
-    header { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 52px; background: #1a1a2e; border-bottom: 1px solid #2a2a4e; flex-shrink: 0; }
-    .header-left { display: flex; align-items: center; gap: 10px; }
-    .logo { font-size: 22px; }
-    .brand { font-size: 16px; font-weight: 700; color: #fff; }
-    .brand-sub { font-size: 10px; color: #8888aa; letter-spacing: 2px; text-transform: uppercase; }
-    .header-right { display: flex; align-items: center; gap: 10px; }
-    .refresh-btn { background: transparent; border: 1px solid #3a3a5e; color: #aaaacc; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.15s; }
-    .refresh-btn:hover { border-color: #b8822a; color: #b8822a; }
-    .ticket-total { font-size: 12px; color: #8888aa; }
-    .layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 52px); }
-    .sidebar { width: 320px; border-right: 1px solid #e0e4ea; background: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
-    .tabs { display: flex; border-bottom: 1px solid #e0e4ea; background: #fff; padding: 0 8px; overflow-x: auto; }
-    .tab { padding: 10px 10px; font-size: 12px; font-weight: 600; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
-    .tab:hover { color: #1a1a2e; }
-    .tab.active { color: #1a1a2e; border-bottom-color: #b8822a; }
-    .tab-badge { background: #e8eaf0; color: #555; border-radius: 10px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
-    .tab.active .tab-badge { background: #b8822a; color: #fff; }
-    .search-box { padding: 10px 12px; border-bottom: 1px solid #f0f2f5; }
-    .search-input { width: 100%; padding: 7px 12px; border: 1px solid #e0e4ea; border-radius: 6px; font-size: 12px; font-family: inherit; outline: none; background: #f8f9fc; }
-    .search-input:focus { border-color: #b8822a; background: #fff; }
-    .ticket-list { flex: 1; overflow-y: auto; }
-    .ticket-card { padding: 12px 14px; border-bottom: 1px solid #f0f2f5; cursor: pointer; transition: background 0.1s; display: flex; gap: 10px; align-items: flex-start; }
-    .ticket-card:hover { background: #f8f9fc; }
-    .ticket-card.active { background: #fff8f0; border-left: 3px solid #b8822a; }
-    .ticket-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; margin-top: 1px; }
-    .ticket-info { flex: 1; min-width: 0; }
-    .ticket-requester { font-size: 12px; font-weight: 600; color: #1a1a2e; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ticket-subject-small { font-size: 12px; color: #555; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .ticket-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-    .ticket-source { font-size: 10px; color: #999; }
-    .ticket-time { font-size: 10px; color: #bbb; }
-    .status-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700; white-space: nowrap; }
-    .main { flex: 1; overflow-y: auto; background: #f4f5f7; }
-    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; opacity: 0.4; }
-    .empty-icon { font-size: 48px; }
-    .empty-title { font-size: 18px; font-weight: 600; }
-    .empty-desc { font-size: 13px; color: #888; max-width: 280px; text-align: center; line-height: 1.6; }
-    .ticket-detail { padding: 0; }
-    .detail-topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: #fff; border-bottom: 1px solid #e8eaf0; gap: 12px; }
-    .detail-subject-text { font-size: 16px; font-weight: 700; color: #1a1a2e; flex: 1; }
-    .detail-badges { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-    .detail-body { padding: 20px 24px; }
-    .requester-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 12px 16px; background: #fff; border-radius: 8px; border: 1px solid #e8eaf0; }
-    .requester-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0; }
-    .requester-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
-    .requester-email { font-size: 12px; color: #888; }
-    .message-card { background: #fff; border: 1px solid #e8eaf0; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .message-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #aaa; margin-bottom: 10px; font-weight: 600; }
-    .message-text { font-size: 14px; color: #333; line-height: 1.7; white-space: pre-wrap; }
-    .order-card { background: #f0faf0; border: 1px solid #b8ddb8; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 12px; color: #2a5a2a; line-height: 1.9; }
-    .ai-section { background: #fff; border: 1px solid #e8eaf0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .ai-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f0f2f5; background: #fafbfc; }
-    .ai-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #b8822a; }
-    .generating-box { display: flex; align-items: center; gap: 12px; padding: 20px; color: #999; font-size: 13px; min-height: 100px; }
-    .reply-textarea { width: 100%; border: none; color: #1a1a2e; font-size: 14px; font-family: inherit; padding: 16px; line-height: 1.7; resize: vertical; outline: none; background: #fff; min-height: 160px; }
-    .ai-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f2f5; background: #fafbfc; }
-    .cancel-btn { background: #fff; border: 1px solid #d0d4dc; color: #666; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; }
-    .cancel-btn:hover { border-color: #aaa; }
-    .send-btn { background: #b8822a; border: none; color: #fff; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit; }
-    .send-btn:hover { background: #a0701f; }
-    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .center-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; gap: 8px; color: #aaa; font-size: 12px; }
-    .error-box { margin: 12px; background: #fff5f5; border: 1px solid #f0c0c0; border-radius: 8px; padding: 12px; font-size: 12px; color: #c04040; }
-    .retry-btn { margin-top: 8px; background: #fff; border: 1px solid #f0c0c0; color: #c04040; padding: 4px 12px; border-radius: 5px; cursor: pointer; font-size: 11px; font-family: inherit; }
-    .spinner { width: 16px; height: 16px; border: 2px solid #e0e4ea; border-top: 2px solid #b8822a; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .toast { position: fixed; top: 16px; right: 16px; z-index: 9999; color: white; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: none; }
-    .no-tickets { padding: 30px; text-align: center; color: #bbb; font-size: 13px; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Yespresso - Assistenza Clienti</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fff;color:#1a1a2e;min-height:100vh;display:flex;font-size:13px;overflow:hidden}
+
+/* NAV LEFT */
+.nav{width:52px;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0;height:100vh}
+.nav-logo{width:36px;height:36px;background:#4caf50;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:12px}
+.nav-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;color:#8888aa;transition:all 0.15s}
+.nav-icon:hover,.nav-icon.active{background:#2a2a4e;color:#fff}
+.nav-spacer{flex:1}
+.nav-avatar{width:32px;height:32px;border-radius:50%;background:#b8822a;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;cursor:pointer}
+
+/* SIDEBAR */
+.sidebar{width:240px;border-right:1px solid #e8eaf0;background:#fff;display:flex;flex-direction:column;height:100vh;flex-shrink:0}
+.sidebar-top{padding:14px 14px 10px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;justify-content:space-between}
+.sidebar-title{font-size:15px;font-weight:700;color:#1a1a2e}
+.new-ticket-btn{background:#1a73e8;border:none;color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit}
+.sidebar-search{padding:10px 12px;border-bottom:1px solid #f0f2f5}
+.sidebar-search input{width:100%;padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;outline:none;background:#f8f9fc}
+.sidebar-search input:focus{border-color:#1a73e8}
+.sidebar-section{padding:8px 14px 4px;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#aaa}
+.sidebar-item{display:flex;align-items:center;justify-content:space-between;padding:7px 14px;cursor:pointer;border-radius:0;transition:background 0.1s;color:#444}
+.sidebar-item:hover{background:#f8f9fc}
+.sidebar-item.active{background:#e8f0fe;color:#1a73e8;font-weight:600}
+.sidebar-item-left{display:flex;align-items:center;gap:8px;font-size:12px}
+.sidebar-badge{background:#e8eaf0;color:#555;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;min-width:18px;text-align:center}
+.sidebar-item.active .sidebar-badge{background:#1a73e8;color:#fff}
+
+/* TICKET LIST PANEL */
+.ticket-panel{flex:1;display:flex;flex-direction:column;height:100vh;background:#fff;border-right:1px solid #e8eaf0;min-width:0}
+.ticket-panel-header{padding:14px 20px 10px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ticket-panel-title{font-size:16px;font-weight:700;color:#1a1a2e}
+.filter-btn{background:#fff;border:1px solid #e0e4ea;color:#555;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit}
+.ticket-count-bar{padding:6px 20px;font-size:11px;color:#888;border-bottom:1px solid #f0f2f5;flex-shrink:0}
+.table-header{display:grid;grid-template-columns:32px 220px 1fr 110px 90px 110px 28px;gap:0;padding:8px 16px;border-bottom:2px solid #f0f2f5;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;flex-shrink:0}
+.ticket-rows{flex:1;overflow-y:auto}
+.ticket-row{display:grid;grid-template-columns:32px 220px 1fr 110px 90px 110px 28px;gap:0;padding:10px 16px;border-bottom:1px solid #f4f5f7;cursor:pointer;align-items:center;transition:background 0.1s}
+.ticket-row:hover{background:#f8f9fc}
+.ticket-row.active{background:#e8f0fe}
+.tr-check{display:flex;align-items:center}
+.tr-check input{cursor:pointer;accent-color:#1a73e8}
+.tr-requester{display:flex;align-items:center;gap:8px;min-width:0}
+.tr-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.tr-req-info{min-width:0}
+.tr-req-name{font-size:12px;font-weight:600;color:#1a1a2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-req-email{font-size:10px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-subject{font-size:12px;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px}
+.tr-subject-dot{color:#ccc;margin-right:6px}
+.tr-agent{font-size:11px;color:#888}
+.tr-status .status-pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+.tr-time{font-size:11px;color:#888;text-align:right}
+.tr-more{color:#ccc;cursor:pointer;font-size:14px;text-align:center}
+.tr-more:hover{color:#666}
+
+/* STATUS PILLS */
+.s-open{background:#e3f2fd;color:#1565c0}
+.s-pending{background:#fff3e0;color:#e65100}
+.s-solved{background:#e8f5e9;color:#2e7d32}
+.s-closed{background:#f5f5f5;color:#757575}
+.s-on_hold{background:#fce4ec;color:#880e4f}
+
+/* DETAIL VIEW */
+.detail-view{display:none;flex:1;flex-direction:column;height:100vh;min-width:0}
+.detail-view.open{display:flex}
+.detail-topbar{padding:12px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#fff}
+.back-btn{background:none;border:none;cursor:pointer;color:#666;font-size:18px;padding:2px 6px;border-radius:4px}
+.back-btn:hover{background:#f0f2f5}
+.detail-title{flex:1;font-size:14px;font-weight:600;color:#1a1a2e;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.detail-actions{display:flex;align-items:center;gap:8px}
+.detail-action-btn{background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px 6px;border-radius:4px}
+.detail-action-btn:hover{background:#f0f2f5;color:#333}
+.detail-body-wrap{display:flex;flex:1;overflow:hidden}
+.detail-main{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+.detail-sidebar{width:280px;border-left:1px solid #e8eaf0;overflow-y:auto;background:#fafbfc;flex-shrink:0}
+.ds-section{padding:14px 16px;border-bottom:1px solid #e8eaf0}
+.ds-section-title{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer}
+.ds-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;font-size:12px}
+.ds-label{color:#888}
+.ds-value{color:#1a1a2e;font-weight:500}
+.ds-select{border:1px solid #e0e4ea;border-radius:5px;padding:3px 8px;font-size:11px;font-family:inherit;outline:none;background:#fff;color:#1a1a2e;cursor:pointer}
+.ds-select:focus{border-color:#1a73e8}
+.message-thread{background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden}
+.msg-header{padding:12px 16px;border-bottom:1px solid #f0f2f5;background:#fafbfc;font-size:12px;color:#555}
+.msg-body{padding:16px;font-size:13px;color:#333;line-height:1.7;white-space:pre-wrap}
+.order-info-box{background:#f0faf0;border:1px solid #b8ddb8;border-radius:8px;padding:12px 16px;font-size:12px;color:#2a5a2a;line-height:1.9}
+.ai-reply-box{background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden}
+.ai-box-header{padding:10px 16px;border-bottom:1px solid #f0f2f5;background:#fafbfc;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#b8822a;display:flex;align-items:center;justify-content:space-between}
+.reply-area{border:none;width:100%;padding:14px 16px;font-size:13px;font-family:inherit;line-height:1.7;resize:vertical;outline:none;min-height:140px;color:#1a1a2e}
+.reply-footer{padding:10px 16px;border-top:1px solid #f0f2f5;background:#fafbfc;display:flex;align-items:center;justify-content:space-between}
+.reply-footer-left{display:flex;align-items:center;gap:8px}
+.status-change-select{border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit;outline:none;background:#fff;color:#1a1a2e;cursor:pointer}
+.status-change-select:focus{border-color:#1a73e8}
+.send-reply-btn{background:#1a73e8;border:none;color:#fff;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit}
+.send-reply-btn:hover{background:#1557b0}
+.send-reply-btn:disabled{opacity:0.5;cursor:not-allowed}
+.cancel-reply-btn{background:#fff;border:1px solid #d0d4dc;color:#666;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit}
+
+.generating{display:flex;align-items:center;gap:10px;padding:20px 16px;color:#aaa;font-size:12px}
+.spinner{width:14px;height:14px;border:2px solid #e0e4ea;border-top:2px solid #b8822a;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;top:16px;right:16px;z-index:9999;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none}
+.center-msg{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;gap:8px;color:#aaa;font-size:12px}
+.error-box{margin:12px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:8px;padding:12px;font-size:12px;color:#c04040}
+.retry-btn{margin-top:8px;background:#fff;border:1px solid #f0c0c0;color:#c04040;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit}
+
+/* List+detail toggle */
+.ticket-list-view{display:flex;flex:1;min-width:0;height:100vh}
+</style>
 </head>
 <body>
 <div class="toast" id="toast"></div>
-<header>
-  <div class="header-left">
-    <div class="logo">☕</div>
-    <div>
-      <div class="brand">Yespresso</div>
-      <div class="brand-sub">Assistenza Clienti</div>
+
+<!-- LEFT NAV -->
+<nav class="nav">
+  <div class="nav-logo">☕</div>
+  <div class="nav-icon active" title="Ticket">🎫</div>
+  <div class="nav-icon" title="Contatti">👥</div>
+  <div class="nav-icon" title="Report">📊</div>
+  <div class="nav-icon" title="Automazioni">⚡</div>
+  <div class="nav-icon" title="Dashboard">⊞</div>
+  <div class="nav-spacer"></div>
+  <div class="nav-icon" title="Lista">📋</div>
+  <div class="nav-icon" title="Impostazioni">⚙️</div>
+  <div class="nav-icon" title="Notifiche">🔔</div>
+  <div class="nav-avatar" title="Profilo">Y</div>
+</nav>
+
+<!-- SIDEBAR FILTERS -->
+<aside class="sidebar">
+  <div class="sidebar-top">
+    <span class="sidebar-title">Tickets</span>
+    <button class="new-ticket-btn">+ New ticket</button>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="sidebar-search" placeholder="Search in all tickets..." oninput="applySearch()"/>
+  </div>
+  <div style="overflow-y:auto;flex:1">
+    <div class="sidebar-item" onclick="setView('all')">
+      <div class="sidebar-item-left">🕐 All recent tickets</div>
+    </div>
+    <div class="sidebar-item active" id="view-tohandle" onclick="setView('tohandle')">
+      <div class="sidebar-item-left">🎫 Tickets to handle</div>
+      <span class="sidebar-badge" id="badge-tohandle">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('mine')">
+      <div class="sidebar-item-left">👤 My open tickets</div>
+      <span class="sidebar-badge" id="badge-mine">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('undelivered')">
+      <div class="sidebar-item-left">⚠️ Undelivered</div>
+      <span class="sidebar-badge">0</span>
+    </div>
+
+    <div class="sidebar-section">Ticket Views</div>
+    <div class="sidebar-item" onclick="setView('annullamento')">
+      <div class="sidebar-item-left">👤 ANNULLAMENTO</div>
+      <span class="sidebar-badge" id="badge-annullamento">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('doveordine')">
+      <div class="sidebar-item-left">👤 DOV'E' ORDINE</div>
+      <span class="sidebar-badge" id="badge-doveordine">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('garanzia')">
+      <div class="sidebar-item-left">👤 GARANZIA A Z</div>
+      <span class="sidebar-badge" id="badge-garanzia">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('giacenza')">
+      <div class="sidebar-item-left">👤 GIACENZA BRT</div>
+      <span class="sidebar-badge" id="badge-giacenza">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('resi')">
+      <div class="sidebar-item-left">👤 RESI MAGAZZINO</div>
+      <span class="sidebar-badge" id="badge-resi">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('richiestabrt')">
+      <div class="sidebar-item-left">👤 RICHIESTA BRT</div>
+      <span class="sidebar-badge" id="badge-richiestabrt">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('rispedire')">
+      <div class="sidebar-item-left">👤 RISPEDIRE E RITIRARE</div>
+      <span class="sidebar-badge">0</span>
+    </div>
+
+    <div class="sidebar-section">Statuses</div>
+    <div class="sidebar-item" onclick="setView('open')">
+      <div class="sidebar-item-left">Open</div>
+      <span class="sidebar-badge" id="badge-open">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('pending')">
+      <div class="sidebar-item-left">Pending</div>
+      <span class="sidebar-badge" id="badge-pending">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('on_hold')">
+      <div class="sidebar-item-left">On hold</div>
+      <span class="sidebar-badge" id="badge-onhold">0</span>
+    </div>
+    <div class="sidebar-item" onclick="setView('solved')">
+      <div class="sidebar-item-left">Solved</div>
+      <span class="sidebar-badge" id="badge-solved">0</span>
     </div>
   </div>
-  <div class="header-right">
-    <span class="ticket-total" id="ticket-total"></span>
-    <button class="refresh-btn" onclick="loadTickets()">↻ Aggiorna</button>
+</aside>
+
+<!-- MAIN CONTENT -->
+<div class="ticket-list-view" id="main-content">
+
+  <!-- TICKET TABLE -->
+  <div class="ticket-panel" id="ticket-panel">
+    <div class="ticket-panel-header">
+      <span class="ticket-panel-title" id="panel-title">Tickets to handle</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="filter-btn" onclick="loadTickets()">↻ Aggiorna</button>
+      </div>
+    </div>
+    <div class="ticket-count-bar" id="ticket-count-bar">Caricamento...</div>
+    <div class="table-header">
+      <div></div>
+      <div>REQUESTER</div>
+      <div>SUBJECT</div>
+      <div>AGENT</div>
+      <div>STATUS</div>
+      <div style="text-align:right">LAST MESSAGE ↓</div>
+      <div></div>
+    </div>
+    <div class="ticket-rows" id="ticket-rows">
+      <div class="center-msg"><div class="spinner"></div> Caricamento ticket...</div>
+    </div>
   </div>
-</header>
-<div class="layout">
-  <aside class="sidebar">
-    <div class="tabs">
-      <div class="tab active" onclick="setTab('open')" id="tab-open">Aperti <span class="tab-badge" id="badge-open">0</span></div>
-      <div class="tab" onclick="setTab('pending')" id="tab-pending">In attesa <span class="tab-badge" id="badge-pending">0</span></div>
-      <div class="tab" onclick="setTab('solved')" id="tab-solved">Risolti <span class="tab-badge" id="badge-solved">0</span></div>
-      <div class="tab" onclick="setTab('all')" id="tab-all">Tutti <span class="tab-badge" id="badge-all">0</span></div>
+
+  <!-- DETAIL VIEW -->
+  <div class="detail-view" id="detail-view">
+    <div class="detail-topbar">
+      <button class="back-btn" onclick="closeDetail()">←</button>
+      <div class="detail-title" id="detail-title">-</div>
+      <div class="detail-actions">
+        <button class="detail-action-btn" title="Rispondi">⚡</button>
+        <button class="detail-action-btn" title="Archivia">🗄</button>
+        <button class="detail-action-btn" title="Stato">🕐</button>
+        <button class="detail-action-btn" title="Elimina">🗑</button>
+        <button class="detail-action-btn" onclick="navigateTicket(-1)" title="Precedente">‹</button>
+        <button class="detail-action-btn" onclick="navigateTicket(1)" title="Successivo">›</button>
+        <button class="detail-action-btn" title="Altro">⋯</button>
+      </div>
     </div>
-    <div class="search-box">
-      <input class="search-input" id="search-input" type="text" placeholder="🔍 Cerca ticket..." oninput="renderTicketList()" />
+    <div class="detail-body-wrap">
+      <div class="detail-main" id="detail-main"></div>
+      <aside class="detail-sidebar" id="detail-sidebar"></aside>
     </div>
-    <div class="ticket-list" id="ticket-list"><div class="center-msg"><div class="spinner"></div> Caricamento...</div></div>
-  </aside>
-  <main class="main" id="main-panel">
-    <div class="empty-state">
-      <div class="empty-icon">☕</div>
-      <div class="empty-title">Seleziona un ticket</div>
-      <div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI personalizzata.</div>
-    </div>
-  </main>
+  </div>
+
 </div>
+
 <script>
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const PROXY = "https://yespresso-proxy.onrender.com";
-const STATUS_LABELS = { open: "Aperto", pending: "In attesa", solved: "Risolto", closed: "Chiuso", on_hold: "In sospeso" };
-const STATUS_COLORS = { open: "#e8a020", pending: "#4a7cd4", solved: "#2a9d60", closed: "#888", on_hold: "#d46020" };
-const STATUS_BG = { open: "#fff8e8", pending: "#eef3fd", solved: "#e8f7f0", closed: "#f0f0f0", on_hold: "#fff0e8" };
-const STATUS_TEXT = { open: "#7a5010", pending: "#1a3a7a", solved: "#0a5030", closed: "#555", on_hold: "#7a3010" };
-const AVATAR_COLORS = ["#e74c3c","#3498db","#2ecc71","#9b59b6","#e67e22","#1abc9c","#e91e63","#00bcd4","#ff5722","#607d8b"];
-let tickets = [], selectedTicket = null, sentTickets = new Set(), currentTab = "open";
 
-function getAvatarColor(str) { let h = 0; for (let i = 0; i < (str||"").length; i++) h = str.charCodeAt(i) + ((h << 5) - h); return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]; }
-function getInitials(name) { const p = (name||"?").trim().split(" "); return (p[0][0] + (p[1] ? p[1][0] : "")).toUpperCase(); }
-function timeAgo(d) { if (!d) return ""; const diff = Date.now() - new Date(d).getTime(); const m = Math.floor(diff/60000), h = Math.floor(m/60), dy = Math.floor(h/24); if (dy > 0) return dy + "g fa"; if (h > 0) return h + "h fa"; if (m > 0) return m + "min fa"; return "ora"; }
-function sourceLabel(email) {
-  if (!email) return "✉️ Email";
-  if (email.includes("temu") || email.includes("orders.temu")) return "🟠 Temu";
-  if (email.includes("tiktok") || email.includes("v2b4") || email.includes("byndoyz")) return "🎵 TikTok";
-  if (email.includes("amazon") || email.includes("atoz") || email.includes("codisto") || email.includes("bounce-")) return "🟡 Amazon";
-  if (email.includes("brt") || email.includes("vasnoreply")) return "📦 BRT";
-  return "✉️ Email";
+const STATUS_LABELS = {open:"Open",pending:"Pending",solved:"Solved",closed:"Closed",on_hold:"On hold"};
+const STATUS_CLASS = {open:"s-open",pending:"s-pending",solved:"s-solved",closed:"s-closed",on_hold:"s-on_hold"};
+const AVATAR_COLORS = ["#e53935","#1e88e5","#43a047","#8e24aa","#fb8c00","#00897b","#e91e63","#00acc1","#f4511e","#6d4c41","#546e7a","#3949ab"];
+
+let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="";
+
+function avatarColor(s){let h=0;for(let i=0;i<(s||"").length;i++)h=s.charCodeAt(i)+((h<<5)-h);return AVATAR_COLORS[Math.abs(h)%AVATAR_COLORS.length]}
+function initials(n){const p=(n||"?").trim().split(" ");return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
+function timeAgo(d){if(!d)return"";const diff=Date.now()-new Date(d).getTime();const m=Math.floor(diff/60000),h=Math.floor(m/60),dy=Math.floor(h/24);if(dy>0)return dy+"d ago";if(h>0)return h+" hours ago";if(m>0)return m+" min ago";return"just now"}
+function srcLabel(email){
+  if(!email)return"";
+  if(email.includes("temu")||email.includes("orders.temu"))return"🟠 Temu";
+  if(email.includes("tiktok")||email.includes("v2b4")||email.includes("byndoyz"))return"🎵 TikTok";
+  if(email.includes("amazon")||email.includes("atoz")||email.includes("codisto")||email.includes("bounce-"))return"🟡 Amazon";
+  if(email.includes("brt")||email.includes("vasnoreply"))return"📦 BRT";
+  return"";
 }
 
-function showToast(msg, type) { const t = document.getElementById("toast"); t.textContent = msg; t.style.background = type === "error" ? "#c04040" : "#2a7a50"; t.style.display = "block"; setTimeout(function() { t.style.display = "none"; }, 3500); }
+function showToast(msg,type){const t=document.getElementById("toast");t.textContent=msg;t.style.background=type==="error"?"#c04040":"#2a7a50";t.style.display="block";setTimeout(()=>t.style.display="none",3500)}
 
-async function hdFetch(path, options) {
-  const url = PROXY + "/api" + path;
-  const headers = Object.assign({ "Authorization": "Basic " + HD_TOKEN, "Content-Type": "application/json" }, (options || {}).headers);
-  const res = await fetch(url, Object.assign({}, options, { headers }));
-  if (!res.ok) { const b = await res.text(); throw new Error("Errore " + res.status + ": " + b.substring(0, 150)); }
+async function hdFetch(path,options){
+  const url=PROXY+"/api"+path;
+  const headers=Object.assign({"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json"},(options||{}).headers);
+  const res=await fetch(url,Object.assign({},options,{headers}));
+  if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,150))}
   return res.json();
 }
 
-async function loadTickets() {
-  document.getElementById("ticket-list").innerHTML = '<div class="center-msg"><div class="spinner"></div> Caricamento...</div>';
-  try {
-    const data = await hdFetch("/v1/tickets?pageSize=50");
-    tickets = Array.isArray(data) ? data : (data.tickets || data.data || []);
+async function loadTickets(){
+  document.getElementById("ticket-rows").innerHTML='<div class="center-msg"><div class="spinner"></div> Caricamento...</div>';
+  document.getElementById("ticket-count-bar").textContent="Caricamento...";
+  try{
+    const data=await hdFetch("/v1/tickets?pageSize=50");
+    tickets=Array.isArray(data)?data:(data.tickets||data.data||[]);
     updateBadges();
-    renderTicketList();
-  } catch(e) {
-    document.getElementById("ticket-list").innerHTML = '<div class="error-box"><strong>⚠ Errore</strong><br>' + e.message + '<br><button class="retry-btn" onclick="loadTickets()">Riprova</button></div>';
+    renderTable();
+  }catch(e){
+    document.getElementById("ticket-rows").innerHTML='<div class="error-box"><strong>⚠ Errore</strong><br>'+e.message+'<br><button class="retry-btn" onclick="loadTickets()">Riprova</button></div>';
   }
 }
 
-function updateBadges() {
-  const c = { open: 0, pending: 0, solved: 0 };
-  tickets.forEach(function(t) { if (t.status === "open") c.open++; else if (t.status === "pending") c.pending++; else if (t.status === "solved" || t.status === "closed") c.solved++; });
-  document.getElementById("badge-open").textContent = c.open;
-  document.getElementById("badge-pending").textContent = c.pending;
-  document.getElementById("badge-solved").textContent = c.solved;
-  document.getElementById("badge-all").textContent = tickets.length;
-  document.getElementById("ticket-total").textContent = tickets.length + " ticket totali";
+function updateBadges(){
+  const c={open:0,pending:0,solved:0,on_hold:0};
+  tickets.forEach(t=>{if(c[t.status]!==undefined)c[t.status]++});
+  document.getElementById("badge-open").textContent=c.open;
+  document.getElementById("badge-pending").textContent=c.pending;
+  document.getElementById("badge-solved").textContent=c.solved;
+  document.getElementById("badge-onhold").textContent=c.on_hold;
+  const toHandle=tickets.filter(t=>t.status==="open"||t.status==="pending").length;
+  document.getElementById("badge-tohandle").textContent=toHandle;
+  document.getElementById("badge-mine").textContent=c.open;
+  // keyword badges (approximate)
+  function countKw(kw){return tickets.filter(t=>(t.subject||"").toLowerCase().includes(kw)).length}
+  document.getElementById("badge-annullamento").textContent=countKw("annull");
+  document.getElementById("badge-doveordine").textContent=countKw("dove");
+  document.getElementById("badge-garanzia").textContent=countKw("garanzia")+countKw("rimborso")+countKw("refund");
+  document.getElementById("badge-giacenza").textContent=countKw("giacenza");
+  document.getElementById("badge-resi").textContent=countKw("reso")+countKw("magazzino");
+  document.getElementById("badge-richiestabrt").textContent=countKw("brt")+countKw("spediz");
 }
 
-function setTab(tab) {
-  currentTab = tab;
-  document.querySelectorAll(".tab").forEach(function(el) { el.classList.remove("active"); });
-  document.getElementById("tab-" + tab).classList.add("active");
-  renderTicketList();
+function viewFilter(t){
+  if(currentView==="all")return true;
+  if(currentView==="tohandle")return t.status==="open"||t.status==="pending";
+  if(currentView==="mine")return t.status==="open";
+  if(currentView==="undelivered")return false;
+  if(currentView==="open")return t.status==="open";
+  if(currentView==="pending")return t.status==="pending";
+  if(currentView==="on_hold")return t.status==="on_hold";
+  if(currentView==="solved")return t.status==="solved"||t.status==="closed";
+  // keyword views
+  const subj=(t.subject||"").toLowerCase();
+  if(currentView==="annullamento")return subj.includes("annull");
+  if(currentView==="doveordine")return subj.includes("dove");
+  if(currentView==="garanzia")return subj.includes("garanzia")||subj.includes("rimborso")||subj.includes("refund");
+  if(currentView==="giacenza")return subj.includes("giacenza");
+  if(currentView==="resi")return subj.includes("reso")||subj.includes("magazzino");
+  if(currentView==="richiestabrt")return subj.includes("brt")||subj.includes("spediz");
+  if(currentView==="rispedire")return subj.includes("rispedire")||subj.includes("ritirare");
+  return true;
 }
 
-function filterTickets() {
-  const search = (document.getElementById("search-input").value || "").toLowerCase();
-  return tickets.filter(function(t) {
-    const matchTab = currentTab === "all" || (currentTab === "open" && t.status === "open") || (currentTab === "pending" && t.status === "pending") || (currentTab === "solved" && (t.status === "solved" || t.status === "closed"));
-    const matchSearch = !search || (t.subject||"").toLowerCase().includes(search) || ((t.requester&&t.requester.name)||"").toLowerCase().includes(search) || ((t.requester&&t.requester.email)||"").toLowerCase().includes(search);
-    return matchTab && matchSearch;
+function setView(view){
+  currentView=view;
+  document.querySelectorAll(".sidebar-item").forEach(el=>el.classList.remove("active"));
+  const el=document.getElementById("view-"+view);
+  if(el)el.classList.add("active");
+  const titles={all:"All recent tickets",tohandle:"Tickets to handle",mine:"My open tickets",open:"Open",pending:"Pending",solved:"Solved",on_hold:"On hold",annullamento:"ANNULLAMENTO",doveordine:"DOV'E' ORDINE",garanzia:"GARANZIA A Z",giacenza:"GIACENZA BRT",resi:"RESI MAGAZZINO",richiestabrt:"RICHIESTA BRT",rispedire:"RISPEDIRE E RITIRARE"};
+  document.getElementById("panel-title").textContent=titles[view]||view;
+  renderTable();
+}
+
+function applySearch(){searchQuery=document.getElementById("sidebar-search").value.toLowerCase();renderTable()}
+
+function getFiltered(){
+  return tickets.filter(t=>{
+    if(!viewFilter(t))return false;
+    if(!searchQuery)return true;
+    return (t.subject||"").toLowerCase().includes(searchQuery)||
+      ((t.requester&&t.requester.name)||"").toLowerCase().includes(searchQuery)||
+      ((t.requester&&t.requester.email)||"").toLowerCase().includes(searchQuery);
   });
 }
 
-function renderTicketList() {
-  const filtered = filterTickets();
-  if (!filtered.length) { document.getElementById("ticket-list").innerHTML = '<div class="no-tickets">Nessun ticket trovato</div>'; return; }
-  document.getElementById("ticket-list").innerHTML = filtered.map(function(t) {
-    const tid = t.ID || t.id;
-    const isActive = selectedTicket && (selectedTicket.ID || selectedTicket.id) === tid;
-    const isSent = sentTickets.has(tid);
-    const name = (t.requester && t.requester.name) || (t.requester && t.requester.email) || "Cliente";
-    const email = (t.requester && t.requester.email) || "";
-    const lastEvent = t.events && t.events[t.events.length - 1];
-    const lastTime = lastEvent && lastEvent.createdAt ? timeAgo(lastEvent.createdAt) : "";
-    const sBg = STATUS_BG[t.status] || "#f0f0f0";
-    const sTxt = STATUS_TEXT[t.status] || "#555";
-    return '<div class="ticket-card' + (isActive ? " active" : "") + '" onclick="selectTicket(\'' + tid + '\')">' +
-      '<div class="ticket-avatar" style="background:' + getAvatarColor(name) + '">' + getInitials(name) + '</div>' +
-      '<div class="ticket-info">' +
-        '<div class="ticket-requester">' + name + (isSent ? ' <span style="color:#2a9d60">✓</span>' : "") + '</div>' +
-        '<div class="ticket-subject-small">' + (t.subject || "Senza oggetto") + '</div>' +
-        '<div class="ticket-footer"><span class="ticket-source">' + sourceLabel(email) + '</span><span class="ticket-time">' + lastTime + '</span></div>' +
-      '</div>' +
-      '<span class="status-badge" style="background:' + sBg + ';color:' + sTxt + '">' + (STATUS_LABELS[t.status] || t.status) + '</span>' +
-    '</div>';
+function renderTable(){
+  const filtered=getFiltered();
+  document.getElementById("ticket-count-bar").textContent=filtered.length+" tickets";
+  if(!filtered.length){document.getElementById("ticket-rows").innerHTML='<div class="center-msg">Nessun ticket trovato</div>';return}
+  document.getElementById("ticket-rows").innerHTML=filtered.map(t=>{
+    const tid=t.ID||t.id;
+    const isActive=selectedTicket&&(selectedTicket.ID||selectedTicket.id)===tid;
+    const isSent=sentTickets.has(tid);
+    const name=(t.requester&&t.requester.name)||(t.requester&&t.requester.email)||"Cliente";
+    const email=(t.requester&&t.requester.email)||"";
+    const lastEvent=t.events&&t.events[t.events.length-1];
+    const lastTime=lastEvent&&lastEvent.createdAt?timeAgo(lastEvent.createdAt):"";
+    const src=srcLabel(email);
+    const sc=STATUS_CLASS[t.status]||"s-closed";
+    const sl=STATUS_LABELS[t.status]||t.status;
+    return `<div class="ticket-row${isActive?" active":""}" onclick="selectTicket('${tid}')">
+      <div class="tr-check"><input type="checkbox" onclick="event.stopPropagation()"/></div>
+      <div class="tr-requester">
+        <div class="tr-avatar" style="background:${avatarColor(name)}">${initials(name)}</div>
+        <div class="tr-req-info">
+          <div class="tr-req-name">${name}${isSent?' <span style="color:#2a9d60;font-size:10px">✓</span>':""}</div>
+          <div class="tr-req-email">${email}</div>
+        </div>
+      </div>
+      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}</div>
+      <div class="tr-agent" style="font-size:11px;color:#aaa">unassigned</div>
+      <div class="tr-status"><span class="status-pill ${sc}">${sl}</span></div>
+      <div class="tr-time">${lastTime}</div>
+      <div class="tr-more">⋯</div>
+    </div>`;
   }).join("");
 }
 
-async function selectTicket(tid) {
-  selectedTicket = tickets.find(function(t) { return (t.ID || t.id) === tid; });
-  if (!selectedTicket) return;
-  renderTicketList();
-  const t = selectedTicket;
-  const name = (t.requester && t.requester.name) || "Cliente";
-  const email = (t.requester && t.requester.email) || "";
-  const rawMsg = (t.events && t.events[0] && t.events[0].message && t.events[0].message.text) || "";
-  const lastMsg = rawMsg.replace(/\[https?:\/\/[^\]]+\]/g, "").replace(/https?:\/\/\S+/g, "").trim();
-  const sBg = STATUS_BG[t.status] || "#f0f0f0"; const sTxt = STATUS_TEXT[t.status] || "#555";
+async function selectTicket(tid){
+  selectedTicket=tickets.find(t=>(t.ID||t.id)===tid);
+  if(!selectedTicket)return;
+  renderTable();
+  // Show detail panel, hide/shrink ticket panel on small screens
+  document.getElementById("ticket-panel").style.display="none";
+  const dv=document.getElementById("detail-view");
+  dv.classList.add("open");
+  document.getElementById("detail-title").textContent=selectedTicket.subject||"Ticket";
 
-  document.getElementById("main-panel").innerHTML =
-    '<div class="ticket-detail">' +
-      '<div class="detail-topbar">' +
-        '<div class="detail-subject-text">' + (t.subject || "Senza oggetto") + '</div>' +
-        '<div class="detail-badges">' +
-          '<span style="font-size:12px;color:#888">' + sourceLabel(email) + '</span>' +
-          '<span class="status-badge" style="background:' + sBg + ';color:' + sTxt + '">' + (STATUS_LABELS[t.status] || t.status) + '</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="detail-body">' +
-        '<div class="requester-row">' +
-          '<div class="requester-avatar" style="background:' + getAvatarColor(name) + '">' + getInitials(name) + '</div>' +
-          '<div><div class="requester-name">' + name + '</div>' + (email ? '<div class="requester-email">' + email + '</div>' : '') + '</div>' +
-        '</div>' +
-        (lastMsg ? '<div class="message-card"><div class="message-label">Messaggio del cliente</div><div class="message-text">' + lastMsg + '</div></div>' : '') +
-        '<div id="order-box"></div>' +
-        '<div class="ai-section">' +
-          '<div class="ai-header"><span class="ai-label" id="ai-label">✨ Generazione risposta AI...</span></div>' +
-          '<div class="generating-box" id="gen-box"><div class="spinner"></div> Cerco ordine su Shopify...</div>' +
-          '<div id="action-row" style="display:none"><div class="ai-footer">' +
-            '<button class="cancel-btn" onclick="clearDetail()">Annulla</button>' +
-            '<button class="send-btn" id="send-btn" onclick="sendReply()">📤 Approva e invia</button>' +
-          '</div></div>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
+  const t=selectedTicket;
+  const name=(t.requester&&t.requester.name)||"Cliente";
+  const email=(t.requester&&t.requester.email)||"";
+  const createdAt=t.createdAt||t.created_at||"";
+  const lastMsgRaw=(t.events&&t.events[0]&&t.events[0].message&&t.events[0].message.text)||"";
 
-  generateReply(lastMsg, email);
+  // Render sidebar details
+  document.getElementById("detail-sidebar").innerHTML=`
+    <div class="ds-section">
+      <div class="ds-section-title">Ticket info <span>∧</span></div>
+      <div class="ds-row"><span class="ds-label">Ticket ID</span><span class="ds-value">${tid}</span></div>
+      <div class="ds-row"><span class="ds-label">Created</span><span class="ds-value">${createdAt?new Date(createdAt).toLocaleDateString("it-IT"):"-"}</span></div>
+      <div class="ds-row"><span class="ds-label">Status</span>
+        <select class="ds-select" id="status-select" onchange="changeStatus(this.value)">
+          <option value="open"${t.status==="open"?" selected":""}>Open</option>
+          <option value="pending"${t.status==="pending"?" selected":""}>Pending</option>
+          <option value="on_hold"${t.status==="on_hold"?" selected":""}>On hold</option>
+          <option value="solved"${t.status==="solved"?" selected":""}>Solved</option>
+          <option value="closed"${t.status==="closed"?" selected":""}>Closed</option>
+        </select>
+      </div>
+      <div class="ds-row"><span class="ds-label">Source</span><span class="ds-value">${srcLabel(email)||"Email"}</span></div>
+    </div>
+    <div class="ds-section">
+      <div class="ds-section-title">Requester <span>∧</span></div>
+      <div class="ds-row"><span class="ds-label">Nome</span><span class="ds-value">${name}</span></div>
+      <div class="ds-row"><span class="ds-label">Email</span><span class="ds-value" style="font-size:11px;word-break:break-all">${email}</span></div>
+    </div>
+    <div class="ds-section">
+      <div class="ds-section-title">Tags <span>∧</span></div>
+      <div style="color:#aaa;font-size:11px">No tags</div>
+    </div>`;
+
+  // Render main area
+  document.getElementById("detail-main").innerHTML=`
+    <div class="message-thread">
+      <div class="msg-header">Da: <strong>${name}</strong>${email?" &lt;"+email+"&gt;":""}</div>
+      <div class="msg-body" id="msg-body-content">${renderMessageHtml(lastMsgRaw)}</div>
+    </div>
+    <div id="order-info-area"></div>
+    <div class="ai-reply-box">
+      <div class="ai-box-header">
+        <span id="ai-label">✨ Generazione risposta AI...</span>
+      </div>
+      <div class="generating" id="gen-box"><div class="spinner"></div> Cerco ordine su Shopify...</div>
+      <div id="action-area" style="display:none">
+        <textarea class="reply-area" id="reply-text" rows="8"></textarea>
+        <div class="reply-footer">
+          <div class="reply-footer-left">
+            <span style="font-size:11px;color:#888">Ticket status:</span>
+            <select class="status-change-select" id="reply-status-select">
+              <option value="">Non cambiare</option>
+              <option value="open">Open</option>
+              <option value="pending">Pending</option>
+              <option value="solved">Solved</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="cancel-reply-btn" onclick="closeDetail()">Annulla</button>
+            <button class="send-reply-btn" id="send-btn" onclick="sendReply()">📤 Submit</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  generateReply(lastMsgRaw, email);
 }
 
-async function fetchShopifyOrder(message, email) {
-  try {
-    const amazonMatch = message.match(/(\d{3}-\d{7}-\d{7})/);
-    if (amazonMatch) {
-      const res = await fetch(PROXY + "/shopify/orders.json?status=any&limit=50");
-      const data = await res.json();
-      if (data.orders) { const order = data.orders.find(function(o) { return (o.note_attributes||[]).some(function(a) { return a.name === "Amazon Order Id" && a.value === amazonMatch[1]; }); }); if (order) return order; }
+function renderMessageHtml(text){
+  if(!text)return"<em style='color:#aaa'>Nessun messaggio</em>";
+  // Escape HTML
+  let safe=text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  // Convert URLs to links
+  safe=safe.replace(/(https?:\/\/[^\s\]<]+)/g,'<a href="$1" target="_blank" style="color:#1a73e8">$1</a>');
+  // Convert [text](url) or [url]
+  safe=safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,'<a href="$2" target="_blank" style="color:#1a73e8;font-weight:600">$1 ↗</a>');
+  return safe;
+}
+
+async function changeStatus(newStatus){
+  if(!selectedTicket||!newStatus)return;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  try{
+    await hdFetch("/v1/tickets/"+tid,{method:"PUT",body:JSON.stringify({status:newStatus})});
+    selectedTicket.status=newStatus;
+    const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+    if(idx>=0)tickets[idx].status=newStatus;
+    updateBadges();
+    renderTable();
+    showToast("Stato aggiornato: "+STATUS_LABELS[newStatus]);
+  }catch(e){showToast("Errore cambio stato: "+e.message,"error")}
+}
+
+function navigateTicket(dir){
+  const filtered=getFiltered();
+  const tid=selectedTicket&&(selectedTicket.ID||selectedTicket.id);
+  const idx=filtered.findIndex(t=>(t.ID||t.id)===tid);
+  const next=filtered[idx+dir];
+  if(next)selectTicket(next.ID||next.id);
+}
+
+function closeDetail(){
+  selectedTicket=null;
+  document.getElementById("detail-view").classList.remove("open");
+  document.getElementById("ticket-panel").style.display="flex";
+  renderTable();
+}
+
+async function fetchShopifyOrder(message,email){
+  try{
+    const amazonMatch=message.match(/(\d{3}-\d{7}-\d{7})/);
+    if(amazonMatch){
+      const res=await fetch(PROXY+"/shopify/orders.json?status=any&limit=50");
+      const data=await res.json();
+      if(data.orders){const order=data.orders.find(o=>(o.note_attributes||[]).some(a=>a.name==="Amazon Order Id"&&a.value===amazonMatch[1]));if(order)return order}
     }
-    const orderMatch = message.match(/#?(\d{3,6})/);
-    if (orderMatch) { const res = await fetch(PROXY + "/shopify/orders.json?name=%23" + orderMatch[1] + "&status=any"); const data = await res.json(); if (data.orders && data.orders.length > 0) return data.orders[0]; }
-    if (email && !email.includes("bounce-")) { const res = await fetch(PROXY + "/shopify/orders.json?email=" + encodeURIComponent(email) + "&status=any&limit=1"); const data = await res.json(); if (data.orders && data.orders.length > 0) return data.orders[0]; }
-  } catch(e) { console.log("Shopify:", e.message); }
+    const orderMatch=message.match(/#?(\d{3,6})/);
+    if(orderMatch){const res=await fetch(PROXY+"/shopify/orders.json?name=%23"+orderMatch[1]+"&status=any");const data=await res.json();if(data.orders&&data.orders.length>0)return data.orders[0]}
+    if(email&&!email.includes("bounce-")){const res=await fetch(PROXY+"/shopify/orders.json?email="+encodeURIComponent(email)+"&status=any&limit=1");const data=await res.json();if(data.orders&&data.orders.length>0)return data.orders[0]}
+  }catch(e){console.log("Shopify:",e.message)}
   return null;
 }
 
-function formatOrderInfo(order) {
-  if (!order) return "";
-  const fS = { pending:"In attesa", fulfilled:"Spedito", unfulfilled:"Non spedito", partial:"Parz. spedito", restocked:"Reso" };
-  const sS = { confirmed:"Confermato", in_transit:"In transito", out_for_delivery:"In consegna", delivered:"Consegnato", failure:"Problema", attempted_delivery:"Tentativo fallito" };
-  const f = order.fulfillments && order.fulfillments[0];
-  const items = (order.line_items||[]).map(function(i) { return i.quantity + "x " + i.name; }).join(", ");
-  const amz = (order.note_attributes||[]).find(function(a) { return a.name === "Amazon Order Id"; });
-  let info = "Ordine #" + order.order_number + (amz ? " (Amazon: " + amz.value + ")" : "") + " | Stato: " + (fS[order.fulfillment_status]||"Non spedito") + " | €" + order.total_price + (items ? " | " + items : "");
-  if (f) {
-    if (f.shipment_status) info += " | " + (sS[f.shipment_status]||f.shipment_status);
-    if (f.tracking_company) info += " | " + f.tracking_company;
-    if (f.tracking_number) info += " | Tracking: " + f.tracking_number + " | BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione=" + f.tracking_number;
-    if (f.created_at) info += " | Spedito: " + new Date(f.created_at).toLocaleDateString("it-IT");
+function formatOrderInfo(order){
+  if(!order)return"";
+  const fS={pending:"In attesa",fulfilled:"Spedito",unfulfilled:"Non spedito",partial:"Parz. spedito",restocked:"Reso"};
+  const sS={confirmed:"Confermato",in_transit:"In transito",out_for_delivery:"In consegna",delivered:"Consegnato",failure:"Problema",attempted_delivery:"Tentativo fallito"};
+  const f=order.fulfillments&&order.fulfillments[0];
+  const items=(order.line_items||[]).map(i=>i.quantity+"x "+i.name).join(", ");
+  const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
+  let info="Ordine #"+order.order_number+(amz?" (Amazon: "+amz.value+")":"")+" | Stato: "+(fS[order.fulfillment_status]||"Non spedito")+" | €"+order.total_price+(items?" | "+items:"");
+  if(f){
+    if(f.shipment_status)info+=" | "+(sS[f.shipment_status]||f.shipment_status);
+    if(f.tracking_company)info+=" | "+f.tracking_company;
+    if(f.tracking_number)info+=" | Tracking: "+f.tracking_number+" | BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione="+f.tracking_number;
+    if(f.created_at)info+=" | Spedito: "+new Date(f.created_at).toLocaleDateString("it-IT");
   }
-  if (order.shipping_address) { const a = order.shipping_address; info += " | " + [a.address1, a.city, a.zip].filter(Boolean).join(", "); }
+  if(order.shipping_address){const a=order.shipping_address;info+=" | "+[a.address1,a.city,a.zip].filter(Boolean).join(", ")}
   return info;
 }
 
-async function generateReply(lastMsg, email) {
-  const t = selectedTicket;
-  const genBox = document.getElementById("gen-box");
-  if (genBox) genBox.innerHTML = '<div class="spinner"></div> Cerco ordine su Shopify...';
-  const order = await fetchShopifyOrder(lastMsg || t.subject || "", email || "");
-  const orderInfo = formatOrderInfo(order);
-  if (genBox) genBox.innerHTML = '<div class="spinner"></div> Claude sta generando la risposta...';
+async function generateReply(lastMsg,email){
+  const t=selectedTicket;
+  const genBox=document.getElementById("gen-box");
+  if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
 
-  if (order) {
-    const f = order.fulfillments && order.fulfillments[0];
-    const amz = (order.note_attributes||[]).find(function(a) { return a.name === "Amazon Order Id"; });
-    const fS = { fulfilled:"✅ Spedito", unfulfilled:"⏳ Non spedito", partial:"🔄 Parziale", pending:"⏳ In attesa" };
-    let html = '<strong>🛍️ Ordine #' + order.order_number + '</strong>' + (amz ? ' <span style="opacity:0.7">· Amazon: ' + amz.value + '</span>' : "") + ' — ' + (fS[order.fulfillment_status]||order.fulfillment_status||"Non spedito");
-    if (f && f.tracking_number) { const brtUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione=" + f.tracking_number; html += '<br>📦 ' + (f.tracking_company||"Corriere") + ': <strong>' + f.tracking_number + '</strong> — <a href="' + brtUrl + '" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>'; }
-    if (f && f.created_at) html += '<br>📅 Spedito il ' + new Date(f.created_at).toLocaleDateString("it-IT");
-    const orderBox = document.getElementById("order-box");
-    if (orderBox) orderBox.innerHTML = '<div class="order-card">' + html + '</div>';
+  const order=await fetchShopifyOrder(lastMsg||t.subject||"",email||"");
+  const orderInfo=formatOrderInfo(order);
+
+  if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
+
+  if(order){
+    const f=order.fulfillments&&order.fulfillments[0];
+    const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
+    const fS={fulfilled:"✅ Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parziale",pending:"⏳ In attesa"};
+    let html='<strong>🛍️ Ordine #'+order.order_number+'</strong>'+(amz?' <span style="opacity:0.7">· Amazon: '+amz.value+'</span>':"")+" — "+(fS[order.fulfillment_status]||order.fulfillment_status||"Non spedito");
+    if(f&&f.tracking_number){const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione="+f.tracking_number;html+='<br>📦 '+(f.tracking_company||"Corriere")+': <strong>'+f.tracking_number+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>'}
+    if(f&&f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
+    const oArea=document.getElementById("order-info-area");
+    if(oArea)oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
   }
 
-  const prompt = "Oggetto: " + t.subject + "\nDa: " + ((t.requester&&t.requester.name)||"Cliente") + "\nEmail: " + (email||"") + "\nMessaggio: " + (lastMsg || t.subject) + (orderInfo ? "\n\nDati ordine: " + orderInfo : "");
-  try {
-    const res = await fetch(PROXY + "/anthropic/v1/messages", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000,
-        system: "Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffè, capsule e prodotti per il caffè. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come 'Il Team Yespresso'. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa con i dettagli reali. Se c'è un link BRT includilo nella risposta.",
-        messages: [{ role: "user", content: "Genera una risposta professionale per questo ticket:\n\n" + prompt }] })
+  const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+"\nMessaggio: "+(lastMsg||t.subject)+(orderInfo?"\n\nDati ordine: "+orderInfo:"");
+  try{
+    const res=await fetch(PROXY+"/anthropic/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
+        system:"Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffè, capsule e prodotti per il caffè. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come 'Il Team Yespresso'. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa con i dettagli reali. Se c'è un link BRT includilo.",
+        messages:[{role:"user",content:"Genera una risposta professionale per questo ticket:\n\n"+prompt}]})
     });
-    const data = await res.json();
-    const reply = (data.content && data.content[0] && data.content[0].text) || "";
-    const lbl = document.getElementById("ai-label"); if (lbl) lbl.textContent = "✨ Risposta suggerita dall'AI";
-    const gb = document.getElementById("gen-box"); if (gb) gb.outerHTML = '<textarea class="reply-textarea" id="reply-text">' + reply + '</textarea>';
-    const ar = document.getElementById("action-row"); if (ar) ar.style.display = "block";
-  } catch(e) {
-    const gb = document.getElementById("gen-box"); if (gb) gb.innerHTML = '<span style="color:#c04040">Errore: ' + e.message + '</span>';
+    const data=await res.json();
+    const reply=(data.content&&data.content[0]&&data.content[0].text)||"";
+    const lbl=document.getElementById("ai-label");if(lbl)lbl.textContent="✨ Risposta suggerita dall'AI";
+    const gb=document.getElementById("gen-box");if(gb)gb.style.display="none";
+    const aa=document.getElementById("action-area");if(aa){aa.style.display="block";document.getElementById("reply-text").value=reply}
+  }catch(e){
+    const gb=document.getElementById("gen-box");if(gb)gb.innerHTML='<span style="color:#c04040">Errore: '+e.message+'</span>';
   }
 }
 
-async function sendReply() {
-  const message = document.getElementById("reply-text") && document.getElementById("reply-text").value;
-  if (!message || !selectedTicket) return;
-  const btn = document.getElementById("send-btn");
-  btn.disabled = true; btn.textContent = "Invio in corso...";
-  try {
-    const tid = selectedTicket.ID || selectedTicket.id;
-    const res = await fetch(PROXY + "/api/v1/tickets/" + tid + "/transactions", { method: "POST", headers: { "Authorization": "Basic " + HD_TOKEN, "Content-Type": "application/json" }, body: JSON.stringify({ message: message, type: "message" }) });
-    if (!res.ok) { const b = await res.text(); throw new Error("Errore " + res.status + ": " + b.substring(0, 150)); }
-    sentTickets.add(tid); showToast("✓ Risposta inviata con successo!"); clearDetail(); renderTicketList();
-  } catch(e) { showToast("Errore: " + e.message, "error"); btn.disabled = false; btn.textContent = "📤 Approva e invia"; }
-}
-
-function clearDetail() {
-  selectedTicket = null; renderTicketList();
-  document.getElementById("main-panel").innerHTML = '<div class="empty-state"><div class="empty-icon">☕</div><div class="empty-title">Seleziona un ticket</div><div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI personalizzata.</div></div>';
+async function sendReply(){
+  const message=document.getElementById("reply-text")&&document.getElementById("reply-text").value;
+  if(!message||!selectedTicket)return;
+  const btn=document.getElementById("send-btn");
+  btn.disabled=true;btn.textContent="Invio...";
+  const newStatus=document.getElementById("reply-status-select").value;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  try{
+    const res=await fetch(PROXY+"/api/v1/tickets/"+tid+"/transactions",{method:"POST",headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json"},body:JSON.stringify({message,type:"message"})});
+    if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,150))}
+    // Change status if selected
+    if(newStatus){
+      try{await hdFetch("/v1/tickets/"+tid,{method:"PUT",body:JSON.stringify({status:newStatus})});
+      selectedTicket.status=newStatus;
+      const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+      if(idx>=0)tickets[idx].status=newStatus;}catch(e2){console.log("Status change failed:",e2.message)}
+    }
+    sentTickets.add(tid);
+    showToast("✓ Risposta inviata!");
+    closeDetail();
+    updateBadges();
+    renderTable();
+  }catch(e){
+    showToast("Errore: "+e.message,"error");
+    btn.disabled=false;btn.textContent="📤 Submit";
+  }
 }
 
 loadTickets();
