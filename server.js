@@ -5,9 +5,21 @@ const path = require("path");
 
 const PORT = process.env.PORT || 3001;
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
-const ANTHROPIC_KEY = "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";
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || "";
+const SHOPIFY_SHOP = "40f758-3.myshopify.com";
+const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || "";
 
-const server = http.createServer(function(req, res) {
+console.log("[INIT] ANTHROPIC_KEY presente:", !!ANTHROPIC_KEY);
+console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
+
+async function getShopifyToken() {
+  if (!SHOPIFY_TOKEN) {
+    console.error("[SHOPIFY] ⚠️ SHOPIFY_TOKEN non configurato nelle env vars di Render!");
+  }
+  return SHOPIFY_TOKEN;
+}
+
+const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key");
@@ -40,19 +52,35 @@ const server = http.createServer(function(req, res) {
     return;
   }
 
+  // Shopify OAuth callback
+  if (req.url.startsWith("/shopify/callback")) {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
+    return;
+  }
+
   let targetUrl, requestHeaders;
 
-  if (req.url.startsWith("/anthropic")) {
+  if (req.url.startsWith("/shopify")) {
+    const p = req.url.replace(/^\/shopify/, "");
+    const token = await getShopifyToken();
+    targetUrl = "https://" + SHOPIFY_SHOP + "/admin/api/2024-01" + p;
+    requestHeaders = {
+      "X-Shopify-Access-Token": token,
+      "Content-Type": "application/json",
+    };
+  } else if (req.url.startsWith("/anthropic")) {
     const p = req.url.replace("/anthropic", "");
     targetUrl = "https://api.anthropic.com" + p;
     requestHeaders = {
       "Content-Type": "application/json",
       "anthropic-version": "2023-06-01",
-      "x-api-key": ANTHROPIC_KEY,
+      "x-api-key": ANTHROPIC_KEY || "",
     };
   } else {
     const p = req.url.replace(/^\/api/, "");
     targetUrl = "https://api.helpdesk.com" + p;
+
     requestHeaders = {
       "Authorization": "Basic " + HD_TOKEN,
       "Content-Type": "application/json",
