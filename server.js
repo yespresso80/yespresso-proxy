@@ -101,7 +101,11 @@ const server = http.createServer(async function(req, res) {
       proxyRes.on("end", function() {
         console.log("[RISPOSTA] " + proxyRes.statusCode);
         if (proxyRes.statusCode !== 200) console.log(responseBody.substring(0, 300));
-        res.writeHead(proxyRes.statusCode, { "Content-Type": "application/json" });
+        const respHeaders = { "Content-Type": "application/json" };
+        // Forwarda header Link per paginazione cursor-based Shopify
+        if (proxyRes.headers["link"]) respHeaders["Link"] = proxyRes.headers["link"];
+        if (proxyRes.headers["x-shopify-shop-api-call-limit"]) respHeaders["x-shopify-shop-api-call-limit"] = proxyRes.headers["x-shopify-shop-api-call-limit"];
+        res.writeHead(proxyRes.statusCode, respHeaders);
         res.end(responseBody);
       });
     });
