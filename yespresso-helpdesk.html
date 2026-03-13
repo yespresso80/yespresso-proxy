@@ -6,58 +6,75 @@
   <title>Yespresso - Assistenza Clienti</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Georgia, serif; background: #f5f2ee; color: #2a2420; min-height: 100vh; display: flex; flex-direction: column; }
-    header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid #e0d8d0; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .header-left { display: flex; align-items: center; gap: 12px; }
-    .logo { font-size: 26px; }
-    .brand { font-size: 18px; font-weight: 700; color: #b8822a; }
-    .brand-sub { font-size: 10px; color: #a09080; letter-spacing: 2px; text-transform: uppercase; }
-    .refresh-btn { background: #fff; border: 1px solid #d0c8c0; color: #6a5e52; padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; color: #1a1a2e; min-height: 100vh; display: flex; flex-direction: column; font-size: 14px; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 52px; background: #1a1a2e; border-bottom: 1px solid #2a2a4e; flex-shrink: 0; }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .logo { font-size: 22px; }
+    .brand { font-size: 16px; font-weight: 700; color: #fff; }
+    .brand-sub { font-size: 10px; color: #8888aa; letter-spacing: 2px; text-transform: uppercase; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .refresh-btn { background: transparent; border: 1px solid #3a3a5e; color: #aaaacc; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.15s; }
     .refresh-btn:hover { border-color: #b8822a; color: #b8822a; }
-    .layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 65px); }
-    .sidebar { width: 300px; border-right: 1px solid #e0d8d0; background: #fff; overflow-y: auto; display: flex; flex-direction: column; }
-    .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0e8e0; background: #faf8f5; }
-    .sidebar-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #a09080; }
-    .ticket-count { background: #b8822a; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
-    .ticket-card { padding: 14px 16px; border-bottom: 1px solid #f0ebe5; cursor: pointer; transition: background 0.12s; }
-    .ticket-card:hover { background: #faf5ef; }
-    .ticket-card.active { background: #fef5e7; border-left: 3px solid #b8822a; }
-    .ticket-card.sent { opacity: 0.5; }
-    .ticket-subject { font-size: 13px; font-weight: 600; color: #2a2420; line-height: 1.4; }
-    .ticket-meta { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
-    .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-    .meta-text { font-size: 11px; color: #a09080; }
-    .main { flex: 1; overflow-y: auto; padding: 28px; background: #f5f2ee; }
-    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60%; gap: 12px; opacity: 0.5; text-align: center; }
+    .ticket-total { font-size: 12px; color: #8888aa; }
+    .layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 52px); }
+    .sidebar { width: 320px; border-right: 1px solid #e0e4ea; background: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
+    .tabs { display: flex; border-bottom: 1px solid #e0e4ea; background: #fff; padding: 0 8px; overflow-x: auto; }
+    .tab { padding: 10px 10px; font-size: 12px; font-weight: 600; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    .tab:hover { color: #1a1a2e; }
+    .tab.active { color: #1a1a2e; border-bottom-color: #b8822a; }
+    .tab-badge { background: #e8eaf0; color: #555; border-radius: 10px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
+    .tab.active .tab-badge { background: #b8822a; color: #fff; }
+    .search-box { padding: 10px 12px; border-bottom: 1px solid #f0f2f5; }
+    .search-input { width: 100%; padding: 7px 12px; border: 1px solid #e0e4ea; border-radius: 6px; font-size: 12px; font-family: inherit; outline: none; background: #f8f9fc; }
+    .search-input:focus { border-color: #b8822a; background: #fff; }
+    .ticket-list { flex: 1; overflow-y: auto; }
+    .ticket-card { padding: 12px 14px; border-bottom: 1px solid #f0f2f5; cursor: pointer; transition: background 0.1s; display: flex; gap: 10px; align-items: flex-start; }
+    .ticket-card:hover { background: #f8f9fc; }
+    .ticket-card.active { background: #fff8f0; border-left: 3px solid #b8822a; }
+    .ticket-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; margin-top: 1px; }
+    .ticket-info { flex: 1; min-width: 0; }
+    .ticket-requester { font-size: 12px; font-weight: 600; color: #1a1a2e; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ticket-subject-small { font-size: 12px; color: #555; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ticket-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .ticket-source { font-size: 10px; color: #999; }
+    .ticket-time { font-size: 10px; color: #bbb; }
+    .status-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .main { flex: 1; overflow-y: auto; background: #f4f5f7; }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; opacity: 0.4; }
     .empty-icon { font-size: 48px; }
-    .empty-title { font-size: 18px; font-weight: 600; color: #2a2420; }
-    .empty-desc { font-size: 13px; color: #a09080; max-width: 280px; line-height: 1.6; }
-    .ticket-detail { max-width: 100%; }
-    .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; }
-    .detail-subject { font-size: 20px; font-weight: 700; color: #1a1410; margin-bottom: 6px; line-height: 1.3; }
-    .detail-meta { font-size: 12px; color: #a09080; }
-    .status-pill { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-    .message-box { background: #fff; border: 1px solid #e8e0d8; border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .message-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #a09080; margin-bottom: 10px; }
-    .message-text { font-size: 21px; color: #3a3028; line-height: 1.7; white-space: pre-wrap; }
-    .reply-label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .reply-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #b8822a; font-weight: 700; }
-    .regen-btn { background: #fff; border: 1px solid #d0c8c0; color: #6a5e52; padding: 4px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; font-family: inherit; }
-    .generating-box { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e8e0d8; border-radius: 10px; padding: 20px; min-height: 100px; color: #a09080; font-size: 13px; }
-    .reply-textarea { width: 100%; background: #fff; border: 1px solid #d8d0c8; border-radius: 10px; color: #2a2420; font-size: 17px; font-family: Georgia, serif; padding: 16px 18px; line-height: 1.7; resize: vertical; outline: none; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .reply-textarea:focus { border-color: #b8822a; box-shadow: 0 0 0 3px rgba(184,130,42,0.1); }
-    .action-row { display: flex; justify-content: flex-end; gap: 12px; margin-top: 14px; }
-    .cancel-btn { background: #fff; border: 1px solid #d0c8c0; color: #6a5e52; padding: 10px 22px; border-radius: 7px; cursor: pointer; font-size: 14px; font-family: inherit; }
-    .cancel-btn:hover { border-color: #a09080; }
-    .send-btn { background: #b8822a; border: none; color: #fff; padding: 10px 26px; border-radius: 7px; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+    .empty-title { font-size: 18px; font-weight: 600; }
+    .empty-desc { font-size: 13px; color: #888; max-width: 280px; text-align: center; line-height: 1.6; }
+    .ticket-detail { padding: 0; }
+    .detail-topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: #fff; border-bottom: 1px solid #e8eaf0; gap: 12px; }
+    .detail-subject-text { font-size: 16px; font-weight: 700; color: #1a1a2e; flex: 1; }
+    .detail-badges { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .detail-body { padding: 20px 24px; }
+    .requester-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 12px 16px; background: #fff; border-radius: 8px; border: 1px solid #e8eaf0; }
+    .requester-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .requester-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+    .requester-email { font-size: 12px; color: #888; }
+    .message-card { background: #fff; border: 1px solid #e8eaf0; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .message-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #aaa; margin-bottom: 10px; font-weight: 600; }
+    .message-text { font-size: 14px; color: #333; line-height: 1.7; white-space: pre-wrap; }
+    .order-card { background: #f0faf0; border: 1px solid #b8ddb8; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 12px; color: #2a5a2a; line-height: 1.9; }
+    .ai-section { background: #fff; border: 1px solid #e8eaf0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .ai-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f0f2f5; background: #fafbfc; }
+    .ai-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #b8822a; }
+    .generating-box { display: flex; align-items: center; gap: 12px; padding: 20px; color: #999; font-size: 13px; min-height: 100px; }
+    .reply-textarea { width: 100%; border: none; color: #1a1a2e; font-size: 14px; font-family: inherit; padding: 16px; line-height: 1.7; resize: vertical; outline: none; background: #fff; min-height: 160px; }
+    .ai-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid #f0f2f5; background: #fafbfc; }
+    .cancel-btn { background: #fff; border: 1px solid #d0d4dc; color: #666; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    .cancel-btn:hover { border-color: #aaa; }
+    .send-btn { background: #b8822a; border: none; color: #fff; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit; }
     .send-btn:hover { background: #a0701f; }
     .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .center-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; gap: 10px; color: #a09080; font-size: 13px; }
-    .error-box { margin: 16px; background: #fff5f5; border: 1px solid #f0c0c0; border-radius: 8px; padding: 16px; font-size: 13px; color: #c04040; }
-    .retry-btn { margin-top: 10px; background: #fff; border: 1px solid #f0c0c0; color: #c04040; padding: 5px 14px; border-radius: 5px; cursor: pointer; font-size: 12px; font-family: inherit; }
-    .spinner { width: 18px; height: 18px; border: 2px solid #e0d8d0; border-top: 2px solid #b8822a; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+    .center-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; gap: 8px; color: #aaa; font-size: 12px; }
+    .error-box { margin: 12px; background: #fff5f5; border: 1px solid #f0c0c0; border-radius: 8px; padding: 12px; font-size: 12px; color: #c04040; }
+    .retry-btn { margin-top: 8px; background: #fff; border: 1px solid #f0c0c0; color: #c04040; padding: 4px 12px; border-radius: 5px; cursor: pointer; font-size: 11px; font-family: inherit; }
+    .spinner { width: 16px; height: 16px; border: 2px solid #e0e4ea; border-top: 2px solid #b8822a; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; color: white; padding: 12px 22px; border-radius: 8px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: none; }
+    .toast { position: fixed; top: 16px; right: 16px; z-index: 9999; color: white; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: none; }
+    .no-tickets { padding: 30px; text-align: center; color: #bbb; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -70,42 +87,55 @@
       <div class="brand-sub">Assistenza Clienti</div>
     </div>
   </div>
-  <button class="refresh-btn" onclick="loadTickets()">↻ Aggiorna</button>
+  <div class="header-right">
+    <span class="ticket-total" id="ticket-total"></span>
+    <button class="refresh-btn" onclick="loadTickets()">↻ Aggiorna</button>
+  </div>
 </header>
 <div class="layout">
   <aside class="sidebar">
-    <div class="sidebar-header">
-      <span class="sidebar-title">Ticket aperti</span>
-      <span class="ticket-count" id="ticket-count">0</span>
+    <div class="tabs">
+      <div class="tab active" onclick="setTab('open')" id="tab-open">Aperti <span class="tab-badge" id="badge-open">0</span></div>
+      <div class="tab" onclick="setTab('pending')" id="tab-pending">In attesa <span class="tab-badge" id="badge-pending">0</span></div>
+      <div class="tab" onclick="setTab('solved')" id="tab-solved">Risolti <span class="tab-badge" id="badge-solved">0</span></div>
+      <div class="tab" onclick="setTab('all')" id="tab-all">Tutti <span class="tab-badge" id="badge-all">0</span></div>
     </div>
-    <div id="ticket-list"><div class="center-msg"><div class="spinner"></div> Caricamento...</div></div>
+    <div class="search-box">
+      <input class="search-input" id="search-input" type="text" placeholder="🔍 Cerca ticket..." oninput="renderTicketList()" />
+    </div>
+    <div class="ticket-list" id="ticket-list"><div class="center-msg"><div class="spinner"></div> Caricamento...</div></div>
   </aside>
   <main class="main" id="main-panel">
     <div class="empty-state">
       <div class="empty-icon">☕</div>
       <div class="empty-title">Seleziona un ticket</div>
-      <div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI.</div>
+      <div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI personalizzata.</div>
     </div>
   </main>
 </div>
 <script>
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const PROXY = "https://yespresso-proxy.onrender.com";
-
 const STATUS_LABELS = { open: "Aperto", pending: "In attesa", solved: "Risolto", closed: "Chiuso", on_hold: "In sospeso" };
-const STATUS_COLORS = { open: "#e8a020", pending: "#4a7cd4", solved: "#2a9d60", closed: "#a09080", on_hold: "#d46020" };
-const STATUS_TEXT = { open: "#7a5010", pending: "#1a3a7a", solved: "#0a5030", closed: "#5a4a40", on_hold: "#7a3010" };
-const STATUS_BG = { open: "#fef5e0", pending: "#e8f0fc", solved: "#e0f5ec", closed: "#f0ece8", on_hold: "#feeee0" };
+const STATUS_COLORS = { open: "#e8a020", pending: "#4a7cd4", solved: "#2a9d60", closed: "#888", on_hold: "#d46020" };
+const STATUS_BG = { open: "#fff8e8", pending: "#eef3fd", solved: "#e8f7f0", closed: "#f0f0f0", on_hold: "#fff0e8" };
+const STATUS_TEXT = { open: "#7a5010", pending: "#1a3a7a", solved: "#0a5030", closed: "#555", on_hold: "#7a3010" };
+const AVATAR_COLORS = ["#e74c3c","#3498db","#2ecc71","#9b59b6","#e67e22","#1abc9c","#e91e63","#00bcd4","#ff5722","#607d8b"];
+let tickets = [], selectedTicket = null, sentTickets = new Set(), currentTab = "open";
 
-let tickets = [], selectedTicket = null, sentTickets = new Set();
-
-function showToast(msg, type) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.style.background = type === "error" ? "#c04040" : "#2a7a50";
-  t.style.display = "block";
-  setTimeout(function() { t.style.display = "none"; }, 3500);
+function getAvatarColor(str) { let h = 0; for (let i = 0; i < (str||"").length; i++) h = str.charCodeAt(i) + ((h << 5) - h); return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]; }
+function getInitials(name) { const p = (name||"?").trim().split(" "); return (p[0][0] + (p[1] ? p[1][0] : "")).toUpperCase(); }
+function timeAgo(d) { if (!d) return ""; const diff = Date.now() - new Date(d).getTime(); const m = Math.floor(diff/60000), h = Math.floor(m/60), dy = Math.floor(h/24); if (dy > 0) return dy + "g fa"; if (h > 0) return h + "h fa"; if (m > 0) return m + "min fa"; return "ora"; }
+function sourceLabel(email) {
+  if (!email) return "✉️ Email";
+  if (email.includes("temu") || email.includes("orders.temu")) return "🟠 Temu";
+  if (email.includes("tiktok") || email.includes("v2b4") || email.includes("byndoyz")) return "🎵 TikTok";
+  if (email.includes("amazon") || email.includes("atoz") || email.includes("codisto") || email.includes("bounce-")) return "🟡 Amazon";
+  if (email.includes("brt") || email.includes("vasnoreply")) return "📦 BRT";
+  return "✉️ Email";
 }
+
+function showToast(msg, type) { const t = document.getElementById("toast"); t.textContent = msg; t.style.background = type === "error" ? "#c04040" : "#2a7a50"; t.style.display = "block"; setTimeout(function() { t.style.display = "none"; }, 3500); }
 
 async function hdFetch(path, options) {
   const url = PROXY + "/api" + path;
@@ -118,27 +148,63 @@ async function hdFetch(path, options) {
 async function loadTickets() {
   document.getElementById("ticket-list").innerHTML = '<div class="center-msg"><div class="spinner"></div> Caricamento...</div>';
   try {
-    const data = await hdFetch("/v1/tickets?pageSize=20");
+    const data = await hdFetch("/v1/tickets?pageSize=50");
     tickets = Array.isArray(data) ? data : (data.tickets || data.data || []);
+    updateBadges();
     renderTicketList();
   } catch(e) {
     document.getElementById("ticket-list").innerHTML = '<div class="error-box"><strong>⚠ Errore</strong><br>' + e.message + '<br><button class="retry-btn" onclick="loadTickets()">Riprova</button></div>';
   }
 }
 
+function updateBadges() {
+  const c = { open: 0, pending: 0, solved: 0 };
+  tickets.forEach(function(t) { if (t.status === "open") c.open++; else if (t.status === "pending") c.pending++; else if (t.status === "solved" || t.status === "closed") c.solved++; });
+  document.getElementById("badge-open").textContent = c.open;
+  document.getElementById("badge-pending").textContent = c.pending;
+  document.getElementById("badge-solved").textContent = c.solved;
+  document.getElementById("badge-all").textContent = tickets.length;
+  document.getElementById("ticket-total").textContent = tickets.length + " ticket totali";
+}
+
+function setTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll(".tab").forEach(function(el) { el.classList.remove("active"); });
+  document.getElementById("tab-" + tab).classList.add("active");
+  renderTicketList();
+}
+
+function filterTickets() {
+  const search = (document.getElementById("search-input").value || "").toLowerCase();
+  return tickets.filter(function(t) {
+    const matchTab = currentTab === "all" || (currentTab === "open" && t.status === "open") || (currentTab === "pending" && t.status === "pending") || (currentTab === "solved" && (t.status === "solved" || t.status === "closed"));
+    const matchSearch = !search || (t.subject||"").toLowerCase().includes(search) || ((t.requester&&t.requester.name)||"").toLowerCase().includes(search) || ((t.requester&&t.requester.email)||"").toLowerCase().includes(search);
+    return matchTab && matchSearch;
+  });
+}
+
 function renderTicketList() {
-  document.getElementById("ticket-count").textContent = tickets.length;
-  if (!tickets.length) { document.getElementById("ticket-list").innerHTML = '<div class="center-msg">🎉 Nessun ticket aperto!</div>'; return; }
-  document.getElementById("ticket-list").innerHTML = tickets.map(function(t) {
+  const filtered = filterTickets();
+  if (!filtered.length) { document.getElementById("ticket-list").innerHTML = '<div class="no-tickets">Nessun ticket trovato</div>'; return; }
+  document.getElementById("ticket-list").innerHTML = filtered.map(function(t) {
     const tid = t.ID || t.id;
     const isActive = selectedTicket && (selectedTicket.ID || selectedTicket.id) === tid;
     const isSent = sentTickets.has(tid);
-    const color = STATUS_COLORS[t.status] || "#a09080";
-    const name = (t.requester && (t.requester.name || t.requester.email)) || "Cliente";
-    return '<div class="ticket-card ' + (isActive ? "active" : "") + " " + (isSent ? "sent" : "") + '" onclick="selectTicket(\'' + tid + '\')">' +
-      '<div class="ticket-subject">' + (t.subject || "Senza oggetto") + (isSent ? ' <span style="color:#2a9d60;font-size:10px">✓ Inviato</span>' : "") + '</div>' +
-      '<div class="ticket-meta"><span class="status-dot" style="background:' + color + '"></span><span class="meta-text">' + (STATUS_LABELS[t.status] || t.status) + '</span><span class="meta-text">·</span><span class="meta-text">' + name + '</span></div>' +
-      '</div>';
+    const name = (t.requester && t.requester.name) || (t.requester && t.requester.email) || "Cliente";
+    const email = (t.requester && t.requester.email) || "";
+    const lastEvent = t.events && t.events[t.events.length - 1];
+    const lastTime = lastEvent && lastEvent.createdAt ? timeAgo(lastEvent.createdAt) : "";
+    const sBg = STATUS_BG[t.status] || "#f0f0f0";
+    const sTxt = STATUS_TEXT[t.status] || "#555";
+    return '<div class="ticket-card' + (isActive ? " active" : "") + '" onclick="selectTicket(\'' + tid + '\')">' +
+      '<div class="ticket-avatar" style="background:' + getAvatarColor(name) + '">' + getInitials(name) + '</div>' +
+      '<div class="ticket-info">' +
+        '<div class="ticket-requester">' + name + (isSent ? ' <span style="color:#2a9d60">✓</span>' : "") + '</div>' +
+        '<div class="ticket-subject-small">' + (t.subject || "Senza oggetto") + '</div>' +
+        '<div class="ticket-footer"><span class="ticket-source">' + sourceLabel(email) + '</span><span class="ticket-time">' + lastTime + '</span></div>' +
+      '</div>' +
+      '<span class="status-badge" style="background:' + sBg + ';color:' + sTxt + '">' + (STATUS_LABELS[t.status] || t.status) + '</span>' +
+    '</div>';
   }).join("");
 }
 
@@ -146,59 +212,110 @@ async function selectTicket(tid) {
   selectedTicket = tickets.find(function(t) { return (t.ID || t.id) === tid; });
   if (!selectedTicket) return;
   renderTicketList();
-
-  const color = STATUS_COLORS[selectedTicket.status] || "#a09080";
-  const textColor = STATUS_TEXT[selectedTicket.status] || "#5a4a40";
-  const bgColor = STATUS_BG[selectedTicket.status] || "#f0ece8";
-  const requesterName = selectedTicket.requester && selectedTicket.requester.name || "Cliente";
-  const requesterEmail = selectedTicket.requester && selectedTicket.requester.email || "";
-  const rawMsg = (selectedTicket.events && selectedTicket.events[0] && selectedTicket.events[0].message && selectedTicket.events[0].message.text) || "";
+  const t = selectedTicket;
+  const name = (t.requester && t.requester.name) || "Cliente";
+  const email = (t.requester && t.requester.email) || "";
+  const rawMsg = (t.events && t.events[0] && t.events[0].message && t.events[0].message.text) || "";
   const lastMsg = rawMsg.replace(/\[https?:\/\/[^\]]+\]/g, "").replace(/https?:\/\/\S+/g, "").trim();
+  const sBg = STATUS_BG[t.status] || "#f0f0f0"; const sTxt = STATUS_TEXT[t.status] || "#555";
 
   document.getElementById("main-panel").innerHTML =
     '<div class="ticket-detail">' +
-      '<div class="detail-header">' +
-        '<div>' +
-          '<div class="detail-subject">' + (selectedTicket.subject || "Senza oggetto") + '</div>' +
-          '<div class="detail-meta">Da: <strong>' + requesterName + '</strong>' + (requesterEmail ? ' &lt;' + requesterEmail + '&gt;' : '') + '</div>' +
+      '<div class="detail-topbar">' +
+        '<div class="detail-subject-text">' + (t.subject || "Senza oggetto") + '</div>' +
+        '<div class="detail-badges">' +
+          '<span style="font-size:12px;color:#888">' + sourceLabel(email) + '</span>' +
+          '<span class="status-badge" style="background:' + sBg + ';color:' + sTxt + '">' + (STATUS_LABELS[t.status] || t.status) + '</span>' +
         '</div>' +
-        '<span class="status-pill" style="background:' + bgColor + ';color:' + textColor + '">' + (STATUS_LABELS[selectedTicket.status] || selectedTicket.status) + '</span>' +
       '</div>' +
-      (lastMsg ? '<div class="message-box"><div class="message-label">Messaggio del cliente</div><div class="message-text">' + lastMsg + '</div></div>' : '') +
-      '<div class="reply-label-row"><span class="reply-label">✨ Generazione risposta AI...</span></div>' +
-      '<div class="generating-box" id="gen-box"><div class="spinner"></div> Claude sta scrivendo la risposta...</div>' +
-      '<div id="action-row" style="display:none">' +
-        '<div class="action-row">' +
-          '<button class="cancel-btn" onclick="clearDetail()">Annulla</button>' +
-          '<button class="send-btn" id="send-btn" onclick="sendReply()">📤 Approva e invia</button>' +
+      '<div class="detail-body">' +
+        '<div class="requester-row">' +
+          '<div class="requester-avatar" style="background:' + getAvatarColor(name) + '">' + getInitials(name) + '</div>' +
+          '<div><div class="requester-name">' + name + '</div>' + (email ? '<div class="requester-email">' + email + '</div>' : '') + '</div>' +
+        '</div>' +
+        (lastMsg ? '<div class="message-card"><div class="message-label">Messaggio del cliente</div><div class="message-text">' + lastMsg + '</div></div>' : '') +
+        '<div id="order-box"></div>' +
+        '<div class="ai-section">' +
+          '<div class="ai-header"><span class="ai-label" id="ai-label">✨ Generazione risposta AI...</span></div>' +
+          '<div class="generating-box" id="gen-box"><div class="spinner"></div> Cerco ordine su Shopify...</div>' +
+          '<div id="action-row" style="display:none"><div class="ai-footer">' +
+            '<button class="cancel-btn" onclick="clearDetail()">Annulla</button>' +
+            '<button class="send-btn" id="send-btn" onclick="sendReply()">📤 Approva e invia</button>' +
+          '</div></div>' +
         '</div>' +
       '</div>' +
     '</div>';
 
-  generateReply(lastMsg);
+  generateReply(lastMsg, email);
 }
 
-async function generateReply(lastMsg) {
+async function fetchShopifyOrder(message, email) {
+  try {
+    const amazonMatch = message.match(/(\d{3}-\d{7}-\d{7})/);
+    if (amazonMatch) {
+      const res = await fetch(PROXY + "/shopify/orders.json?status=any&limit=50");
+      const data = await res.json();
+      if (data.orders) { const order = data.orders.find(function(o) { return (o.note_attributes||[]).some(function(a) { return a.name === "Amazon Order Id" && a.value === amazonMatch[1]; }); }); if (order) return order; }
+    }
+    const orderMatch = message.match(/#?(\d{3,6})/);
+    if (orderMatch) { const res = await fetch(PROXY + "/shopify/orders.json?name=%23" + orderMatch[1] + "&status=any"); const data = await res.json(); if (data.orders && data.orders.length > 0) return data.orders[0]; }
+    if (email && !email.includes("bounce-")) { const res = await fetch(PROXY + "/shopify/orders.json?email=" + encodeURIComponent(email) + "&status=any&limit=1"); const data = await res.json(); if (data.orders && data.orders.length > 0) return data.orders[0]; }
+  } catch(e) { console.log("Shopify:", e.message); }
+  return null;
+}
+
+function formatOrderInfo(order) {
+  if (!order) return "";
+  const fS = { pending:"In attesa", fulfilled:"Spedito", unfulfilled:"Non spedito", partial:"Parz. spedito", restocked:"Reso" };
+  const sS = { confirmed:"Confermato", in_transit:"In transito", out_for_delivery:"In consegna", delivered:"Consegnato", failure:"Problema", attempted_delivery:"Tentativo fallito" };
+  const f = order.fulfillments && order.fulfillments[0];
+  const items = (order.line_items||[]).map(function(i) { return i.quantity + "x " + i.name; }).join(", ");
+  const amz = (order.note_attributes||[]).find(function(a) { return a.name === "Amazon Order Id"; });
+  let info = "Ordine #" + order.order_number + (amz ? " (Amazon: " + amz.value + ")" : "") + " | Stato: " + (fS[order.fulfillment_status]||"Non spedito") + " | €" + order.total_price + (items ? " | " + items : "");
+  if (f) {
+    if (f.shipment_status) info += " | " + (sS[f.shipment_status]||f.shipment_status);
+    if (f.tracking_company) info += " | " + f.tracking_company;
+    if (f.tracking_number) info += " | Tracking: " + f.tracking_number + " | BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione=" + f.tracking_number;
+    if (f.created_at) info += " | Spedito: " + new Date(f.created_at).toLocaleDateString("it-IT");
+  }
+  if (order.shipping_address) { const a = order.shipping_address; info += " | " + [a.address1, a.city, a.zip].filter(Boolean).join(", "); }
+  return info;
+}
+
+async function generateReply(lastMsg, email) {
   const t = selectedTicket;
-  const prompt = "Oggetto: " + t.subject + "\nDa: " + (t.requester && t.requester.name || "Cliente") + "\nMessaggio: " + (lastMsg || t.subject);
+  const genBox = document.getElementById("gen-box");
+  if (genBox) genBox.innerHTML = '<div class="spinner"></div> Cerco ordine su Shopify...';
+  const order = await fetchShopifyOrder(lastMsg || t.subject || "", email || "");
+  const orderInfo = formatOrderInfo(order);
+  if (genBox) genBox.innerHTML = '<div class="spinner"></div> Claude sta generando la risposta...';
+
+  if (order) {
+    const f = order.fulfillments && order.fulfillments[0];
+    const amz = (order.note_attributes||[]).find(function(a) { return a.name === "Amazon Order Id"; });
+    const fS = { fulfilled:"✅ Spedito", unfulfilled:"⏳ Non spedito", partial:"🔄 Parziale", pending:"⏳ In attesa" };
+    let html = '<strong>🛍️ Ordine #' + order.order_number + '</strong>' + (amz ? ' <span style="opacity:0.7">· Amazon: ' + amz.value + '</span>' : "") + ' — ' + (fS[order.fulfillment_status]||order.fulfillment_status||"Non spedito");
+    if (f && f.tracking_number) { const brtUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione=" + f.tracking_number; html += '<br>📦 ' + (f.tracking_company||"Corriere") + ': <strong>' + f.tracking_number + '</strong> — <a href="' + brtUrl + '" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>'; }
+    if (f && f.created_at) html += '<br>📅 Spedito il ' + new Date(f.created_at).toLocaleDateString("it-IT");
+    const orderBox = document.getElementById("order-box");
+    if (orderBox) orderBox.innerHTML = '<div class="order-card">' + html + '</div>';
+  }
+
+  const prompt = "Oggetto: " + t.subject + "\nDa: " + ((t.requester&&t.requester.name)||"Cliente") + "\nEmail: " + (email||"") + "\nMessaggio: " + (lastMsg || t.subject) + (orderInfo ? "\n\nDati ordine: " + orderInfo : "");
   try {
     const res = await fetch(PROXY + "/anthropic/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: "Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffè, capsule e prodotti per il caffè. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come 'Il Team Yespresso'. Sii conciso e risolutivo.",
-        messages: [{ role: "user", content: "Genera una risposta professionale per questo ticket:\n\n" + prompt }]
-      })
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000,
+        system: "Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffè, capsule e prodotti per il caffè. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come 'Il Team Yespresso'. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa con i dettagli reali. Se c'è un link BRT includilo nella risposta.",
+        messages: [{ role: "user", content: "Genera una risposta professionale per questo ticket:\n\n" + prompt }] })
     });
     const data = await res.json();
-    const reply = data.content && data.content[0] && data.content[0].text || "";
-    document.querySelector(".reply-label").textContent = "✨ Risposta suggerita dall'AI";
-    document.getElementById("gen-box").outerHTML = '<textarea class="reply-textarea" id="reply-text" rows="10">' + reply + '</textarea>';
-    document.getElementById("action-row").style.display = "block";
+    const reply = (data.content && data.content[0] && data.content[0].text) || "";
+    const lbl = document.getElementById("ai-label"); if (lbl) lbl.textContent = "✨ Risposta suggerita dall'AI";
+    const gb = document.getElementById("gen-box"); if (gb) gb.outerHTML = '<textarea class="reply-textarea" id="reply-text">' + reply + '</textarea>';
+    const ar = document.getElementById("action-row"); if (ar) ar.style.display = "block";
   } catch(e) {
-    document.getElementById("gen-box").innerHTML = '<span style="color:#c04040">Errore: ' + e.message + '</span>';
+    const gb = document.getElementById("gen-box"); if (gb) gb.innerHTML = '<span style="color:#c04040">Errore: ' + e.message + '</span>';
   }
 }
 
@@ -209,27 +326,15 @@ async function sendReply() {
   btn.disabled = true; btn.textContent = "Invio in corso...";
   try {
     const tid = selectedTicket.ID || selectedTicket.id;
-    const res = await fetch(PROXY + "/api/v1/tickets/" + tid + "/transactions", {
-      method: "POST",
-      headers: { "Authorization": "Basic " + HD_TOKEN, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: message, type: "message" })
-    });
+    const res = await fetch(PROXY + "/api/v1/tickets/" + tid + "/transactions", { method: "POST", headers: { "Authorization": "Basic " + HD_TOKEN, "Content-Type": "application/json" }, body: JSON.stringify({ message: message, type: "message" }) });
     if (!res.ok) { const b = await res.text(); throw new Error("Errore " + res.status + ": " + b.substring(0, 150)); }
-    sentTickets.add(tid);
-    showToast("✓ Risposta inviata con successo!");
-    clearDetail();
-    renderTicketList();
-  } catch(e) {
-    showToast("Errore: " + e.message, "error");
-    btn.disabled = false; btn.textContent = "📤 Approva e invia";
-  }
+    sentTickets.add(tid); showToast("✓ Risposta inviata con successo!"); clearDetail(); renderTicketList();
+  } catch(e) { showToast("Errore: " + e.message, "error"); btn.disabled = false; btn.textContent = "📤 Approva e invia"; }
 }
 
 function clearDetail() {
-  selectedTicket = null;
-  renderTicketList();
-  document.getElementById("main-panel").innerHTML =
-    '<div class="empty-state"><div class="empty-icon">☕</div><div class="empty-title">Seleziona un ticket</div><div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI.</div></div>';
+  selectedTicket = null; renderTicketList();
+  document.getElementById("main-panel").innerHTML = '<div class="empty-state"><div class="empty-icon">☕</div><div class="empty-title">Seleziona un ticket</div><div class="empty-desc">Scegli un ticket dalla lista per generare una risposta AI personalizzata.</div></div>';
 }
 
 loadTickets();
