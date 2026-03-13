@@ -280,6 +280,12 @@ function srcLabel(email){
 
 function showToast(msg,type){const t=document.getElementById("toast");t.textContent=msg;t.style.background=type==="error"?"#c04040":"#2a7a50";t.style.display="block";setTimeout(()=>t.style.display="none",3500)}
 
+function copyText(txt,msg){
+  navigator.clipboard.writeText(txt).then(()=>showToast(msg||"Copiato!")).catch(()=>{
+    const el=document.createElement("textarea");el.value=txt;document.body.appendChild(el);el.select();document.execCommand("copy");document.body.removeChild(el);showToast(msg||"Copiato!");
+  });
+}
+
 async function hdFetch(path,options){
   const url=PROXY+"/api"+path;
   const headers=Object.assign({"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json"},(options||{}).headers);
@@ -433,10 +439,14 @@ async function selectTicket(tid){
     <div class="ds-section">
       <div class="ds-section-title">Requester <span>∧</span></div>
       <div class="ds-row"><span class="ds-label">Nome</span><span class="ds-value">${name}</span></div>
-      <div class="ds-row"><span class="ds-label">Email</span><span class="ds-value" style="font-size:11px;word-break:break-all">${email}</span></div>
+      <div style="margin-bottom:4px;font-size:11px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="ds-label">Email:</span>
+        <span style="color:#1a1a2e;word-break:break-all;flex:1">${email}</span>
+        ${email?'<button onclick="copyText(\'"+email+"\',\'Email copiata!\')" style="flex-shrink:0;background:#f0f2f5;border:1px solid #e0e4ea;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:10px;color:#555" title="Copia email">📋 Copia</button>':''} 
+      </div>
     </div>
     <div class="ds-section">
-      <div class="ds-section-title">Tags <span>∧</span></div>
+      <div class="ds-section-title">TAGS <span>∧</span></div>
       <div style="color:#aaa;font-size:11px">No tags</div>
     </div>`;
 
@@ -516,18 +526,85 @@ function closeDetail(){
   renderTable();
 }
 
-async function fetchShopifyOrder(message,email){
+async function shopifyGet(path){
+  const res=await fetch(PROXY+"/shopify/"+path);
+  if(!res.ok)return null;
+  const d=await res.json();
+  return d;
+}
+
+function findInNoteAttributes(orders,keys,value){
+  if(!orders)return null;
+  const val=(value||"").trim().toLowerCase();
+  if(!val)return null;
+  return orders.find(o=>(o.note_attributes||[]).some(a=>
+    keys.includes(a.name)&&(a.value||"").trim().toLowerCase()===val
+  ))||null;
+}
+
+async function fetchShopifyOrder(message,email,requesterName){
   try{
+    console.log("🔍 Shopify search | msg:",message.substring(0,120),"| email:",email,"| name:",requesterName);
+
+    // 1. Amazon order number (formato 123-1234567-1234567)
     const amazonMatch=message.match(/(\d{3}-\d{7}-\d{7})/);
     if(amazonMatch){
-      const res=await fetch(PROXY+"/shopify/orders.json?status=any&limit=50");
-      const data=await res.json();
-      if(data.orders){const order=data.orders.find(o=>(o.note_attributes||[]).some(a=>a.name==="Amazon Order Id"&&a.value===amazonMatch[1]));if(order)return order}
+      console.log("→ Cercando Amazon Order Id:",amazonMatch[1]);
+      const d=await shopifyGet("orders.json?status=any&limit=100");
+      const order=findInNoteAttributes(d&&d.orders,["Amazon Order Id","amazon_order_id"],amazonMatch[1]);
+      if(order){console.log("✅ Trovato via Amazon ID");return order}
     }
-    const orderMatch=message.match(/#?(\d{3,6})/);
-    if(orderMatch){const res=await fetch(PROXY+"/shopify/orders.json?name=%23"+orderMatch[1]+"&status=any");const data=await res.json();if(data.orders&&data.orders.length>0)return data.orders[0]}
-    if(email&&!email.includes("bounce-")){const res=await fetch(PROXY+"/shopify/orders.json?email="+encodeURIComponent(email)+"&status=any&limit=1");const data=await res.json();if(data.orders&&data.orders.length>0)return data.orders[0]}
-  }catch(e){console.log("Shopify:",e.message)}
+
+    // 2. Temu order number (formato PO-098-... oppure numerico lungo)
+    const temuMatch=message.match(/(PO-\d{3}-[\d]+)/i);
+    if(temuMatch){
+      console.log("→ Cercando Temu Order:",temuMatch[0]);
+      const d=await shopifyGet("orders.json?status=any&limit=100");
+      const order=findInNoteAttributes(d&&d.orders,["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"],temuMatch[0]);
+      if(order){console.log("✅ Trovato via Temu ID");return order}
+    }
+
+    // 3. Numero ordine Shopify (#1234 o 1234)
+    const shopifyMatch=message.match(/#(\d{3,8})/);
+    if(shopifyMatch){
+      console.log("→ Cercando ordine Shopify #"+shopifyMatch[1]);
+      const d=await shopifyGet("orders.json?name=%23"+shopifyMatch[1]+"&status=any");
+      if(d&&d.orders&&d.orders.length>0){console.log("✅ Trovato via numero ordine");return d.orders[0]}
+    }
+
+    // 4. Email cliente (skip bounce e email marketplace)
+    const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it"];
+    const emailClean=email&&!skipDomains.some(s=>email.includes(s))?email:null;
+    if(emailClean){
+      console.log("→ Cercando per email:",emailClean);
+      const d=await shopifyGet("orders.json?email="+encodeURIComponent(emailClean)+"&status=any&limit=5");
+      if(d&&d.orders&&d.orders.length>0){console.log("✅ Trovato via email");return d.orders[0]}
+    }
+
+    // 5. Nome cliente (solo per clienti Shopify/email reale)
+    if(requesterName&&requesterName.length>3&&emailClean){
+      const nameParts=requesterName.trim().split(/\s+/);
+      if(nameParts.length>=2){
+        // Cerca per nome completo
+        const query=encodeURIComponent(requesterName.trim());
+        console.log("→ Cercando per nome:",requesterName);
+        const d=await shopifyGet("orders.json?status=any&limit=50");
+        if(d&&d.orders){
+          const order=d.orders.find(o=>{
+            const sn=((o.shipping_address&&o.shipping_address.name)||"").toLowerCase();
+            const fn=((o.customer&&o.customer.first_name)||"").toLowerCase();
+            const ln=((o.customer&&o.customer.last_name)||"").toLowerCase();
+            const fullName=requesterName.toLowerCase();
+            return sn.includes(fullName)||
+              (fn&&ln&&fullName.includes(fn)&&fullName.includes(ln));
+          });
+          if(order){console.log("✅ Trovato via nome");return order}
+        }
+      }
+    }
+
+    console.log("❌ Nessun ordine trovato");
+  }catch(e){console.log("Shopify error:",e.message)}
   return null;
 }
 
@@ -538,7 +615,8 @@ function formatOrderInfo(order){
   const f=order.fulfillments&&order.fulfillments[0];
   const items=(order.line_items||[]).map(i=>i.quantity+"x "+i.name).join(", ");
   const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
-  let info="Ordine #"+order.order_number+(amz?" (Amazon: "+amz.value+")":"")+" | Stato: "+(fS[order.fulfillment_status]||"Non spedito")+" | €"+order.total_price+(items?" | "+items:"");
+  const temu=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
+  let info="Ordine #"+order.order_number+(amz?" (Amazon: "+amz.value+")":(temu?" (Temu: "+temu.value+")":""))+" | Stato: "+(fS[order.fulfillment_status]||"Non spedito")+" | €"+order.total_price+(items?" | "+items:"");
   if(f){
     if(f.shipment_status)info+=" | "+(sS[f.shipment_status]||f.shipment_status);
     if(f.tracking_company)info+=" | "+f.tracking_company;
@@ -554,20 +632,31 @@ async function generateReply(lastMsg,email){
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
 
-  const order=await fetchShopifyOrder(lastMsg||t.subject||"",email||"");
+  const searchText=(lastMsg||"")+" "+(t.subject||"");
+  const requesterName=(t.requester&&t.requester.name)||"";
+  const order=await fetchShopifyOrder(searchText,email||"",requesterName);
   const orderInfo=formatOrderInfo(order);
 
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
 
+  const oArea=document.getElementById("order-info-area");
   if(order){
     const f=order.fulfillments&&order.fulfillments[0];
     const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
     const fS={fulfilled:"✅ Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parziale",pending:"⏳ In attesa"};
-    let html='<strong>🛍️ Ordine #'+order.order_number+'</strong>'+(amz?' <span style="opacity:0.7">· Amazon: '+amz.value+'</span>':"")+" — "+(fS[order.fulfillment_status]||order.fulfillment_status||"Non spedito");
-    if(f&&f.tracking_number){const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione="+f.tracking_number;html+='<br>📦 '+(f.tracking_company||"Corriere")+': <strong>'+f.tracking_number+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>'}
+    let html='<strong>🛍️ Ordine #'+order.order_number+'</strong>';
+    if(amz)html+=' <span style="opacity:0.7;font-size:11px">· Amazon: '+amz.value+'</span>';
+    else{const temu=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));if(temu)html+=' <span style="opacity:0.7;font-size:11px">· Temu: '+temu.value+'</span>';}
+    html+=' — '+(fS[order.fulfillment_status]||order.fulfillment_status||"Non spedito");
+    if(f&&f.tracking_number){
+      const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numsped_par.hsm&Nspedizione="+f.tracking_number;
+      html+='<br>📦 '+(f.tracking_company||"Corriere")+': <strong>'+f.tracking_number+'</strong>';
+      html+=' — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';
+    }
     if(f&&f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
-    const oArea=document.getElementById("order-info-area");
     if(oArea)oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+  } else {
+    if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';
   }
 
   const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+"\nMessaggio: "+(lastMsg||t.subject)+(orderInfo?"\n\nDati ordine: "+orderInfo:"");
