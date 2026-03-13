@@ -147,6 +147,27 @@ input.field,textarea.field{width:100%;padding:8px 12px;border:1px solid #e0e4ea;
 input.field:focus,textarea.field:focus{border-color:#1a73e8}
 textarea.field{min-height:80px;resize:vertical}
 
+
+/* MESSAGE BODY - HTML rendering */
+.msg-body{padding:16px;font-size:13px;color:#333;line-height:1.7}
+.msg-body-html{max-width:100%;overflow-x:auto}
+.msg-body-html img{max-width:200px;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0;object-fit:cover}
+.msg-body-html img:hover{opacity:.85}
+.msg-body-html a{color:#1a73e8;word-break:break-word}
+.msg-body-plain{white-space:pre-wrap;word-break:break-word}
+/* URL shortener in plain text */
+.msg-url-btn{display:inline-flex;align-items:center;gap:4px;background:#e8f0fe;border:1px solid #c5d8fa;border-radius:5px;padding:2px 8px;font-size:11px;color:#1a73e8;text-decoration:none;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;cursor:pointer}
+.msg-url-btn:hover{background:#d2e3fc}
+/* Attachments */
+.attachments-row{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px;border-top:1px solid #f0f2f5}
+.attach-img{width:80px;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #e0e4ea}
+.attach-img:hover{opacity:.8}
+.attach-file{display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;cursor:pointer;text-decoration:none}
+.attach-file:hover{background:#e8f0fe;color:#1a73e8}
+/* Image lightbox */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;display:flex;align-items:center;justify-content:center;cursor:zoom-out}
+.lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+
 /* CUSTOMER HISTORY */
 .ch-item{padding:8px 0;border-bottom:1px solid #f0f2f5;cursor:pointer}
 .ch-item:last-child{border-bottom:none}
@@ -580,6 +601,7 @@ async function selectTicket(tid){
   for(const tk of ticketsToShow){
     const tkId=tk.ID||tk.id;
     const tkMsg=(tk.events&&tk.events[0]&&tk.events[0].message&&tk.events[0].message.text)||"";
+    const tkAttachments=(tk.events&&tk.events[0]&&tk.events[0].message&&tk.events[0].message.attachments)||[];
     const tkDate=(tk.events&&tk.events[0]&&tk.events[0].createdAt)||"";
     const tkDateStr=tkDate?new Date(tkDate).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
     const isMain=tkId===tid2;
@@ -588,7 +610,7 @@ async function selectTicket(tid){
         '<span class="concat-ticket-label">'+(hasMultiple?(isMain?'&#128204; Ticket principale: ':'&#128206; '):'')+'<span class="'+(isMain?'s-open':'s-pending')+' status-pill" style="font-size:10px">'+(tk.subject||"Senza oggetto")+'</span></span>'+
         '<span class="concat-ticket-date">'+tkDateStr+'</span>'+
       '</div>'+
-      '<div class="msg-body">'+renderMessageHtml(tkMsg)+'</div>'+
+      '<div class="msg-body">'+renderMessageHtml(tkMsg,tkAttachments)+'</div>'+
     '</div>';
   }
 
@@ -636,15 +658,79 @@ async function selectTicket(tid){
   loadCustomerHistory(email, name, tid2);
 }
 
-function renderMessageHtml(text){
-  if(!text)return"<em style='color:#aaa'>Nessun messaggio</em>";
-  // Escape HTML
-  let safe=text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  // Convert URLs to links
-  safe=safe.replace(/(https?:\/\/[^\s\]<]+)/g,'<a href="$1" target="_blank" style="color:#1a73e8">$1</a>');
-  // Convert [text](url) or [url]
-  safe=safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,'<a href="$2" target="_blank" style="color:#1a73e8;font-weight:600">$1 ↗</a>');
-  return safe;
+function renderMessageHtml(text, attachments){
+  if(!text&&(!attachments||!attachments.length))return"<em style='color:#aaa'>Nessun messaggio</em>";
+
+  let bodyHtml="";
+
+  // Detect if content contains HTML tags
+  const hasHtml=/<(a|img|p|br|div|span|table|td|tr|b|i|strong|em|ul|li|h[1-6])[\s>]/i.test(text||"");
+
+  if(hasHtml){
+    // Clean and render HTML safely
+    // Remove dangerous tags/attrs but keep structure
+    let html=(text||"")
+      .replace(/<script[\s\S]*?<\/script>/gi,"")
+      .replace(/<style[\s\S]*?<\/style>/gi,"")
+      .replace(/on\w+="[^"]*"/gi,"")
+      .replace(/on\w+='[^']*'/gi,"");
+    // Make links open in new tab
+    html=html.replace(/<a /gi,'<a target="_blank" rel="noopener" ');
+    // Shrink images inline
+    html=html.replace(/<img([^>]*)>/gi,(m,attrs)=>{
+      // Skip tracking pixels (1x1)
+      if(/width=["']?1["']?/i.test(attrs)||/height=["']?1["']?/i.test(attrs))return"";
+      return '<img'+attrs+' style="max-width:200px;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0;margin:2px" onclick="openLightbox(this.src)">';
+    });
+    bodyHtml='<div class="msg-body-html">'+html+'</div>';
+  } else {
+    // Plain text — shorten URLs into buttons
+    let safe=(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    // Replace long URLs (>60 chars) with compact buttons
+    safe=safe.replace(/(https?:\/\/[^\s]{60,})/g,(url)=>{
+      let label="🔗 Link";
+      try{
+        const u=new URL(url.replace(/&amp;/g,"&"));
+        const host=u.hostname.replace("www.","");
+        if(host.includes("brt"))label="📦 Traccia BRT";
+        else if(host.includes("shopify")||host.includes("yespresso"))label="🛍 "+host;
+        else if(host.includes("amazon"))label="📦 Amazon";
+        else label="🔗 "+host;
+      }catch(e){}
+      return '<a href="'+url.replace(/&amp;/g,"&")+'" target="_blank" class="msg-url-btn" title="'+url+'">'+label+'</a>';
+    });
+    // Short URLs stay as normal links
+    safe=safe.replace(/(https?:\/\/[^\s<"]{4,59})/g,'<a href="$1" target="_blank" style="color:#1a73e8;word-break:break-all">$1</a>');
+    bodyHtml='<div class="msg-body-plain">'+safe+'</div>';
+  }
+
+  // Render attachments (images + files)
+  let attachHtml="";
+  if(attachments&&attachments.length){
+    const imgs=attachments.filter(a=>a.contentType&&a.contentType.startsWith("image/"));
+    const files=attachments.filter(a=>!a.contentType||!a.contentType.startsWith("image/"));
+    let parts="";
+    imgs.forEach(a=>{
+      const url=a.url||a.href||"";
+      if(url)parts+='<img class="attach-img" src="'+url+'" onclick="openLightbox(this.src)" title="'+( a.name||"")+'"/>';
+    });
+    files.forEach(a=>{
+      const url=a.url||a.href||"";
+      const name=a.name||a.filename||"File";
+      if(url)parts+='<a class="attach-file" href="'+url+'" target="_blank">📎 '+name+'</a>';
+    });
+    if(parts)attachHtml='<div class="attachments-row">'+parts+'</div>';
+  }
+
+  return bodyHtml+attachHtml;
+}
+
+function openLightbox(src){
+  const lb=document.createElement("div");
+  lb.className="lightbox";
+  lb.innerHTML='<img src="'+src+'"/>';
+  lb.onclick=()=>lb.remove();
+  document.body.appendChild(lb);
 }
 
 async function changeStatus(newStatus){
@@ -735,21 +821,52 @@ async function fetchShopifyOrder(message,email,requesterName){
       if(order){console.log("✅ Trovato via Temu ID");return order}
     }
 
-    // 3. Numero ordine Shopify (#1234 o plain number in subject)
-    const shopifyMatch=message.match(/#(\d{3,12})/)||message.match(/(?:ordine|order)[^\d]*(\d{6,12})/i);
-    if(shopifyMatch){
-      console.log("→ Cercando ordine Shopify #"+shopifyMatch[1]);
-      const d=await shopifyGet("orders.json?name=%23"+shopifyMatch[1]+"&status=any");
-      if(d&&d.orders&&d.orders.length>0){console.log("✅ Trovato via numero ordine");return d.orders[0]}
+    // 3. Numero ordine Shopify
+    // Decodifica %23 -> # nel messaggio, cerca nel subject (passato per primo in message)
+    const decodedMsg=message.replace(/%23/g,"#").replace(/\\u0023/g,"#");
+    
+    // Tutti i numeri dopo # (ordina: più lunghi prima = più specifici)
+    const shopifyMatches=[...decodedMsg.matchAll(/#(\d{4,12})/g)].map(m=>m[1]);
+    const uniqueNums=[...new Set(shopifyMatches)].sort((a,b)=>b.length-a.length);
+    
+    // Anche numeri lunghi dopo parola "ordine/order" senza #
+    const orderWordMatches=[...decodedMsg.matchAll(/(?:ordine|order)[^\d#]*(\d{6,12})/gi)].map(m=>m[1]);
+    const allNums=[...new Set([...uniqueNums,...orderWordMatches])].sort((a,b)=>b.length-a.length);
+    
+    console.log("🔢 Numeri ordine trovati:", allNums.slice(0,5));
+    
+    for(const num of allNums.slice(0,5)){
+      console.log("→ Cercando ordine Shopify #"+num);
+      // 3a. Ricerca per nome ordine con # (standard Shopify)
+      const d=await shopifyGet("orders.json?name=%23"+num+"&status=any");
+      if(d&&d.orders&&d.orders.length>0){console.log("✅ Trovato via #"+num);return d.orders[0]}
+      // 3b. Senza # (alcuni negozi usano numerazione diversa)
+      const d2=await shopifyGet("orders.json?name="+num+"&status=any");
+      if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ Trovato plain "+num);return d2.orders[0]}
+      // 3c. Scarica tutti e filtra per order_number (per numeri molto lunghi tipo 2024181268)
+      if(num.length>=8){
+        console.log("→ Ricerca estesa per order_number="+num);
+        const d3=await shopifyGet("orders.json?status=any&limit=250");
+        if(d3&&d3.orders){
+          const found=d3.orders.find(o=>String(o.order_number)===num||String(o.name)==="#"+num||String(o.id)===num);
+          if(found){console.log("✅ Trovato via scan order_number");return found}
+        }
+      }
     }
 
     // 4. Email cliente (skip bounce e email marketplace)
-    const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral"];
+    const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply"];
     const emailClean=email&&!skipDomains.some(s=>email.includes(s))?email:null;
     if(emailClean){
       console.log("→ Cercando per email:",emailClean);
-      const d=await shopifyGet("orders.json?email="+encodeURIComponent(emailClean)+"&status=any&limit=5");
-      if(d&&d.orders&&d.orders.length>0){console.log("✅ Trovato via email");return d.orders[0]}
+      // Aumentato limit a 10 per trovare ordini più vecchi
+      const d=await shopifyGet("orders.json?email="+encodeURIComponent(emailClean)+"&status=any&limit=10");
+      if(d&&d.orders&&d.orders.length>0){
+        // Prendi l'ordine più recente
+        const sorted=d.orders.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+        console.log("✅ Trovato via email, ordine più recente #"+sorted[0].order_number);
+        return sorted[0];
+      }
     }
 
     // 5. Nome cliente (solo per clienti Shopify/email reale)
@@ -774,7 +891,7 @@ async function fetchShopifyOrder(message,email,requesterName){
       }
     }
 
-    console.log("❌ Nessun ordine trovato");
+    console.log("❌ Nessun ordine trovato. Email cercata:", emailClean, "| Nums:", allNums.slice(0,3));
   }catch(e){console.log("Shopify error:",e.message)}
   return null;
 }
@@ -803,8 +920,11 @@ async function generateReply(lastMsg,email){
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
 
-  const searchText=(lastMsg||"")+" "+(t.subject||"");
+  const subject=t.subject||"";
+  // Search in subject first (more reliable than message body), then message
+  const searchText=subject+" "+(lastMsg||"");
   const requesterName=(t.requester&&t.requester.name)||"";
+  console.log("🔍 searchText preview:", searchText.substring(0,200));
   const order=await fetchShopifyOrder(searchText,email||"",requesterName);
   const orderInfo=formatOrderInfo(order);
 
