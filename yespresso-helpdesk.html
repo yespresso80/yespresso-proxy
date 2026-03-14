@@ -10,7 +10,7 @@ html{zoom:1.25}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fff;color:#1a1a2e;height:calc(100vh / 1.25);display:flex;font-size:13px;overflow:hidden}
 
 /* NAV LEFT */
-.nav{width:52px;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0;height:100vh}
+.nav{width:52px;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0;min-height:0}
 .nav-logo{width:36px;height:36px;background:#4caf50;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:12px}
 .nav-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;color:#8888aa;transition:all 0.15s}
 .nav-icon:hover,.nav-icon.active{background:#2a2a4e;color:#fff}
@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .nav-avatar{width:32px;height:32px;border-radius:50%;background:#b8822a;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;cursor:pointer}
 
 /* SIDEBAR */
-.sidebar{width:240px;border-right:1px solid #e8eaf0;background:#fff;display:flex;flex-direction:column;height:100vh;flex-shrink:0}
+.sidebar{width:240px;border-right:1px solid #e8eaf0;background:#fff;display:flex;flex-direction:column;min-height:0;flex-shrink:0}
 .sidebar-top{padding:14px 14px 10px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;justify-content:space-between}
 .sidebar-title{font-size:16px;font-weight:700;color:#1a1a2e}
 .new-ticket-btn{background:#1a73e8;border:none;color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit}
@@ -34,7 +34,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .sidebar-item.active .sidebar-badge{background:#1a73e8;color:#fff}
 
 /* TICKET LIST PANEL */
-.ticket-panel{flex:1;display:flex;flex-direction:column;height:100vh;background:#fff;border-right:1px solid #e8eaf0;min-width:0}
+.ticket-panel{flex:1;display:flex;flex-direction:column;min-height:0;background:#fff;border-right:1px solid #e8eaf0;min-width:0}
 .ticket-panel-header{padding:14px 20px 10px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .ticket-panel-title{font-size:16px;font-weight:700;color:#1a1a2e}
 .filter-btn{background:#fff;border:1px solid #e0e4ea;color:#555;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit}
@@ -67,7 +67,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .s-on_hold{background:#fce4ec;color:#880e4f}
 
 /* DETAIL VIEW */
-.detail-view{display:none;flex:1;flex-direction:column;height:100vh;min-width:0;width:100%}
+.detail-view{display:none;flex:1;flex-direction:column;overflow:hidden;min-width:0;width:100%}
 .detail-view.open{display:flex}
 .detail-topbar{padding:12px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#fff}
 .back-btn{background:none;border:none;cursor:pointer;color:#666;font-size:18px;padding:2px 6px;border-radius:4px}
@@ -76,11 +76,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .detail-actions{display:flex;align-items:center;gap:8px}
 .detail-action-btn{background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px 6px;border-radius:4px}
 .detail-action-btn:hover{background:#f0f2f5;color:#333}
-.detail-body-wrap{display:flex;flex:1;overflow:hidden}
-.detail-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.detail-messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+.detail-body-wrap{display:flex;flex:1;overflow:hidden;min-height:0}
+.detail-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0}
+.detail-messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;min-height:0}
 .detail-reply-fixed{flex-shrink:0;border-top:2px solid #e8eaf0;background:#fff;padding:0}
-.detail-sidebar{width:360px;border-left:1px solid #e8eaf0;overflow-y:auto;background:#fafbfc;flex-shrink:0}
+.detail-sidebar{width:360px;border-left:1px solid #e8eaf0;overflow-y:auto;background:#fafbfc;flex-shrink:0;max-height:calc(100vh / 1.25);position:sticky;top:0}
 .ds-section{padding:14px 16px;border-bottom:1px solid #e8eaf0}
 .ds-section-title{font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer}
 .ds-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:14px}
@@ -98,7 +98,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .msg-body-email .email-inner a{color:#1a73e8}
 .msg-body-email table{border-collapse:collapse;width:100%}
 .order-info-box{background:#f0faf0;border:1px solid #b8ddb8;border-radius:8px;padding:12px 16px;font-size:15px;color:#2a5a2a;line-height:2}
-.ai-reply-box{background:#fff;border-top:2px solid #e8eaf0;overflow:hidden}
+.ai-reply-box{background:#fff;border-top:2px solid #e8eaf0;overflow-y:auto;max-height:320px;flex-shrink:0}
 .ai-box-header{padding:8px 16px 0;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#b8822a;display:flex;align-items:center;justify-content:space-between}
 .reply-area{border:1px solid #dde1e7;border-radius:8px;width:calc(100% - 32px);margin:8px 16px 0;padding:10px 14px;font-size:13px;font-family:inherit;line-height:1.6;resize:none;outline:none;min-height:90px;max-height:180px;color:#1a1a2e;display:block;box-sizing:border-box;transition:border-color .15s}
 .reply-area:focus{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.08)}
@@ -125,7 +125,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .retry-btn{margin-top:8px;background:#fff;border:1px solid #f0c0c0;color:#c04040;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit}
 
 /* List+detail toggle */
-.ticket-list-view{display:flex;flex:1;min-width:0;height:100vh}
+.ticket-list-view{display:flex;flex:1;min-width:0;min-height:0}
 
 /* QUICK REPLIES */
 .qr-popup{position:absolute;bottom:100%;left:0;right:0;background:#fff;border:1px solid #d0d4dc;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.12);max-height:260px;overflow-y:auto;z-index:999}
@@ -435,9 +435,22 @@ async function loadTickets(){
     else msg.textContent="Quasi pronto... ("+elapsed+"s)";
   },1000);
   try{
-    const data=await hdFetch("/v1/tickets?pageSize=50");
+    let allTickets=[];
+    let page=1;
+    while(true){
+      const data=await hdFetch("/v1/tickets?pageSize=50&page="+page);
+      const batch=Array.isArray(data)?data:(data.tickets||data.data||[]);
+      if(!batch||!batch.length)break;
+      allTickets=allTickets.concat(batch);
+      const msg=document.getElementById("load-msg");
+      if(msg)msg.textContent="Caricati "+allTickets.length+" ticket...";
+      if(batch.length<50)break;
+      page++;
+      if(page>20)break;
+    }
     clearInterval(loadTimer);
-    tickets=Array.isArray(data)?data:(data.tickets||data.data||[]);
+    tickets=allTickets;
+    currentPage=1;
     updateBadges();
     renderTable();
   }catch(e){
@@ -661,6 +674,7 @@ async function selectTicket(tid){
         <div style="color:#aaa;font-size:11px">No tags</div>
       </div>
       <div class="ds-section" id="order-info-area" style="padding:12px 16px"></div>
+      <div class="ds-section" id="last-order-area" style="padding:12px 16px"></div>
     </div>
     <div class="ds-tab-content" id="ds-tab-history">
       <div id="customer-history-list" style="padding:4px 0">
@@ -842,6 +856,7 @@ async function selectTicket(tid){
     generateReply(allMsgs, email, fullThread);
   }
   loadCustomerHistory(email, name, tid2);
+  setTimeout(()=>{if(email)loadLastCustomerOrder(email);}, 800);
 }
 
 function renderMsgBlock(text, attachments){
@@ -1260,6 +1275,42 @@ function formatOrderInfo(order){
   return info;
 }
 
+
+async function loadLastCustomerOrder(email, currentOrderId){
+  const loArea=document.getElementById("last-order-area");
+  if(!loArea||!email)return;
+  const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply","donotreply"];
+  if(skipDomains.some(s=>email.includes(s)))return;
+  loArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">Caricamento ordini...</div>';
+  try{
+    const d=await shopifyGet("orders.json?email="+encodeURIComponent(email)+"&status=any&limit=5");
+    const orders=(d&&d.orders)||[];
+    if(!orders.length){loArea.innerHTML='';return;}
+    // Ordina per data decrescente
+    orders.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+    const fS={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz.",pending:"⏳ Attesa"};
+    let html='<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">🛍️ ORDINI CLIENTE</div>';
+    orders.slice(0,3).forEach(o=>{
+      const isCurrentOrder=currentOrderId&&String(o.id)===String(currentOrderId);
+      const date=o.created_at?new Date(o.created_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"2-digit"}):"";
+      const status=fS[o.fulfillment_status]||"⏳";
+      const shopifyUrl="https://40f758-3.myshopify.com/admin/orders/"+o.id;
+      const bg=isCurrentOrder?"background:#e8f5e9;border:1px solid #b8ddb8":"background:#f8f9fc;border:1px solid #e8eaf0";
+      html+='<div style="'+bg+';border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">'+
+          '<a href="'+shopifyUrl+'" target="_blank" style="font-weight:700;color:#1a1a2e;text-decoration:none">'+(o.name||'#'+o.order_number)+(isCurrentOrder?' <span style="color:#2a7a50;font-size:10px">← attuale</span>':'')+'</a>'+
+          '<span style="font-weight:700;color:#2a5a2a">€'+parseFloat(o.total_price||0).toFixed(2)+'</span>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:space-between;color:#888;font-size:11px">'+
+          '<span>'+date+'</span>'+
+          '<span>'+status+'</span>'+
+        '</div>'+
+      '</div>';
+    });
+    loArea.innerHTML=html;
+  }catch(e){loArea.innerHTML='';}
+}
+
 async function generateReply(lastMsg,email,fullThread){
   const t=selectedTicket;
   const genBox=document.getElementById("gen-box");
@@ -1326,8 +1377,11 @@ async function generateReply(lastMsg,email,fullThread){
     window._dupOrders[dupBtnId]=order.id;
     html+='<br>📋 <span id="'+dupBtnId+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
     if(oArea)oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+  loadLastCustomerOrder(email, order.id);
   } else {
     if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';
+  // Carica comunque ultimo ordine cliente per email
+  loadLastCustomerOrder(email);
   }
 
   const otherOpen=window._customerOpenTickets||[];
