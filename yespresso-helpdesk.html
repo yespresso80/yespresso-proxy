@@ -7,7 +7,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html{zoom:1.25}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fff;color:#1a1a2e;min-height:100vh;display:flex;font-size:13px;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fff;color:#1a1a2e;height:calc(100vh / 1.25);display:flex;font-size:13px;overflow:hidden}
 
 /* NAV LEFT */
 .nav{width:52px;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0;height:100vh}
@@ -21,8 +21,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .sidebar{width:240px;border-right:1px solid #e8eaf0;background:#fff;display:flex;flex-direction:column;height:100vh;flex-shrink:0}
 .sidebar-top{padding:14px 14px 10px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;justify-content:space-between}
 .sidebar-title{font-size:16px;font-weight:700;color:#1a1a2e}
-.new-ticket-btn{background:#1a73e8;border:none;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;box-shadow:0 2px 6px rgba(26,115,232,.3);transition:background .15s}
-.new-ticket-btn:hover{background:#1557b0}
+.new-ticket-btn{background:#1a73e8;border:none;color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit}
 .sidebar-search{padding:10px 12px;border-bottom:1px solid #f0f2f5}
 .sidebar-search input{width:100%;padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;outline:none;background:#f8f9fc}
 .sidebar-search input:focus{border-color:#1a73e8}
@@ -40,7 +39,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .ticket-panel-title{font-size:16px;font-weight:700;color:#1a1a2e}
 .filter-btn{background:#fff;border:1px solid #e0e4ea;color:#555;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit}
 .ticket-count-bar{padding:6px 20px;font-size:11px;color:#888;border-bottom:1px solid #f0f2f5;flex-shrink:0}
-.table-header{display:grid;grid-template-columns:32px 220px 1fr 110px 90px 110px 28px;gap:0;padding:8px 16px;border-bottom:2px solid #f0f2f5;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#333;flex-shrink:0}
+.table-header{display:grid;grid-template-columns:32px 220px 1fr 110px 90px 110px 28px;gap:0;padding:8px 16px;border-bottom:2px solid #f0f2f5;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;flex-shrink:0}
 .ticket-rows{flex:1;overflow-y:auto}
 .ticket-row{display:grid;grid-template-columns:32px 220px 1fr 110px 90px 110px 28px;gap:0;padding:10px 16px;border-bottom:1px solid #f4f5f7;cursor:pointer;align-items:center;transition:background 0.1s}
 .ticket-row:hover{background:#f8f9fc}
@@ -55,17 +54,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .tr-subject{font-size:14px;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px}
 .tr-subject-dot{color:#ccc;margin-right:6px}
 .tr-agent{font-size:11px;color:#888}
-.tr-status .status-pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:800}
-.tr-time{font-size:12px;color:#333;text-align:right;font-weight:500}
+.tr-status .status-pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+.tr-time{font-size:12px;color:#888;text-align:right}
 .tr-more{color:#ccc;cursor:pointer;font-size:14px;text-align:center}
 .tr-more:hover{color:#666}
 
 /* STATUS PILLS */
-.s-open{background:#e3f2fd;color:#0d47a1}
-.s-pending{background:#fff3e0;color:#bf360c}
-.s-solved{background:#e8f5e9;color:#1b5e20}
-.s-closed{background:#f5f5f5;color:#333}
-.s-on_hold{background:#fce4ec;color:#6a0036}
+.s-open{background:#e3f2fd;color:#1565c0}
+.s-pending{background:#fff3e0;color:#e65100}
+.s-solved{background:#e8f5e9;color:#2e7d32}
+.s-closed{background:#f5f5f5;color:#757575}
+.s-on_hold{background:#fce4ec;color:#880e4f}
 
 /* DETAIL VIEW */
 .detail-view{display:none;flex:1;flex-direction:column;height:100vh;min-width:0;width:100%}
@@ -115,14 +114,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .generating{display:flex;align-items:center;gap:10px;padding:20px 16px;color:#aaa;font-size:12px}
 .spinner{width:14px;height:14px;border:2px solid #e0e4ea;border-top:2px solid #b8822a;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* PAGINATION */
 .pagination-bar{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:8px 16px;border-top:1px solid #f0f2f5;flex-shrink:0;background:#fff}
 .page-btn{width:32px;height:32px;border:1px solid #e0e4ea;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#333;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .page-btn:hover{background:#f0f2f5}
 .page-btn.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
 .page-btn:disabled{opacity:0.4;cursor:not-allowed}
-
 .toast{position:fixed;top:16px;right:16px;z-index:9999;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none}
 .center-msg{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;gap:8px;color:#aaa;font-size:12px}
 .error-box{margin:12px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:8px;padding:12px;font-size:12px;color:#c04040}
@@ -243,7 +239,7 @@ textarea.field{min-height:80px;resize:vertical}
 <aside class="sidebar">
   <div class="sidebar-top">
     <span class="sidebar-title">Tickets</span>
-    <button class="new-ticket-btn" onclick="openNewTicketModal()">+ New ticket</button>
+    <button class="new-ticket-btn">+ New ticket</button>
   </div>
   <div class="sidebar-search">
     <input type="text" id="sidebar-search" placeholder="Search in all tickets..." oninput="applySearch()"/>
@@ -374,6 +370,8 @@ const STATUS_CLASS = {open:"s-open",pending:"s-pending",solved:"s-solved",closed
 const AVATAR_COLORS = ["#e53935","#1e88e5","#43a047","#8e24aa","#fb8c00","#00897b","#e91e63","#00acc1","#f4511e","#6d4c41","#546e7a","#3949ab"];
 
 let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="";
+let currentPage=1;
+const PAGE_SIZE=25;
 
 function avatarColor(s){let h=0;for(let i=0;i<(s||"").length;i++)h=s.charCodeAt(i)+((h<<5)-h);return AVATAR_COLORS[Math.abs(h)%AVATAR_COLORS.length]}
 function initials(n){const p=(n||"?").trim().split(" ");return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
@@ -421,10 +419,8 @@ async function hdFetch(path,options){
   }
 }
 
-let currentPage=1;
-const PAGE_SIZE=25;
-
 async function loadTickets(){
+  // Mostra spinner con messaggio avvio proxy
   let elapsed=0;
   const rowsEl=document.getElementById("ticket-rows");
   const countEl=document.getElementById("ticket-count-bar");
@@ -439,18 +435,9 @@ async function loadTickets(){
     else msg.textContent="Quasi pronto... ("+elapsed+"s)";
   },1000);
   try{
-    // Carica fino a 200 ticket (4 pagine da 50)
-    let allTickets=[];
-    for(let p=1;p<=4;p++){
-      const data=await hdFetch("/v1/tickets?pageSize=50&page="+p);
-      const page=Array.isArray(data)?data:(data.tickets||data.data||[]);
-      if(!page.length)break;
-      allTickets=allTickets.concat(page);
-      if(page.length<50)break;
-    }
+    const data=await hdFetch("/v1/tickets?pageSize=50");
     clearInterval(loadTimer);
-    tickets=allTickets;
-    currentPage=1;
+    tickets=Array.isArray(data)?data:(data.tickets||data.data||[]);
     updateBadges();
     renderTable();
   }catch(e){
@@ -533,7 +520,7 @@ function renderTable(){
   const filtered=getFiltered();
   const totalPages=Math.ceil(filtered.length/PAGE_SIZE);
   if(currentPage>totalPages&&totalPages>0)currentPage=totalPages;
-  const pageTickets=filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+  const pageTickets=filtered.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
   document.getElementById("ticket-count-bar").textContent=filtered.length+" tickets";
   if(!filtered.length){document.getElementById("ticket-rows").innerHTML='<div class="center-msg">Nessun ticket trovato</div>';renderPagination(0,0);return}
   renderPagination(currentPage,totalPages);
@@ -544,8 +531,7 @@ function renderTable(){
     const name=(t.requester&&t.requester.name)||(t.requester&&t.requester.email)||"Cliente";
     const email=(t.requester&&t.requester.email)||"";
     const lastEvent=t.events&&t.events[t.events.length-1];
-    const lastTimeRaw=lastEvent&&(lastEvent.createdAt||lastEvent.updatedAt)||t.updatedAt||t.updated_at||t.createdAt||t.created_at||"";
-    const lastTime=lastTimeRaw?timeAgo(lastTimeRaw):"";
+    const lastTime=lastEvent&&lastEvent.createdAt?timeAgo(lastEvent.createdAt):"";
     const src=srcLabel(email);
     const sc=STATUS_CLASS[t.status]||"s-closed";
     const sl=STATUS_LABELS[t.status]||t.status;
@@ -559,7 +545,7 @@ function renderTable(){
         </div>
       </div>
       <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}</div>
-      <div class="tr-agent" style="font-size:11px;color:#333;font-weight:500">unassigned</div>
+      <div class="tr-agent" style="font-size:11px;color:#aaa">unassigned</div>
       <div class="tr-status"><span class="status-pill ${sc}">${sl}</span></div>
       <div class="tr-time">${lastTime}</div>
       <div class="tr-more">⋯</div>
@@ -567,15 +553,14 @@ function renderTable(){
   }).join("");
 }
 
+
 function renderPagination(page, total){
   const bar=document.getElementById("pagination-bar");
   if(!bar)return;
   if(total<=1){bar.style.display="none";return;}
   bar.style.display="flex";
   let html="";
-  // Prev button
-  html+='<button class="page-btn" '+( page<=1?"disabled":'onclick="goPage('+(page-1)+')"')+'>‹</button>';
-  // Page numbers
+  html+='<button class="page-btn" '+(page<=1?"disabled":'onclick="goPage('+(page-1)+')"')+'>‹</button>';
   for(let i=1;i<=total;i++){
     if(total>7&&i>2&&i<total-1&&Math.abs(i-page)>1){
       if(i===3||i===total-2)html+='<span style="color:#aaa;padding:0 4px">…</span>';
@@ -583,7 +568,6 @@ function renderPagination(page, total){
     }
     html+='<button class="page-btn'+(i===page?" active":"")+'" onclick="goPage('+i+')">'+i+'</button>';
   }
-  // Next button
   html+='<button class="page-btn" '+(page>=total?"disabled":'onclick="goPage('+(page+1)+')"')+'>›</button>';
   bar.innerHTML=html;
 }
@@ -1508,8 +1492,7 @@ async function loadCustomerHistory(email, name, currentTid){
     const sc=STATUS_CLASS[t.status]||"s-closed";
     const sl=STATUS_LABELS[t.status]||t.status;
     const lastEvent=t.events&&t.events[t.events.length-1];
-    const lastTimeRaw=lastEvent&&(lastEvent.createdAt||lastEvent.updatedAt)||t.updatedAt||t.updated_at||t.createdAt||t.created_at||"";
-    const lastTime=lastTimeRaw?timeAgo(lastTimeRaw):"";
+    const lastTime=lastEvent&&lastEvent.createdAt?timeAgo(lastEvent.createdAt):"";
     const isOpen=t.status==="open"||t.status==="pending";
     return `<div class="ch-item${isOpen?" ch-current":""}" onclick="selectTicket('${tid2}')">
       <div class="ch-subject">${isOpen?"🔴 ":""}${t.subject||"Senza oggetto"}</div>
@@ -1816,153 +1799,6 @@ async function duplicateOrder(orderId){
       showToast("Errore: "+(data.errors?JSON.stringify(data.errors):"risposta inattesa"),"error");
     }
   }catch(e){showToast("Errore: "+e.message,"error");}
-}
-</script>
-
-<!-- NEW TICKET MODAL -->
-<div class="modal-overlay" id="new-ticket-modal" style="display:none" onclick="if(event.target===this)closeNewTicketModal()">
-  <div class="modal" style="max-width:560px">
-    <div class="modal-header">
-      <span class="modal-title">🎫 Nuovo Ticket</span>
-      <button class="modal-close" onclick="closeNewTicketModal()">×</button>
-    </div>
-    <div class="modal-body" style="gap:14px">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Email cliente *</label>
-        <input class="field" id="nt-email" type="email" placeholder="es. cliente@email.com"/>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Nome cliente</label>
-        <input class="field" id="nt-name" type="text" placeholder="es. Mario Rossi"/>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Oggetto *</label>
-        <input class="field" id="nt-subject" type="text" placeholder="es. Problema con ordine #1234"/>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Messaggio *</label>
-        <div style="position:relative">
-          <textarea class="field" id="nt-message" rows="5" placeholder="Scrivi il messaggio... (digita # per risposte rapide)"></textarea>
-          <div id="nt-qr-popup" class="qr-popup" style="display:none"></div>
-        </div>
-        <div style="margin-top:6px">
-          <button class="qr-btn" onclick="openNTQuickReplies()" style="height:28px;font-size:11px">⚡ Risposte rapide</button>
-        </div>
-      </div>
-      <div id="nt-error" style="display:none;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:10px;font-size:12px;color:#c04040"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-sm" onclick="closeNewTicketModal()">Annulla</button>
-      <button class="btn-sm btn-primary" id="nt-send-btn" onclick="submitNewTicket()">📤 Crea Ticket</button>
-    </div>
-  </div>
-</div>
-
-<script>
-function openNewTicketModal(){
-  document.getElementById("nt-email").value="";
-  document.getElementById("nt-name").value="";
-  document.getElementById("nt-subject").value="";
-  document.getElementById("nt-message").value="";
-  document.getElementById("nt-error").style.display="none";
-  document.getElementById("nt-send-btn").disabled=false;
-  document.getElementById("nt-send-btn").textContent="📤 Crea Ticket";
-  document.getElementById("new-ticket-modal").style.display="flex";
-  setTimeout(()=>document.getElementById("nt-email").focus(),100);
-  const ta=document.getElementById("nt-message");
-  ta.oninput=function(){
-    const val=this.value, pos=this.selectionStart;
-    const before=val.substring(0,pos);
-    const hashIdx=before.lastIndexOf("#");
-    if(hashIdx>=0&&(hashIdx===0||/\s/.test(before[hashIdx-1]))){
-      const q=before.substring(hashIdx+1).toLowerCase();
-      showNTQRPopup(q);
-    } else { hideNTQRPopup(); }
-  };
-  ta.onkeydown=function(e){
-    const popup=document.getElementById("nt-qr-popup");
-    if(popup.style.display==="none")return;
-    const items=popup.querySelectorAll(".qr-item");
-    if(!items.length)return;
-    let idx=parseInt(popup.dataset.idx||"0");
-    if(e.key==="ArrowDown"){e.preventDefault();idx=Math.min(idx+1,items.length-1);}
-    else if(e.key==="ArrowUp"){e.preventDefault();idx=Math.max(idx-1,0);}
-    else if(e.key==="Enter"){e.preventDefault();items[idx].click();return;}
-    else if(e.key==="Escape"){hideNTQRPopup();return;}
-    popup.dataset.idx=idx;
-    items.forEach((el,i)=>el.classList.toggle("qr-selected",i===idx));
-  };
-}
-
-function showNTQRPopup(query){
-  const popup=document.getElementById("nt-qr-popup");
-  const filtered=quickReplies.filter(qr=>!query||qr.name.toLowerCase().includes(query)||qr.body.toLowerCase().includes(query));
-  if(!filtered.length){hideNTQRPopup();return;}
-  popup.innerHTML=filtered.map((qr,i)=>`<div class="qr-item${i===0?" qr-selected":""}" onclick="insertNTQR(${qr.id})"><div class="qr-title">⚡ ${qr.name}</div><div class="qr-preview">${qr.body.replace(/\n/g," ").substring(0,80)}...</div></div>`).join("");
-  popup.dataset.idx="0";
-  popup.style.display="block";
-}
-
-function hideNTQRPopup(){
-  const popup=document.getElementById("nt-qr-popup");
-  if(popup)popup.style.display="none";
-}
-
-function insertNTQR(id){
-  const qr=quickReplies.find(q=>q.id===id); if(!qr)return;
-  const ta=document.getElementById("nt-message"); if(!ta)return;
-  const pos=ta.selectionStart;
-  const before=ta.value.substring(0,pos);
-  const hashIdx=before.lastIndexOf("#");
-  ta.value=(hashIdx>=0?ta.value.substring(0,hashIdx):ta.value.substring(0,pos))+qr.body+ta.value.substring(pos);
-  ta.focus();
-  hideNTQRPopup();
-}
-
-function openNTQuickReplies(){
-  showNTQRPopup("");
-  document.getElementById("nt-message").focus();
-}
-
-function closeNewTicketModal(){
-  hideNTQRPopup();
-  document.getElementById("new-ticket-modal").style.display="none";
-}
-
-async function submitNewTicket(){
-  const email=document.getElementById("nt-email").value.trim();
-  const name=document.getElementById("nt-name").value.trim();
-  const subject=document.getElementById("nt-subject").value.trim();
-  const message=document.getElementById("nt-message").value.trim();
-  const errEl=document.getElementById("nt-error");
-  const btn=document.getElementById("nt-send-btn");
-  if(!email||!subject||!message){
-    errEl.textContent="⚠ Compila tutti i campi obbligatori (email, oggetto, messaggio).";
-    errEl.style.display="block";
-    return;
-  }
-  btn.disabled=true;
-  btn.textContent="Invio...";
-  errEl.style.display="none";
-  try{
-    const payload={subject:subject,message:{text:message},requester:{email:email,name:name||email}};
-    const res=await fetch(PROXY+"/api/v1/tickets",{
-      method:"POST",
-      headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-      body:JSON.stringify(payload)
-    });
-    if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,200));}
-    const data=await res.json();
-    console.log("✅ Nuovo ticket creato:",data);
-    closeNewTicketModal();
-    showToast("✓ Ticket creato con successo!");
-    await loadTickets();
-  }catch(e){
-    errEl.textContent="❌ "+e.message;
-    errEl.style.display="block";
-    btn.disabled=false;
-    btn.textContent="📤 Crea Ticket";
-  }
 }
 </script>
 
