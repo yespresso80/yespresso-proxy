@@ -242,6 +242,26 @@ const server = http.createServer(async function(req, res) {
   });
 });
 
+// Creditsyard customer lookup by email
+app.get('/creditsyard/customer', async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) return res.json({ error: 'email required' });
+    const response = await fetch('https://creditsyard.com/api/customers?email=' + encodeURIComponent(email), {
+      headers: {
+        'Authorization': 'Bearer 412b510ba19f72e6eaab40fdf63aa114',
+        'X-Shop-Domain': '40f758-3.myshopify.com',
+        'Content-Type': 'application/json'
+      }
+    });
+    const data = await response.json();
+    const customer = Array.isArray(data) ? data[0] : (data.customers && data.customers[0]) || data;
+    res.json(customer || {});
+  } catch(e) {
+    res.json({ error: e.message });
+  }
+});
+
 server.listen(PORT, "0.0.0.0", function() {
   console.log("✅ Server Yespresso avviato su porta " + PORT);
 });
