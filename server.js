@@ -70,26 +70,41 @@ async function syncImapAttachments() {
         for await (const chunk of download.content) rawChunks.push(chunk);
         const raw = Buffer.concat(rawChunks).toString("binary");
 
-        // Parsing allegati dal raw
+        // Parsing allegati dal raw - versione robusta
         const attachments = [];
-        const boundaryMatch = raw.match(/boundary="?([^"\r\n;]+)"?/i);
-        if (boundaryMatch) {
-          const boundary = boundaryMatch[1];
-          const parts = raw.split("--" + boundary);
+        // Trova tutti i boundary nel messaggio
+        const boundaryMatches = [...raw.matchAll(/boundary=["']?([^"'\r\n;\s]+)["']?/gi)];
+        const boundaries = [...new Set(boundaryMatches.map(m => m[1]))];
+        
+        for (const boundary of boundaries) {
+          const parts = raw.split(new RegExp("--" + boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
           for (const part of parts) {
-            const fnMatch = part.match(/filename\*?=["']?(?:UTF-8'')?([^"'\r\n;]+)/i);
-            const ctMatch = part.match(/Content-Type:\s*([^\r\n;]+)/i);
+            // Cerca Content-Disposition: attachment
+            const isAttachment = /Content-Disposition:\s*(attachment|inline)/i.test(part);
+            const fnMatch = part.match(/(?:filename\*=UTF-8''([^\r\n;]+)|filename="?([^"\r\n;]+)"?)/i);
+            const ctMatch = part.match(/Content-Type:\s*([^\r\n;,]+)/i);
             const encMatch = part.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+            
             if (fnMatch && ctMatch) {
-              const filename = decodeURIComponent(fnMatch[1].replace(/['"]/g,"").trim());
-              const contentType = ctMatch[1].trim();
+              let filename = fnMatch[1] || fnMatch[2] || "";
+              try { filename = decodeURIComponent(filename.trim()); } catch(e) { filename = filename.trim(); }
+              filename = filename.replace(/['"]/g,"").trim();
+              const contentType = ctMatch[1].trim().toLowerCase();
               const encoding = (encMatch ? encMatch[1].trim() : "").toLowerCase();
-              if (encoding === "base64") {
+              
+              // Accetta base64 per immagini, pdf e altri file
+              if (encoding === "base64" && filename) {
                 const bodyIdx = part.indexOf("\r\n\r\n");
-                if (bodyIdx > 0) {
-                  const b64 = part.slice(bodyIdx+4).replace(/[\r\n\s]/g,"").trim();
-                  if (b64.length > 10) {
-                    attachments.push({ filename, contentType, data: b64 });
+                const bodyIdx2 = part.indexOf("\n\n");
+                const startIdx = bodyIdx >= 0 ? bodyIdx + 4 : (bodyIdx2 >= 0 ? bodyIdx2 + 2 : -1);
+                if (startIdx > 0) {
+                  // Prendi solo caratteri base64 validi
+                  const b64 = part.slice(startIdx).replace(/[^A-Za-z0-9+/=]/g,"");
+                  if (b64.length > 100) {
+                    // Evita duplicati
+                    if (!attachments.find(a => a.filename === filename && a.data.length === b64.length)) {
+                      attachments.push({ filename, contentType, data: b64 });
+                    }
                   }
                 }
               }
