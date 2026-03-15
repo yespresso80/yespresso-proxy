@@ -98,11 +98,17 @@ async function syncImapAttachments() {
                 const bodyIdx2 = part.indexOf("\n\n");
                 const startIdx = bodyIdx >= 0 ? bodyIdx + 4 : (bodyIdx2 >= 0 ? bodyIdx2 + 2 : -1);
                 if (startIdx > 0) {
-                  // Prendi solo caratteri base64 validi
-                  const b64 = part.slice(startIdx).replace(/[^A-Za-z0-9+/=]/g,"");
+                  // Prendi solo caratteri base64 validi e rimuovi residui esadecimali in coda
+                  let b64 = part.slice(startIdx).replace(/[^A-Za-z0-9+/=]/g,"");
+                  // Tronca tutto dopo il padding = finale (es. =000000abc e spazzatura esadecimale)
+                  const lastEqIdx = b64.lastIndexOf("=");
+                  if (lastEqIdx > 0) b64 = b64.substring(0, lastEqIdx + 1);
+                  // Normalizza padding
+                  const rem = b64.replace(/=/g,"").length % 4;
+                  if (rem) b64 = b64.replace(/=*$/, "") + "===".substring(0, 4-rem);
                   if (b64.length > 100) {
-                    // Evita duplicati
-                    if (!attachments.find(a => a.filename === filename && a.data.length === b64.length)) {
+                    // Evita duplicati per filename
+                    if (!attachments.find(a => a.filename === filename)) {
                       attachments.push({ filename, contentType, data: b64 });
                     }
                   }

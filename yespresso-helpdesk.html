@@ -76,11 +76,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .detail-actions{display:flex;align-items:center;gap:8px}
 .detail-action-btn{background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px 6px;border-radius:4px}
 .detail-action-btn:hover{background:#f0f2f5;color:#333}
-.detail-body-wrap{display:flex;flex:1;overflow:hidden;min-height:0}
-.detail-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0}
+.detail-body-wrap{display:flex;flex:1;overflow:hidden;min-height:0;align-items:stretch}
+.detail-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;align-self:stretch}
 .detail-messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;min-height:0}
 .detail-reply-fixed{flex-shrink:0;border-top:2px solid #e8eaf0;background:#fff;padding:0}
-.detail-sidebar{width:360px;border-left:1px solid #e8eaf0;overflow-y:auto;background:#fafbfc;flex-shrink:0;max-height:calc(100vh / 1.25);position:sticky;top:0}
+.detail-sidebar{width:360px;border-left:1px solid #e8eaf0;overflow-y:scroll;background:#fafbfc;flex-shrink:0;align-self:stretch}
 .ds-section{padding:14px 16px;border-bottom:1px solid #e8eaf0}
 .ds-section-title{font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer}
 .ds-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:14px}
@@ -114,15 +114,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .generating{display:flex;align-items:center;gap:10px;padding:20px 16px;color:#aaa;font-size:12px}
 .spinner{width:14px;height:14px;border:2px solid #e0e4ea;border-top:2px solid #b8822a;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
-.filter-panel{background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);padding:16px;position:absolute;top:100%;left:0;z-index:500;width:320px;margin-top:4px}
+.filter-panel{background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);padding:16px;position:absolute;top:100%;left:0;z-index:8000;width:320px;margin-top:4px}
 .filter-chip{display:inline-flex;align-items:center;gap:4px;background:#e8f0fe;color:#1a73e8;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;margin:2px}
 .filter-chip button{background:none;border:none;cursor:pointer;color:#1a73e8;font-size:13px;padding:0;line-height:1}
+.bulk-bar{display:none;align-items:center;gap:8px;padding:8px 16px;background:#e8f0fe;border-bottom:1px solid #c5d8f8;flex-shrink:0;flex-wrap:wrap}
+.bulk-btn{background:#fff;border:1px solid #c5d8f8;color:#1a73e8;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;white-space:nowrap}
+.bulk-btn:hover{background:#f0f4ff}
+.bulk-btn.danger{color:#c04040;border-color:#f0c0c0}
+.bulk-btn.danger:hover{background:#fff5f5}
 .pagination-bar{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:8px 16px;border-top:1px solid #f0f2f5;flex-shrink:0;background:#fff}
 .page-btn{width:32px;height:32px;border:1px solid #e0e4ea;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#333;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .page-btn:hover{background:#f0f2f5}
 .page-btn.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
 .page-btn:disabled{opacity:0.4;cursor:not-allowed}
-.toast{position:fixed;top:16px;right:16px;z-index:9999;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none}
+.toast{position:fixed;top:16px;right:16px;z-index:9999;zoom:calc(1/1.25);color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none}
 .center-msg{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;gap:8px;color:#aaa;font-size:12px}
 .error-box{margin:12px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:8px;padding:12px;font-size:12px;color:#c04040}
 .retry-btn{margin-top:8px;background:#fff;border:1px solid #f0c0c0;color:#c04040;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit}
@@ -143,7 +148,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .qr-btn:hover{border-color:#1a73e8;color:#1a73e8}
 .reply-area-wrap{position:relative}
 /* MANAGE QUICK REPLIES MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;zoom:calc(1/1.25)}
 .modal{background:#fff;border-radius:12px;width:580px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.2)}
 .modal-header{padding:16px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between}
 .modal-title{font-size:15px;font-weight:700}
@@ -182,12 +187,12 @@ textarea.field{min-height:80px;resize:vertical}
 .attach-file{display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;cursor:pointer;text-decoration:none}
 .attach-file:hover{background:#e8f0fe;color:#1a73e8}
 /* Image lightbox */
-.ticket-preview-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center}
+.ticket-preview-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;zoom:calc(1/1.25);display:flex;align-items:center;justify-content:center}
 .ticket-preview-box{background:#fff;border-radius:12px;width:680px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden}
 .ticket-preview-header{padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:10px;flex-shrink:0;background:#fff}
 .ticket-preview-title{flex:1;font-size:14px;font-weight:700;color:#1a1a2e;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ticket-preview-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
-.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;display:flex;align-items:center;justify-content:center;cursor:zoom-out}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;zoom:calc(1/1.25);display:flex;align-items:center;justify-content:center;cursor:zoom-out}
 .lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
 
 /* CUSTOMER HISTORY */
@@ -260,9 +265,13 @@ textarea.field{min-height:80px;resize:vertical}
       <div class="sidebar-item-left">🎫 Tickets to handle</div>
       <span class="sidebar-badge" id="badge-tohandle">0</span>
     </div>
-    <div class="sidebar-item" onclick="setView('mine')">
-      <div class="sidebar-item-left">👤 My open tickets</div>
-      <span class="sidebar-badge" id="badge-mine">0</span>
+    <div class="sidebar-item" id="view-giorgio" onclick="setView('giorgio')">
+      <div class="sidebar-item-left">👤 Open Giorgio</div>
+      <span class="sidebar-badge" id="badge-giorgio">0</span>
+    </div>
+    <div class="sidebar-item" id="view-giulia" onclick="setView('giulia')">
+      <div class="sidebar-item-left">👤 Open Giulia</div>
+      <span class="sidebar-badge" id="badge-giulia">0</span>
     </div>
     <div class="sidebar-item" onclick="setView('undelivered')">
       <div class="sidebar-item-left">⚠️ Undelivered</div>
@@ -376,6 +385,16 @@ textarea.field{min-height:80px;resize:vertical}
     </div>
     <div id="active-filters-bar" style="display:none;padding:6px 20px;border-bottom:1px solid #f0f2f5;background:#f8f9fc;flex-shrink:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:36px"></div>
     <div class="ticket-count-bar" id="ticket-count-bar">Caricamento...</div>
+    <div id="bulk-bar" style="display:none;align-items:center;gap:8px;padding:8px 16px;background:#e8f0fe;border-bottom:1px solid #c5d8f8;flex-shrink:0;flex-wrap:wrap">
+      <span id="bulk-count" style="font-size:12px;font-weight:700;color:#1a73e8;margin-right:4px">0 selezionati</span>
+      <button class="bulk-btn" onclick="bulkSetStatus('solved')">✓ Solved</button>
+      <button class="bulk-btn" onclick="bulkSetStatus('open')">● Open</button>
+      <button class="bulk-btn" onclick="bulkSetStatus('pending')">⏳ Pending</button>
+      <button class="bulk-btn" onclick="bulkAssignAgent()">👤 Assegna agente</button>
+      <button class="bulk-btn danger" onclick="bulkSpam()">🚫 Spam</button>
+      <button class="bulk-btn danger" onclick="bulkTrash()">🗑 Elimina</button>
+      <button class="bulk-btn" style="margin-left:auto;color:#888;border-color:#e0e4ea" onclick="clearBulkSelection()">✕ Deseleziona</button>
+    </div>
     <div class="table-header">
       <div></div>
       <div>REQUESTER</div>
@@ -423,7 +442,7 @@ const STATUS_LABELS = {open:"Open",pending:"Pending",solved:"Solved",closed:"Clo
 const STATUS_CLASS = {open:"s-open",pending:"s-pending",solved:"s-solved",closed:"s-closed",on_hold:"s-on_hold"};
 const AVATAR_COLORS = ["#e53935","#1e88e5","#43a047","#8e24aa","#fb8c00","#00897b","#e91e63","#00acc1","#f4511e","#6d4c41","#546e7a","#3949ab"];
 
-let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="";
+let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="", selectedTicketIds=new Set();
 let agentsList=[], tagsList=[];
 
 
@@ -708,11 +727,12 @@ function removeFilter(key){
   renderTable();
 }
 
+let autoRefreshTimer=null;
+
 async function loadTickets(){
-  // Mostra spinner con messaggio avvio proxy
-  let elapsed=0;
   const rowsEl=document.getElementById("ticket-rows");
   const countEl=document.getElementById("ticket-count-bar");
+  let elapsed=0;
   rowsEl.innerHTML='<div class="center-msg"><div class="spinner"></div><span id="load-msg">Connessione al server...</span></div>';
   countEl.textContent="Caricamento...";
   const loadTimer=setInterval(()=>{
@@ -723,30 +743,210 @@ async function loadTickets(){
     else if(elapsed<15)msg.textContent="Il server si sta avviando... ("+elapsed+"s)";
     else msg.textContent="Quasi pronto... ("+elapsed+"s)";
   },1000);
+
   try{
-    let allTickets=[];
-    let page=1;
-    while(true){
-      const data=await hdFetch("/v1/tickets?pageSize=50&page="+page);
-      const batch=Array.isArray(data)?data:(data.tickets||data.data||[]);
-      if(!batch||!batch.length)break;
-      allTickets=allTickets.concat(batch);
-      const msg=document.getElementById("load-msg");
-      if(msg)msg.textContent="Caricati "+allTickets.length+" ticket...";
-      if(batch.length<50)break;
-      page++;
-      if(page>20)break;
+    // Carica open+pending subito (priorità) e tutte le pagine in parallelo
+    const openPages=[];
+    for(let p=1;p<=6;p++){
+      openPages.push(
+        hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=open&sortBy=lastMessageAt&order=desc")
+          .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
+      );
+      openPages.push(
+        hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=pending&sortBy=lastMessageAt&order=desc")
+          .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
+      );
     }
+    const openResults=await Promise.all(openPages);
     clearInterval(loadTimer);
-    tickets=allTickets;
+    const openTickets=[];
+    const seenIds=new Set();
+    for(const batch of openResults){
+      for(const t of batch){
+        const id=t.ID||t.id;
+        if(!seenIds.has(id)){seenIds.add(id);openTickets.push(t);}
+      }
+    }
+    // Ordina per lastMessageAt
+    openTickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
+    tickets=openTickets;
     currentPage=1;
     updateBadges();
     renderTable();
+    const now=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
+    countEl.textContent=(tickets.length)+" ticket aperti · aggiornato "+now;
+
+    // Carica anche solved in background per "All" e "Solved" view
+    setTimeout(async()=>{
+      try{
+        const solvedPages=await Promise.all([1,2,3].map(p=>
+          hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=solved&sortBy=lastMessageAt&order=desc")
+            .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
+        ));
+        for(const batch of solvedPages){
+          for(const t of batch){
+            const id=t.ID||t.id;
+            if(!seenIds.has(id)){seenIds.add(id);tickets.push(t);}
+          }
+        }
+        updateBadges();
+        if(currentView==="all"||currentView==="solved")renderTable();
+        const now2=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
+        countEl.textContent=(tickets.length)+" ticket · aggiornato "+now2;
+      }catch(e){console.log("Solved load error:",e);}
+    },500);
+
+    // Auto-refresh ogni 2 minuti: ricarica solo prima pagina e aggiorna nuovi
+    if(autoRefreshTimer)clearInterval(autoRefreshTimer);
+    autoRefreshTimer=setInterval(async()=>{
+      try{
+        const fresh=await hdFetch("/v1/tickets?pageSize=50&page=1&sortBy=lastMessageAt&order=desc");
+        const freshBatch=Array.isArray(fresh)?fresh:(fresh.tickets||fresh.data||[]);
+        const existing=new Set(tickets.map(t=>t.ID||t.id));
+        const newOnes=freshBatch.filter(t=>!existing.has(t.ID||t.id));
+        // Aggiorna ticket esistenti (stato potrebbe essere cambiato)
+        freshBatch.forEach(ft=>{
+          const idx=tickets.findIndex(t=>(t.ID||t.id)===(ft.ID||ft.id));
+          if(idx>=0)tickets[idx]={...tickets[idx],...ft};
+        });
+        if(newOnes.length){
+          tickets=newOnes.concat(tickets);
+          updateBadges();
+          renderTable();
+        } else {
+          updateBadges();
+        }
+        const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
+        document.getElementById("ticket-count-bar").textContent=(tickets.length)+" ticket · aggiornato "+nowR;
+      }catch(e){console.log("Auto-refresh error:",e.message);}
+    },2*60*1000);
+
   }catch(e){
     clearInterval(loadTimer);
     rowsEl.innerHTML='<div class="error-box"><strong>⚠ Errore caricamento</strong><br>'+e.message+'<br><button class="retry-btn" onclick="loadTickets()">🔄 Riprova</button></div>';
     countEl.textContent="Errore";
   }
+}
+
+
+function toggleBulkSelect(tid, cb){
+  if(cb.checked) selectedTicketIds.add(tid);
+  else selectedTicketIds.delete(tid);
+  updateBulkBar();
+}
+
+function updateBulkBar(){
+  const bar=document.getElementById("bulk-bar");
+  const cnt=document.getElementById("bulk-count");
+  if(selectedTicketIds.size>0){
+    bar.style.display="flex";
+    cnt.textContent=selectedTicketIds.size+" selezionat"+(selectedTicketIds.size===1?"o":"i");
+  } else {
+    bar.style.display="none";
+  }
+}
+
+function clearBulkSelection(){
+  selectedTicketIds.clear();
+  updateBulkBar();
+  renderTable();
+}
+
+async function bulkSetStatus(status){
+  if(!selectedTicketIds.size)return;
+  const ids=[...selectedTicketIds];
+  const label={solved:"Solved",open:"Open",pending:"Pending"}[status]||status;
+  if(!confirm("Impostare "+ids.length+" ticket come "+label+"?"))return;
+  let ok=0;
+  for(const tid of ids){
+    try{
+      await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({status})});
+      const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+      if(idx>=0)tickets[idx].status=status;
+      ok++;
+    }catch(e){console.log("Bulk status error",tid,e.message);}
+  }
+  showToast("✓ "+ok+" ticket impostati come "+label);
+  clearBulkSelection();
+  updateBadges();
+  renderTable();
+}
+
+async function bulkAssignAgent(){
+  if(!selectedTicketIds.size)return;
+  // Mostra modal selezione agente
+  const modal=document.createElement("div");
+  modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center";
+  const agentOptions=agentsList.map(a=>`<option value="${a.ID}">${a.name}</option>`).join("");
+  modal.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;min-width:280px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="font-weight:700;margin-bottom:12px">Assegna ${selectedTicketIds.size} ticket a:</div>
+    <select id="bulk-agent-sel" style="width:100%;padding:8px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:16px">
+      <option value="">Seleziona agente...</option>${agentOptions}
+    </select>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style]').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit">Annulla</button>
+      <button id="bulk-assign-ok" style="padding:8px 16px;border:none;border-radius:8px;background:#1a73e8;color:#fff;cursor:pointer;font-weight:700;font-family:inherit">Assegna</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  document.getElementById("bulk-assign-ok").onclick=async()=>{
+    const agentId=document.getElementById("bulk-agent-sel").value;
+    if(!agentId)return;
+    modal.remove();
+    const ids=[...selectedTicketIds];
+    let ok=0;
+    for(const tid of ids){
+      try{
+        await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({assignment:{agentID:agentId}})});
+        const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+        if(idx>=0){
+          const agent=agentsList.find(a=>a.ID===agentId);
+          if(agent&&tickets[idx].assignment)tickets[idx].assignment.agent=agent;
+        }
+        ok++;
+      }catch(e){console.log("Bulk assign error",tid,e.message);}
+    }
+    showToast("✓ "+ok+" ticket assegnati");
+    clearBulkSelection();
+    updateBadges();
+    renderTable();
+  };
+}
+
+async function bulkSpam(){
+  if(!selectedTicketIds.size)return;
+  if(!confirm("Segnare "+selectedTicketIds.size+" ticket come spam?"))return;
+  const ids=[...selectedTicketIds];
+  let ok=0;
+  for(const tid of ids){
+    try{
+      await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({spam:true,status:"closed"})});
+      tickets=tickets.filter(t=>(t.ID||t.id)!==tid);
+      ok++;
+    }catch(e){console.log("Bulk spam error",tid,e.message);}
+  }
+  showToast("✓ "+ok+" ticket segnati come spam");
+  clearBulkSelection();
+  updateBadges();
+  renderTable();
+}
+
+async function bulkTrash(){
+  if(!selectedTicketIds.size)return;
+  if(!confirm("Eliminare "+selectedTicketIds.size+" ticket? Questa azione non può essere annullata."))return;
+  const ids=[...selectedTicketIds];
+  let ok=0;
+  for(const tid of ids){
+    try{
+      await hdFetch("/v1/tickets/"+tid,{method:"DELETE"});
+      tickets=tickets.filter(t=>(t.ID||t.id)!==tid);
+      ok++;
+    }catch(e){console.log("Bulk delete error",tid,e.message);}
+  }
+  showToast("✓ "+ok+" ticket eliminati");
+  clearBulkSelection();
+  updateBadges();
+  renderTable();
 }
 
 function updateBadges(){
@@ -756,9 +956,13 @@ function updateBadges(){
   document.getElementById("badge-pending").textContent=c.pending;
   document.getElementById("badge-solved").textContent=c.solved;
   document.getElementById("badge-onhold").textContent=c.on_hold;
-  const toHandle=tickets.filter(t=>t.status==="open"||t.status==="pending").length;
+  const toHandle=tickets.filter(t=>{const agent=t.assignment&&t.assignment.agent&&t.assignment.agent.ID;return (t.status==="open"||t.status==="pending")&&!agent;}).length;
   document.getElementById("badge-tohandle").textContent=toHandle;
-  document.getElementById("badge-mine").textContent=c.open;
+  document.getElementById("badge-mine") && (document.getElementById("badge-mine").textContent=c.open);
+  const giorgioCount=tickets.filter(t=>{const a=t.assignment&&t.assignment.agent;return t.status==="open"&&a&&a.ID&&a.name&&a.name.toLowerCase().includes("giorgio");}).length;
+  const giuliaCount=tickets.filter(t=>{const a=t.assignment&&t.assignment.agent;return t.status==="open"&&a&&a.ID&&a.name&&a.name.toLowerCase().includes("giulia");}).length;
+  const badgeG=document.getElementById("badge-giorgio");if(badgeG)badgeG.textContent=giorgioCount;
+  const badgeGi=document.getElementById("badge-giulia");if(badgeGi)badgeGi.textContent=giuliaCount;
   // keyword badges (approximate)
   function countKw(kw){return tickets.filter(t=>(t.subject||"").toLowerCase().includes(kw)).length}
   document.getElementById("badge-annullamento").textContent=countKw("annull");
@@ -771,8 +975,10 @@ function updateBadges(){
 
 function viewFilter(t){
   if(currentView==="all")return true;
-  if(currentView==="tohandle")return t.status==="open"||t.status==="pending";
+  if(currentView==="tohandle"){const agent=t.assignment&&t.assignment.agent&&t.assignment.agent.ID;return (t.status==="open"||t.status==="pending")&&!agent;}
   if(currentView==="mine")return t.status==="open";
+  if(currentView==="giorgio"){const agent=t.assignment&&t.assignment.agent;return t.status==="open"&&agent&&agent.ID&&agent.name&&agent.name.toLowerCase().includes("giorgio");}
+  if(currentView==="giulia"){const agent=t.assignment&&t.assignment.agent;return t.status==="open"&&agent&&agent.ID&&agent.name&&agent.name.toLowerCase().includes("giulia");}
   if(currentView==="undelivered")return false;
   if(currentView==="open")return t.status==="open";
   if(currentView==="pending")return t.status==="pending";
@@ -800,7 +1006,7 @@ function setView(view){
   document.querySelectorAll(".sidebar-item").forEach(el=>el.classList.remove("active"));
   const el=document.getElementById("view-"+view);
   if(el)el.classList.add("active");
-  const titles={all:"All recent tickets",tohandle:"Tickets to handle",mine:"My open tickets",open:"Open",pending:"Pending",solved:"Solved",on_hold:"On hold",annullamento:"ANNULLAMENTO",doveordine:"DOV'E' ORDINE",garanzia:"GARANZIA A Z",giacenza:"GIACENZA BRT",resi:"RESI MAGAZZINO",richiestabrt:"RICHIESTA BRT",rispedire:"RISPEDIRE E RITIRARE"};
+  const titles={all:"All recent tickets",tohandle:"Tickets to handle",mine:"My open tickets",giorgio:"Open Giorgio",giulia:"Open Giulia",open:"Open",pending:"Pending",solved:"Solved",on_hold:"On hold",annullamento:"ANNULLAMENTO",doveordine:"DOV'E' ORDINE",garanzia:"GARANZIA A Z",giacenza:"GIACENZA BRT",resi:"RESI MAGAZZINO",richiestabrt:"RICHIESTA BRT",rispedire:"RISPEDIRE E RITIRARE"};
   document.getElementById("panel-title").textContent=titles[view]||view;
   renderTable();
 }
@@ -874,7 +1080,7 @@ function renderTable(){
     const sc=STATUS_CLASS[t.status]||"s-closed";
     const sl=STATUS_LABELS[t.status]||t.status;
     return `<div class="ticket-row${isActive?" active":""}" onclick="selectTicket('${tid}')">
-      <div class="tr-check"><input type="checkbox" onclick="event.stopPropagation()"/></div>
+      <div class="tr-check"><input type="checkbox" ${selectedTicketIds.has(tid)?"checked":""} onclick="event.stopPropagation();toggleBulkSelect('${tid}',this)"/></div>
       <div class="tr-requester">
         <div class="tr-avatar" style="background:${avatarColor(name)}">${initials(name)}</div>
         <div class="tr-req-info">
@@ -1114,18 +1320,38 @@ async function selectTicket(tid){
   }));
 
   // Per Shopify search: usa solo il primo messaggio del ticket principale
-  const allMsgs=ticketsToShow.map(tk=>(tk.events&&tk.events[0]&&tk.events[0].message&&tk.events[0].message.text)||"").join(" ");
+  const allMsgs=ticketsToShow.map(tk=>(tk.events||[]).map(e=>e.message&&(e.message.text||"")||"").join(" ")).join(" ");
   // Per AI: costruisci storico completo della conversazione
   const fullThread=ticketsToShow.map(tk=>{
     const evs=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
     return evs.map(ev=>{
       const isAgent=ev.author&&ev.author.type==="agent";
       const role=isAgent?"AGENTE YESPRESSO":"CLIENTE";
-      const txt=(ev.message.text||ev.message.richTextHtml||"").substring(0,400).trim();
+      const txt=(ev.message.text||ev.message.richTextHtml||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").substring(0,1000).trim();
       return role+": "+txt;
     }).join("\n");
   }).filter(Boolean).join("\n---\n");
   // Mostra box AI solo per ticket open/pending — non per solved/closed
+  // Aggiungi link A-Z se ticket da garanzia Amazon A-Z
+  if(email&&email.includes("atoz-guarantee")){
+    const oArea=document.getElementById("order-info-area");
+    if(oArea){
+      const amzOrderMatch=(t.subject||"").match(/(\d{3}-\d{7}-\d{7})/);
+      const atozUrl='https://sellercentral.amazon.it/gp/guarantee-claims/list.html';
+      const scUrl=amzOrderMatch?'https://sellercentral.amazon.it/orders-v3/order/'+amzOrderMatch[1]:null;
+      let html='<div style="background:#f5f0ff;border:1px solid #d4b8ff;border-radius:8px;padding:12px 14px;font-size:13px;line-height:2">';
+      html+='<strong>🛡️ Garanzia A-Z</strong><br>';
+      if(scUrl)html+='🔗 <a href="'+scUrl+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi Ordine su Amazon ↗</a><br>';
+      html+='<a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📋 Gestisci Reclamo A-Z ↗</a>';
+      if(amzOrderMatch){
+        const refundUrl='https://sellercentral.amazon.it/gp/orders-v2/refund?orderID='+amzOrderMatch[1];
+        html+='<br>💶 <a href="'+refundUrl+'" target="_blank" style="color:#c0392b;font-weight:600;text-decoration:none">Rimborsa su Amazon ↗</a>';
+      }
+      html+='</div>';
+      oArea.innerHTML=html;
+    }
+  }
+
   const isSolved=mainTicket.status==="solved"||mainTicket.status==="closed";
   if(isSolved){
     const aiReplyBox=document.querySelector(".ai-reply-box");
@@ -1133,7 +1359,9 @@ async function selectTicket(tid){
   } else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
-      const order=await fetchShopifyOrder(t.subject,email||"",name||"");
+      const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+      const brtFullBody=isBrtMsg2?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
+      const order=await fetchShopifyOrder(t.subject+(brtFullBody?" "+brtFullBody:""),email||"",name||"");
       const oArea=document.getElementById("order-info-area");
       if(order&&oArea){
         const f=order.fulfillments&&order.fulfillments[0];
@@ -1153,7 +1381,8 @@ async function selectTicket(tid){
           if(f.created_at)html2+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
-        if(order.customer&&order.customer.id){const creditUrl2='https://creditsyard.com/dashboard/customers/'+order.customer.id+'?order_id='+order.id;html2+='<br>🎁 <a href="'+creditUrl2+'" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';}
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
+        if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const creditUrl2='https://creditsyard.com/dashboard/customers/'+order.customer.id+'?order_id='+order.id;html2+='<br>🎁 <a href="'+creditUrl2+'" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';}
         const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -1184,6 +1413,15 @@ async function selectTicket(tid){
         '<div style="font-size:11px;font-weight:700;color:#cc4400;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">📋 Risposte rapide Temu — clicca per copiare</div>'+
         '<div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px"></div>'+
         '</div>'+
+        '<div style="border-top:1px solid #ffe0cc;padding-top:14px;margin-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:10px">'+
+          '<select id="temu-status-select" style="padding:7px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:#fff">'+
+            '<option value="">Non cambiare stato</option>'+
+            '<option value="solved" selected>Solved</option>'+
+            '<option value="pending">Pending</option>'+
+            '<option value="open">Open</option>'+
+          '</select>'+
+          '<button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🚀 Submit</button>'+
+        '</div>'+
       '</div>';
     // Popola bottoni risposte rapide Temu
     setTimeout(()=>{
@@ -1198,12 +1436,64 @@ async function selectTicket(tid){
       }
     },100);
   } else {
-    generateReply(allMsgs, email, fullThread);
+    // Carica prima gli allegati IMAP, poi genera risposta AI
+    const skipAttDomains=["donotreply@amazon","marketplace.amazon","orders.temu","tiktok","vasnoreply","brt.it"];
+    const shouldLoadAtt=email&&!skipAttDomains.some(s=>email.includes(s));
+    if(shouldLoadAtt){
+      // Carica allegati e poi genera risposta
+      loadImapAttachments(email, t.subject||"", tid2).then(()=>{
+        generateReply(allMsgs, email, fullThread);
+      });
+    } else {
+      generateReply(allMsgs, email, fullThread);
+    }
   }
   loadCustomerHistory(email, name, tid2);
-  setTimeout(()=>{if(email)loadLastCustomerOrder(email);}, 800);
-  // Carica allegati da IMAP
-  setTimeout(()=>loadImapAttachments(email, t.subject||"", tid2), 1200);
+  // Per ticket BRT: cerca ordine usando il body completo dei messaggi
+  const isBrtTicketSelect=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+  if(isBrtTicketSelect){
+    setTimeout(async()=>{
+      const oArea=document.getElementById("order-info-area");
+      if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">🔍 Ricerca ordine BRT...</div>';
+      const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+      const brtSearchText=(t.subject||"")+" "+brtFullText;
+      const brtOrder=await fetchShopifyOrder(brtSearchText,email||"",name||"");
+      if(brtOrder&&oArea){
+        // Popola order-info-area direttamente come per gli altri ticket
+        const f=brtOrder.fulfillments&&brtOrder.fulfillments[0];
+        const sS={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",failure:"❌ Problema"};
+        const fS={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
+        const displayStatus=(f&&f.shipment_status)?(sS[f.shipment_status]||("📦 "+f.shipment_status)):(fS[brtOrder.fulfillment_status]||"⏳ Non spedito");
+        const shopifyUrl="https://40f758-3.myshopify.com/admin/orders/"+brtOrder.id;
+        let html='<strong>🛍️ <a href="'+shopifyUrl+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(brtOrder.name||("#"+brtOrder.order_number))+' ↗</a></strong>';
+        html+='<br>'+displayStatus;
+        if(f){
+          const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+          if(tn){const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;html+='<br>📦 BRT: <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';}
+          if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
+        }
+        // Link modifica indirizzo se non spedito
+        const notShipped2=!brtOrder.fulfillment_status||brtOrder.fulfillment_status==="unfulfilled";
+        if(notShipped2){const cloudUrl2='https://yespresso.cloud/orders-transmission?status=to_transmit&searchString=%23'+(brtOrder.order_number||brtOrder.name.replace("#",""));html+='<br>📍 <a href="'+cloudUrl2+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Modifica indirizzo ↗</a>';}
+        // Detect source
+        const brtSource=detectOrderSource(brtOrder);
+        const amzBrt=(brtOrder.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
+        if(amzBrt){html+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3/order/'+amzBrt.value+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';}
+        const temuBrt=(brtOrder.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id"].includes(a.name));
+        if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
+        if(brtSource==="sito"){
+          html+='<br>📍 <a href="https://yespresso.cloud/orders-transmission?status=to_transmit&searchString=%23'+(brtOrder.order_number||"")+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Modifica indirizzo ↗</a>';
+          html+='<br>🎁 <a href="https://creditsyard.com/dashboard" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';
+        }
+        oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+      } else if(oArea){
+        oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
+      }
+    },500);
+  } else {
+    setTimeout(()=>{if(email)loadLastCustomerOrder(email);}, 800);
+  }
+  // Allegati IMAP già caricati sopra per ticket normali
   // Popola tags
   setTimeout(()=>{
     const tagsEl=document.getElementById("ticket-tags-area");
@@ -1378,6 +1668,29 @@ function renderMessageHtml(text, attachments){
   return bodyHtml+attachHtml;
 }
 
+
+async function submitTemuTicket(){
+  const statusSel=document.getElementById("temu-status-select");
+  const newStatus=statusSel?statusSel.value:"";
+  if(!selectedTicket)return;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  try{
+    if(newStatus){
+      await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({status:newStatus})});
+      selectedTicket.status=newStatus;
+      const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+      if(idx>=0)tickets[idx].status=newStatus;
+    }
+    sentTickets.add(tid);
+    showToast("✓ Ticket "+( newStatus?"impostato come "+newStatus:"aggiornato"));
+    closeDetail();
+    updateBadges();
+    renderTable();
+  }catch(e){
+    showToast("Errore: "+e.message,"error");
+  }
+}
+
 function copyTemuQR(id){
   const text=window._temuQR&&window._temuQR[id];
   if(!text)return;
@@ -1391,8 +1704,14 @@ function copyTemuQR(id){
   });
 }
 
-function openTicketPreview(tid){
-  const t=tickets.find(tk=>(tk.ID||tk.id)===tid);
+async function openTicketPreview(tid){
+  // Cerca prima in cache, altrimenti carica dall'API
+  let t=tickets.find(tk=>(tk.ID||tk.id)===tid);
+  if(!t){
+    try{
+      t=await hdFetch("/v1/tickets/"+tid);
+    }catch(e){console.log("Preview load error:",e.message);}
+  }
   if(!t)return;
   const sc=STATUS_CLASS[t.status]||"s-closed";
   const sl=STATUS_LABELS[t.status]||t.status;
@@ -1445,6 +1764,15 @@ function openTicketPreview(tid){
   </div>`;
   document.body.appendChild(modal);
   modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+}
+
+function openPdfPreview(dataUrl){
+  const modal=document.createElement("div");
+  modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out";
+  modal.innerHTML='<iframe src="'+dataUrl+'" style="width:90vw;height:85vh;border:none;border-radius:8px"></iframe>'+
+    '<button onclick="this.parentNode.remove()" style="margin-top:10px;background:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px">✕ Chiudi</button>';
+  modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+  document.body.appendChild(modal);
 }
 
 function openLightbox(src){
@@ -1503,7 +1831,8 @@ function closeDetail(){
   document.getElementById("detail-view").classList.remove("open");
   document.getElementById("ticket-panel").style.display="flex";
   document.querySelector(".sidebar").style.display="flex";
-  renderTable();
+  // Ricarica tutto da zero per avere dati freschi
+  loadTickets();
 }
 
 async function shopifyGet(path){
@@ -1533,6 +1862,24 @@ function findInNoteAttributes(orders,keys,value){
     if(withAttrs.length)console.log("→ Note attrs sample:",withAttrs.map(o=>o.name+": "+JSON.stringify(o.note_attributes)));
   }
   return found||null;
+}
+
+function detectOrderSource(order){
+  if(!order)return "sito";
+  const attrs=order.note_attributes||[];
+  if(attrs.find(a=>a.name==="Amazon Order Id"))return "amazon";
+  if(attrs.find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id"].includes(a.name)))return "temu";
+  if(attrs.find(a=>a.name&&a.name.toLowerCase().includes("tiktok")))return "tiktok";
+  // Controlla anche tags e source_name
+  const tags=(order.tags||"").toLowerCase();
+  if(tags.includes("amazon"))return "amazon";
+  if(tags.includes("temu"))return "temu";
+  if(tags.includes("tiktok"))return "tiktok";
+  const src=(order.source_name||"").toLowerCase();
+  if(src.includes("amazon"))return "amazon";
+  if(src.includes("temu"))return "temu";
+  if(src.includes("tiktok"))return "tiktok";
+  return "sito";
 }
 
 async function fetchShopifyOrder(message,email,requesterName){
@@ -1645,6 +1992,60 @@ async function fetchShopifyOrder(message,email,requesterName){
       }
     }
 
+    // 4. Numero spedizione BRT — rimuovi prefisso 26 e cerca tracking su Shopify
+    const isBrtTicket=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt")||(email||"").includes("servizioclienti@brt");
+    if(isBrtTicket){
+      // 4a. Giacenza BRT: cerca "Riferimento ordine: XXXXXX XXXXXXXX" nel testo
+      // Cerca "Riferimenti mittente : 108328000 2024181804" oppure "Riferimento ordine: XXX YYY"
+      // Cerca "Riferimenti mittente : 108328000 2024181804"
+      const giacenzaMatch=message.match(/[Rr]iferiment[io]\s+(?:mittente|ordine)\s*:?\s*([\d]+)\s+([\d]+)/);
+      if(giacenzaMatch){
+        const brtRef1=giacenzaMatch[1];
+        const brtRef2=giacenzaMatch[2];
+        console.log("→ BRT Giacenza - Riferimento mittente:",brtRef1,brtRef2);
+        for(const ref of [brtRef2,brtRef1]){
+          const dRef=await shopifyGet("orders.json?name=%23"+ref+"&status=any");
+          if(dRef&&dRef.orders&&dRef.orders.length){console.log("✅ BRT Giacenza trovato via #"+ref);return dRef.orders[0];}
+          const dRef2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(ref));
+          if(dRef2&&dRef2.orders&&dRef2.orders.length){console.log("✅ BRT Giacenza trovato via query "+ref);return dRef2.orders[0];}
+        }
+      }
+      // Cerca anche numero spedizione nel formato "spedizione 2026 179 X XXXXXX" -> toglie 26 dal secondo gruppo
+      const spedMatch=message.match(/spedizione\s+2026\s+(\d+)\s+(\d+)\s+(\d+)/i);
+      if(spedMatch){
+        const brtNum="26"+spedMatch[1]+spedMatch[3];
+        const brtShort=spedMatch[1]+spedMatch[3];
+        console.log("→ BRT spedizione num:",brtNum,brtShort);
+        const dSped=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtShort));
+        if(dSped&&dSped.orders&&dSped.orders.length){console.log("✅ BRT trovato via spedizione");return dSped.orders[0];}
+      }
+      // Cerca numeri BRT nel messaggio (es. 26179010735604 -> 179010735604)
+      const brtMatches=[...message.matchAll(/\b(26(\d{10,12}))\b/g)];
+      for(const m of brtMatches){
+        const brtFull=m[1];   // es. 26179010735604
+        const brtShort=m[2];  // es. 179010735604
+        console.log("→ BRT tracking trovato:",brtFull,"-> cercando",brtShort);
+        // Cerca per tracking number su Shopify
+        const dBrt=await shopifyGet("orders.json?status=any&limit=250");
+        const allBrt=(dBrt&&dBrt.orders)||[];
+        const foundBrt=allBrt.find(o=>{
+          const fulf=o.fulfillments&&o.fulfillments[0];
+          if(!fulf)return false;
+          const tn=(fulf.tracking_number||"")+(fulf.tracking_numbers?fulf.tracking_numbers.join(","):"");
+          return tn.includes(brtShort)||tn.includes(brtFull);
+        });
+        if(foundBrt){
+          console.log("✅ Trovato via BRT tracking:",foundBrt.name,"source:",detectOrderSource(foundBrt));
+          return foundBrt;
+        }
+        // Prova anche ricerca full-text
+        const dBrt2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtShort));
+        if(dBrt2&&dBrt2.orders&&dBrt2.orders.length){
+          console.log("✅ Trovato via BRT full-text");return dBrt2.orders[0];
+        }
+      }
+    }
+
     // 4. Email cliente (skip bounce e email marketplace)
     const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply"];
     const emailClean=email&&!skipDomains.some(s=>email.includes(s))?email:null;
@@ -1710,7 +2111,7 @@ function formatOrderInfo(order){
 }
 
 
-async function loadLastCustomerOrder(email, currentOrderId){
+async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
   const loArea=document.getElementById("last-order-area");
   if(!loArea||!email)return;
   const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply","donotreply"];
@@ -1750,9 +2151,33 @@ async function generateReply(lastMsg,email,fullThread){
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
 
+  // Controllo numero ordine Amazon mancante
+  const isAmazonCustomer=(email||"").includes("marketplace.amazon");
+  if(isAmazonCustomer){
+    const amazonOrderPattern=/\d{3}-\d{7}-\d{7}/;
+    const fullText=(t.subject||"")+" "+(fullThread||"")+" "+(lastMsg||"");
+    if(!amazonOrderPattern.test(fullText)){
+      // Nessun numero ordine trovato — mostra box risposta con testo precompilato
+      if(genBox){
+        genBox.style.display="block";
+        genBox.innerHTML='<div style="color:#e67e22;font-size:12px;font-weight:600;padding:4px 0">⚠️ Numero ordine Amazon non trovato nel thread</div>';
+      }
+      // Mostra action-area e precompila risposta
+      setTimeout(()=>{
+        const aa=document.getElementById("action-area");
+        if(aa)aa.style.display="block";
+        const rt=document.getElementById("reply-text");
+        if(rt)rt.value="Gentile cliente,\nper poterla assistere al meglio avremmo bisogno del suo numero ordine Amazon (formato: xxx-xxxxxxx-xxxxxxx).\nLa ringraziamo per la collaborazione.\nCordiali saluti,\nIl Team Yespresso";
+      },300);
+      return;
+    }
+  }
+
   const subject=t.subject||"";
-  // Search in subject first (more reliable than message body), then message
-  const searchText=subject+" "+(lastMsg||"");
+  // Per ticket BRT includi tutto il body del primo messaggio per trovare "Riferimenti mittente"
+  const isBrtMsg=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+  const fullBodyText=isBrtMsg?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
+  const searchText=subject+" "+(lastMsg||"")+(fullBodyText?" "+fullBodyText:"");
   const requesterName=(t.requester&&t.requester.name)||"";
   console.log("🔍 searchText preview:", searchText.substring(0,200));
   const order=await fetchShopifyOrder(searchText,email||"",requesterName);
@@ -1774,6 +2199,12 @@ async function generateReply(lastMsg,email,fullThread){
     const temuAttr=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
 
     html+='<br>'+displayStatus;
+    // Link modifica indirizzo su Yespresso Cloud — solo se ordine non ancora spedito
+    const notShipped=!order.fulfillment_status||order.fulfillment_status==="unfulfilled"||order.fulfillment_status==="partial";
+    if(notShipped){
+      const cloudUrl='https://yespresso.cloud/orders-transmission?status=to_transmit&searchString=%23'+(order.order_number||order.name.replace("#",""));
+      html+='<br>📍 <a href="'+cloudUrl+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Modifica indirizzo ↗</a>';
+    }
     if(f){
       const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
       const tc=f.tracking_company||"BRT";
@@ -1789,44 +2220,140 @@ async function generateReply(lastMsg,email,fullThread){
       }
       if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
     }
-    if(amz){
-      const scUrl='https://sellercentral.amazon.it/orders-v3/order/'+amz.value;
-      const refundUrl='https://sellercentral.amazon.it/gp/orders-v2/refund?orderID='+amz.value;
+    const fromEmail2=(t.requester&&t.requester.email)||"";
+    const hideActions=fromEmail2.includes("donotreply@amazon")&&(t.subject||"").toLowerCase().includes("annullamento");
+    const isMarketplaceAmazon=fromEmail2.includes("marketplace.amazon");
+    const isBrtEmail=fromEmail2.includes("brt.it")||fromEmail2.includes("vasnoreply@brt")||fromEmail2.includes("servizioclienti@brt");
+    const orderSource=(isBrtEmail&&order)?detectOrderSource(order):"sito";
+    const effectiveIsAmazon=isMarketplaceAmazon||(isBrtEmail&&orderSource==="amazon");
+    const effectiveIsTemu=fromEmail2.includes("temu")||(isBrtEmail&&orderSource==="temu");
+    const effectiveIsTiktok=fromEmail2.includes("tiktok")||(isBrtEmail&&orderSource==="tiktok");
+    if(amz&&amz.value||(isBrtEmail&&orderSource==="amazon")){
+      const amzOrderId=amz?amz.value:((order.note_attributes||[]).find(a=>a.name==="Amazon Order Id")||{}).value||"";
+      const scUrl='https://sellercentral.amazon.it/orders-v3/order/'+amzOrderId;
+      const refundUrl='https://sellercentral.amazon.it/gp/orders-v2/refund?orderID='+amzOrderId;
+      const cancelUrl='https://sellercentral.amazon.it/orders-v3/order/'+amzOrderId+'/cancel';
+      const atozUrl='https://sellercentral.amazon.it/gp/guarantee-claims/list.html';
+      const fromEmail=(t.requester&&t.requester.email)||"";
+      const isAnnullamentoAmazon=(fromEmail.includes("donotreply@amazon")||(isBrtEmail&&orderSource==="amazon"))&&(t.subject||"").toLowerCase().includes("annullamento");
       html+='<br>🔗 <a href="'+scUrl+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';
-      html+='<br>💶 <a href="'+refundUrl+'" target="_blank" style="color:#c0392b;font-weight:600;text-decoration:none">Rimborsa su Amazon ↗</a>';
+      if(isAnnullamentoAmazon){
+        html+='<br><span style="background:#fff3e0;border:2px solid #e67e22;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">⚠️ RICHIESTA ANNULLAMENTO</span>';
+        html+='<br>❌ <a href="'+cancelUrl+'" target="_blank" style="color:#e67e22;font-weight:700;text-decoration:none;font-size:13px">Annulla Ordine su Amazon ↗</a>';
+      } else {
+        html+='<br>💶 <a href="'+refundUrl+'" target="_blank" style="color:#c0392b;font-weight:600;text-decoration:none">Rimborsa su Amazon ↗</a>';
+        html+='<br>❌ <a href="'+cancelUrl+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Annulla Ordine ↗</a>';
+        html+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
+      }
     }
     // Link Temu Seller
     if(temuAttr){
       const temuUrl='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr.value);
       html+='<br>🟠 <a href="'+temuUrl+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';
     }
-    // Crea Credito (solo se cliente presente)
-    if(order.customer&&order.customer.id){
-      const creditUrl='https://creditsyard.com/dashboard/customers/'+order.customer.id+'?order_id='+order.id;
-      html+='<br>🎁 <a href="'+creditUrl+'" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';
+    // Crea Credito e Duplica — nascosti per ticket annullamento Amazon
+    if(!hideActions){
+      if(order.customer&&order.customer.id&&!effectiveIsAmazon&&!effectiveIsTemu&&!effectiveIsTiktok){
+        const creditUrl='https://creditsyard.com/dashboard/customers/'+order.customer.id+'?order_id='+order.id;
+        html+='<br>🎁 <a href="'+creditUrl+'" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';
+      }
+      const dupBtnId='dup_'+order.id;
+      window._dupOrders=window._dupOrders||{};
+      window._dupOrders[dupBtnId]=order.id;
+      html+='<br>📋 <span id="'+dupBtnId+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
+      // Annulla ordine Shopify — solo per ticket NON marketplace
+      const fromEmail3=(t.requester&&t.requester.email)||"";
+      const isMarketplace=fromEmail3.includes("amazon")||fromEmail3.includes("temu")||fromEmail3.includes("tiktok")||fromEmail3.includes("seller-")||effectiveIsAmazon||effectiveIsTemu||effectiveIsTiktok;
+      if(!isMarketplace){
+        window._cancelOrders=window._cancelOrders||{};
+        const cancelShopifyId='cshop_'+order.id;
+        window._cancelOrders[cancelShopifyId]=order.id;
+        html+='<br>🚫 <span id="'+cancelShopifyId+'" onclick="cancelShopifyOrder(window._cancelOrders[this.id])" style="color:#c0392b;font-weight:600;cursor:pointer">Annulla Ordine</span>';
+      }
     }
-    // Duplica ordine via API — usa window map per evitare problemi con attributi HTML
-    const dupBtnId='dup_'+order.id;
-    window._dupOrders=window._dupOrders||{};
-    window._dupOrders[dupBtnId]=order.id;
-    html+='<br>📋 <span id="'+dupBtnId+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
     if(oArea)oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
   loadLastCustomerOrder(email, order.id);
   } else {
-    if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';
+    // Anche senza ordine Shopify, mostra link Amazon se ticket da marketplace.amazon
+    const isAmazonTicket=email&&(email.includes("marketplace.amazon")||email.includes("donotreply@amazon")||email.includes("atoz-guarantee"));
+    if(isAmazonTicket){
+      // Estrai Amazon order ID dal testo
+      const amzOrderMatch=searchText.match(/(\d{3}-\d{7}-\d{7})/);
+      const amzOrderId=amzOrderMatch?amzOrderMatch[1]:"";
+      let amzHtml='';
+      if(amzOrderId){
+        const scUrl='https://sellercentral.amazon.it/orders-v3/order/'+amzOrderId;
+        const refundUrl='https://sellercentral.amazon.it/gp/orders-v2/refund?orderID='+amzOrderId;
+        const cancelUrl='https://sellercentral.amazon.it/orders-v3/order/'+amzOrderId+'/cancel';
+        const atozUrl='https://sellercentral.amazon.it/gp/guarantee-claims/list.html';
+        amzHtml='<strong>🟡 Amazon Ordine '+amzOrderId+'</strong>';
+        amzHtml+='<br>🔗 <a href="'+scUrl+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';
+        amzHtml+='<br>💶 <a href="'+refundUrl+'" target="_blank" style="color:#c0392b;font-weight:600;text-decoration:none">Rimborsa su Amazon ↗</a>';
+        amzHtml+='<br>❌ <a href="'+cancelUrl+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Annulla Ordine ↗</a>';
+        amzHtml+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
+      } else {
+        const atozUrl='https://sellercentral.amazon.it/gp/guarantee-claims/list.html';
+        amzHtml='<strong>🟡 Ticket Amazon</strong>';
+        amzHtml+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Seller Central ↗</a>';
+        amzHtml+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
+      }
+      if(oArea)oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';
+    } else {
+      if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';
+    }
   // Carica comunque ultimo ordine cliente per email
   loadLastCustomerOrder(email);
   }
 
   const otherOpen=window._customerOpenTickets||[];
   const otherOpenStr=otherOpen.length?("\n\nALTRI TICKET APERTI DELLO STESSO CLIENTE:\n"+otherOpen.map(o=>"- "+o.subject+(o.msg?" | "+o.msg:"")).join("\n")):"";
-  const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+(orderInfo?"\n\nDati ordine: "+orderInfo:"")+"\n\nSTORICO CONVERSAZIONE (dal più vecchio al più recente):\n"+fullThread+otherOpenStr+"\n\nRispondi all'ultimo messaggio del cliente tenendo conto dell'intera conversazione.";
+  // Includi anche ticket recenti dello stesso cliente (ultimi 3 risolti) per contesto
+  const recentCustomerTickets=tickets.filter(tk=>{
+    const tkEmail=(tk.requester&&tk.requester.email)||"";
+    const curEmail=email||"";
+    return tkEmail&&curEmail&&tkEmail===curEmail&&(tk.ID||tk.id)!==(t.ID||t.id);
+  }).slice(0,3);
+  const recentStr=recentCustomerTickets.length?("\n\nTICKET RECENTI DELLO STESSO CLIENTE (per contesto):\n"+recentCustomerTickets.map(tk=>{
+    const lastEvs=(tk.events||[]).filter(e=>e.message&&e.message.text).slice(-3);
+    const msgs=lastEvs.map(ev=>{
+      const role=(ev.author&&ev.author.type==="agent")?"AGENTE":"CLIENTE";
+      return role+": "+(ev.message.text||"").substring(0,300).trim();
+    }).join("\n");
+    return "=== Ticket: "+tk.subject+" ("+tk.status+") ===\n"+msgs;
+  }).join("\n")):"";
+  const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+(orderInfo?"\n\nDati ordine: "+orderInfo:"")+"\n\nSTORICO CONVERSAZIONE (dal più vecchio al più recente):\n"+fullThread+otherOpenStr+recentStr+"\n\nRispondi all'ultimo messaggio del cliente tenendo conto dell'INTERA conversazione sopra. Se il cliente ha gia fornito informazioni nei messaggi precedenti (es. numero ordine, descrizione problema, quantita prodotti), NON chiederle di nuovo ma usa quelle informazioni per rispondere.";
   try{
     const res=await fetch(PROXY+"/anthropic/v1/messages",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,
-        system:"Sei l\'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell\'ordine, usali per dare una risposta precisa con i dettagli reali. Se c\'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l\'azione da fare. REGOLE PRODOTTI DANNEGGIATI: 1) Se il cliente si lamenta di capsule danneggiate e chiede rimborso, NON offrire rimborso subito. Chiedi prima foto delle capsule danneggiate, foto del pacco, quantita capsule danneggiate e se sono utilizzabili. 2) Se il cliente segnala solo pacco esterno ammaccato ma prodotto integro, rispondi con scuse, spiega che il cartone e solo protezione esterna, comunica che segnalerai al corriere e alla logistica. REGOLE EROGAZIONE CAPSULE: 5) Problemi con capsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo. 6a) Problemi con capsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore). 6b) Problemi con capsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula. 6c) Problemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video. NON offrire rimborso prima di avere queste informazioni. REGOLE PACCO NON RICEVUTO: 3) Se il cliente dice di non aver ricevuto il pacco ma il tracking risulta consegnato, e questa e la sua prima richiesta: comunica che il pacco risulta consegnato, includi numero tracking e link BRT, non offrire rimborso. 4) Se il cliente insiste dopo la nostra risposta sulla consegna: ribadisci con fermezza che il pacco risulta consegnato e non possiamo procedere con rimborso. REGOLE TICKET AMAZON: Quando il ticket proviene da Amazon (donotreply@amazon, marketplace.amazon, atoz-guarantee), NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. NON includere email esterne. Usa solo riferimenti Amazon. Per il tracking invita il cliente a controllare dal suo account Amazon."+buildSolvedContext(),
-        messages:[{role:"user",content:"Genera una risposta professionale per questo ticket:\n\n"+prompt}]})
+        system:"Sei l\'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell\'ordine, usali per dare una risposta precisa con i dettagli reali. Se c\'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l\'azione da fare. REGOLE PRODOTTI DANNEGGIATI: 1) Se il cliente si lamenta di capsule danneggiate e chiede rimborso, NON offrire rimborso subito. Chiedi prima foto delle capsule danneggiate, foto del pacco, quantita capsule danneggiate e se sono utilizzabili. 2) Se il cliente segnala solo pacco esterno ammaccato ma prodotto integro, rispondi con scuse, spiega che il cartone e solo protezione esterna, comunica che segnalerai al corriere e alla logistica. REGOLE EROGAZIONE CAPSULE: 5) Problemi con capsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo. 6a) Problemi con capsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore). 6b) Problemi con capsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula. 6c) Problemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video. NON offrire rimborso prima di avere queste informazioni. REGOLE PACCO NON RICEVUTO: 3) Se il cliente dice di non aver ricevuto il pacco ma il tracking risulta consegnato, e questa e la sua prima richiesta: comunica che il pacco risulta consegnato, includi numero tracking e link BRT, non offrire rimborso. 4) Se il cliente insiste dopo la nostra risposta sulla consegna: ribadisci con fermezza che il pacco risulta consegnato e non possiamo procedere con rimborso. REGOLE TICKET AMAZON: Quando il ticket proviene da Amazon (donotreply@amazon, marketplace.amazon, atoz-guarantee), NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. NON includere email esterne. Usa solo riferimenti Amazon. Per il tracking invita il cliente a controllare dal suo account Amazon. REGOLA NUMERO ORDINE AMAZON: Quando il messaggio proviene da un cliente Amazon (email contiene @marketplace.amazon.it) e in NESSUN messaggio del thread e presente un numero ordine Amazon (formato es. 402-1234567-1234567 oppure xxx-xxxxxxx-xxxxxxx con trattini), DEVI come PRIMA risposta chiedere al cliente il suo numero ordine Amazon. Non procedere con rimborsi, sostituzioni, soluzioni tecniche o qualsiasi altra azione senza aver verificato la presenza del numero ordine in tutto il thread. Questa regola NON si applica alle notifiche automatiche Amazon (donotreply@amazon, atoz-guarantee). REGOLE ACQUISTO ERRATO: Se il cliente dichiara di aver acquistato capsule sbagliate o non compatibili con la sua macchina, usa la risposta rapida Acquisto errato - reso cliente (o TEMU - Acquisto errato reso se il cliente proviene da Temu). NON offrire rimborso diretto ma spiega la procedura di reso entro 14 giorni. REGOLA PRODOTTO ERRATO RICEVUTO: Se il cliente segnala di aver ricevuto un prodotto diverso da quello ordinato (articolo errato, prodotto sbagliato, non corrisponde all'ordine), DEVI come PRIMA risposta richiedere le seguenti informazioni senza procedere con rimborsi o sostituzioni: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco dove sia chiaramente visibile l'etichetta del corriere BRT con il numero ordine, 3) foto della busta che contiene le capsule ricevute. NON procedere con rimborsi o sostituzioni prima di aver ricevuto queste informazioni e foto. REGOLA PRODOTTI DANNEGGIATI - QUANTITA: Quando il cliente segnala capsule danneggiate, segui SEMPRE queste regole senza eccezioni: SE le capsule danneggiate sono MENO di 100: per ordini dal sito yespresso.it offri SOLO un credito parziale (NON rispedizione, NON sostituzione, NON rimborso diretto); per ordini Amazon offri SOLO un rimborso parziale tramite Amazon (NON rispedizione, NON sostituzione); per ordini Temu o TikTok offri SOLO un rimborso parziale (NON rispedizione, NON sostituzione). SE le capsule danneggiate sono 100 O PIU: puoi offrire rispedizione o sostituzione. NON inviare MAI prodotti sostitutivi per meno di 100 capsule danneggiate, indipendentemente da qualsiasi altra considerazione. REGOLA CRITICA - ACQUISTO ERRATO: Ogni volta che il cliente menziona di aver acquistato capsule sbagliate, non compatibili con la sua macchina, o di aver commesso un errore di acquisto, DEVI rispondere ESCLUSIVAMENTE con la procedura di reso: reso entro 14 giorni, spese di spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, tutti i prodotti devono essere integri e non aperti. Se proviene da Temu usa la procedura reso Temu. NON suggerire soluzioni tecniche. NON offrire rimborso. NON chiedere informazioni aggiuntive. REGOLA PROBLEMA TECNICO: Solo se il cliente descrive un problema tecnico con capsule compatibili SENZA menzionare errore di acquisto, usa la risposta tecnica specifica: Bialetti usa risposta Bialetti Gioia, Nespresso usa risposta Nespresso acqua prima caffe, Caffitaly usa risposta CAFFITALY Volta, altri usa PROBLEMA PRODOTTO RICHIESTA INFO SUL DIFETTO."+buildSolvedContext(),
+        messages:[{role:"user",content:(()=>{
+          // Deduplicazione e pulizia allegati
+          const seen=new Set();
+          const imgs=(window._ticketAttachments||[]).filter(img=>{
+            if(seen.has(img.filename)){return false;}
+            seen.add(img.filename);
+            return img.data&&img.data.length>100;
+          });
+          if(!imgs.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
+          const parts=[{type:"text",text:"Genera una risposta professionale per questo ticket. Sono allegate "+imgs.length+" foto inviate dal cliente che puoi analizzare:\n\n"+prompt}];
+          imgs.forEach(img=>{
+            // Pulisci base64: rimuovi caratteri non validi e tronca al padding corretto
+            let cleanData=img.data.replace(/[^A-Za-z0-9+/=]/g,"");
+            // Tronca agli ultimi = di padding validi
+            const lastSlash=cleanData.lastIndexOf("/9j");
+            if(lastSlash>0)cleanData=cleanData; // JPEG valido
+            // Rimuovi caratteri esadecimali in coda (residui parser)
+            cleanData=cleanData.replace(/[0-9a-f]{10,}$/,"");
+            // Padding corretto
+            const rem=cleanData.length%4;
+            if(rem)cleanData+=("===".substring(0,4-rem));
+            try{
+              parts.push({type:"image",source:{type:"base64",media_type:img.contentType||"image/jpeg",data:cleanData}});
+            }catch(e){console.log("Skip img:",e.message);}
+          });
+          return parts;
+        })()}]})
     });
     const data=await res.json();
     console.log("Claude response:",JSON.stringify(data).substring(0,200));
@@ -1970,6 +2497,13 @@ async function loadImapAttachments(email, subject, tid){
     const data=await res.json();
     const attachments=data.attachments||[];
     if(!attachments.length)return;
+    // Salva allegati immagine globalmente per l'AI
+    const existing=new Set((window._ticketAttachments||[]).map(a=>a.filename+a.data.length));
+    const newImgs=attachments.filter(a=>
+      a.contentType&&a.contentType.startsWith("image/")&&
+      !existing.has(a.filename+a.data.length)
+    ).slice(0,3);
+    window._ticketAttachments=(window._ticketAttachments||[]).concat(newImgs);
 
     // Mostra allegati nella sidebar
     const oArea=document.getElementById("order-info-area");
@@ -1985,8 +2519,14 @@ async function loadImapAttachments(email, subject, tid){
         html+='<img src="'+dataUrl+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+att.filename+'">';
         html+='<div style="font-size:10px;color:#888;margin-top:2px">'+att.filename+'</div>';
         html+='</div>';
+      } else if(att.contentType&&att.contentType.includes("pdf")){
+        const pdfIcon='📄';
+        html+='<div style="margin-bottom:6px">';
+        html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:8px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:8px 12px;font-size:12px;color:#c04040;text-decoration:none;font-weight:600">'+pdfIcon+' '+att.filename+' <span style="font-size:10px;color:#aaa;margin-left:auto">⬇ Scarica</span></a>';
+        html+='<button onclick="openPdfPreview(\'"'+dataUrl+'\')" style="margin-top:4px;width:100%;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:5px;font-size:11px;cursor:pointer;color:#555">👁 Anteprima PDF</button>';
+        html+='</div>';
       } else {
-        html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+att.filename+'</a>';
+        html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+att.filename+' <span style="margin-left:auto;font-size:10px">⬇ Scarica</span></a>';
       }
     });
     html+='</div>';
@@ -2069,6 +2609,7 @@ async function loadCustomerHistory(email, name, currentTid){
     console.log("👤 Cliente ha",openRelated.length,"altri ticket aperti:",openRelated.map(t=>t.subject));
   } else {
     window._customerOpenTickets=[];
+  window._ticketAttachments=[];
   }
 }
 
@@ -2465,6 +3006,62 @@ setInterval(async function(){
   }catch(e){console.log("Auto-refresh failed:",e.message)}
 },60000);
 
+
+async function cancelShopifyOrder(orderId){
+  // Popup di conferma con opzione rimborso
+  const modal=document.createElement("div");
+  modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center";
+  modal.innerHTML=`
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+      <div style="font-size:18px;font-weight:700;color:#c0392b;margin-bottom:8px">🚫 Annulla Ordine</div>
+      <div style="font-size:13px;color:#555;margin-bottom:16px">Stai per annullare l'ordine <strong>#${orderId}</strong> su Shopify.</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333;margin-bottom:20px;cursor:pointer;background:#fff8f0;border:1px solid #f0c0a0;border-radius:8px;padding:10px 12px">
+        <input type="checkbox" id="refund-check-${orderId}" checked style="width:16px;height:16px;cursor:pointer">
+        <span>💶 Effettua anche il rimborso automatico</span>
+      </label>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="cancel-no-${orderId}" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>
+        <button id="cancel-yes-${orderId}" style="padding:8px 18px;border:none;border-radius:8px;background:#c0392b;color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">⚠️ Conferma</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  document.getElementById("cancel-no-"+orderId).onclick=()=>modal.remove();
+
+  document.getElementById("cancel-yes-"+orderId).onclick=async()=>{
+    const withRefund=document.getElementById("refund-check-"+orderId).checked;
+    modal.remove();
+    const btn=document.querySelector('[onclick*="cancelShopifyOrder"][onclick*="'+orderId+'"]');
+    if(btn){btn.textContent="Annullamento...";btn.style.pointerEvents="none";}
+    try{
+      const body={reason:"customer",email:true};
+      if(withRefund)body.refund=true;
+      const res=await fetch(PROXY+"/shopify/orders/"+orderId+"/cancel.json",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(body)
+      });
+      const data=await res.json();
+      if(res.ok&&data.order){
+        showToast("✓ Ordine #"+orderId+" annullato"+(withRefund?" e rimborsato":"")+" su Shopify");
+        if(btn){btn.textContent="✓ Annullato";btn.style.color="#aaa";btn.style.pointerEvents="none";}
+        // Svuota box risposta AI — il cliente riceve già notifica da Shopify
+        const rt=document.getElementById("reply-text");
+        if(rt)rt.value="";
+        const gb=document.getElementById("gen-box");
+        if(gb)gb.style.display="none";
+      } else {
+        const errMsg=(data.errors&&JSON.stringify(data.errors))||"Errore sconosciuto";
+        showToast("Errore: "+errMsg,"error");
+        if(btn){btn.textContent="🚫 Annulla Ordine";btn.style.pointerEvents="auto";}
+      }
+    }catch(e){
+      showToast("Errore: "+e.message,"error");
+      if(btn){btn.textContent="🚫 Annulla Ordine";btn.style.pointerEvents="auto";}
+    }
+  };
+}
+
 async function duplicateOrder(orderId){
   try{
     showToast("Duplicando ordine...","info");
@@ -2595,7 +3192,9 @@ async function submitNewTicket(){
     const payload={subject:subject,message:{text:message},requester:{email:email,name:name||email}};
     const res=await fetch(PROXY+"/api/v1/tickets",{method:"POST",headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},body:JSON.stringify(payload)});
     if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,200));}
-    closeNewTicketModal();showToast("✓ Ticket creato con successo!");await loadTickets();
+    closeNewTicketModal();showToast("✓ Ticket creato con successo!");await // Keepalive ping ogni 10 minuti per tenere sveglio il proxy Render
+setInterval(()=>fetch(PROXY+"/ping").catch(()=>{}), 10*60*1000);
+loadTickets();
   }catch(e){
     errEl.textContent="❌ "+e.message;errEl.style.display="block";
     btn.disabled=false;btn.textContent="📤 Crea Ticket";
