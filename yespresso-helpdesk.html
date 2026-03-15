@@ -114,6 +114,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .generating{display:flex;align-items:center;gap:10px;padding:20px 16px;color:#aaa;font-size:12px}
 .spinner{width:14px;height:14px;border:2px solid #e0e4ea;border-top:2px solid #b8822a;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+.filter-panel{background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);padding:16px;position:absolute;top:100%;left:0;z-index:500;width:320px;margin-top:4px}
+.filter-chip{display:inline-flex;align-items:center;gap:4px;background:#e8f0fe;color:#1a73e8;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;margin:2px}
+.filter-chip button{background:none;border:none;cursor:pointer;color:#1a73e8;font-size:13px;padding:0;line-height:1}
 .pagination-bar{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:8px 16px;border-top:1px solid #f0f2f5;flex-shrink:0;background:#fff}
 .page-btn{width:32px;height:32px;border:1px solid #e0e4ea;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#333;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .page-btn:hover{background:#f0f2f5}
@@ -179,6 +182,11 @@ textarea.field{min-height:80px;resize:vertical}
 .attach-file{display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;cursor:pointer;text-decoration:none}
 .attach-file:hover{background:#e8f0fe;color:#1a73e8}
 /* Image lightbox */
+.ticket-preview-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center}
+.ticket-preview-box{background:#fff;border-radius:12px;width:680px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden}
+.ticket-preview-header{padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:10px;flex-shrink:0;background:#fff}
+.ticket-preview-title{flex:1;font-size:14px;font-weight:700;color:#1a1a2e;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-preview-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;display:flex;align-items:center;justify-content:center;cursor:zoom-out}
 .lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
 
@@ -319,9 +327,54 @@ textarea.field{min-height:80px;resize:vertical}
     <div class="ticket-panel-header">
       <span class="ticket-panel-title" id="panel-title">Tickets to handle</span>
       <div style="display:flex;gap:8px;align-items:center">
+        <button class="filter-btn" onclick="openQRModal()" style="display:flex;align-items:center;gap:4px" title="Risposte rapide">⚡</button>
+        <div style="position:relative">
+          <button class="filter-btn" onclick="toggleFilterPanel()" id="filter-btn" style="display:flex;align-items:center;gap:4px">
+            <span>+ Filtri</span><span id="filter-count" style="display:none;background:#1a73e8;color:#fff;border-radius:8px;padding:1px 6px;font-size:10px">0</span>
+          </button>
+          <div id="filter-panel" class="filter-panel" style="display:none">
+            <div style="font-size:12px;font-weight:700;color:#1a1a2e;margin-bottom:12px">Filtra ticket</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">SOURCE</label>
+                <select id="filter-source" onchange="applyFilters()" style="width:100%;padding:6px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;outline:none">
+                  <option value="">Tutti</option>
+                  <option value="amazon">🟡 Amazon</option>
+                  <option value="temu">🟠 Temu</option>
+                  <option value="tiktok">🎵 TikTok</option>
+                  <option value="brt">📦 BRT</option>
+                  <option value="email">✉️ Email diretta</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">TAG</label>
+                <select id="filter-tag" onchange="applyFilters()" style="width:100%;padding:6px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;outline:none">
+                  <option value="">Tutti</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">AGENTE</label>
+                <select id="filter-agent" onchange="applyFilters()" style="width:100%;padding:6px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;outline:none">
+                  <option value="">Tutti</option>
+                  <option value="unassigned">Non assegnato</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">DATA CREAZIONE</label>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="date" id="filter-date-from" onchange="applyFilters()" style="flex:1;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:11px;font-family:inherit;outline:none">
+                  <span style="font-size:11px;color:#888">→</span>
+                  <input type="date" id="filter-date-to" onchange="applyFilters()" style="flex:1;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:11px;font-family:inherit;outline:none">
+                </div>
+              </div>
+              <button onclick="clearFilters()" style="background:#fff;border:1px solid #e0e4ea;color:#555;padding:6px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;margin-top:4px">✕ Rimuovi tutti i filtri</button>
+            </div>
+          </div>
+        </div>
         <button class="filter-btn" onclick="loadTickets()">↻ Aggiorna</button>
       </div>
     </div>
+    <div id="active-filters-bar" style="display:none;padding:6px 20px;border-bottom:1px solid #f0f2f5;background:#f8f9fc;flex-shrink:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:36px"></div>
     <div class="ticket-count-bar" id="ticket-count-bar">Caricamento...</div>
     <div class="table-header">
       <div></div>
@@ -343,8 +396,9 @@ textarea.field{min-height:80px;resize:vertical}
     <div class="detail-topbar">
       <button class="back-btn" onclick="closeDetail()" style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;font-size:13px;font-weight:600;color:#555;background:#f0f2f5;border:1px solid #e0e4ea">← Lista</button>
       <div class="detail-title" id="detail-title">-</div>
+      <a id="hd-link" href="#" target="_blank" title="Apri su HelpDesk" style="flex-shrink:0;background:#f0f2f5;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:11px;color:#555;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:4px">📎 HelpDesk ↗</a>
       <div class="detail-actions">
-        <button class="detail-action-btn" onclick="closeDetail()" title="Torna alla lista">⚡</button>
+        <button class="detail-action-btn" onclick="openQRModal()" title="Risposte rapide">⚡</button>
         <button class="detail-action-btn" title="Archivia">🗄</button>
         <button class="detail-action-btn" title="Stato">🕐</button>
         <button class="detail-action-btn" title="Elimina">🗑</button>
@@ -370,8 +424,132 @@ const STATUS_CLASS = {open:"s-open",pending:"s-pending",solved:"s-solved",closed
 const AVATAR_COLORS = ["#e53935","#1e88e5","#43a047","#8e24aa","#fb8c00","#00897b","#e91e63","#00acc1","#f4511e","#6d4c41","#546e7a","#3949ab"];
 
 let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="";
+let agentsList=[], tagsList=[];
+
+
+function openAgentEditor(){
+  if(!selectedTicket)return;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  const currentAgent=selectedTicket.assignment&&selectedTicket.assignment.agent;
+  const modal=document.createElement("div");
+  modal.className="modal-overlay";
+  modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center";
+  modal.innerHTML=`<div class="modal" style="max-width:380px">
+    <div class="modal-header"><span class="modal-title">👤 Assegna Agente</span><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+    <div class="modal-body" style="gap:8px;padding:12px 16px">
+      <div onclick="assignAgent(null)" style="padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid #e0e4ea;font-size:13px;color:#888;background:${!currentAgent?'#e8f0fe':'#fff'}" onmouseover="this.style.background='#f0f2f5'" onmouseout="this.style.background='${!currentAgent?'#e8f0fe':'#fff'}'">
+        ❌ Rimuovi assegnazione
+      </div>
+      ${agentsList.map(a=>`<div onclick="assignAgent('${a.ID}')" style="padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid #e0e4ea;display:flex;align-items:center;gap:8px;background:${currentAgent&&currentAgent.ID===a.ID?'#e8f0fe':'#fff'}" onmouseover="this.style.background='#f0f2f5'" onmouseout="this.style.background='${currentAgent&&currentAgent.ID===a.ID?'#e8f0fe':'#fff'}'">
+        <div style="width:28px;height:28px;border-radius:50%;background:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${a.name[0].toUpperCase()}</div>
+        <div><div style="font-size:13px;font-weight:600">${a.name}</div><div style="font-size:11px;color:#888">${a.email}</div></div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+}
+
+async function assignAgent(agentId){
+  if(!selectedTicket)return;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  document.querySelector(".modal-overlay")?.remove();
+  try{
+    await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({assignment:{agentID:agentId||null}})});
+    // Aggiorna localmente
+    if(!selectedTicket.assignment)selectedTicket.assignment={};
+    selectedTicket.assignment.agent=agentId?agentsList.find(a=>a.ID===agentId)||null:null;
+    const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+    if(idx>=0)tickets[idx].assignment=selectedTicket.assignment;
+    // Aggiorna UI
+    setTimeout(()=>{
+      const agentEl=document.getElementById("ticket-agent-area");
+      if(agentEl){
+        const agent=selectedTicket.assignment.agent;
+        const team=selectedTicket.assignment&&selectedTicket.assignment.team;
+        if(agent){
+          agentEl.innerHTML='<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:24px;border-radius:50%;background:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff">'+agent.name[0].toUpperCase()+'</div><span style="font-size:13px">'+agent.name+'</span></div>';
+        } else {
+          agentEl.innerHTML='<span style="color:#aaa;font-size:11px">Non assegnato</span>';
+        }
+      }
+    },100);
+    showToast(agentId?"✓ Agente assegnato":"✓ Assegnazione rimossa");
+  }catch(e){showToast("Errore: "+e.message,"error");}
+}
+
+function openTagsEditor(){
+  if(!selectedTicket)return;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  const currentTagIDs=selectedTicket.tagIDs||[];
+  const modal=document.createElement("div");
+  modal.className="modal-overlay";
+  modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center";
+  const selectedIDs=new Set(currentTagIDs);
+  modal.innerHTML=`<div class="modal" style="max-width:400px">
+    <div class="modal-header"><span class="modal-title">🏷️ Gestisci Tag</span><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+    <div class="modal-body" style="gap:8px;padding:12px 16px;display:grid;grid-template-columns:1fr 1fr">
+      ${tagsList.map(tag=>`<div id="tag-btn-${tag.ID}" onclick="toggleTag('${tag.ID}')" style="padding:8px 12px;border-radius:8px;cursor:pointer;border:2px solid ${selectedIDs.has(tag.ID)?'#1a73e8':'#e0e4ea'};background:${selectedIDs.has(tag.ID)?'#e8f0fe':'#fff'};font-size:12px;font-weight:600;text-align:center;color:${selectedIDs.has(tag.ID)?'#1a73e8':'#555'}">
+        ${tag.name}
+      </div>`).join("")}
+    </div>
+    <div class="modal-footer"><button class="btn-sm" onclick="this.closest('.modal-overlay').remove()">Annulla</button><button class="btn-sm btn-primary" onclick="saveTags()">✓ Salva</button></div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+  window._editingTagIDs=new Set(currentTagIDs);
+}
+
+function toggleTag(tagId){
+  if(!window._editingTagIDs)window._editingTagIDs=new Set();
+  const btn=document.getElementById("tag-btn-"+tagId);
+  if(window._editingTagIDs.has(tagId)){
+    window._editingTagIDs.delete(tagId);
+    if(btn){btn.style.borderColor="#e0e4ea";btn.style.background="#fff";btn.style.color="#555";}
+  } else {
+    window._editingTagIDs.add(tagId);
+    if(btn){btn.style.borderColor="#1a73e8";btn.style.background="#e8f0fe";btn.style.color="#1a73e8";}
+  }
+}
+
+async function saveTags(){
+  if(!selectedTicket)return;
+  const tid=selectedTicket.ID||selectedTicket.id;
+  const tagIDs=[...window._editingTagIDs];
+  document.querySelector(".modal-overlay")?.remove();
+  try{
+    await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({tagIDs:tagIDs})});
+    selectedTicket.tagIDs=tagIDs;
+    const idx=tickets.findIndex(t=>(t.ID||t.id)===tid);
+    if(idx>=0)tickets[idx].tagIDs=tagIDs;
+    // Aggiorna UI
+    const tagsEl=document.getElementById("ticket-tags-area");
+    if(tagsEl){
+      if(tagIDs.length){
+        const tagNames=tagIDs.map(id=>{const t=tagsList.find(t=>t.ID===id);return t?t.name:id;});
+        tagsEl.innerHTML=tagNames.map(name=>'<span style="background:#e8f0fe;color:#1a73e8;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600">🏷️ '+name+'</span>').join(" ");
+      } else {
+        tagsEl.innerHTML='<span style="color:#aaa;font-size:11px">No tags</span>';
+      }
+    }
+    showToast("✓ Tag aggiornati");
+  }catch(e){showToast("Errore: "+e.message,"error");}
+}
+
+async function loadAgentsAndTags(){
+  try{
+    const [agents, tags] = await Promise.all([
+      hdFetch("/v1/agents"),
+      hdFetch("/v1/tags")
+    ]);
+    agentsList=Array.isArray(agents)?agents:[];
+    tagsList=Array.isArray(tags)?tags:[];
+    console.log("✅ Agenti:",agentsList.length,"Tag:",tagsList.length);
+  }catch(e){console.log("⚠️ loadAgentsAndTags error:",e.message);}
+}
 let currentPage=1;
 const PAGE_SIZE=25;
+let activeFilters={source:"",tag:"",agent:"",dateFrom:"",dateTo:""};
 
 function avatarColor(s){let h=0;for(let i=0;i<(s||"").length;i++)h=s.charCodeAt(i)+((h<<5)-h);return AVATAR_COLORS[Math.abs(h)%AVATAR_COLORS.length]}
 function initials(n){const p=(n||"?").trim().split(" ");return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
@@ -417,6 +595,117 @@ async function hdFetch(path,options){
     if(e.name==="AbortError")throw new Error("Timeout: il proxy non risponde (attendi ~15s e riprova — potrebbe essere in avvio)");
     throw e;
   }
+}
+
+
+function toggleFilterPanel(){
+  const panel=document.getElementById("filter-panel");
+  panel.style.display=panel.style.display==="none"?"block":"none";
+  if(panel.style.display==="block") populateFilterSelects();
+  // Chiudi cliccando fuori
+  setTimeout(()=>{
+    document.addEventListener("click",function handler(e){
+      if(!panel.contains(e.target)&&e.target.id!=="filter-btn"&&!e.target.closest("#filter-btn")){
+        panel.style.display="none";
+        document.removeEventListener("click",handler);
+      }
+    });
+  },100);
+}
+
+function populateFilterSelects(){
+  // Popola tag
+  const tagSel=document.getElementById("filter-tag");
+  const currentTag=tagSel.value;
+  tagSel.innerHTML='<option value="">Tutti</option>';
+  tagsList.forEach(tag=>{
+    const opt=document.createElement("option");
+    opt.value=tag.ID;
+    opt.textContent=tag.name;
+    if(tag.ID===currentTag)opt.selected=true;
+    tagSel.appendChild(opt);
+  });
+  // Popola agenti
+  const agentSel=document.getElementById("filter-agent");
+  const currentAgent=agentSel.value;
+  agentSel.innerHTML='<option value="">Tutti</option><option value="unassigned">Non assegnato</option>';
+  agentsList.forEach(agent=>{
+    const opt=document.createElement("option");
+    opt.value=agent.ID;
+    opt.textContent=agent.name;
+    if(agent.ID===currentAgent)opt.selected=true;
+    agentSel.appendChild(opt);
+  });
+}
+
+function applyFilters(){
+  activeFilters.source=document.getElementById("filter-source")?.value||"";
+  activeFilters.tag=document.getElementById("filter-tag")?.value||"";
+  activeFilters.agent=document.getElementById("filter-agent")?.value||"";
+  activeFilters.dateFrom=document.getElementById("filter-date-from")?.value||"";
+  activeFilters.dateTo=document.getElementById("filter-date-to")?.value||"";
+  currentPage=1;
+  updateFilterChips();
+  renderTable();
+}
+
+function clearFilters(){
+  activeFilters={source:"",tag:"",agent:"",dateFrom:"",dateTo:""};
+  document.getElementById("filter-source").value="";
+  document.getElementById("filter-tag").value="";
+  document.getElementById("filter-agent").value="";
+  document.getElementById("filter-date-from").value="";
+  document.getElementById("filter-date-to").value="";
+  document.getElementById("filter-panel").style.display="none";
+  currentPage=1;
+  updateFilterChips();
+  renderTable();
+}
+
+function updateFilterChips(){
+  const bar=document.getElementById("active-filters-bar");
+  const countEl=document.getElementById("filter-count");
+  const chips=[];
+  if(activeFilters.source){
+    const labels={amazon:"🟡 Amazon",temu:"🟠 Temu",tiktok:"🎵 TikTok",brt:"📦 BRT",email:"✉️ Email"};
+    chips.push({label:"Source: "+(labels[activeFilters.source]||activeFilters.source),key:"source"});
+  }
+  if(activeFilters.tag){
+    const tag=tagsList.find(t=>t.ID===activeFilters.tag);
+    chips.push({label:"Tag: "+(tag?tag.name:activeFilters.tag),key:"tag"});
+  }
+  if(activeFilters.agent){
+    if(activeFilters.agent==="unassigned"){
+      chips.push({label:"Agente: Non assegnato",key:"agent"});
+    } else {
+      const agent=agentsList.find(a=>a.ID===activeFilters.agent);
+      chips.push({label:"Agente: "+(agent?agent.name:activeFilters.agent),key:"agent"});
+    }
+  }
+  if(activeFilters.dateFrom)chips.push({label:"Da: "+activeFilters.dateFrom,key:"dateFrom"});
+  if(activeFilters.dateTo)chips.push({label:"A: "+activeFilters.dateTo,key:"dateTo"});
+  
+  if(chips.length){
+    bar.style.display="flex";
+    bar.innerHTML='<span style="font-size:11px;color:#888;margin-right:4px">Filtri:</span>'+
+      chips.map(ch=>`<span class="filter-chip">${ch.label}<button onclick="removeFilter('${ch.key}')">×</button></span>`).join("")+
+      '<button onclick="clearFilters()" style="background:none;border:none;color:#c04040;font-size:11px;cursor:pointer;margin-left:4px">Rimuovi tutti</button>';
+    countEl.textContent=chips.length;
+    countEl.style.display="inline";
+  } else {
+    bar.style.display="none";
+    countEl.style.display="none";
+  }
+}
+
+function removeFilter(key){
+  activeFilters[key]="";
+  const elMap={source:"filter-source",tag:"filter-tag",agent:"filter-agent",dateFrom:"filter-date-from",dateTo:"filter-date-to"};
+  const el=document.getElementById(elMap[key]);
+  if(el)el.value="";
+  currentPage=1;
+  updateFilterChips();
+  renderTable();
 }
 
 async function loadTickets(){
@@ -489,7 +778,8 @@ function viewFilter(t){
   if(currentView==="pending")return t.status==="pending";
   if(currentView==="on_hold")return t.status==="on_hold";
   if(currentView==="solved")return t.status==="solved"||t.status==="closed";
-  // keyword views
+  // keyword views — solo open/pending
+  if(t.status==="solved"||t.status==="closed")return false;
   const subj=(t.subject||"").toLowerCase();
   if(currentView==="annullamento")return subj.includes("annull");
   if(currentView==="doveordine")return subj.includes("dove");
@@ -519,13 +809,48 @@ function applySearch(){searchQuery=document.getElementById("sidebar-search").val
 
 function getFiltered(){
   return tickets.filter(t=>{
-    // Se c'è una ricerca attiva, cerca su TUTTI i ticket ignorando la view
+    // Ricerca testo
     if(searchQuery){
-      return (t.subject||"").toLowerCase().includes(searchQuery)||
+      const match=(t.subject||"").toLowerCase().includes(searchQuery)||
         ((t.requester&&t.requester.name)||"").toLowerCase().includes(searchQuery)||
         ((t.requester&&t.requester.email)||"").toLowerCase().includes(searchQuery);
+      if(!match)return false;
+    } else {
+      if(!viewFilter(t))return false;
     }
-    return viewFilter(t);
+    // Filtro source
+    if(activeFilters.source){
+      const email=(t.requester&&t.requester.email)||"";
+      const src=srcLabel(email);
+      if(activeFilters.source==="amazon"&&!src.includes("Amazon"))return false;
+      if(activeFilters.source==="temu"&&!src.includes("Temu"))return false;
+      if(activeFilters.source==="tiktok"&&!src.includes("TikTok"))return false;
+      if(activeFilters.source==="brt"&&!src.includes("BRT"))return false;
+      if(activeFilters.source==="email"&&src)return false;
+    }
+    // Filtro tag
+    if(activeFilters.tag){
+      const tagIDs=t.tagIDs||[];
+      if(!tagIDs.includes(activeFilters.tag))return false;
+    }
+    // Filtro agente
+    if(activeFilters.agent){
+      const agent=t.assignment&&t.assignment.agent;
+      if(activeFilters.agent==="unassigned"&&agent)return false;
+      if(activeFilters.agent!=="unassigned"&&(!agent||agent.ID!==activeFilters.agent))return false;
+    }
+    // Filtro data
+    if(activeFilters.dateFrom){
+      const created=new Date(t.createdAt||t.created_at||0);
+      if(created<new Date(activeFilters.dateFrom))return false;
+    }
+    if(activeFilters.dateTo){
+      const created=new Date(t.createdAt||t.created_at||0);
+      const dateTo=new Date(activeFilters.dateTo);
+      dateTo.setHours(23,59,59);
+      if(created>dateTo)return false;
+    }
+    return true;
   });
 }
 
@@ -637,6 +962,8 @@ async function selectTicket(tid){
   // Title: show count if multiple open
   const titlePrefix=openTickets.length>1?`[${openTickets.length} ticket aperti] `:"";
   document.getElementById("detail-title").textContent=titlePrefix+(t.subject||"Ticket");
+  const hdLinkEl=document.getElementById("hd-link");
+  if(hdLinkEl)hdLinkEl.href="https://app.helpdesk.com/tickets/"+(t.ID||t.id);
 
   // Render sidebar details
   document.getElementById("detail-sidebar").innerHTML=`
@@ -670,8 +997,16 @@ async function selectTicket(tid){
         </div>
       </div>
       <div class="ds-section">
-        <div class="ds-section-title">TAGS</div>
-        <div style="color:#aaa;font-size:11px">No tags</div>
+        <div class="ds-section-title">TAGS <span onclick="openTagsEditor()" style="cursor:pointer;color:#1a73e8;font-size:10px;font-weight:600;letter-spacing:0">✏️ Modifica</span></div>
+        <div id="ticket-tags-area" style="display:flex;flex-wrap:wrap;gap:4px;min-height:20px">
+          <span style="color:#aaa;font-size:11px">No tags</span>
+        </div>
+      </div>
+      <div class="ds-section">
+        <div class="ds-section-title">AGENTE <span onclick="openAgentEditor()" style="cursor:pointer;color:#1a73e8;font-size:10px;font-weight:600;letter-spacing:0">✏️ Modifica</span></div>
+        <div id="ticket-agent-area" style="font-size:13px;color:#1a1a2e">
+          <span style="color:#aaa;font-size:11px">Non assegnato</span>
+        </div>
       </div>
       <div class="ds-section" id="order-info-area" style="padding:12px 16px"></div>
       <div class="ds-section" id="last-order-area" style="padding:12px 16px"></div>
@@ -692,6 +1027,16 @@ async function selectTicket(tid){
 
   // Show all open tickets messages in chronological order — tutti gli eventi
   const ticketsToShow=hasMultiple?openTickets:[t];
+  // Controlla se ci sono allegati menzionati nel testo
+  const allText=ticketsToShow.map(tk=>(tk.events||[]).map(ev=>(ev.message?.text||"")).join(" ")).join(" ").toLowerCase();
+  const hasAttachmentKeywords=/allego|allegato|allegati|foto|immagini|screenshot|invio foto|mando foto|ti mando|in allegato|vi allego|vi ho allegato|see attached|attached|attachment/i.test(allText);
+  if(hasAttachmentKeywords){
+    messagesHtml+='<div style="background:#fff8e0;border:1px solid #f0c040;border-radius:8px;padding:10px 14px;font-size:12px;color:#8a6500;display:flex;align-items:center;gap:8px;margin-bottom:4px">\
+      <span>📎</span>\
+      <span>Il cliente ha menzionato allegati. <a href="https://app.helpdesk.com/tickets/'+tid2+'" target="_blank" style="color:#1a73e8;font-weight:600">Aprire su HelpDesk ↗</a> per visualizzarli.</span>\
+    </div>';
+  }
+
   for(const tk of ticketsToShow){
     const tkId=tk.ID||tk.id;
     const tkEvents=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml||e.message.html));
@@ -745,9 +1090,9 @@ async function selectTicket(tid){
           '<span style="font-size:11px;color:#888;margin-right:4px">Stato:</span>'+
           '<select class="status-change-select" id="reply-status-select">'+
             '<option value="">Non cambiare</option>'+
+            '<option value="solved" selected>Solved</option>'+
             '<option value="open">Open</option>'+
             '<option value="pending">Pending</option>'+
-            '<option value="solved">Solved</option>'+
             '<option value="closed">Closed</option>'+
           '</select>'+
         '</div>'+
@@ -857,6 +1202,38 @@ async function selectTicket(tid){
   }
   loadCustomerHistory(email, name, tid2);
   setTimeout(()=>{if(email)loadLastCustomerOrder(email);}, 800);
+  // Carica allegati da IMAP
+  setTimeout(()=>loadImapAttachments(email, t.subject||"", tid2), 1200);
+  // Popola tags
+  setTimeout(()=>{
+    const tagsEl=document.getElementById("ticket-tags-area");
+    const agentEl=document.getElementById("ticket-agent-area");
+    if(tagsEl){
+      const tagIDs=t.tagIDs||t.tags||[];
+      if(tagsEl){
+        if(tagIDs.length){
+          const tagNames=tagIDs.map(id=>{const tg=tagsList.find(tg=>tg.ID===id);return tg?tg.name:id;});
+          tagsEl.innerHTML=tagNames.map(name=>'<span style="background:#e8f0fe;color:#1a73e8;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600">🏷️ '+name+'</span>').join(" ");
+        } else {
+          tagsEl.innerHTML='<span style="color:#aaa;font-size:11px">No tags</span>';
+        }
+      }
+    }
+    if(agentEl){
+      const agent=t.assignment&&t.assignment.agent;
+      const team=t.assignment&&t.assignment.team;
+      if(agentEl){
+        if(agent){
+          const agentName=agent.name||agent.fullName||agent.email||"Agente";
+          agentEl.innerHTML='<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:24px;border-radius:50%;background:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff">'+agentName[0].toUpperCase()+'</div><span style="font-size:13px">'+agentName+'</span></div>'+(team?'<div style="font-size:11px;color:#888;margin-top:2px">Team: '+team.name+'</div>':"");
+        } else if(team){
+          agentEl.innerHTML='<div style="font-size:12px;color:#555">👥 '+team.name+'</div><div style="font-size:11px;color:#aaa">Nessun agente assegnato</div>';
+        } else {
+          agentEl.innerHTML='<span style="color:#aaa;font-size:11px">Non assegnato</span>';
+        }
+      }
+    }
+  }, 100);
 }
 
 function renderMsgBlock(text, attachments){
@@ -1013,6 +1390,63 @@ function copyTemuQR(id){
     }
   });
 }
+
+function openTicketPreview(tid){
+  const t=tickets.find(tk=>(tk.ID||tk.id)===tid);
+  if(!t)return;
+  const sc=STATUS_CLASS[t.status]||"s-closed";
+  const sl=STATUS_LABELS[t.status]||t.status;
+  const createdAt=t.createdAt||t.created_at||"";
+  const dateStr=createdAt?new Date(createdAt).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
+  const hdUrl="https://app.helpdesk.com/tickets/"+(t.ID||t.id);
+
+  // Render messaggi
+  const events=(t.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
+  let msgsHtml="";
+  if(!events.length){
+    msgsHtml='<div style="color:#aaa;font-size:13px;text-align:center;padding:20px">Nessun messaggio</div>';
+  } else {
+    events.forEach((ev,idx)=>{
+      const isAgent=ev.author&&ev.author.type==="agent";
+      const evDate=ev.createdAt?new Date(ev.createdAt).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+      const txt=(ev.message.text||ev.message.richTextHtml||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().substring(0,500);
+      const bg=isAgent?"#f0f7ff":"#fff";
+      const border=isAgent?"#c5d8fa":"#e8eaf0";
+      const label=isAgent?"👤 Agente":"🙋 Cliente";
+      msgsHtml+=`<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:700;color:#666">${label}</span>
+          <span style="font-size:11px;color:#aaa">${evDate}</span>
+        </div>
+        <div style="font-size:13px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap">${txt}${(ev.message.text||ev.message.richTextHtml||"").length>500?"…":""}</div>
+      </div>`;
+    });
+  }
+
+  const modal=document.createElement("div");
+  modal.className="ticket-preview-modal";
+  modal.innerHTML=`<div class="ticket-preview-box">
+    <div class="ticket-preview-header">
+      <span class="status-pill ${sc}" style="flex-shrink:0">${sl}</span>
+      <span class="ticket-preview-title">${t.subject||"Senza oggetto"}</span>
+      <a href="${hdUrl}" target="_blank" style="flex-shrink:0;background:#f0f2f5;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:11px;color:#555;text-decoration:none;font-weight:600" onclick="event.stopPropagation()">Apri su HelpDesk ↗</a>
+      <button onclick="this.closest('.ticket-preview-modal').remove()" style="flex-shrink:0;background:none;border:none;font-size:20px;cursor:pointer;color:#888;padding:2px 6px;border-radius:4px;margin-left:4px">×</button>
+    </div>
+    <div style="padding:8px 20px;border-bottom:1px solid #f0f2f5;font-size:12px;color:#888;flex-shrink:0;display:flex;gap:16px;background:#fafbfc">
+      <span>📅 ${dateStr}</span>
+      <span>🙋 ${(t.requester&&t.requester.name)||""}</span>
+      <span>✉️ ${(t.requester&&t.requester.email)||""}</span>
+    </div>
+    <div class="ticket-preview-body">${msgsHtml}</div>
+    <div style="padding:10px 20px;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;background:#fff">
+      <button onclick="this.closest('.ticket-preview-modal').remove();selectTicket('${tid}')" style="background:#1a73e8;border:none;color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Apri ticket completo</button>
+      <button onclick="this.closest('.ticket-preview-modal').remove()" style="background:#fff;border:1px solid #e0e4ea;color:#555;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px">Chiudi</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+}
+
 function openLightbox(src){
   const lb=document.createElement("div");
   lb.className="lightbox";
@@ -1391,7 +1825,7 @@ async function generateReply(lastMsg,email,fullThread){
     const res=await fetch(PROXY+"/anthropic/v1/messages",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,
-        system:"Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffè, capsule e prodotti per il caffè. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come 'Il Team Yespresso'. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa con i dettagli reali. Se c'è un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o è una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l'azione da fare (es: 'Verifica reso Temu PO-XXX, gestisci entro la scadenza indicata')."+buildSolvedContext(),
+        system:"Sei l\'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell\'ordine, usali per dare una risposta precisa con i dettagli reali. Se c\'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l\'azione da fare. REGOLE PRODOTTI DANNEGGIATI: 1) Se il cliente si lamenta di capsule danneggiate e chiede rimborso, NON offrire rimborso subito. Chiedi prima foto delle capsule danneggiate, foto del pacco, quantita capsule danneggiate e se sono utilizzabili. 2) Se il cliente segnala solo pacco esterno ammaccato ma prodotto integro, rispondi con scuse, spiega che il cartone e solo protezione esterna, comunica che segnalerai al corriere e alla logistica. REGOLE EROGAZIONE CAPSULE: 5) Problemi con capsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo. 6a) Problemi con capsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore). 6b) Problemi con capsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula. 6c) Problemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video. NON offrire rimborso prima di avere queste informazioni. REGOLE PACCO NON RICEVUTO: 3) Se il cliente dice di non aver ricevuto il pacco ma il tracking risulta consegnato, e questa e la sua prima richiesta: comunica che il pacco risulta consegnato, includi numero tracking e link BRT, non offrire rimborso. 4) Se il cliente insiste dopo la nostra risposta sulla consegna: ribadisci con fermezza che il pacco risulta consegnato e non possiamo procedere con rimborso. REGOLE TICKET AMAZON: Quando il ticket proviene da Amazon (donotreply@amazon, marketplace.amazon, atoz-guarantee), NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. NON includere email esterne. Usa solo riferimenti Amazon. Per il tracking invita il cliente a controllare dal suo account Amazon."+buildSolvedContext(),
         messages:[{role:"user",content:"Genera una risposta professionale per questo ticket:\n\n"+prompt}]})
     });
     const data=await res.json();
@@ -1467,7 +1901,7 @@ async function sendReply(){
       if(!msgRes.ok){const b=await msgRes.text();throw new Error("Errore invio messaggio: "+msgRes.status+" "+b.substring(0,150));}
       console.log("✅ Messaggio inviato via PATCH ticket");
     }
-    // Change status: prova PUT poi PATCH
+    // Change status sul ticket principale
     if(newStatus){
       let statusOk=false;
       for(const method of ["PUT","PATCH"]){
@@ -1482,9 +1916,34 @@ async function sendReply(){
         }catch(eS){console.log("Status",method,"failed:",eS.message);}
       }
       if(!statusOk)console.log("⚠️ Stato non aggiornato sul server (aggiornato localmente)");
+
+      // Se solved/closed, metti solved anche su tutti gli altri ticket aperti concatenati
+      if(newStatus==="solved"||newStatus==="closed"){
+        const email=(selectedTicket.requester&&selectedTicket.requester.email)||"";
+        const otherOpen=tickets.filter(t=>{
+          const te=(t.requester&&t.requester.email)||"";
+          return te===email&&(t.ID||t.id)!==tid&&(t.status==="open"||t.status==="pending");
+        });
+        if(otherOpen.length){
+          console.log("🔄 Metto solved su",otherOpen.length,"altri ticket concatenati");
+          for(const ot of otherOpen){
+            const otid=ot.ID||ot.id;
+            try{
+              await hdFetch("/v1/tickets/"+otid,{method:"PATCH",body:JSON.stringify({status:newStatus})});
+              ot.status=newStatus;
+              const oidx=tickets.findIndex(t=>(t.ID||t.id)===otid);
+              if(oidx>=0)tickets[oidx].status=newStatus;
+              console.log("✅ Ticket concatenato",otid,"→",newStatus);
+            }catch(eO){console.log("⚠️ Errore su ticket concatenato",otid,":",eO.message);}
+          }
+          showToast("✓ Risposta inviata — "+newStatus+" su "+(otherOpen.length+1)+" ticket");
+        }
+      }
     }
     sentTickets.add(tid);
-    showToast("✓ Risposta inviata!");
+    if(!newStatus||(newStatus!=="solved"&&newStatus!=="closed")||!(tickets.filter(t=>(t.requester&&t.requester.email)===(selectedTicket.requester&&selectedTicket.requester.email)&&(t.status==="open"||t.status==="pending")).length>1)){
+      showToast("✓ Risposta inviata!");
+    }
     closeDetail();
     updateBadges();
     renderTable();
@@ -1499,6 +1958,46 @@ async function sendReply(){
 // ═══════════════════════════════════════════════
 // CUSTOMER HISTORY
 // ═══════════════════════════════════════════════
+
+async function loadImapAttachments(email, subject, tid){
+  // Non caricare per email marketplace
+  const skipDomains=["donotreply@amazon","marketplace.amazon","orders.temu","tiktok","vasnoreply","brt.it"];
+  if(!email||skipDomains.some(s=>email.includes(s)))return;
+
+  try{
+    const url=PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject.substring(0,50));
+    const res=await fetch(url);
+    const data=await res.json();
+    const attachments=data.attachments||[];
+    if(!attachments.length)return;
+
+    // Mostra allegati nella sidebar
+    const oArea=document.getElementById("order-info-area");
+    if(!oArea)return;
+
+    let html='<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
+    html+='<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">📎 ALLEGATI EMAIL ('+attachments.length+')</div>';
+    attachments.forEach(att=>{
+      const isImage=att.contentType&&att.contentType.startsWith("image/");
+      const dataUrl="data:"+att.contentType+";base64,"+att.data;
+      if(isImage){
+        html+='<div style="margin-bottom:6px">';
+        html+='<img src="'+dataUrl+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+att.filename+'">';
+        html+='<div style="font-size:10px;color:#888;margin-top:2px">'+att.filename+'</div>';
+        html+='</div>';
+      } else {
+        html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+att.filename+'</a>';
+      }
+    });
+    html+='</div>';
+
+    oArea.innerHTML=(oArea.innerHTML||"")+html;
+    console.log("✅ Allegati IMAP caricati:", attachments.length);
+  }catch(e){
+    console.log("IMAP attachments error:", e.message);
+  }
+}
+
 async function loadCustomerHistory(email, name, currentTid){
   const listEl=document.getElementById("customer-history-list");
   const countEl=document.getElementById("ch-count");
@@ -1548,11 +2047,13 @@ async function loadCustomerHistory(email, name, currentTid){
     const lastEvent=t.events&&t.events[t.events.length-1];
     const lastTime=lastEvent&&lastEvent.createdAt?timeAgo(lastEvent.createdAt):"";
     const isOpen=t.status==="open"||t.status==="pending";
-    return `<div class="ch-item${isOpen?" ch-current":""}" onclick="selectTicket('${tid2}')">
-      <div class="ch-subject">${isOpen?"🔴 ":""}${t.subject||"Senza oggetto"}</div>
+    const hdUrl="https://app.helpdesk.com/tickets/"+tid2;
+    return `<div class="ch-item${isOpen?" ch-current":""}">
+      <div class="ch-subject" onclick="openTicketPreview('${tid2}')" style="cursor:pointer">${isOpen?"🔴 ":""}${t.subject||"Senza oggetto"}</div>
       <div class="ch-meta">
         <span class="ch-pill ${sc}">${sl}</span>
         <span class="ch-time">${lastTime}</span>
+        <a href="${hdUrl}" target="_blank" title="Apri su HelpDesk" style="color:#aaa;font-size:11px;text-decoration:none;margin-left:4px" onclick="event.stopPropagation()">↗</a>
       </div>
     </div>`;
   }).join("");
@@ -1575,25 +2076,92 @@ async function loadCustomerHistory(email, name, currentTid){
 // QUICK REPLIES
 // ═══════════════════════════════════════════════
 let quickReplies = JSON.parse(localStorage.getItem("yespresso_qr") || "null") || [
-  {id:1, name:"Ordine in spedizione", body:"Gentile cliente,\n\nLe confermiamo che il suo ordine è stato spedito ed è attualmente in transito. Può tracciare la spedizione utilizzando il numero di tracking che le abbiamo fornito.\n\nRimaniamo a sua disposizione per qualsiasi ulteriore informazione.\n\nCordiali saluti,\nIl Team Yespresso"},
-  {id:2, name:"Rimborso ricevuto", body:"Gentile cliente,\n\nAbbiamo ricevuto la sua richiesta di rimborso. Provvederemo ad elaborarla entro 5-7 giorni lavorativi. Riceverà una conferma via email non appena il rimborso sarà accreditato.\n\nCordiali saluti,\nIl Team Yespresso"},
-  {id:3, name:"Giacenza BRT", body:"Gentile cliente,\n\nIl suo pacco risulta in giacenza presso il corriere BRT. La preghiamo di contattare direttamente BRT al numero 0371/4182 oppure di accordarsi per una nuova consegna tramite il sito vas.brt.it.\n\nRestiamo a disposizione.\n\nCordiali saluti,\nIl Team Yespresso"},
-  {id:4, name:"Prodotto non disponibile", body:"Gentile cliente,\n\nCi dispiace informarla che il prodotto richiesto non è al momento disponibile. La aggiorneremo non appena sarà di nuovo in stock.\n\nCordiali saluti,\nIl Team Yespresso"},
-  {id:5, name:"Richiesta informazioni capsule", body:"Gentile cliente,\n\nGrazie per il suo interesse nei nostri prodotti! Le nostre capsule sono compatibili con le macchine Nespresso® e sono disponibili in diverse miscele. Può visualizzare il catalogo completo su yespresso.it.\n\nCordiali saluti,\nIl Team Yespresso"},
-  {id:6, name:"TEMU - Acquisto errato reso", body:"Buongiorno,\n\nse ha acquistato erroneamente delle capsule non compatibili con la sua macchina, ha la possibilità di effettuare un reso entro 14 giorni. Può spedire il prodotto, a sue spese e con il corriere che desidera, a YESPRESSO, situato in via Galileo Galilei 16, 20054 Segrate, includendo tassativamente all'interno del pacco una copia dell'ordine di Temu, oppure un foglio con il nome e cognome di chi ha effettuato l'ordine e il motivo del reso. Una volta ricevuto ed elaborato dal nostro magazzino il reso, provvederemo a emettere un rimborso corrispondente al valore del prodotto integro.\n\nCordiali saluti"},
-  {id:7, name:"TEMU - No reso", body:"Buongiorno, per i prodotti alimentari se ha effettuato un acquisto errato non è possibile fare reso"},
-  {id:8, name:"TEMU - Bialetti Gioia", body:"Buongiorno, se ha una macchina Bialetti modello Gioia è possibile che non funzionino perché capita che non riconosce l'alluminio interno alla capsula.\n\nPer verificare se il problema è questo basta avvolgere con della carta alluminio il retro della capsula e provare ad erogare.\n\nLe consigliamo anche di pulire l'alloggiamento della capsula all'interno della macchina con un panno caldo così da rendere la lettura del sensore dell'alluminio più agevole; capita che dei residui di caffè possano ostruire la lettura del sensore."},
-  {id:9, name:"TEMU - Inviato articolo errato", body:"Buongiorno,\n\nper verificare la sua richiesta avremo necessità di maggiori informazioni, può inviarmi la foto del prodotto ricevuto e dell'etichetta del corriere attaccata alla scatola.\n\nGrazie\n\nCordiali saluti"},
-  {id:10, name:"TEMU - Prodotto danneggiato prove", body:"Buongiorno,\n\nci dispiace sinceramente per l'accaduto, consideri che la confezione esterna è solo un cartone di protezione per la spedizione perché all'interno il prodotto è sigillato in buste. Per gestire la sua richiesta abbiamo necessità di ricevere informazioni precise, la preghiamo gentilmente di compilare i campi sottostanti e di inviarli in risposta a questa comunicazione:\n\nPRODOTTI DANNEGGIATI\n- Prodotti/Quantità danneggiati:\n- Descriva il tipo di danneggiamento:\n- I Prodotti danneggiati sono utilizzabili (SI o NO):\n\nAlleghi delle foto che mostrino tutti i prodotti danneggiati"},
-  {id:11, name:"TEMU - Articoli mancanti", body:"Buongiorno,\n\nci scusiamo per l'eventuale errore di magazzino. Per gestire la sua richiesta compili i campi sottostanti e li invii in risposta a questa comunicazione:\n\nMERCE MANCANTE\n- Prodotti non ricevuti (indicare il numero di buste mancanti):\n\nUna volta ricevute le sue informazioni effettueremo un controllo sul peso della spedizione rilevato sia dal nostro magazzino che dal corriere; se risulteranno degli articoli mancanti le faremo il rimborso parziale, diversamente chiuderemo la richiesta."},
-  {id:12, name:"TEMU - Articolo difettoso non funzionante", body:"Buongiorno,\n\ndato che non abbiamo segnalazione sul lotto in questione, per poter analizzare la sua richiesta è necessario che ci fornisca un video dall'inserimento della capsula alla sua erogazione, così da verificare se è presente un difetto.\n\nGrazie"},
-  {id:13, name:"TEMU - Gusto", body:"Buongiorno, il gusto è soggettivo ma non abbiamo segnalazioni di difformità del prodotto rispetto agli standard.\n\nPer analizzare la sua richiesta è necessario che ci fornisca un video dall'inserimento della capsula alla sua erogazione.\n\nSe invece il prodotto comunque eroga correttamente ma non è di suo gradimento ha la possibilità di effettuare un reso a sue spese entro 14 giorni. Può inviare il prodotto a YESPRESSO, in via Galileo Galilei 16, 20054 Segrate, includendo all'interno del pacco una copia dell'ordine di Temu.\nRicevuto il reso emetteremo un rimborso per il prodotto integro."},
-  {id:14, name:"TEMU - Descrizione inaccurata", body:"Buongiorno, il titolo e la descrizione prodotto sono molto accurati, sono indicati sia il numero di capsule, sia il tipo di compatibilità, sia la miscela o il tipo di bevanda.\n\nLa informiamo che, nel caso in cui abbia acquistato delle capsule non compatibili con la sua macchina, o il prodotto non sia di suo gradimento, ha la possibilità di effettuare un reso entro 14 giorni. Le saremmo grati se potesse inviare il prodotto a YESPRESSO, in via Galileo Galilei 16, 20054 Segrate, includendo una copia dell'ordine di Temu. Una volta ricevuto provvederemo al rimborso del prodotto reso integro."},
-  {id:15, name:"TEMU - Senza motivo", body:"Buongiorno, per richiedere un rimborso sia parziale che totale dell'articolo ricevuto è necessario fornire delle motivazioni e delle prove (immagini e video) a supporto della richiesta."}
+  // ── ORDINI ──
+  {id:1, cat:"📦 Ordini", name:"Ordine in consegna", body:"Buongiorno,\nil suo ordine è in consegna per ___________\nLa ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:2, cat:"📦 Ordini", name:"Ordine in spedizione", body:"Gentile cliente,\n\nLe confermiamo che il suo ordine è stato spedito ed è attualmente in transito. Può tracciare la spedizione utilizzando il numero di tracking che le abbiamo fornito.\n\nRimaniamo a sua disposizione per qualsiasi ulteriore informazione.\n\nCordiali saluti,\nIl Team Yespresso"},
+  {id:3, cat:"📦 Ordini", name:"Annullamento ordine OK", body:"Buongiorno,\nle confermiamo l'annullamento del suo ordine come da richiesta.\nSe ha effettuato il pagamento con carta di credito o paypal il reparto amministrativo effettuerà il rimborso entro 2 giorni lavorativi.\nLa ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:4, cat:"📦 Ordini", name:"Errore spedizione - rispedizione senza ritiro", body:"Buongiorno,\nla informiamo che stiamo provvedendo alla spedizione della merce da lei precedentemente ordinata e che potrà tenere il prodotto erroneamente inviatole in quanto non effettueremo nessun ritiro.\nCi scusiamo per il disagio e la ringraziamo per averci scelto.\nCordiali saluti"},
+
+  // ── BRT / SPEDIZIONI ──
+  {id:10, cat:"🚚 Spedizioni BRT", name:"Giacenza BRT", body:"Gentile cliente,\n\nIl suo pacco risulta in giacenza presso il corriere BRT. La preghiamo di contattare direttamente BRT al numero 0371/4182 oppure di accordarsi per una nuova consegna tramite il sito vas.brt.it.\n\nRestiamo a disposizione.\n\nCordiali saluti,\nIl Team Yespresso"},
+  {id:11, cat:"🚚 Spedizioni BRT", name:"Codice PIN BRT", body:"Buongiorno, il codice pin di BRT lo trova nella email che BRT le ha inviato il giorno in cui la spedizione è partita dai nostri magazzini e ha come mittente spedizioni@brt.it"},
+  {id:12, cat:"🚚 Spedizioni BRT", name:"Modifica indirizzo da email BRT", body:"Buongiorno,\nla sua spedizione è già stata spedita quindi non è possibile modificare indirizzo, può farlo però dalla email/SMS che riceve dal corriere BRT. Ricevuta la email/SMS da BRT con i dettagli della spedizione clicchi su Riprogramma la consegna e potrà modificare indirizzo della consegna o scegliere un punto di ritiro tra quelli più vicini a lei. Se dovesse riscontrare difficoltà ci ricontatti.\nCordiali saluti"},
+  {id:13, cat:"🚚 Spedizioni BRT", name:"BRT - Ritardi natalizi", body:"Buongiorno, purtroppo a causa degli scioperi dei giorni precedenti, delle festività e delle tante consegne che ha BRT da fare ci sono dei ritardi nelle consegne. Ci scusiamo per il disagio"},
+
+  // ── RESI E RIMBORSI ──
+  {id:20, cat:"↩️ Resi e Rimborsi", name:"Acquisto errato - reso cliente", body:"Buongiorno,\nse ha acquistato erroneamente delle capsule non compatibili con la sua macchina, ha la possibilità di effettuare un reso entro 14 giorni. Può spedire il prodotto, a sue spese e con il corriere che desidera, a YESPRESSO, situato in via Galileo Galilei 16, 20054 Segrate, includendo tassattivamente all'interno del pacco una copia dell'ordine. Una volta ricevuto ed elaborato dal nostro magazzino il reso, provvederemo a emettere un credito o un rimborso corrispondente al valore del prodotto restituito integro. Si ricordi di rimuovere tutti i sacchetti e/o le scatoline e/o le capsule aperte prima di spedire il pacco.\nLa ringraziamo sinceramente per la sua comprensione e disponibilità.\nCordiali saluti"},
+  {id:21, cat:"↩️ Resi e Rimborsi", name:"Rimborso ricevuto", body:"Gentile cliente,\n\nAbbiamo ricevuto la sua richiesta di rimborso. Provvederemo ad elaborarla entro 5-7 giorni lavorativi. Riceverà una conferma via email non appena il rimborso sarà accreditato.\n\nCordiali saluti,\nIl Team Yespresso"},
+  {id:22, cat:"↩️ Resi e Rimborsi", name:"Credito per reso", body:"Buongiorno,\nle abbiamo creato un credito pari al valore dell'ordine rientrato/reso da utilizzare sul negozio yespresso.it\nRiceverà una email con l'importo del credito e le modalità di utilizzo.\nPuò utilizzarlo al suo prossimo ordine, entro 90 giorni. Per utilizzarlo aggiunga i prodotti al carrello, vada al checkout e poi in alto a destra troverà un banner con scritto utilizzalo.\nPer qualsiasi dubbio non esiti a contattarci.\nA presto"},
+  {id:23, cat:"↩️ Resi e Rimborsi", name:"Credito per reso -8€", body:"Buongiorno,\nle abbiamo creato un credito pari al valore dell'ordine rientrato/reso, decurtato di 8€ per la gestione del reso, da utilizzare sul negozio yespresso.it\nRiceverà una email con l'importo del credito e le modalità di utilizzo.\nPuò utilizzarlo al suo prossimo ordine, entro 90 giorni.\nPer qualsiasi dubbio non esiti a contattarci\nA presto"},
+  {id:24, cat:"↩️ Resi e Rimborsi", name:"Credito - come utilizzarlo", body:"Buongiorno,\nPuò utilizzare il credito entro 90 giorni dalla sua creazione. Per utilizzarlo aggiunga i prodotti al carrello, vada al checkout e poi in alto a destra troverà un banner con scritto utilizzalo. Se il totale dell'ordine è superiore al credito per saldare la differenza scelga la modalità di pagamento desiderata. Se il totale dell'ordine è inferiore al credito, può anche utilizzarlo parzialmente.\nPer qualsiasi dubbio non esiti a contattarci\nA presto\nCordiali saluti"},
+
+  // ── PRODOTTI DANNEGGIATI ──
+  {id:30, cat:"⚠️ Prodotti Danneggiati", name:"Prodotto danneggiato - richiesta info + foto", body:"Buongiorno,\nci dispiace sinceramente per l'accaduto, consideri che la confezione esterna è solo un cartone di protezione per la spedizione perché all'interno il prodotto è sigillato in buste. La preghiamo gentilmente di compilare i campi sottostanti e di inviarli in risposta a questa comunicazione:\nPRODOTTI DANNEGGIATI\n- Nome e Cognome:\n- Numero Ordine:\n- Prodotti/Quantità danneggiati:\n- Descriva il tipo di danneggiamento:\n- I Prodotti danneggiati sono utilizzabili (indichi SI o NO):\nAlleghi alla email delle foto che mostrino i prodotti e/o il pacco danneggiato\nRimaniamo in attesa di un suo cortese riscontro.\nCordiali saluti."},
+  {id:31, cat:"⚠️ Prodotti Danneggiati", name:"Prodotto danneggiato - nessun danno ai prodotti", body:"Buongiorno,\nci teniamo a esprimere le nostre scuse per l'accaduto, consideri che la confezione esterna è solo un cartone di protezione per la spedizione perché all'interno il prodotto è sigillato in buste. Siamo comunque molto sollevati nel sapere che i prodotti non hanno subito danni. Abbiamo provveduto a inoltrare la segnalazione al corriere responsabile del pacco durante la consegna. La ringraziamo sinceramente per la sua segnalazione e ci scusiamo nuovamente per il disagio arrecato.\n\nCordiali Saluti"},
+  {id:32, cat:"⚠️ Prodotti Danneggiati", name:"Lotto e scadenza", body:"Buongiorno,\nper poter verificare la sua richiesta, avremmo bisogno di alcune informazioni aggiuntive. Potrebbe gentilmente inviarci una foto della busta in cui siano chiaramente visibili il lotto e la scadenza. In alternativa, potrebbe scriverci il lotto e la scadenza in risposta a questa email.\nLa ringraziamo anticipatamente per la sua collaborazione."},
+  {id:33, cat:"⚠️ Prodotti Danneggiati", name:"Problema prodotto - rispedito senza ritiro", body:"Buongiorno,\nSiamo spiacenti di apprendere che sta riscontrando dei problemi con il nostro prodotto. Purtroppo, abbiamo constatato che una parte delle capsule del lotto di produzione da lei ricevuto presenta una difformità. Per cercare di alleviare il suo disagio, provvederemo a inviarle un prodotto sostitutivo di un nuovo lotto. La ringraziamo per la sua comprensione e ci scusiamo nuovamente per il disagio arrecato.\nCordiali saluti"},
+  {id:34, cat:"⚠️ Prodotti Danneggiati", name:"Problema prodotto - non vuole inviare video", body:"Buongiorno,\nil video è necessario ai tecnici non solo ad attestare la problematica ma a comprenderne l'esatta origine e poterla risolvere.\nSaremmo quindi felici di poterla aiutare attraverso il video e la sua collaborazione.\nCordiali saluti"},
+
+  // ── MACCHINE ──
+  {id:40, cat:"☕ Macchine", name:"Nespresso - acqua prima del caffè", body:"Buongiorno, questo succede quando\n- i dentini della macchina sono sporchi di residui di caffè e/o bevande\n- la macchina eroga il primo caffè ed era spenta o in stand by e quindi ha nel circuito acqua fredda\n- il contenitore delle capsule è pieno e quindi la leva non chiude perfettamente.\nDovrebbe risolvere il problema effettuando\n- la decalcificazione della macchina con cadenza mensile\n- pulendo i dentini della macchina con uno spazzolino settimanalmente\n- facendo un'erogazione a vuoto di qualche secondo senza capsula quando la macchina era spenta o in stand by\n- verificando che il contenitore delle capsule esauste non abbia più di 4 capsule esauste\nse il problema persiste, prima di inserire la capsula faccia pressione con l'indice sull'alluminio presente nel retro della capsula\nCi faccia sapere"},
+  {id:41, cat:"☕ Macchine", name:"Problema macchina NOEMI - modulo", body:"Buongiorno,\nse ha riscontrato dei problemi con la macchina NOEMI compili i seguenti dati richiesti e li invii in risposta alla presente:\n\nASSISTENZA MACCHINA CAFFE'\nNome e Cognome:\nNumero Ordine:\nNumero di serie della macchina (lo trovi sotto la macchina):\nSpiega i problemi riscontrati sulla macchina:\nPuò inviarci un video - dall'inserimento della spina fino al verificarsi della problematica - in risposta a questa email oppure inviandolo a assistenza@yespresso.it\n\nACQUISTO DA MENO DI UN MESE: Effettueremo il ritiro e spediremo simultaneamente una nuova macchinetta.\nACQUISTO DA PIU' DI UN MESE: Ritiro e sostituzione con macchinetta rigenerata.\n\nAttendiamo quanto richiesto.\nCordiali saluti"},
+  {id:42, cat:"☕ Macchine", name:"NOEMI - compatibilità Linea S", body:"Buongiorno,\nLa NOEMI utilizza solo le capsule LINEA S.\nLe altre compatibilità (Es. Nespresso, A Modo Mio, Dolce Gusto, ecc) non sono quindi utilizzabili sulla macchinetta NOEMI.\nTrova le capsule compatibili Linea S qui https://www.yespresso.it/#!/Nero-Nobile/c/13273060/offset=0&sort=normal\nSe dovesse riscontrare difficoltà ci contatti dal Lunedì al Venerdì - dalle 09:00 alle 13:00 e dalle 14:00 alle 18:00, al numero +39022132093.\nCordiali saluti"},
+  {id:45, cat:"⚠️ Prodotti Danneggiati", name:"PROBLEMA PRODOTTO - RICHIESTA INFO SUL DIFETTO", body:"Gentile Cliente,\nLa ringraziamo per la sua attenzione. La preghiamo cortesemente di compilare i dati richiesti nel modulo seguente per poterle fornire assistenza riguardo al prodotto che ritiene difettoso.\n\nASSISTENZA PROBLEMI PRODOTTO\n- indichi il sistema delle sue capsule (ad esempio: Nespresso, Dolce Gusto, A modo mio, Caffitaly, ecc...):\n- Numero di lotto/i di produzione e data di scadenza del prodotto/i (li trova stampati sulla confezione del prodotto):\n- Indichi se il problema riscontrato riguarda la totalità o solo una parte delle capsule:\n- Descriva il problema che sta riscontrando:\n\nle chiediamo di inviarci in allegato anche una foto della busta/scatola che contiene le capsule dove è ben visibile il lotto e la scadenza e un video dall'inserimento della capsula alla sua erogazione così da individuare e segnalare il problema al reparto produttivo.\nSe non riesce ad allegare il video alla email lo invii via wa al 3491031349 indicando il numero ordine o il numero di ticket e il suo nome e cognome.\nLe chiedo di rispondere inviandoci tutte le informazioni richieste al fine di poter gestire in modo ottimale la sua problematica, le anticipiamo che in assenza delle informazioni richieste purtroppo non potremo gestire la sua segnalazione.\nLa ringraziamo anticipatamente per la sua collaborazione.\nCordiali saluti,"},
+  {id:44, cat:"☕ Macchine", name:"CAFFITALY - Volta e macchine vecchie", body:"Buongiorno,\ncome indicato nella descrizione del prodotto, purtroppo sulle macchine modello volta acquistate tra fine 2024 e 2025 non funzionano perché la macchina non riesce a bucare la capsula.\nLo stesso problema si riscontra anche sulle macchine caffitaly molto vecchie il cui punzone per bucare la capsula è molto usurato e quindi non riesce a bucare la capsula.\nIn entrambi i casi per poterle utilizzare basta fare un buchino con una forbicina o una forbice a punta sul retro della capsula (come indicato nell'immagine in allegato). Così dovrebbe risolvere il problema.\nStiamo comunque lavorando per apportare modifiche alla capsula e a breve, dalle produzioni di fine ottobre, la nuova capsula funzionerà senza necessità di doverla bucare anche su questi modelli perché verranno già fatti, in produzione, due piccoli forellini sul fondo della capsula.\ngrazie per la collaborazione e ci scusi per il disagio"},
+  {id:43, cat:"☕ Macchine", name:"Caffitaly - qualità nuova capsula", body:"Buongiorno, abbiamo modificato la capsula aggiungendo dei piccoli forellini nella parte posteriore per farla funzionare anche sulle nuove macchine e dalla consegne di gennaio l'erogazione è tornata ottimale\n\ngrazie per la comprensione"},
+
+  // ── TEMU ──
+  {id:50, cat:"🟠 Temu", name:"TEMU - Acquisto errato reso", body:"Buongiorno,\nse ha acquistato erroneamente delle capsule non compatibili con la sua macchina, ha la possibilità di effettuare un reso entro 14 giorni. Può spedire il prodotto, a sue spese e con il corriere che desidera, a YESPRESSO, situato in via Galileo Galilei 16, 20054 Segrate, includendo tassattivamente all'interno del pacco una copia dell'ordine di Temu, oppure un foglio con il nome e cognome di chi ha effettuato l'ordine e il motivo del reso. Una volta ricevuto ed elaborato dal nostro magazzino il reso, provvederemo a emettere un rimborso corrispondente al valore del prodotto integro.\nCordiali saluti"},
+  {id:51, cat:"🟠 Temu", name:"TEMU - No reso alimentari", body:"Buongiorno, per i prodotti alimentari se ha effettuato un acquisto errato non è possibile fare reso"},
+  {id:52, cat:"🟠 Temu", name:"TEMU - Bialetti Gioia", body:"Buongiorno, Se ha una macchina Bialetti modello Gioia è possibile che non funzionino perché capita che non riconosce l'alluminio interno alla capsula.\n\nPer verificare se il problema è questo basta avvolgere con della carta alluminio il retro della capsula e provare ad erogare.\n\nLe consigliamo anche di pulire l'alloggiamento della capsula all'interno della macchina con un panno caldo così da rendere la lettura del sensore dell'alluminio più agevole."},
+  {id:53, cat:"🟠 Temu", name:"TEMU - Inviato articolo errato", body:"Buongiorno,\nper verificare la sua richiesta avremo necessità di maggiori informazioni, può inviarmi la foto del prodotto ricevuto e dell'etichetta del corriere attaccata alla scatola.\nGrazie\nCordiali saluti"},
+  {id:54, cat:"🟠 Temu", name:"TEMU - Prodotto danneggiato prove", body:"Buongiorno,\nci dispiace sinceramente per l'accaduto, consideri che la confezione esterna è solo un cartone di protezione per la spedizione perché all'interno il prodotto è sigillato in buste. Per gestire la sua richiesta abbiamo necessità di ricevere informazioni precise, la preghiamo gentilmente di compilare i campi sottostanti:\n\nPRODOTTI DANNEGGIATI\n- Prodotti/Quantità danneggiati:\n- Descriva il tipo di danneggiamento:\n- I Prodotti danneggiati sono utilizzabili (SI o NO):\n\nAlleghi delle foto che mostrino tutti i prodotti danneggiati"},
+  {id:55, cat:"🟠 Temu", name:"TEMU - Articoli mancanti", body:"Buongiorno,\nci scusiamo per l'eventuale errore di magazzino. Per gestire la sua richiesta compili i campi sottostanti:\n\nMERCE MANCANTE\n- Prodotti non ricevuti (indicare il numero di buste mancanti):\n\nUna volta ricevute le sue informazioni effettueremo un controllo sul peso della spedizione; se risulteranno degli articoli mancanti le faremo il rimborso parziale, diversamente chiuderemo la richiesta."},
+  {id:56, cat:"🟠 Temu", name:"TEMU - Articolo difettoso", body:"Buongiorno,\ndato che non abbiamo segnalazione sul lotto in questione, per poter analizzare la sua richiesta è necessario che ci fornisca un video dall'inserimento della capsula alla sua erogazione, così da verificare se è presente un difetto.\n\nGrazie"},
+  {id:57, cat:"🟠 Temu", name:"TEMU - Gusto soggettivo", body:"Buongiorno, il gusto è soggettivo ma non abbiamo segnalazioni di difformità del prodotto rispetto agli standard.\n\nPer analizzare la sua richiesta è necessario che ci fornisca un video dall'inserimento della capsula alla sua erogazione.\n\nSe invece il prodotto comunque eroga correttamente ma non è di suo gradimento ha la possibilità di effettuare un reso a sue spese entro 14 giorni a YESPRESSO, via Galileo Galilei 16, 20054 Segrate, includendo all'interno del pacco una copia dell'ordine di Temu."},
+  {id:58, cat:"🟠 Temu", name:"TEMU - Descrizione inaccurata", body:"Buongiorno, il titolo e la descrizione prodotto sono molto accurati, sono indicati sia il numero di capsule, sia il tipo di compatibilità, sia la miscela o il tipo di bevanda.\n\nLa informiamo che nel caso in cui abbia acquistato delle capsule non compatibili con la sua macchina, ha la possibilità di effettuare un reso entro 14 giorni a YESPRESSO, via Galileo Galilei 16, 20054 Segrate, includendo una copia dell'ordine di Temu."},
+  {id:59, cat:"🟠 Temu", name:"TEMU - Senza motivo", body:"Buongiorno, per richiedere un rimborso sia parziale che totale dell'articolo ricevuto è necessario fornire delle motivazioni e delle prove (immagini e video) a supporto della richiesta."},
+
+  // ── PAGAMENTI ──
+  {id:60, cat:"💳 Pagamenti", name:"Metodi di pagamento", body:"Buongiorno,\nÈ possibile pagare in vari modi:\n- Carta di credito (incluse carte prepagate)\n- Conto Paypal\n- Contrassegno (pagamento in CONTANTI alla consegna. È prevista una maggiorazione di 4€ sul totale dell'ordine da pagare al corriere. Si accettano solo contanti. Metodo di pagamento utilizzabile solo per spedizioni in Italia.)\nIn caso difficoltà ci contatti nella chat\nCordiali saluti"},
+  {id:61, cat:"💳 Pagamenti", name:"Carta di credito non andata a buon fine", body:"Buongiorno,\nse il pagamento con carta non è andato a buon fine verifichi la correttezza dei dati inseriti, compreso il CVV ed il circuito della carta selezionato.\nSe è una ricaricabile si assicuri che l'importo caricato sia sufficiente all'acquisto.\nSe dovesse riscontrare difficoltà ci contatti gentilmente, dal Lunedì al Venerdì - dalle 09:00 alle 13:00 e dalle 14:00 alle 18:00, al numero +39022132093.\nCordiali saluti"},
+
+  // ── FATTURE ──
+  {id:70, cat:"🧾 Fatture", name:"Fattura - copia disponibile", body:"Buongiorno,\nemettiamo fattura al momento dell'ordine. Come da nuova normativa riceverà la fattura tramite il sistema di interscambio dell'Agenzia delle Entrate entro 10 giorni dall'ordine\nLa ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:71, cat:"🧾 Fatture", name:"Fattura - no emissione dati non inseriti", body:"Buongiorno,\nla informiamo che non è possibile emettere fattura se non è stata correttamente richiesta ed inseriti i dati al momento dell'ordine.\nAi sensi dell'art. 21, comma 4, del D.P.R. 633/1972: la fattura è emessa al momento dell'effettuazione dell'operazione.\nVi ricordiamo che per poter ricevere la fattura commerciale è necessario, per i futuri ordini, inserire sempre e tassativamente i dati di fatturazione al momento dell'ordine\nGrazie\nCordiali saluti"},
+
+  // ── PRODOTTI E SITO ──
+  {id:80, cat:"🛍️ Prodotti e Sito", name:"Prodotto non disponibile / riassortimento", body:"Buongiorno,\nCi dispiace che il prodotto che cerca non è al momento disponibile o è stato eliminato. Consideri che:\n- se il prodotto è presente sul negozio ma risulta esaurito verrà riassortito entro 7 giorni lavorativi\n- se il prodotto invece non è più presente e visibile sul negozio significa che è stato eliminato quindi non sarà più disponibile.\nCordiali saluti"},
+  {id:81, cat:"🛍️ Prodotti e Sito", name:"Origini caffè", body:"Buongiorno, il caffè verde proviene da brasile, vietnam, india e africa mentre tostatura e confezionamento vengono effettuate in italia"},
+  {id:82, cat:"🛍️ Prodotti e Sito", name:"Ingredienti", body:"Buongiorno,\nse desidera maggiori informazioni rispetto agli ingredienti, potrà cliccare sulla singola bevanda per visualizzarne l'etichetta.\nNon esiti inoltre a contattarci allo +39022132093 in caso desideri ulteriori informazioni, dal Lunedì al Venerdì - dalle 09:00 alle 13:00 e dalle 14:00 alle 18:00.\nLa ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:83, cat:"🛍️ Prodotti e Sito", name:"Cancellare prodotto dal carrello", body:"Buongiorno,\nse desidera cancellare del tutto un prodotto dal carrello clicchi il minuscolo cestino che si trova a destra delle quantità. Invece per aumentare o diminuire le quantità basta regolarsi con i simboli - e +.\nLa ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:84, cat:"🛍️ Prodotti e Sito", name:"Rivenditore - ordine e sconti", body:"Buongiorno,\nGli ordini come rivenditore puoi effettuarli direttamente sul sito yespresso.it usufruendo di uno sconto del 25% o del 30% rispetto ai prezzi di listino applicati.\n\n- 25% sconto con ordine minimo di 450€ iva inclusa → codice sconto RIV25\n- 30% di sconto con ordine minimo di 1000€ iva inclusa → codice sconto RIV30\n\nGli sconti non sono cumulabili con eventuali promozioni presenti sul sito.\n\nRicordati prima di andare alla cassa di inserire i dati per richiedere la fattura cliccando sul bottone rosso \"RICHIEDI FATTURA COME AZIENDA\"\n\nRimaniamo a disposizione per eventuali chiarimenti.\nCordiali saluti"},
+  {id:85, cat:"🛍️ Prodotti e Sito", name:"Promozione della settimana", body:"Buongiorno,\nle inoltriamo la promozione attiva\nSOLO OGGI\nSOTTOCOSTO SU TUTTI I PRODOTTI\ni prezzi visualizzati sono già scontati\nCordiali saluti"},
+
+  // ── GENERALE ──
+  {id:90, cat:"💬 Generale", name:"Chatbot - richiesta maggiori info", body:"Buongiorno,\nha aperto una segnalazione, posso aiutarla in qualche modo?\nAttendiamo una sua risposta in caso desideri maggiori informazioni.\nLa ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:91, cat:"💬 Generale", name:"Ringraziamento", body:"la ringraziamo per averci scelto.\nCordiali saluti"},
+  {id:92, cat:"💬 Generale", name:"Richiesta informazioni capsule", body:"Gentile cliente,\n\nGrazie per il suo interesse nei nostri prodotti! Le nostre capsule sono compatibili con le macchine Nespresso® e sono disponibili in diverse miscele. Può visualizzare il catalogo completo su yespresso.it.\n\nCordiali saluti,\nIl Team Yespresso"},
 ];
 let qrEditingId = null;
+let qrSortMode = localStorage.getItem("yespresso_qr_sort") || "manual"; // "manual" o "usage"
+let qrUsageCount = JSON.parse(localStorage.getItem("yespresso_qr_usage") || "{}");
 
 function saveQRToStorage(){ localStorage.setItem("yespresso_qr", JSON.stringify(quickReplies)); }
+function trackQRUsage(id){ qrUsageCount[id]=(qrUsageCount[id]||0)+1; localStorage.setItem("yespresso_qr_usage",JSON.stringify(qrUsageCount)); }
+
+
+function insertQRFromModal(id){
+  const qr=quickReplies.find(q=>q.id===id); if(!qr)return;
+  const rt=document.getElementById("reply-text");
+  if(rt){
+    rt.value=qr.body;
+    rt.focus();
+    trackQRUsage(id);
+    closeQRModal();
+    showToast("✓ Risposta rapida inserita");
+  }
+}
 
 function openQRModal(){
   renderQRList();
@@ -1604,39 +2172,101 @@ function closeQRModal(){ document.getElementById("qr-modal").style.display="none
 function renderQRList(){
   const body=document.getElementById("qr-modal-body");
   if(!quickReplies.length){ body.innerHTML='<div style="color:#aaa;text-align:center;padding:20px">Nessuna risposta rapida. Aggiungine una!</div>'; return; }
-  body.innerHTML=quickReplies.map(qr=>`
-    <div class="qr-list-item">
-      <div style="flex:1;min-width:0">
-        <div class="qr-list-title">⚡ ${qr.name}</div>
-        <div class="qr-list-body">${qr.body.replace(/\n/g," ")}</div>
-      </div>
-      <div class="qr-list-actions">
-        <button class="btn-sm" onclick="editQR(${qr.id})">✏️ Modifica</button>
-        <button class="btn-sm btn-danger" onclick="deleteQR(${qr.id})">🗑</button>
-      </div>
-    </div>`).join("");
+  
+  // Ordina in base alla modalità
+  let sorted=[...quickReplies];
+  if(qrSortMode==="usage"){
+    sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
+  }
+  
+  // Raggruppa per categoria
+  const cats={};
+  sorted.forEach(qr=>{
+    const cat=qr.cat||"💬 Generale";
+    if(!cats[cat])cats[cat]=[];
+    cats[cat].push(qr);
+  });
+  
+  let html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:4px 0;border-bottom:1px solid #f0f2f5">'+
+    '<span style="font-size:11px;color:#888">Ordina per:</span>'+
+    '<button onclick="setQRSort(\'manual\')" style="padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid '+( qrSortMode==="manual"?"#1a73e8":"#e0e4ea")+';background:'+( qrSortMode==="manual"?"#e8f0fe":"#fff")+';color:'+( qrSortMode==="manual"?"#1a73e8":"#555")+'">Manuale</button>'+
+    '<button onclick="setQRSort(\'usage\')" style="padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid '+( qrSortMode==="usage"?"#1a73e8":"#e0e4ea")+';background:'+( qrSortMode==="usage"?"#e8f0fe":"#fff")+';color:'+( qrSortMode==="usage"?"#1a73e8":"#555")+'">Più usate</button>'+
+    '</div>';
+  
+  Object.entries(cats).forEach(([cat, items])=>{
+    html+=`<div style="margin-bottom:4px"><div style="font-size:11px;font-weight:700;color:#888;padding:6px 0;letter-spacing:0.5px">${cat}</div>`;
+    items.forEach(qr=>{
+      const usage=qrUsageCount[qr.id]||0;
+      const bodyPreview=qr.body.replace(/\n/g," ");
+      html+='<div class="qr-list-item" style="margin-bottom:6px">'+
+        '<div style="flex:1;min-width:0">'+
+          '<div class="qr-list-title" onclick="insertQRFromModal('+qr.id+')" style="cursor:pointer">⚡ '+qr.name+(usage>0?'<span style="font-size:9px;color:#aaa;font-weight:400;margin-left:6px">usata '+usage+'x</span>':"")+' <span style="font-size:10px;color:#aaa;font-weight:400">↵ inserisci</span></div>'+
+          '<div id="qr-preview-'+qr.id+'" style="font-size:12px;color:#666;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:pre-wrap">'+qr.body+'</div>'+
+        '</div>'+
+        '<div class="qr-list-actions" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+
+          '<div style="display:flex;gap:4px">'+
+            '<button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
+            '<button class="btn-sm btn-danger" onclick="deleteQR('+qr.id+')">🗑</button>'+
+          '</div>'+
+          '<button class="btn-sm" id="qr-expand-'+qr.id+'" onclick="toggleQRExpand('+qr.id+')" style="font-size:10px;padding:2px 8px">⋯</button>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div>';
+  });
+  body.innerHTML=html;
 }
 
-function showAddQR(){ qrEditingId=null; document.getElementById("qr-edit-title").textContent="Nuova risposta rapida"; document.getElementById("qr-edit-name").value=""; document.getElementById("qr-edit-body").value=""; document.getElementById("qr-edit-modal").style.display="flex"; }
-function editQR(id){ const qr=quickReplies.find(q=>q.id===id); if(!qr)return; qrEditingId=id; document.getElementById("qr-edit-title").textContent="Modifica risposta"; document.getElementById("qr-edit-name").value=qr.name; document.getElementById("qr-edit-body").value=qr.body; document.getElementById("qr-edit-modal").style.display="flex"; }
+
+function toggleQRExpand(id){
+  const preview=document.getElementById("qr-preview-"+id);
+  const btn=document.getElementById("qr-expand-"+id);
+  if(!preview||!btn)return;
+  if(btn.dataset.expanded==="1"){
+    preview.style.webkitLineClamp="3";
+    preview.style.overflow="hidden";
+    btn.dataset.expanded="0";
+    btn.textContent="⋯";
+    btn.style.background="";
+    btn.style.color="";
+  } else {
+    preview.style.webkitLineClamp="unset";
+    preview.style.overflow="visible";
+    btn.dataset.expanded="1";
+    btn.textContent="▲";
+    btn.style.background="#e8f0fe";
+    btn.style.color="#1a73e8";
+  }
+}
+
+function setQRSort(mode){
+  qrSortMode=mode;
+  localStorage.setItem("yespresso_qr_sort",mode);
+  renderQRList();
+}
+
+function showAddQR(){ qrEditingId=null; document.getElementById("qr-edit-title").textContent="Nuova risposta rapida"; document.getElementById("qr-edit-cat").value="💬 Generale"; document.getElementById("qr-edit-name").value=""; document.getElementById("qr-edit-body").value=""; document.getElementById("qr-edit-modal").style.display="flex"; }
+function editQR(id){ const qr=quickReplies.find(q=>q.id===id); if(!qr)return; qrEditingId=id; document.getElementById("qr-edit-title").textContent="Modifica risposta"; document.getElementById("qr-edit-cat").value=qr.cat||"💬 Generale"; document.getElementById("qr-edit-name").value=qr.name; document.getElementById("qr-edit-body").value=qr.body; document.getElementById("qr-edit-modal").style.display="flex"; }
 function closeEditModal(){ document.getElementById("qr-edit-modal").style.display="none"; }
 function deleteQR(id){ if(!confirm("Eliminare questa risposta rapida?"))return; quickReplies=quickReplies.filter(q=>q.id!==id); saveQRToStorage(); renderQRList(); }
 function saveQR(){
   const name=document.getElementById("qr-edit-name").value.trim();
   const body=document.getElementById("qr-edit-body").value.trim();
+  const cat=document.getElementById("qr-edit-cat").value||"💬 Generale";
   if(!name||!body){showToast("Compila titolo e testo","error");return;}
-  if(qrEditingId){ const qr=quickReplies.find(q=>q.id===qrEditingId); if(qr){qr.name=name;qr.body=body;} }
-  else{ quickReplies.push({id:Date.now(),name,body}); }
+  if(qrEditingId){ const qr=quickReplies.find(q=>q.id===qrEditingId); if(qr){qr.name=name;qr.body=body;qr.cat=cat;} }
+  else{ quickReplies.push({id:Date.now(),cat,name,body}); }
   saveQRToStorage(); renderQRList(); closeEditModal(); showToast("✓ Risposta salvata");
 }
 
 // Insert QR into textarea
-function insertQR(body){
+function insertQR(body,id){
   const rt=document.getElementById("reply-text");
   if(!rt)return;
   rt.value=body;
   rt.focus();
   hideQRPopup();
+  if(id)trackQRUsage(id);
 }
 
 // Popup triggered by # in textarea
@@ -1667,7 +2297,9 @@ function setupQRPopup(textarea){
 }
 
 function showQRPopup(query, textarea){
-  const filtered=quickReplies.filter(qr=>!query||qr.name.toLowerCase().includes(query)||qr.body.toLowerCase().includes(query));
+  let sorted=[...quickReplies];
+  if(qrSortMode==="usage") sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
+  const filtered=sorted.filter(qr=>!query||qr.name.toLowerCase().includes(query)||qr.body.toLowerCase().includes(query));
   let popup=document.getElementById("qr-inline-popup");
   if(!filtered.length){ hideQRPopup(); return; }
   if(!popup){
@@ -1677,7 +2309,7 @@ function showQRPopup(query, textarea){
     textarea.parentNode.style.position="relative";
     textarea.parentNode.appendChild(popup);
   }
-  popup.innerHTML=filtered.map((qr,i)=>`<div class="qr-item${i===qrSelectedIdx?" qr-selected":""}" onclick="insertQRFromPopup(${qr.id},this)"><div class="qr-title">⚡ ${qr.name}</div><div class="qr-preview">${qr.body.replace(/\n/g," ").substring(0,80)}...</div></div>`).join("");
+  popup.innerHTML=filtered.map((qr,i)=>`<div class="qr-item${i===qrSelectedIdx?" qr-selected":""}" onclick="insertQRFromPopup(${qr.id},this)"><div class="qr-title">${qr.cat?'<span style="font-size:9px;color:#aaa;margin-right:4px">'+qr.cat+'</span>':""} ${qr.name}</div><div class="qr-preview">${qr.body.replace(/\n/g," ").substring(0,80)}...</div></div>`).join("");
   popup.style.display="block";
   qrPopupActive=true;
 }
@@ -1687,13 +2319,13 @@ function hideQRPopup(){ const p=document.getElementById("qr-inline-popup"); if(p
 function insertQRFromPopup(id, el){
   const qr=quickReplies.find(q=>q.id===id); if(!qr)return;
   const rt=document.getElementById("reply-text"); if(!rt)return;
-  // Replace from last # to cursor with the QR body
   const pos=rt.selectionStart;
   const before=rt.value.substring(0,pos);
   const hashIdx=before.lastIndexOf("#");
   rt.value=rt.value.substring(0,hashIdx)+qr.body+rt.value.substring(pos);
   rt.focus();
   hideQRPopup();
+  trackQRUsage(id);
 }
 
 // ═══════════════════════════════════════════════
@@ -1798,6 +2430,7 @@ window.debugShopify = async function(num){
 };
 loadTickets();
 loadSolvedExamples();
+loadAgentsAndTags();
 // Auto-refresh ogni 60 secondi (silent, non interrompe ticket aperto)
 setInterval(async function(){
   try{
@@ -1992,6 +2625,21 @@ async function submitNewTicket(){
       <button class="modal-close" onclick="closeEditModal()">×</button>
     </div>
     <div class="modal-body">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Categoria</label>
+        <select class="field" id="qr-edit-cat" style="padding:8px 12px">
+          <option value="📦 Ordini">📦 Ordini</option>
+          <option value="🚚 Spedizioni BRT">🚚 Spedizioni BRT</option>
+          <option value="↩️ Resi e Rimborsi">↩️ Resi e Rimborsi</option>
+          <option value="⚠️ Prodotti Danneggiati">⚠️ Prodotti Danneggiati</option>
+          <option value="☕ Macchine">☕ Macchine</option>
+          <option value="🟠 Temu">🟠 Temu</option>
+          <option value="💳 Pagamenti">💳 Pagamenti</option>
+          <option value="🧾 Fatture">🧾 Fatture</option>
+          <option value="🛍️ Prodotti e Sito">🛍️ Prodotti e Sito</option>
+          <option value="💬 Generale">💬 Generale</option>
+        </select>
+      </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Titolo (es. "Spedizione in corso")</label>
         <input class="field" id="qr-edit-name" type="text" placeholder="Nome risposta rapida"/>

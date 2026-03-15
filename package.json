@@ -1,12 +1,8 @@
 {
   "name": "yespresso-proxy",
   "version": "1.0.0",
-  "description": "Proxy server per Yespresso HelpDesk",
   "main": "server.js",
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "scripts": {
-    "start": "node server.js"
+  "dependencies": {
+    "imapflow": "^1.0.169"
   }
 }
