@@ -204,16 +204,31 @@ const server = http.createServer(async function(req, res) {
     const email = params.get("email") || "";
     if (!email) { res.writeHead(400); res.end(JSON.stringify({ error: "email required" })); return; }
     try {
-      const csRes = await fetch("https://creditsyard.com/api/customers?email=" + encodeURIComponent(email), {
-        headers: {
-          "Authorization": "Bearer 412b510ba19f72e6eaab40fdf63aa114",
-          "X-Shop-Domain": "40f758-3.myshopify.com",
-          "Content-Type": "application/json"
-        }
-      });
-      const data = await csRes.json();
-      console.log("[CREDITSYARD] response:", JSON.stringify(data).substring(0, 200));
-      const customer = Array.isArray(data) ? data[0] : (data.customers && data.customers[0]) || data;
+      // Prova diversi endpoint Creditsyard
+      const endpoints = [
+        "https://creditsyard.com/api/v1/customers?email=" + encodeURIComponent(email),
+        "https://creditsyard.com/api/customers?email=" + encodeURIComponent(email),
+        "https://creditsyard.com/api/customers/search?email=" + encodeURIComponent(email),
+      ];
+      let customer = null;
+      for (const url of endpoints) {
+        try {
+          const csRes = await fetch(url, {
+            headers: {
+              "Authorization": "Bearer 412b510ba19f72e6eaab40fdf63aa114",
+              "X-Shop-Domain": "40f758-3.myshopify.com",
+              "Content-Type": "application/json"
+            }
+          });
+          const text = await csRes.text();
+          console.log("[CREDITSYARD] " + url + " status:" + csRes.status + " body:", text.substring(0, 300));
+          if (csRes.ok && text.startsWith("{") || text.startsWith("[")) {
+            const data = JSON.parse(text);
+            customer = Array.isArray(data) ? data[0] : (data.customers && data.customers[0]) || data;
+            if (customer && customer.id) break;
+          }
+        } catch(ee) { console.log("[CREDITSYARD] error:", ee.message); }
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(customer || {}));
     } catch(e) {
