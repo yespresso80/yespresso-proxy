@@ -197,6 +197,32 @@ const server = http.createServer(async function(req, res) {
 
   if (req.url.startsWith("/shopify/callback")) { res.writeHead(200); res.end("OK"); return; }
 
+  // Creditsyard customer lookup by email
+  if (req.url.startsWith("/creditsyard/customer")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const email = params.get("email") || "";
+    if (!email) { res.writeHead(400); res.end(JSON.stringify({ error: "email required" })); return; }
+    try {
+      const csRes = await fetch("https://creditsyard.com/api/customers?email=" + encodeURIComponent(email), {
+        headers: {
+          "Authorization": "Bearer 412b510ba19f72e6eaab40fdf63aa114",
+          "X-Shop-Domain": "40f758-3.myshopify.com",
+          "Content-Type": "application/json"
+        }
+      });
+      const data = await csRes.json();
+      console.log("[CREDITSYARD] response:", JSON.stringify(data).substring(0, 200));
+      const customer = Array.isArray(data) ? data[0] : (data.customers && data.customers[0]) || data;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(customer || {}));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   let targetUrl, requestHeaders;
 
   if (req.url.startsWith("/shopify")) {
@@ -240,26 +266,6 @@ const server = http.createServer(async function(req, res) {
     if (bodyBuffer.length > 0) proxyReq.write(bodyBuffer);
     proxyReq.end();
   });
-});
-
-// Creditsyard customer lookup by email
-app.get('/creditsyard/customer', async (req, res) => {
-  try {
-    const email = req.query.email;
-    if (!email) return res.json({ error: 'email required' });
-    const response = await fetch('https://creditsyard.com/api/customers?email=' + encodeURIComponent(email), {
-      headers: {
-        'Authorization': 'Bearer 412b510ba19f72e6eaab40fdf63aa114',
-        'X-Shop-Domain': '40f758-3.myshopify.com',
-        'Content-Type': 'application/json'
-      }
-    });
-    const data = await response.json();
-    const customer = Array.isArray(data) ? data[0] : (data.customers && data.customers[0]) || data;
-    res.json(customer || {});
-  } catch(e) {
-    res.json({ error: e.message });
-  }
 });
 
 server.listen(PORT, "0.0.0.0", function() {
