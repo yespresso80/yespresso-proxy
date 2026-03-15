@@ -204,33 +204,20 @@ const server = http.createServer(async function(req, res) {
     const email = params.get("email") || "";
     if (!email) { res.writeHead(400); res.end(JSON.stringify({ error: "email required" })); return; }
     try {
-      // Prova diversi endpoint Creditsyard
-      const endpoints = [
-        "https://creditsyard.com/api/v1/customers?email=" + encodeURIComponent(email),
-        "https://creditsyard.com/api/customers?email=" + encodeURIComponent(email),
-        "https://creditsyard.com/api/customers/search?email=" + encodeURIComponent(email),
-      ];
-      let customer = null;
-      for (const url of endpoints) {
-        try {
-          const csRes = await fetch(url, {
-            headers: {
-              "Authorization": "Bearer 412b510ba19f72e6eaab40fdf63aa114",
-              "X-Shop-Domain": "40f758-3.myshopify.com",
-              "Content-Type": "application/json"
-            }
-          });
-          const text = await csRes.text();
-          console.log("[CREDITSYARD] " + url + " status:" + csRes.status + " body:", text.substring(0, 300));
-          if (csRes.ok && text.startsWith("{") || text.startsWith("[")) {
-            const data = JSON.parse(text);
-            customer = Array.isArray(data) ? data[0] : (data.customers && data.customers[0]) || data;
-            if (customer && customer.id) break;
-          }
-        } catch(ee) { console.log("[CREDITSYARD] error:", ee.message); }
-      }
+      const csRes = await fetch("https://creditsyard.com/api/common/customers/get", {
+        method: "POST",
+        headers: {
+          "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ customer_email: email })
+      });
+      const text = await csRes.text();
+      console.log("[CREDITSYARD] status:" + csRes.status + " body:", text.substring(0, 200));
+      let customer = {};
+      try { customer = JSON.parse(text); } catch(pe) {}
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(customer || {}));
+      res.end(JSON.stringify(customer));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: e.message }));
