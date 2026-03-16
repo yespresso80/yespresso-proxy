@@ -203,7 +203,8 @@ const server = http.createServer(async function(req, res) {
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
 const BRT_PASS = "YES01307";
-const BRT_BASE = "https://vas.brt.it";
+const BRT_BASE = "https://services.brt.it";
+const BRT_VAS = "https://vas.brt.it";
 let brtSessionCookie = null;
 let brtSessionExpiry = 0;
 
@@ -211,51 +212,27 @@ async function brtLogin() {
   const now = Date.now();
   if (brtSessionCookie && now < brtSessionExpiry) return brtSessionCookie;
   // Prova diversi endpoint di login BRT
-  const loginAttempts = [
-    { url: BRT_BASE + "/vas/login.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe" },
-    { url: BRT_BASE + "/vas/utenti_login.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS },
-    { url: BRT_BASE + "/vas/accesso.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe" },
-    { url: "https://www.brt.it/vas/login.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe" },
-  ];
-  for (const attempt of loginAttempts) {
-    console.log("[BRT] Provo login su:", attempt.url);
-    const res = await fetch(attempt.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-      },
-      body: attempt.body,
-      redirect: "manual"
-    });
-    console.log("[BRT] Risposta:", res.status, "Location:", res.headers.get("location") || "nessuna");
-    const setCookie = res.headers.get("set-cookie") || "";
-    const jsessionMatch = setCookie.match(/JSESSIONID=[^;]+/);
-    if (jsessionMatch) {
-      brtSessionCookie = jsessionMatch[0];
-      brtSessionExpiry = now + 25 * 60 * 1000;
-      console.log("[BRT] Login OK su", attempt.url);
-      return brtSessionCookie;
-    }
-    // Se redirect a pagina interna = login OK con redirect
-    const location = res.headers.get("location") || "";
-    if (location && !location.includes("login") && !location.includes("error") && res.status >= 300 && res.status < 400) {
-      // Segui il redirect per ottenere il cookie
-      const res2 = await fetch(location.startsWith("http") ? location : BRT_BASE + location, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        redirect: "manual"
-      });
-      const setCookie2 = res2.headers.get("set-cookie") || "";
-      const m2 = setCookie2.match(/JSESSIONID=[^;]+/);
-      if (m2) {
-        brtSessionCookie = m2[0];
-        brtSessionExpiry = now + 25 * 60 * 1000;
-        console.log("[BRT] Login OK via redirect su", attempt.url);
-        return brtSessionCookie;
-      }
-    }
-  }
-  throw new Error("BRT login fallito su tutti gli endpoint");
+  // Step 1: GET pagina login per ottenere CSRF token e cookie sessione
+  const loginPageUrl = "https://services.brt.it/it/area-clienti";
+  console.log("[BRT] GET pagina login:", loginPageUrl);
+  const pageRes = await fetch(loginPageUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html,*/*" },
+    redirect: "follow"
+  });
+  const pageHtml = await pageRes.text();
+  const pageCookies = pageRes.headers.get("set-cookie") || "";
+  console.log("[BRT] Pagina login status:", pageRes.status, "url:", pageRes.url, "html length:", pageHtml.length);
+  console.log("[BRT] Cookie ricevuti:", pageCookies.substring(0, 100));
+  
+  // Cerca form action e CSRF token nella pagina
+  const formActionMatch = pageHtml.match(/action=["']([^"']*login[^"']*)["']/i);
+  const csrfMatch = pageHtml.match(/name=["'](_csrf|csrf_token|token|authenticity_token)["'][^>]*value=["']([^"']+)["']/i);
+  const formAction = formActionMatch ? formActionMatch[1] : null;
+  const csrfToken = csrfMatch ? csrfMatch[2] : null;
+  console.log("[BRT] Form action:", formAction, "CSRF:", csrfToken ? "trovato" : "non trovato");
+  console.log("[BRT] HTML snippet (form):", pageHtml.substring(pageHtml.indexOf("form"), pageHtml.indexOf("form") + 500));
+
+  throw new Error("BRT: analisi pagina completata, controlla i log per procedere");
 }
 
 async function brtFetch(path, options = {}) {
