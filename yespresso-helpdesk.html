@@ -2245,10 +2245,15 @@ async function generateReply(lastMsg,email,fullThread){
       if(tn){
         const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;
         html+='<br>📦 '+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
-        // POD — link diretto vas.brt.it con prefisso 26
+        // POD — link BRT + pulsante carica immagine nella sidebar
         const tnPod=tn.startsWith('26')?tn:'26'+tn;
         const podUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnPod;
         html+=' — <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 POD ↗</a>';
+        const podInputId='pod-file-'+order.id;
+        window._podTnForOrder=window._podTnForOrder||{};
+        window._podTnForOrder[podInputId]=tn;
+        html+=' <label for="'+podInputId+'" style="color:#8e44ad;font-size:11px;cursor:pointer;text-decoration:underline;font-weight:600" title="Carica immagine POD scaricata da vas.brt.it">📥 Carica</label>';
+        html+='<input type="file" id="'+podInputId+'" accept="image/*,application/pdf" style="display:none" onchange="handlePodFileUpload(this)">';
       } else if(f.tracking_url){
         html+='<br>📦 <a href="'+f.tracking_url+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia spedizione ↗</a>';
       } else {
@@ -3271,6 +3276,94 @@ async function loadBrtPod(btnId){
     if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
     showToast("Errore caricamento POD: "+e.message,"error");
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// POD — gestione upload file immagine nella sidebar
+// ─────────────────────────────────────────────────────────────
+function handlePodFileUpload(input){
+  const file=input.files[0];
+  if(!file)return;
+  const tn=(window._podTnForOrder||{})[input.id]||input.id.replace('pod-file-','');
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const dataUrl=e.target.result;
+    showPodSidebar(dataUrl, file.type||'image/jpeg', tn, file.name);
+    // Aggiorna label
+    const lbl=input.previousElementSibling;
+    if(lbl){lbl.textContent='✅ POD';lbl.style.color='#2a9d60';}
+  };
+  reader.readAsDataURL(file);
+}
+
+function showPodSidebar(dataUrl, mime, tn, filename){
+  // Rimuovi POD precedente
+  const prev=document.getElementById('pod-sidebar-box');
+  if(prev)prev.remove();
+
+  const sidebar=document.getElementById('detail-sidebar');
+  if(!sidebar)return;
+
+  const box=document.createElement('div');
+  box.id='pod-sidebar-box';
+  box.className='ds-section';
+  box.style.cssText='padding:12px 16px;border-bottom:1px solid #e8eaf0';
+
+  const isPdf=mime.includes('pdf');
+  const tnSafe=tn.replace(/[^a-zA-Z0-9]/g,'_');
+
+  box.innerHTML=`
+    <div class="ds-section-title" style="margin-bottom:8px;color:#8e44ad">
+      📸 POD — PROVA DI CONSEGNA
+    </div>
+    <div style="background:#f8f9fc;border-radius:8px;padding:8px;text-align:center;margin-bottom:8px">
+      ${isPdf
+        ? `<embed src="${dataUrl}" type="application/pdf" width="100%" style="height:180px;border:none"/>`
+        : `<img id="pod-img-${tnSafe}" src="${dataUrl}" style="max-width:100%;max-height:200px;border-radius:4px;cursor:pointer" alt="POD" onclick="this.style.maxHeight=this.style.maxHeight==='none'?'200px':'none'"/>`}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button id="pod-copy-${tnSafe}" style="flex:1;padding:6px 8px;background:#1a73e8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit">📋 Copia</button>
+      <button id="pod-allega-${tnSafe}" style="flex:1;padding:6px 8px;background:#8e44ad;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit">📎 Allega</button>
+      <button id="pod-dl-${tnSafe}" style="flex:1;padding:6px 8px;background:#2a9d60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit">⬇️ JPG</button>
+    </div>
+    <div style="font-size:10px;color:#aaa;margin-top:6px">Tracking: ${tn}</div>
+  `;
+
+  // Inserisci all'inizio della sidebar (sopra tutto)
+  sidebar.insertBefore(box, sidebar.firstChild);
+
+  // Bind pulsanti
+  const imgEl=document.getElementById('pod-img-'+tnSafe);
+
+  document.getElementById('pod-copy-'+tnSafe).addEventListener('click',()=>{
+    if(isPdf){showToast('Copia non disponibile per PDF — usa Scarica','error');return;}
+    const canvas=document.createElement('canvas');
+    canvas.width=imgEl.naturalWidth;canvas.height=imgEl.naturalHeight;
+    canvas.getContext('2d').drawImage(imgEl,0,0);
+    canvas.toBlob(b=>{
+      navigator.clipboard.write([new ClipboardItem({'image/png':b})])
+        .then(()=>showToast('✅ POD copiato negli appunti — Ctrl+V per incollarlo'))
+        .catch(()=>showToast('Copia fallita: tasto destro → Copia immagine','error'));
+    });
+  });
+
+  document.getElementById('pod-allega-'+tnSafe).addEventListener('click',function(){
+    window._podAttachment=window._podAttachment||{};
+    window._podAttachment[tn]=dataUrl;
+    showToast('✅ POD allegato — sarà inviato con la prossima risposta');
+    this.textContent='✅ Allegato';this.style.background='#888';
+  });
+
+  document.getElementById('pod-dl-'+tnSafe).addEventListener('click',()=>{
+    if(isPdf){
+      const a=document.createElement('a');a.href=dataUrl;a.download='POD_'+tn+'.pdf';a.click();
+    } else {
+      const canvas=document.createElement('canvas');
+      canvas.width=imgEl.naturalWidth;canvas.height=imgEl.naturalHeight;
+      canvas.getContext('2d').drawImage(imgEl,0,0);
+      const a=document.createElement('a');a.href=canvas.toDataURL('image/jpeg',0.95);a.download='POD_'+tn+'.jpg';a.click();
+    }
+  });
 }
 
 function openBrtPickup(orderId){
