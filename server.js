@@ -189,8 +189,7 @@ async function brtRestPost(p, body, useTrackingBase) {
       const params = new URLSearchParams(qs);
       const testId = params.get("id") || "179010735604";
       const data = await brtRestGet("/parcelID/" + testId, true);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, data }));
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
     } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
@@ -218,15 +217,76 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD: non disponibile via REST API (doc ufficiale: unico endpoint e GET parcelID)
-  // Il POD e scaricabile solo dal portale BRT: vas.brt.it
+  // BRT POD automatico — login vas.brt.it + scraping immagine firma
+  if (req.url.startsWith("/brt/pod-auto")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "nspediz required" })); return; }
+    try {
+      // Step 1: Login
+      const loginRes = await fetch("https://vas.brt.it/vas/login.do", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        body: "user=1791201&pwd=Dus0549dsb&language=it",
+        redirect: "manual"
+      });
+      const rawCookies = loginRes.headers.get("set-cookie") || "";
+      const cookies = rawCookies.split(/,(?=[^;]+=[^;]+)/).map(c => c.split(";")[0].trim()).filter(Boolean).join("; ");
+      console.log("[POD-AUTO] Login:", loginRes.status, "| cookies:", cookies.substring(0,100));
+
+      // Step 2: Pagina tracking
+      const trackUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
+      const trackRes = await fetch(trackUrl, { headers: { "Cookie": cookies, "User-Agent": "Mozilla/5.0" } });
+      const trackHtml = await trackRes.text();
+      console.log("[POD-AUTO] Track page:", trackRes.status, trackHtml.length, "chars");
+
+      // Step 3: Cerca URL immagine POD
+      const patterns = [
+        /src=["']([^"']*(?:pod|firma|signature|proof)[^"']*\.(?:jpg|jpeg|png|gif))["']/i,
+        /href=["']([^"']*(?:pod|firma|signature)[^"']*\.(?:jpg|jpeg|png|pdf))["']/i,
+        /["'](\/vas\/[^"']*(?:pod|firma|immagine)[^"']*)["']/i,
+        /sped_pod[^"']*["']([^"']+)["']/i,
+      ];
+      let podUrl = null;
+      for (const pat of patterns) {
+        const m = trackHtml.match(pat);
+        if (m) { podUrl = m[1]; break; }
+      }
+
+      if (!podUrl) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "POD non trovato nella pagina", html_sample: trackHtml.substring(0, 3000), login_status: loginRes.status }));
+        return;
+      }
+
+      if (!podUrl.startsWith("http")) podUrl = "https://vas.brt.it" + podUrl;
+      console.log("[POD-AUTO] URL immagine:", podUrl);
+
+      // Step 4: Scarica immagine
+      const imgRes = await fetch(podUrl, { headers: { "Cookie": cookies, "User-Agent": "Mozilla/5.0" } });
+      const ct = imgRes.headers.get("content-type") || "image/jpeg";
+      const buf = await imgRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString("base64");
+      const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
+      console.log("[POD-AUTO] Immagine:", buf.byteLength, "bytes, mime:", mime);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz, pod_url: podUrl }));
+    } catch(e) {
+      console.log("[POD-AUTO] Errore:", e.message);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT POD via REST (non disponibile)
   if (req.url.startsWith("/brt/pod")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
-    const podUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: false, not_available_via_api: true, pod_url: podUrl }));
+    res.end(JSON.stringify({ ok: false, not_available_via_api: true, pod_url: "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz) }));
     return;
   }
 
@@ -239,7 +299,7 @@ async function brtRestPost(p, body, useTrackingBase) {
   }
 
   if (req.url.startsWith("/brt/svincola")) {
-    const chunks3 = []; req.on("data", chunk => chunks3.push(chunk)); await new Promise(resolve => req.on("end", resolve));
+    const chunks3 = []; req.on("data", c => chunks3.push(c)); await new Promise(r => req.on("end", r));
     const body3 = JSON.parse(Buffer.concat(chunks3).toString() || "{}");
     try {
       const data = await brtRestPost("/shipment/storage/release", body3, false);
@@ -249,7 +309,7 @@ async function brtRestPost(p, body, useTrackingBase) {
   }
 
   if (req.url.startsWith("/brt/ritiro")) {
-    const chunks4 = []; req.on("data", chunk => chunks4.push(chunk)); await new Promise(resolve => req.on("end", resolve));
+    const chunks4 = []; req.on("data", c => chunks4.push(c)); await new Promise(r => req.on("end", r));
     const body4 = JSON.parse(Buffer.concat(chunks4).toString() || "{}");
     try {
       const data = await brtRestPost("/pickup/create", body4, false);
@@ -260,7 +320,7 @@ async function brtRestPost(p, body, useTrackingBase) {
 
   if (req.url.startsWith("/shopify-graphql")) {
     const token = await getShopifyToken();
-    const chunks2 = []; req.on("data", chunk => chunks2.push(chunk)); await new Promise(resolve => req.on("end", resolve));
+    const chunks2 = []; req.on("data", c => chunks2.push(c)); await new Promise(r => req.on("end", r));
     const body2 = Buffer.concat(chunks2).toString();
     const gqlRes = await fetch("https://" + SHOPIFY_SHOP + "/admin/api/2024-01/graphql.json", { method: "POST", headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" }, body: body2 });
     const gqlData = await gqlRes.text();
@@ -305,8 +365,7 @@ async function brtRestPost(p, body, useTrackingBase) {
 
   let targetUrl, requestHeaders;
   if (req.url.startsWith("/shopify")) {
-    const p = req.url.replace(/^\/shopify/, "");
-    const token = await getShopifyToken();
+    const p = req.url.replace(/^\/shopify/, ""); const token = await getShopifyToken();
     targetUrl = "https://" + SHOPIFY_SHOP + "/admin/api/2024-01" + p;
     requestHeaders = { "X-Shopify-Access-Token": token, "Content-Type": "application/json" };
   } else if (req.url.startsWith("/anthropic")) {
@@ -336,8 +395,7 @@ async function brtRestPost(p, body, useTrackingBase) {
         const respHeaders = { "Content-Type": proxyRes.headers["content-type"] || "application/json" };
         if (proxyRes.headers["link"]) respHeaders["Link"] = proxyRes.headers["link"];
         if (proxyRes.headers["x-shopify-shop-api-call-limit"]) respHeaders["x-shopify-shop-api-call-limit"] = proxyRes.headers["x-shopify-shop-api-call-limit"];
-        res.writeHead(proxyRes.statusCode, respHeaders);
-        res.end(responseBody);
+        res.writeHead(proxyRes.statusCode, respHeaders); res.end(responseBody);
       });
     });
     proxyReq.on("error", function(err) { console.error("[ERRORE]", err.message); res.writeHead(500); res.end(JSON.stringify({ error: err.message })); });
