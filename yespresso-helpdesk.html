@@ -1382,7 +1382,7 @@ async function selectTicket(tid){
           let oHtml='<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d4b8ff;font-size:13px">';
           oHtml+='🛍️ <a href="'+shopifyUrlA+'" target="_blank" style="color:#2a5a2a;font-weight:700;text-decoration:none">Ordine '+(orderAtoz.name||('#'+orderAtoz.order_number))+' ↗</a>';
           oHtml+='<br>'+(fSA[orderAtoz.fulfillment_status]||"⏳ Non spedito");
-          if(tnA){const tnPodA=tnA.startsWith('26')?tnA:'26'+tnA;const brtUrlA="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243"PodA;oHtml+='<br>📦 '+tnA+' — <a href="'+brtUrlA+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia ↗</a> <a href="'+brtUrlA+'" target="_blank" style="color:#8e44ad;font-weight:600">📸 POD ↗</a>';}
+          if(tnA){const tnPodA=tnA.startsWith('26')?tnA:'26'+tnA;const brtUrlA="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";oHtml+='<br>📦 '+tnA+' — <a href="'+brtUrlA+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia ↗</a> <a href="'+brtUrlA+'" target="_blank" style="color:#8e44ad;font-weight:600">📸 POD ↗</a>';}
           if(fA&&fA.created_at)oHtml+='<br>📅 '+new Date(fA.created_at).toLocaleDateString("it-IT");
           oHtml+='</div>';
           const wrapper=oArea2.querySelector('div');
