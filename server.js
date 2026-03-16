@@ -20,7 +20,6 @@ console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
 console.log("[INIT] IMAP_USER:", IMAP_USER);
 console.log("[INIT] IMAP_PASSWORD presente:", !!IMAP_PASSWORD);
 
-// Cache allegati in memoria
 const attachmentsCache = new Map();
 let lastImapSync = 0;
 const IMAP_SYNC_INTERVAL = 5 * 60 * 1000;
@@ -30,7 +29,6 @@ async function syncImapAttachments() {
   const now = Date.now();
   if (now - lastImapSync < IMAP_SYNC_INTERVAL) return;
   lastImapSync = now;
-
   try {
     const { ImapFlow } = require("imapflow");
     const client = new ImapFlow({
@@ -38,78 +36,57 @@ async function syncImapAttachments() {
       auth: { user: IMAP_USER, pass: IMAP_PASSWORD },
       logger: false
     });
-
     await client.connect();
     await client.mailboxOpen("INBOX");
-
     const messages = [];
     for await (const msg of client.fetch("1:*", { envelope: true, bodyStructure: true, uid: true })) {
       messages.push(msg);
     }
     console.log("[IMAP] Messaggi trovati:", messages.length);
-
     for (const msg of messages.slice(-200)) {
       const messageId = msg.envelope?.messageId || String(msg.uid);
       if (attachmentsCache.has(messageId)) continue;
-
       const fromEmail = msg.envelope?.from?.[0]?.address || "";
       const subject = msg.envelope?.subject || "";
       const date = msg.envelope?.date || new Date();
-
-      // Verifica se ha allegati
       const struct = msg.bodyStructure;
       const hasAtt = struct && (
         (struct.childNodes||[]).some(n => n.disposition === "attachment" || (n.type && !["text","multipart"].includes(n.type))) ||
         (struct.disposition === "attachment")
       );
       if (!hasAtt) continue;
-
-      // Scarica messaggio completo
       try {
         const download = await client.download(String(msg.seq));
         if (!download) continue;
         const rawChunks = [];
         for await (const chunk of download.content) rawChunks.push(chunk);
         const raw = Buffer.concat(rawChunks).toString("binary");
-
-        // Parsing allegati dal raw - versione robusta
         const attachments = [];
-        // Trova tutti i boundary nel messaggio
         const boundaryMatches = [...raw.matchAll(/boundary=["']?([^"'\r\n;\s]+)["']?/gi)];
         const boundaries = [...new Set(boundaryMatches.map(m => m[1]))];
-        
         for (const boundary of boundaries) {
           const parts = raw.split(new RegExp("--" + boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
           for (const part of parts) {
-            // Cerca Content-Disposition: attachment
-            const isAttachment = /Content-Disposition:\s*(attachment|inline)/i.test(part);
             const fnMatch = part.match(/(?:filename\*=UTF-8''([^\r\n;]+)|filename="?([^"\r\n;]+)"?)/i);
             const ctMatch = part.match(/Content-Type:\s*([^\r\n;,]+)/i);
             const encMatch = part.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
-            
             if (fnMatch && ctMatch) {
               let filename = fnMatch[1] || fnMatch[2] || "";
               try { filename = decodeURIComponent(filename.trim()); } catch(e) { filename = filename.trim(); }
               filename = filename.replace(/['"]/g,"").trim();
               const contentType = ctMatch[1].trim().toLowerCase();
               const encoding = (encMatch ? encMatch[1].trim() : "").toLowerCase();
-              
-              // Accetta base64 per immagini, pdf e altri file
               if (encoding === "base64" && filename) {
                 const bodyIdx = part.indexOf("\r\n\r\n");
                 const bodyIdx2 = part.indexOf("\n\n");
                 const startIdx = bodyIdx >= 0 ? bodyIdx + 4 : (bodyIdx2 >= 0 ? bodyIdx2 + 2 : -1);
                 if (startIdx > 0) {
-                  // Prendi solo caratteri base64 validi e rimuovi residui esadecimali in coda
                   let b64 = part.slice(startIdx).replace(/[^A-Za-z0-9+/=]/g,"");
-                  // Tronca tutto dopo il padding = finale (es. =000000abc e spazzatura esadecimale)
                   const lastEqIdx = b64.lastIndexOf("=");
                   if (lastEqIdx > 0) b64 = b64.substring(0, lastEqIdx + 1);
-                  // Normalizza padding
                   const rem = b64.replace(/=/g,"").length % 4;
                   if (rem) b64 = b64.replace(/=*$/, "") + "===".substring(0, 4-rem);
                   if (b64.length > 100) {
-                    // Evita duplicati per filename
                     if (!attachments.find(a => a.filename === filename)) {
                       attachments.push({ filename, contentType, data: b64 });
                     }
@@ -119,14 +96,12 @@ async function syncImapAttachments() {
             }
           }
         }
-
         if (attachments.length > 0) {
           attachmentsCache.set(messageId, { from: fromEmail, subject, date, attachments });
           console.log("[IMAP] Allegati salvati:", fromEmail, "|", subject.substring(0,40), "| n:", attachments.length);
         }
       } catch(e2) { console.log("[IMAP] Errore msg:", e2.message); }
     }
-
     await client.logout();
     console.log("[IMAP] Sync OK. Cache:", attachmentsCache.size, "email con allegati");
   } catch(e) {
@@ -165,7 +140,6 @@ const server = http.createServer(async function(req, res) {
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
 
-  // Endpoint allegati IMAP
   if (req.url.startsWith("/imap/attachments")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -178,7 +152,6 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // Forza sync IMAP
   if (req.url === "/imap/sync") {
     lastImapSync = 0;
     syncImapAttachments().catch(e => console.error(e));
@@ -199,7 +172,6 @@ const server = http.createServer(async function(req, res) {
 
   if (req.url.startsWith("/shopify/callback")) { res.writeHead(200); res.end("OK"); return; }
 
-
 // ═══════════════════════════════════════════════
 // BRT REST API Integration
 // ═══════════════════════════════════════════════
@@ -210,20 +182,17 @@ const BRT_SFTP_PORT = 22;
 const BRT_SFTP_USER = "1791201";
 const BRT_SFTP_PASS = "qyo^G16^H3";
 const BRT_SFTP_PATH = "/OUT";
-const BRT_REST_BASE = "https://api.brt.it/rest/v1/tracking";
+const BRT_REST_BASE = "https://api.brt.it/rest/v1";
+const BRT_TRACKING_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_VAS = "https://vas.brt.it";
-// Token base64 user:pass
 const BRT_AUTH = "Basic " + Buffer.from(BRT_USER + ":" + BRT_PASS).toString("base64");
 
-async function brtRestGet(path) {
-  const url = BRT_REST_BASE + path;
+async function brtRestGet(path, useTrackingBase) {
+  const base = useTrackingBase ? BRT_TRACKING_BASE : BRT_REST_BASE;
+  const url = base + path;
   console.log("[BRT REST] GET " + url);
   const res = await fetch(url, {
-    headers: {
-      "Authorization": BRT_AUTH,
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    }
+    headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" }
   });
   const text = await res.text();
   console.log("[BRT REST] status:" + res.status + " body:" + text.substring(0, 300));
@@ -231,14 +200,11 @@ async function brtRestGet(path) {
   try { return JSON.parse(text); } catch(e) { return text; }
 }
 
-async function brtRestPost(path, body) {
-  const res = await fetch(BRT_REST_BASE + path, {
+async function brtRestPost(path, body, useTrackingBase) {
+  const base = useTrackingBase ? BRT_TRACKING_BASE : BRT_REST_BASE;
+  const res = await fetch(base + path, {
     method: "POST",
-    headers: {
-      "Authorization": BRT_AUTH,
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    },
+    headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
   const text = await res.text();
@@ -247,15 +213,13 @@ async function brtRestPost(path, body) {
   try { return JSON.parse(text); } catch(e) { return text; }
 }
 
-
-  // BRT test connessione - usa parcelID di esempio
+  // BRT test connessione
   if (req.url.startsWith("/brt/test")) {
     try {
-      // Prova con un parcelID di test (numero spedizione)
       const qs = req.url.split("?")[1] || "";
       const params = new URLSearchParams(qs);
       const testId = params.get("id") || "179010735604";
-      const data = await brtRestGet("/parcelID/" + testId);
+      const data = await brtRestGet("/parcelID/" + testId, true);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, data }));
     } catch(e) {
@@ -265,26 +229,59 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // BRT tracking per numero spedizione (parcelID)
+  // BRT tracking per numero spedizione
   if (req.url.startsWith("/brt/track")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
     try {
-      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
-      // Dalla doc: dati_consegna.data_consegna_merce valorizzato = consegnato
+      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz), true);
       const result = data.ttParcelIdResponse || data;
       const spedizione = result.spedizione || {};
       const datiConsegna = spedizione.dati_consegna || {};
       const delivered = !!(datiConsegna.data_consegna_merce && datiConsegna.data_consegna_merce.trim());
       const firmatario = datiConsegna.firmatario_consegna || "";
       const dataConsegna = datiConsegna.data_consegna_merce || "";
+      const luogoConsegna = datiConsegna.luogo_consegna || "";
+      const indirizzoConsegna = datiConsegna.indirizzo_consegna || "";
       const eventi = (spedizione.eventi && spedizione.eventi.evento) || [];
       const ultimoEvento = Array.isArray(eventi) ? eventi[eventi.length-1] : eventi;
       console.log("[BRT TRACK] " + nspediz + " consegnato:" + delivered + " data:" + dataConsegna);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, delivered, data_consegna: dataConsegna, firmatario, ultimo_evento: ultimoEvento, raw: data }));
+      res.end(JSON.stringify({ ok: true, delivered, data_consegna: dataConsegna, firmatario, luogo_consegna: luogoConsegna, indirizzo_consegna: indirizzoConsegna, ultimo_evento: ultimoEvento, raw: data }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT POD (Proof of Delivery) — immagine firma base64
+  if (req.url.startsWith("/brt/pod")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "nspediz required" })); return; }
+    try {
+      const url = BRT_TRACKING_BASE + "/pod/" + encodeURIComponent(nspediz);
+      console.log("[BRT POD] GET " + url);
+      const podRes = await fetch(url, {
+        headers: { "Authorization": BRT_AUTH, "Accept": "application/json, image/*, */*" }
+      });
+      console.log("[BRT POD] status:" + podRes.status + " content-type:" + podRes.headers.get("content-type"));
+      if (!podRes.ok) {
+        const errText = await podRes.text();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "BRT " + podRes.status + ": " + errText.substring(0, 200) }));
+        return;
+      }
+      const ct = podRes.headers.get("content-type") || "";
+      const buf = await podRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString("base64");
+      const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz }));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -295,7 +292,7 @@ async function brtRestPost(path, body) {
   // BRT lista giacenze
   if (req.url.startsWith("/brt/giacenze")) {
     try {
-      const data = await brtRestGet("/shipment/storage/list");
+      const data = await brtRestGet("/shipment/storage/list", false);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, data }));
     } catch(e) {
@@ -312,7 +309,7 @@ async function brtRestPost(path, body) {
     await new Promise(resolve => req.on("end", resolve));
     const body3 = JSON.parse(Buffer.concat(chunks3).toString() || "{}");
     try {
-      const data = await brtRestPost("/shipment/storage/release", body3);
+      const data = await brtRestPost("/shipment/storage/release", body3, false);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, data }));
     } catch(e) {
@@ -329,7 +326,7 @@ async function brtRestPost(path, body) {
     await new Promise(resolve => req.on("end", resolve));
     const body4 = JSON.parse(Buffer.concat(chunks4).toString() || "{}");
     try {
-      const data = await brtRestPost("/pickup/create", body4);
+      const data = await brtRestPost("/pickup/create", body4, false);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, data }));
     } catch(e) {
@@ -362,24 +359,14 @@ async function brtRestPost(path, body) {
   if (req.url.startsWith("/brt/sftp-giacenze")) {
     if (!SftpClient) {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: "ssh2-sftp-client non installato. Aggiungilo al package.json" }));
+      res.end(JSON.stringify({ ok: false, error: "ssh2-sftp-client non installato" }));
       return;
     }
     const sftp = new SftpClient();
     try {
-      await sftp.connect({
-        host: BRT_SFTP_HOST,
-        port: BRT_SFTP_PORT,
-        username: BRT_SFTP_USER,
-        password: BRT_SFTP_PASS,
-        readyTimeout: 10000,
-        retries: 1
-      });
+      await sftp.connect({ host: BRT_SFTP_HOST, port: BRT_SFTP_PORT, username: BRT_SFTP_USER, password: BRT_SFTP_PASS, readyTimeout: 10000, retries: 1 });
       console.log("[BRT SFTP] Connesso a sftp.brt.it");
-      // Lista file nella directory OUT
       const fileList = await sftp.list(BRT_SFTP_PATH);
-      console.log("[BRT SFTP] File trovati:", fileList.length);
-      // Leggi i file più recenti (giacenze)
       const files = fileList.filter(f => f.type === "-").sort((a,b) => b.modifyTime - a.modifyTime).slice(0, 5);
       const results = [];
       for (const file of files) {
@@ -409,10 +396,7 @@ async function brtRestPost(path, body) {
     try {
       const csRes = await fetch("https://creditsyard.com/api/common/customers/get", {
         method: "POST",
-        headers: {
-          "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114",
-          "Content-Type": "application/json"
-        },
+        headers: { "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114", "Content-Type": "application/json" },
         body: JSON.stringify({ customer_email: email })
       });
       const text = await csRes.text();
