@@ -2243,11 +2243,11 @@ async function generateReply(lastMsg,email,fullThread){
       const tc=f.tracking_company||"BRT";
       console.log("📦 Fulfillment:",{tn,tc,status:f.shipment_status});
       if(tn){
+        const tnPod=tn.startsWith('26')?tn:'26'+tn;
+
         const brtUrl="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";
         html+='<br>📦 '+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
-        // POD — link BRT + pulsante carica immagine nella sidebar
-        const tnPod=tn.startsWith('26')?tn:'26'+tn;
-        const podUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod+'&PODChkCde=348365243';
+        // POD — link BRT + pulsante carica immagine nella sidebar        const podUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod+'&PODChkCde=348365243';
         html+=' — <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 POD ↗</a>';
                 if(f&&f.shipment_status==='delivered'){
           const podDlBtnId='pod-dl-'+order.id;
