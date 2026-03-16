@@ -296,7 +296,7 @@ async function markAsPaid(orderId, orderName, totalPrice) {
   const gid = "gid://shopify/Order/" + orderId;
   const mutation = `mutation orderMarkAsPaid($input: OrderMarkAsPaidInput!) {
     orderMarkAsPaid(input: $input) {
-      order { id name financialStatus }
+      order { id name }
       userErrors { field message }
     }
   }`;
