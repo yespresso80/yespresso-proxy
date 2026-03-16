@@ -2224,6 +2224,11 @@ async function generateReply(lastMsg,email,fullThread){
       if(tn){
         const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;
         html+='<br>📦 '+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
+        // POD button — sempre visibile per spedizioni BRT con tracking
+        const podBtnId='pod_'+order.id;
+        window._podData=window._podData||{};
+        window._podData[podBtnId]=tn;
+        html+=' — <span id="'+podBtnId+'" onclick="loadBrtPod(this.id)" style="color:#8e44ad;font-weight:600;cursor:pointer;text-decoration:underline">📸 POD</span>';
       } else if(f.tracking_url){
         html+='<br>📦 <a href="'+f.tracking_url+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia spedizione ↗</a>';
       } else {
@@ -3078,6 +3083,90 @@ async function openCreditLink(el, btnId){
   }catch(e){
     window.open("https://creditsyard.com/dashboard","_blank");
     el.textContent="🎁 Crea Credito ↗";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// BRT POD — carica immagine firma e mostra modale
+// ─────────────────────────────────────────────────────────────
+async function loadBrtPod(btnId){
+  const tn=(window._podData||{})[btnId];
+  if(!tn){showToast("Numero tracking non disponibile","error");return;}
+  const btn=document.getElementById(btnId);
+  if(btn){btn.textContent="⏳ Caricamento...";btn.style.pointerEvents="none";}
+  try{
+    const res=await fetch(PROXY+"/brt/pod?nspediz="+encodeURIComponent(tn));
+    const data=await res.json();
+    if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
+    if(!data.ok){
+      showToast("POD non disponibile: "+(data.error||"errore BRT"),"error");
+      return;
+    }
+    const dataUrl="data:"+data.mime+";base64,"+data.data;
+    const modal=document.createElement("div");
+    modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;display:flex;align-items:center;justify-content:center;padding:20px";
+    const tnSafe=tn.replace(/[^a-zA-Z0-9]/g,"_");
+    modal.innerHTML=`
+      <div style="background:#fff;border-radius:12px;padding:20px;max-width:680px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:12px;max-height:90vh">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:16px;font-weight:700;color:#1a1a2e">📸 Prova di Consegna (POD)</div>
+            <div style="font-size:12px;color:#888">Tracking: <strong>`+tn+`</strong></div>
+          </div>
+          <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1">×</button>
+        </div>
+        <div style="overflow:auto;flex:1;text-align:center;background:#f8f9fc;border-radius:8px;padding:12px">
+          <img id="pod-img-`+tnSafe+`" src="`+dataUrl+`" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.15)" alt="POD firma"/>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="pod-btns-`+tnSafe+`">
+          <button class="pod-copy-btn" style="padding:8px 14px;background:#1a73e8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">📋 Copia Immagine</button>
+          <button class="pod-download-btn" style="padding:8px 14px;background:#2a9d60;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">⬇️ Scarica POD</button>
+          <button class="pod-allega-btn" style="padding:8px 14px;background:#8e44ad;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">📎 Aggiungi al Ticket</button>
+          <button class="pod-risposta-btn" style="padding:8px 14px;background:#c0392b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">✉️ Usa come Risposta</button>
+        </div>
+        <div style="font-size:11px;color:#aaa">💡 "Copia Immagine" la mette negli appunti per incollarla ovunque (Ctrl+V)</div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+    // Bind pulsanti dopo append
+    const imgEl=modal.querySelector("#pod-img-"+tnSafe);
+    modal.querySelector(".pod-copy-btn").addEventListener("click",()=>{
+      const canvas=document.createElement("canvas");
+      canvas.width=imgEl.naturalWidth;canvas.height=imgEl.naturalHeight;
+      canvas.getContext("2d").drawImage(imgEl,0,0);
+      canvas.toBlob(b=>{
+        navigator.clipboard.write([new ClipboardItem({"image/png":b})])
+          .then(()=>showToast("✅ POD copiato negli appunti"))
+          .catch(()=>showToast("❌ Copia fallita: usa tasto destro sull immagine","error"));
+      });
+    });
+    modal.querySelector(".pod-download-btn").addEventListener("click",()=>{
+      const a=document.createElement("a");a.href=dataUrl;a.download="POD_"+tn+".jpg";a.click();
+    });
+    modal.querySelector(".pod-allega-btn").addEventListener("click",function(){
+      window._podAttachment=window._podAttachment||{};
+      window._podAttachment[tn]=dataUrl;
+      showToast("✅ POD allegato — sarà inviato con la prossima risposta");
+      this.textContent="✅ Allegato";this.style.background="#888";
+    });
+    modal.querySelector(".pod-risposta-btn").addEventListener("click",()=>{
+      const replyBox=document.getElementById("reply-body");
+      const src=(window._currentOrder&&detectOrderSource(window._currentOrder))||"sito";
+      let testo="";
+      if(src==="amazon"||src==="temu"||src==="tiktok"){
+        testo="La spedizione risulta regolarmente consegnata. In allegato la prova di consegna firmata dal destinatario.";
+      } else {
+        testo="La informiamo che la sua spedizione (tracking: "+tn+") risulta regolarmente consegnata e firmata dal destinatario. In allegato trova la prova di consegna.";
+      }
+      if(replyBox){replyBox.value=(replyBox.value?replyBox.value+"\n\n":"")+testo;}
+      window._podAttachment=window._podAttachment||{};
+      window._podAttachment[tn]=dataUrl;
+      showToast("✅ Testo e POD pronti per la risposta");
+      modal.remove();
+    });
+  }catch(e){
+    if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
+    showToast("Errore caricamento POD: "+e.message,"error");
   }
 }
 
