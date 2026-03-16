@@ -218,39 +218,15 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD — prova piu varianti URL
+  // BRT POD: non disponibile via REST API (doc ufficiale: unico endpoint e GET parcelID)
+  // Il POD e scaricabile solo dal portale BRT: vas.brt.it
   if (req.url.startsWith("/brt/pod")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
-    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "nspediz required" })); return; }
-    const nspedizLong = nspediz.startsWith("26") ? nspediz : "26" + nspediz;
-    const urlsToTry = [
-      BRT_TRACKING_BASE + "/pod/" + encodeURIComponent(nspediz),
-      BRT_TRACKING_BASE + "/pod/" + encodeURIComponent(nspedizLong),
-      BRT_REST_BASE + "/shipment/pod/" + encodeURIComponent(nspediz),
-      BRT_REST_BASE + "/shipment/pod/" + encodeURIComponent(nspedizLong),
-    ];
-    const attempts = [];
-    try {
-      for (const url of urlsToTry) {
-        console.log("[BRT POD] Provo: " + url);
-        const podRes = await fetch(url, { headers: { "Authorization": BRT_AUTH, "Accept": "application/json, image/*, */*" } });
-        const ct = podRes.headers.get("content-type") || "";
-        console.log("[BRT POD] status:" + podRes.status + " ct:" + ct);
-        attempts.push({ url, status: podRes.status });
-        if (podRes.ok) {
-          const buf = await podRes.arrayBuffer();
-          const b64 = Buffer.from(buf).toString("base64");
-          const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz, url_used: url }));
-          return;
-        }
-      }
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: "POD non trovato su nessun endpoint BRT", attempts }));
-    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message, attempts })); }
+    const podUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, not_available_via_api: true, pod_url: podUrl }));
     return;
   }
 
