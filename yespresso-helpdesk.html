@@ -1382,7 +1382,7 @@ async function selectTicket(tid){
           let oHtml='<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d4b8ff;font-size:13px">';
           oHtml+='🛍️ <a href="'+shopifyUrlA+'" target="_blank" style="color:#2a5a2a;font-weight:700;text-decoration:none">Ordine '+(orderAtoz.name||('#'+orderAtoz.order_number))+' ↗</a>';
           oHtml+='<br>'+(fSA[orderAtoz.fulfillment_status]||"⏳ Non spedito");
-          if(tnA){const tnPodA=tnA.startsWith('26')?tnA:'26'+tnA;const brtUrlA="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tnPodA;oHtml+='<br>📦 '+tnA+' — <a href="'+brtUrlA+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia ↗</a> <a href="'+brtUrlA+'" target="_blank" style="color:#8e44ad;font-weight:600">📸 POD ↗</a>';}
+          if(tnA){const tnPodA=tnA.startsWith('26')?tnA:'26'+tnA;const brtUrlA="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243"PodA;oHtml+='<br>📦 '+tnA+' — <a href="'+brtUrlA+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia ↗</a> <a href="'+brtUrlA+'" target="_blank" style="color:#8e44ad;font-weight:600">📸 POD ↗</a>';}
           if(fA&&fA.created_at)oHtml+='<br>📅 '+new Date(fA.created_at).toLocaleDateString("it-IT");
           oHtml+='</div>';
           const wrapper=oArea2.querySelector('div');
@@ -1417,7 +1417,7 @@ async function selectTicket(tid){
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
           const tc2=f.tracking_company||"BRT";
-          if(tn2){const brtUrl2="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn2;html2+='<br>📦 '+tc2+': <strong>'+tn2+'</strong> — <a href="'+brtUrl2+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';}
+          if(tn2){const brtUrl2="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243"2;html2+='<br>📦 '+tc2+': <strong>'+tn2+'</strong> — <a href="'+brtUrl2+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';}
           if(f.created_at)html2+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
@@ -1509,7 +1509,7 @@ async function selectTicket(tid){
         html+='<br>'+displayStatus;
         if(f){
           const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
-          if(tn){const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;html+='<br>📦 BRT: <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';}
+          if(tn){const brtUrl="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";html+='<br>📦 BRT: <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';}
           if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
         }
         // Link modifica indirizzo se non spedito
@@ -2136,7 +2136,7 @@ function formatOrderInfo(order){
   if(f){
     if(f.shipment_status)info+=" | "+(sS[f.shipment_status]||f.shipment_status);
     if(f.tracking_company)info+=" | "+f.tracking_company;
-    if(f.tracking_number)info+=" | Tracking: "+f.tracking_number+" | BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+f.tracking_number;
+    if(f.tracking_number)info+=" | Tracking: "+f.tracking_number+" | BRT: https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+f.tracking_number;
     if(f.created_at)info+=" | Spedito: "+new Date(f.created_at).toLocaleDateString("it-IT");
   }
   if(order.shipping_address){const a=order.shipping_address;info+=" | "+[a.address1,a.city,a.zip].filter(Boolean).join(", ")}
@@ -2243,11 +2243,11 @@ async function generateReply(lastMsg,email,fullThread){
       const tc=f.tracking_company||"BRT";
       console.log("📦 Fulfillment:",{tn,tc,status:f.shipment_status});
       if(tn){
-        const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;
+        const brtUrl="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";
         html+='<br>📦 '+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
         // POD — link BRT + pulsante carica immagine nella sidebar
         const tnPod=tn.startsWith('26')?tn:'26'+tn;
-        const podUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnPod;
+        const podUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod+'&PODChkCde=348365243';
         html+=' — <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 POD ↗</a>';
         const podInputId='pod-file-'+order.id;
         window._podTnForOrder=window._podTnForOrder||{};
@@ -3125,7 +3125,7 @@ async function fetchBrtPodAuto(btnId){
     if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
     if(!data.ok){
       // Fallback: apri portale BRT
-      window.open("https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn,"_blank");
+      window.open("https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243","_blank");
       showToast("POD non automatico: aperto portale BRT","error");
       return;
     }
