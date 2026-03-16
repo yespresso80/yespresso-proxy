@@ -1422,7 +1422,7 @@ async function selectTicket(tid){
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
-        if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const creditUrl2='https://creditsyard.com/dashboard/customers/'+order.customer.id+'?order_id='+order.id;html2+='<br>🎁 <a href="'+creditUrl2+'" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';}
+        if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -1523,7 +1523,7 @@ async function selectTicket(tid){
         if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         if(brtSource==="sito"){
           html+='<br>📍 <a href="https://yespresso.cloud/orders-transmission?status=to_transmit&searchString=%23'+(brtOrder.order_number||"")+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Modifica indirizzo ↗</a>';
-          if(brtOrder.customer&&brtOrder.customer.id){const brtCreditUrl='https://creditsyard.com/dashboard/customers/'+brtOrder.customer.id+'?order_id='+brtOrder.id;html+='<br>🎁 <a href="'+brtCreditUrl+'" target="_blank" style="color:#7b2d8b;font-weight:600;text-decoration:none">Crea Credito ↗</a>';}
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
       } else if(oArea){
@@ -3098,16 +3098,13 @@ async function openCreditLink(el, btnId){
     const data=await res.json();
     const csyardId=data&&data.id;
     if(csyardId){
-      const url="https://creditsyard.com/dashboard/customers/"+csyardId+"?order_id="+shopifyOrderId;
       window.open(url,"_blank");
       el.textContent="🎁 Crea Credito ↗";
     } else {
       // Fallback: apri dashboard ricerca
-      window.open("https://creditsyard.com/dashboard/customers?search="+encodeURIComponent(customerEmail),"_blank");
       el.textContent="🎁 Crea Credito ↗";
     }
   }catch(e){
-    window.open("https://creditsyard.com/dashboard","_blank");
     el.textContent="🎁 Crea Credito ↗";
   }
 }
@@ -3328,6 +3325,43 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
     window._podAttachment=window._podAttachment||{};window._podAttachment[tn]=dataUrl;
     showToast('✅ POD allegato alla risposta');this.textContent='✅ Allegato';this.style.background='#888';
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+// CREDITO — crea credito cliente via Creditsyard
+// ─────────────────────────────────────────────────────────────
+async function createCredit(inputId){
+  const data=(window._credMap||{})[inputId];
+  const inp=document.getElementById(inputId);
+  if(!data||!inp){showToast('Dati credito non disponibili','error');return;}
+  const amount=parseFloat(inp.value);
+  if(!amount||amount<=0){showToast('Inserisci un importo valido','error');inp.focus();return;}
+  // Conferma
+  const ok=confirm('Creare un credito di €'+amount.toFixed(2)+' per '+data.email+'?');
+  if(!ok)return;
+  inp.disabled=true;
+  inp.nextElementSibling.textContent='⏳';
+  try{
+    const res=await fetch(PROXY+'/creditsyard/adjust',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({customer_email:data.email,customer_id:data.customerId,amount:amount,reason:'Credito da helpdesk',send_email_notification:0})
+    });
+    const j=await res.json();
+    if(j.message==='success'){
+      showToast('✅ Credito €'+amount.toFixed(2)+' aggiunto a '+data.email);
+      inp.nextElementSibling.textContent='✅';
+      inp.style.background='#e8f5e9';
+    } else {
+      showToast('Errore: '+(j.error||j.message||JSON.stringify(j)),'error');
+      inp.disabled=false;
+      inp.nextElementSibling.textContent='✓ Invia';
+    }
+  }catch(e){
+    showToast('Errore: '+e.message,'error');
+    inp.disabled=false;
+    inp.nextElementSibling.textContent='✓ Invia';
+  }
 }
 
 function openBrtPickup(orderId){
