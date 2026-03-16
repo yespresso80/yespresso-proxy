@@ -14,6 +14,7 @@ const IMAP_USER = process.env.IMAP_USER || "allegati@yespresso.it";
 const IMAP_PASSWORD = process.env.IMAP_PASSWORD || "";
 const IMAP_HOST = "imap.ionos.it";
 const IMAP_PORT = 993;
+const CREDITSYARD_KEY = "412b510ba19f72e6eaab40fdf63aa114";
 
 console.log("[INIT] ANTHROPIC_KEY presente:", !!ANTHROPIC_KEY);
 console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
@@ -159,6 +160,7 @@ const BRT_SFTP_PATH = "/OUT";
 const BRT_REST_BASE = "https://api.brt.it/rest/v1";
 const BRT_TRACKING_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_AUTH = "Basic " + Buffer.from(BRT_USER + ":" + BRT_PASS).toString("base64");
+const BRT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
 
 async function brtRestGet(p, useTrackingBase) {
   const base = useTrackingBase ? BRT_TRACKING_BASE : BRT_REST_BASE;
@@ -214,89 +216,108 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD automatico — vas.brt.it IDSESSIONE + form POD
-  // Flusso: 1) GET sped_numspe_par.htm -> IDSESSIONE
-  //         2) GET sped_det_show.hsm?Nspediz=X&IDSESSIONE=X -> PODChkCde + params
-  //         3) POST conferma_pod_image.htm -> immagine POD
+  // BRT POD capture — scarica pagina SPED_DET_SHOW_LDV.HTM ed estrae l'immagine firma
+  // URL pagina: https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=26XXX&PODChkCde=348365243
+  if (req.url.startsWith("/brt/pod-capture")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const tnPod = params.get("tnPod") || "";
+    if (!tnPod) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "tnPod required" })); return; }
+    const podPageUrl = "https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=" + encodeURIComponent(tnPod) + "&PODChkCde=348365243";
+    console.log("[POD-CAPTURE] Fetch:", podPageUrl);
+    try {
+      // Step 1: scarica la pagina HTML del POD
+      const pageRes = await fetch(podPageUrl, {
+        headers: { "User-Agent": BRT_UA, "Accept": "text/html,*/*", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" }
+      });
+      const pageHtml = await pageRes.text();
+      console.log("[POD-CAPTURE] page status:", pageRes.status, "len:", pageHtml.length);
+
+      // Step 2: cerca src dell'immagine nella pagina
+      // Patterns tipici: <img src="...pod..."> o <img src="/vas/...jpg">
+      const imgPatterns = [
+        /src=["']([^"']*\.(?:jpg|jpeg|png|gif))['"]/gi,
+        /src=["']([^"']*(?:pod|firma|ldv|immagine|spediz)[^"']*)['"]/gi,
+        /src=["'](\/vas\/[^"']+)['"]/gi,
+      ];
+      let imgSrc = null;
+      for (const pat of imgPatterns) {
+        pat.lastIndex = 0;
+        const m = pat.exec(pageHtml);
+        if (m) { imgSrc = m[1]; break; }
+      }
+
+      if (!imgSrc) {
+        // Nessuna immagine trovata — la pagina potrebbe essere un redirect o errore
+        console.log("[POD-CAPTURE] Nessuna immagine trovata. HTML sample:", pageHtml.substring(0, 500));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Immagine POD non trovata nella pagina", html_sample: pageHtml.substring(0, 800) }));
+        return;
+      }
+
+      // Step 3: scarica l'immagine
+      if (!imgSrc.startsWith("http")) imgSrc = "https://vas.brt.it" + (imgSrc.startsWith("/") ? "" : "/") + imgSrc;
+      console.log("[POD-CAPTURE] Scarico immagine:", imgSrc);
+
+      const imgRes = await fetch(imgSrc, {
+        headers: { "User-Agent": BRT_UA, "Referer": podPageUrl }
+      });
+      const ct = imgRes.headers.get("content-type") || "image/jpeg";
+
+      if (!imgRes.ok) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Download immagine fallito: " + imgRes.status }));
+        return;
+      }
+
+      const buf = await imgRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString("base64");
+      const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
+      console.log("[POD-CAPTURE] OK:", buf.byteLength, "bytes mime:", mime);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, mime, data: b64, tnPod, podUrl: podPageUrl }));
+    } catch(e) {
+      console.log("[POD-CAPTURE] Errore:", e.message);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT POD automatico — vas.brt.it IDSESSIONE + form POD (legacy)
   if (req.url.startsWith("/brt/pod-auto")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "nspediz required" })); return; }
-    const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
     try {
-      // Step 1: GET pagina pubblica per ottenere IDSESSIONE
-      const pubRes = await fetch("https://vas.brt.it/vas/sped_numspe_par.htm", {
-        headers: { "User-Agent": UA, "Accept": "text/html" }
-      });
+      const pubRes = await fetch("https://vas.brt.it/vas/sped_numspe_par.htm", { headers: { "User-Agent": BRT_UA, "Accept": "text/html" } });
       const pubHtml = await pubRes.text();
-      const sessionMatch = pubHtml.match(/name="IDSESSIONE"[^>]*value="([^"]+)"/i) ||
-                           pubHtml.match(/value="([^"]+)"[^>]*name="IDSESSIONE"/i);
+      const sessionMatch = pubHtml.match(/name="IDSESSIONE"[^>]*value="([^"]+)"/i) || pubHtml.match(/value="([^"]+)"[^>]*name="IDSESSIONE"/i);
       const idsessione = sessionMatch ? sessionMatch[1] : "";
       const pubCookies = (pubRes.headers.get("set-cookie") || "").split(/,(?=[^ ])/).map(c=>c.split(";")[0].trim()).filter(Boolean).join("; ");
-      console.log("[POD-AUTO] IDSESSIONE:", idsessione.substring(0,20), "cookies:", pubCookies.substring(0,60));
-
-      // Step 2: GET pagina dettaglio spedizione con IDSESSIONE
       const detUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz) + (idsessione ? "&IDSESSIONE=" + encodeURIComponent(idsessione) : "");
-      const detRes = await fetch(detUrl, {
-        headers: { "User-Agent": UA, "Cookie": pubCookies, "Accept": "text/html", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" }
-      });
+      const detRes = await fetch(detUrl, { headers: { "User-Agent": BRT_UA, "Cookie": pubCookies, "Accept": "text/html", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" } });
       const detHtml = await detRes.text();
       const detCookies = [pubCookies, (detRes.headers.get("set-cookie")||"").split(/,(?=[^ ])/).map(c=>c.split(";")[0].trim()).filter(Boolean).join("; ")].filter(Boolean).join("; ");
-      console.log("[POD-AUTO] Det page:", detRes.status, detHtml.length, "chars");
-
-      // Step 3: Estrai parametri form POD
-      const chkMatch  = detHtml.match(/name="PODChkCde"[^>]*value="([^"]+)"/i)          || detHtml.match(/value="([^"]+)"[^>]*name="PODChkCde"/i);
+      const chkMatch  = detHtml.match(/name="PODChkCde"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="PODChkCde"/i);
       const spedMatch = detHtml.match(/name="SpedizioneImmagineLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="SpedizioneImmagineLDV"/i);
-      const addMatch  = detHtml.match(/name="AddebitoImmagineLDV"[^>]*value="([^"]+)"/i)   || detHtml.match(/value="([^"]+)"[^>]*name="AddebitoImmagineLDV"/i);
-      const dateMatch = detHtml.match(/name="DataFineGratisLDV"[^>]*value="([^"]+)"/i)     || detHtml.match(/value="([^"]+)"[^>]*name="DataFineGratisLDV"/i);
-
-      if (!chkMatch || !spedMatch) {
-        const hasPOD = detHtml.includes("conferma_pod_image") || detHtml.includes("PODChkCde");
-        const podIdx = detHtml.indexOf("POD");
-        const podSnippet = podIdx >= 0 ? detHtml.substring(Math.max(0, podIdx-100), podIdx+800) : detHtml.substring(0, 800);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: hasPOD ? "Parametri POD non estratti" : "POD non disponibile per questa spedizione", has_pod_form: hasPOD, idsessione_found: !!idsessione, det_status: detRes.status, html_sample: podSnippet }));
-        return;
-      }
-
-      const podChkCde    = chkMatch[1];
-      const spedImmagine = spedMatch[1];
-      const addebito     = addMatch  ? addMatch[1]  : "1";
-      const dataFine     = dateMatch ? dateMatch[1] : "01.01.0001";
-      console.log("[POD-AUTO] SpedImm:", spedImmagine, "ChkCde:", podChkCde);
-
-      // Step 4: POST conferma_pod_image.htm -> immagine
-      const podBody = "SpedizioneImmagineLDV=" + encodeURIComponent(spedImmagine) +
-                      "&AddebitoImmagineLDV=" + encodeURIComponent(addebito) +
-                      "&DataFineGratisLDV=" + encodeURIComponent(dataFine) +
-                      "&PODChkCde=" + encodeURIComponent(podChkCde) +
-                      "&PODImage=P.O.D.+image";
-      const podRes = await fetch("https://vas.brt.it/vas/conferma_pod_image.htm", {
-        method: "POST",
-        headers: { "User-Agent": UA, "Cookie": detCookies, "Content-Type": "application/x-www-form-urlencoded", "Referer": detUrl, "Accept": "image/*, text/html, */*" },
-        body: podBody
-      });
+      const addMatch  = detHtml.match(/name="AddebitoImmagineLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="AddebitoImmagineLDV"/i);
+      const dateMatch = detHtml.match(/name="DataFineGratisLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="DataFineGratisLDV"/i);
+      if (!chkMatch || !spedMatch) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "POD non disponibile", det_status: detRes.status })); return; }
+      const podBody = "SpedizioneImmagineLDV=" + encodeURIComponent(spedMatch[1]) + "&AddebitoImmagineLDV=" + encodeURIComponent(addMatch?addMatch[1]:"1") + "&DataFineGratisLDV=" + encodeURIComponent(dateMatch?dateMatch[1]:"01.01.0001") + "&PODChkCde=" + encodeURIComponent(chkMatch[1]) + "&PODImage=P.O.D.+image";
+      const podRes = await fetch("https://vas.brt.it/vas/conferma_pod_image.htm", { method: "POST", headers: { "User-Agent": BRT_UA, "Cookie": detCookies, "Content-Type": "application/x-www-form-urlencoded", "Referer": detUrl, "Accept": "image/*, text/html, */*" }, body: podBody });
       const ct = podRes.headers.get("content-type") || "";
-      console.log("[POD-AUTO] POST conferma status:", podRes.status, "ct:", ct);
-
       if (ct.includes("image") || ct.includes("pdf")) {
         const buf = await podRes.arrayBuffer();
         const b64 = Buffer.from(buf).toString("base64");
         const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
-        console.log("[POD-AUTO] Immagine OK:", buf.byteLength, "bytes");
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz }));
+        res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz }));
       } else {
         const podHtml = await podRes.text();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Risposta non immagine", ct, html_sample: podHtml.substring(0, 1000) }));
+        res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "Risposta non immagine", ct, html_sample: podHtml.substring(0, 500) }));
       }
-    } catch(e) {
-      console.log("[POD-AUTO] Errore:", e.message);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
@@ -365,11 +386,41 @@ async function brtRestPost(p, body, useTrackingBase) {
     const email = params.get("email") || "";
     if (!email) { res.writeHead(400); res.end(JSON.stringify({ error: "email required" })); return; }
     try {
-      const csRes = await fetch("https://creditsyard.com/api/common/customers/get", { method: "POST", headers: { "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114", "Content-Type": "application/json" }, body: JSON.stringify({ customer_email: email }) });
+      const csRes = await fetch("https://creditsyard.com/api/common/customers/get", { method: "POST", headers: { "X-Shop-Api-Key": CREDITSYARD_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ customer_email: email }) });
       const text = await csRes.text();
       let customer = {}; try { customer = JSON.parse(text); } catch(pe) {}
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(customer));
     } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // Creditsyard — aggiungi/sottrai credito cliente
+  if (req.url.startsWith("/creditsyard/adjust")) {
+    const chunks5 = []; req.on("data", c => chunks5.push(c)); await new Promise(r => req.on("end", r));
+    let body5 = {};
+    try { body5 = JSON.parse(Buffer.concat(chunks5).toString() || "{}"); } catch(e) {}
+    const { customer_email, customer_id, amount, reason, send_email_notification } = body5;
+    if (!customer_email || !amount) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "customer_email e amount obbligatori" })); return; }
+    try {
+      const payload = { customer_email, amount };
+      if (customer_id) payload.customer_id = customer_id;
+      if (reason) payload.reason = reason;
+      payload.send_email_notification = send_email_notification || 0;
+      console.log("[CREDITSYARD] Adjust:", customer_email, "amount:", amount);
+      const csRes = await fetch("https://creditsyard.com/api/common/credits/adjust", {
+        method: "POST",
+        headers: { "X-Shop-Api-Key": CREDITSYARD_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const text = await csRes.text();
+      console.log("[CREDITSYARD] status:", csRes.status, "body:", text.substring(0, 200));
+      let result = {}; try { result = JSON.parse(text); } catch(pe) {}
+      res.writeHead(csRes.ok ? 200 : csRes.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+    } catch(e) {
+      console.log("[CREDITSYARD] Errore:", e.message);
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
     return;
   }
 
