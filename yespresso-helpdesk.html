@@ -2219,6 +2219,7 @@ async function generateReply(lastMsg,email,fullThread){
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
 
   const oArea=document.getElementById("order-info-area");
+  try{
   if(order){
     const f=order.fulfillments&&order.fulfillments[0];
     const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
@@ -2356,7 +2357,21 @@ async function generateReply(lastMsg,email,fullThread){
   // Carica comunque ultimo ordine cliente per email
   loadLastCustomerOrder(email);
   }
-
+  }catch(e){
+    console.error('[generateReply box error]', e.message, e.stack);
+    if(oArea && order){
+      const f2=order.fulfillments&&order.fulfillments[0];
+      const tn2=f2&&(f2.tracking_number||(f2.tracking_numbers&&f2.tracking_numbers[0]))||'';
+      const shopUrl='https://40f758-3.myshopify.com/admin/orders/'+order.id;
+      const sS2={fulfilled:'📦 Spedito',unfulfilled:'⏳ Non spedito',partial:'🔄 Parz. spedito'};
+      let fallback='<div class="order-info-box">';
+      fallback+='<strong>🛍️ <a href="'+shopUrl+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
+      fallback+='<br>'+(sS2[order.fulfillment_status]||'⏳ Non spedito');
+      if(tn2) fallback+='<br>📦 Tracking: <strong>'+tn2+'</strong>';
+      fallback+='</div>';
+      oArea.innerHTML=fallback;
+    }
+  }
   const otherOpen=window._customerOpenTickets||[];
   const otherOpenStr=otherOpen.length?("\n\nALTRI TICKET APERTI DELLO STESSO CLIENTE:\n"+otherOpen.map(o=>"- "+o.subject+(o.msg?" | "+o.msg:"")).join("\n")):"";
   // Includi anche ticket recenti dello stesso cliente (ultimi 3 risolti) per contesto
