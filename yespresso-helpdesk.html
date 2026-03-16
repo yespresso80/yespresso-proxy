@@ -2224,11 +2224,9 @@ async function generateReply(lastMsg,email,fullThread){
       if(tn){
         const brtUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;
         html+='<br>📦 '+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
-        // POD button — sempre visibile per spedizioni BRT con tracking
-        const podBtnId='pod_'+order.id;
-        window._podData=window._podData||{};
-        window._podData[podBtnId]=tn;
-        html+=' — <span id="'+podBtnId+'" onclick="loadBrtPod(this.id)" style="color:#8e44ad;font-weight:600;cursor:pointer;text-decoration:underline">📸 POD</span>';
+        // POD — link diretto al portale BRT (API REST non supporta POD)
+        const brtPodUrl="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+tn;
+        html+=' — <a href="'+brtPodUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 POD ↗</a>';
       } else if(f.tracking_url){
         html+='<br>📦 <a href="'+f.tracking_url+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia spedizione ↗</a>';
       } else {
