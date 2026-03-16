@@ -31,17 +31,11 @@ async function syncImapAttachments() {
   lastImapSync = now;
   try {
     const { ImapFlow } = require("imapflow");
-    const client = new ImapFlow({
-      host: IMAP_HOST, port: IMAP_PORT, secure: true,
-      auth: { user: IMAP_USER, pass: IMAP_PASSWORD },
-      logger: false
-    });
+    const client = new ImapFlow({ host: IMAP_HOST, port: IMAP_PORT, secure: true, auth: { user: IMAP_USER, pass: IMAP_PASSWORD }, logger: false });
     await client.connect();
     await client.mailboxOpen("INBOX");
     const messages = [];
-    for await (const msg of client.fetch("1:*", { envelope: true, bodyStructure: true, uid: true })) {
-      messages.push(msg);
-    }
+    for await (const msg of client.fetch("1:*", { envelope: true, bodyStructure: true, uid: true })) { messages.push(msg); }
     console.log("[IMAP] Messaggi trovati:", messages.length);
     for (const msg of messages.slice(-200)) {
       const messageId = msg.envelope?.messageId || String(msg.uid);
@@ -50,10 +44,7 @@ async function syncImapAttachments() {
       const subject = msg.envelope?.subject || "";
       const date = msg.envelope?.date || new Date();
       const struct = msg.bodyStructure;
-      const hasAtt = struct && (
-        (struct.childNodes||[]).some(n => n.disposition === "attachment" || (n.type && !["text","multipart"].includes(n.type))) ||
-        (struct.disposition === "attachment")
-      );
+      const hasAtt = struct && ((struct.childNodes||[]).some(n => n.disposition === "attachment" || (n.type && !["text","multipart"].includes(n.type))) || (struct.disposition === "attachment"));
       if (!hasAtt) continue;
       try {
         const download = await client.download(String(msg.seq));
@@ -86,27 +77,18 @@ async function syncImapAttachments() {
                   if (lastEqIdx > 0) b64 = b64.substring(0, lastEqIdx + 1);
                   const rem = b64.replace(/=/g,"").length % 4;
                   if (rem) b64 = b64.replace(/=*$/, "") + "===".substring(0, 4-rem);
-                  if (b64.length > 100) {
-                    if (!attachments.find(a => a.filename === filename)) {
-                      attachments.push({ filename, contentType, data: b64 });
-                    }
-                  }
+                  if (b64.length > 100 && !attachments.find(a => a.filename === filename)) { attachments.push({ filename, contentType, data: b64 }); }
                 }
               }
             }
           }
         }
-        if (attachments.length > 0) {
-          attachmentsCache.set(messageId, { from: fromEmail, subject, date, attachments });
-          console.log("[IMAP] Allegati salvati:", fromEmail, "|", subject.substring(0,40), "| n:", attachments.length);
-        }
+        if (attachments.length > 0) { attachmentsCache.set(messageId, { from: fromEmail, subject, date, attachments }); console.log("[IMAP] Allegati salvati:", fromEmail, "|", subject.substring(0,40), "| n:", attachments.length); }
       } catch(e2) { console.log("[IMAP] Errore msg:", e2.message); }
     }
     await client.logout();
     console.log("[IMAP] Sync OK. Cache:", attachmentsCache.size, "email con allegati");
-  } catch(e) {
-    console.error("[IMAP] Errore sync:", e.message);
-  }
+  } catch(e) { console.error("[IMAP] Errore sync:", e.message); }
 }
 
 function findAttachmentsForTicket(requesterEmail, subject) {
@@ -118,9 +100,7 @@ function findAttachmentsForTicket(requesterEmail, subject) {
     const dataSubjLow = (data.subject||"").toLowerCase();
     const emailMatch = emailLow && fromLow && (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
     const subjMatch = subjLow && dataSubjLow && (dataSubjLow.includes(subjLow.substring(0,20)) || subjLow.includes(dataSubjLow.substring(0,20)));
-    if (emailMatch || subjMatch) {
-      results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date })));
-    }
+    if (emailMatch || subjMatch) { results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date }))); }
   }
   return results;
 }
@@ -136,7 +116,6 @@ const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
-
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
 
@@ -172,9 +151,7 @@ const server = http.createServer(async function(req, res) {
 
   if (req.url.startsWith("/shopify/callback")) { res.writeHead(200); res.end("OK"); return; }
 
-// ═══════════════════════════════════════════════
-// BRT REST API Integration
-// ═══════════════════════════════════════════════
+// BRT REST API
 const BRT_USER = "1791201";
 const BRT_PASS = "Dus0549dsb";
 const BRT_SFTP_HOST = "sftp.brt.it";
@@ -184,36 +161,28 @@ const BRT_SFTP_PASS = "qyo^G16^H3";
 const BRT_SFTP_PATH = "/OUT";
 const BRT_REST_BASE = "https://api.brt.it/rest/v1";
 const BRT_TRACKING_BASE = "https://api.brt.it/rest/v1/tracking";
-const BRT_VAS = "https://vas.brt.it";
 const BRT_AUTH = "Basic " + Buffer.from(BRT_USER + ":" + BRT_PASS).toString("base64");
 
-async function brtRestGet(path, useTrackingBase) {
+async function brtRestGet(p, useTrackingBase) {
   const base = useTrackingBase ? BRT_TRACKING_BASE : BRT_REST_BASE;
-  const url = base + path;
+  const url = base + p;
   console.log("[BRT REST] GET " + url);
-  const res = await fetch(url, {
-    headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" }
-  });
-  const text = await res.text();
-  console.log("[BRT REST] status:" + res.status + " body:" + text.substring(0, 300));
-  if (!res.ok) throw new Error("BRT " + res.status + ": " + text.substring(0, 100));
+  const r = await fetch(url, { headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" } });
+  const text = await r.text();
+  console.log("[BRT REST] status:" + r.status + " body:" + text.substring(0, 300));
+  if (!r.ok) throw new Error("BRT " + r.status + ": " + text.substring(0, 100));
   try { return JSON.parse(text); } catch(e) { return text; }
 }
 
-async function brtRestPost(path, body, useTrackingBase) {
+async function brtRestPost(p, body, useTrackingBase) {
   const base = useTrackingBase ? BRT_TRACKING_BASE : BRT_REST_BASE;
-  const res = await fetch(base + path, {
-    method: "POST",
-    headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const text = await res.text();
-  console.log("[BRT REST] POST " + path + " status:" + res.status + " body:" + text.substring(0, 300));
-  if (!res.ok) throw new Error("BRT " + res.status + ": " + text.substring(0, 200));
+  const r = await fetch(base + p, { method: "POST", headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const text = await r.text();
+  console.log("[BRT REST] POST " + p + " status:" + r.status + " body:" + text.substring(0, 300));
+  if (!r.ok) throw new Error("BRT " + r.status + ": " + text.substring(0, 200));
   try { return JSON.parse(text); } catch(e) { return text; }
 }
 
-  // BRT test connessione
   if (req.url.startsWith("/brt/test")) {
     try {
       const qs = req.url.split("?")[1] || "";
@@ -222,14 +191,10 @@ async function brtRestPost(path, body, useTrackingBase) {
       const data = await brtRestGet("/parcelID/" + testId, true);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
-  // BRT tracking per numero spedizione
   if (req.url.startsWith("/brt/track")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -247,173 +212,122 @@ async function brtRestPost(path, body, useTrackingBase) {
       const indirizzoConsegna = datiConsegna.indirizzo_consegna || "";
       const eventi = (spedizione.eventi && spedizione.eventi.evento) || [];
       const ultimoEvento = Array.isArray(eventi) ? eventi[eventi.length-1] : eventi;
-      console.log("[BRT TRACK] " + nspediz + " consegnato:" + delivered + " data:" + dataConsegna);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, delivered, data_consegna: dataConsegna, firmatario, luogo_consegna: luogoConsegna, indirizzo_consegna: indirizzoConsegna, ultimo_evento: ultimoEvento, raw: data }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
-  // BRT POD (Proof of Delivery) — immagine firma base64
+  // BRT POD — prova piu varianti URL
   if (req.url.startsWith("/brt/pod")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "nspediz required" })); return; }
+    const nspedizLong = nspediz.startsWith("26") ? nspediz : "26" + nspediz;
+    const urlsToTry = [
+      BRT_TRACKING_BASE + "/pod/" + encodeURIComponent(nspediz),
+      BRT_TRACKING_BASE + "/pod/" + encodeURIComponent(nspedizLong),
+      BRT_REST_BASE + "/shipment/pod/" + encodeURIComponent(nspediz),
+      BRT_REST_BASE + "/shipment/pod/" + encodeURIComponent(nspedizLong),
+    ];
+    const attempts = [];
     try {
-      const url = BRT_TRACKING_BASE + "/pod/" + encodeURIComponent(nspediz);
-      console.log("[BRT POD] GET " + url);
-      const podRes = await fetch(url, {
-        headers: { "Authorization": BRT_AUTH, "Accept": "application/json, image/*, */*" }
-      });
-      console.log("[BRT POD] status:" + podRes.status + " content-type:" + podRes.headers.get("content-type"));
-      if (!podRes.ok) {
-        const errText = await podRes.text();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "BRT " + podRes.status + ": " + errText.substring(0, 200) }));
-        return;
+      for (const url of urlsToTry) {
+        console.log("[BRT POD] Provo: " + url);
+        const podRes = await fetch(url, { headers: { "Authorization": BRT_AUTH, "Accept": "application/json, image/*, */*" } });
+        const ct = podRes.headers.get("content-type") || "";
+        console.log("[BRT POD] status:" + podRes.status + " ct:" + ct);
+        attempts.push({ url, status: podRes.status });
+        if (podRes.ok) {
+          const buf = await podRes.arrayBuffer();
+          const b64 = Buffer.from(buf).toString("base64");
+          const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz, url_used: url }));
+          return;
+        }
       }
-      const ct = podRes.headers.get("content-type") || "";
-      const buf = await podRes.arrayBuffer();
-      const b64 = Buffer.from(buf).toString("base64");
-      const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.end(JSON.stringify({ ok: false, error: "POD non trovato su nessun endpoint BRT", attempts }));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message, attempts })); }
     return;
   }
 
-  // BRT lista giacenze
   if (req.url.startsWith("/brt/giacenze")) {
     try {
       const data = await brtRestGet("/shipment/storage/list", false);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
-  // BRT svincola giacenza
   if (req.url.startsWith("/brt/svincola")) {
-    const chunks3 = [];
-    req.on("data", chunk => chunks3.push(chunk));
-    await new Promise(resolve => req.on("end", resolve));
+    const chunks3 = []; req.on("data", chunk => chunks3.push(chunk)); await new Promise(resolve => req.on("end", resolve));
     const body3 = JSON.parse(Buffer.concat(chunks3).toString() || "{}");
     try {
       const data = await brtRestPost("/shipment/storage/release", body3, false);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
-  // BRT crea ritiro
   if (req.url.startsWith("/brt/ritiro")) {
-    const chunks4 = [];
-    req.on("data", chunk => chunks4.push(chunk));
-    await new Promise(resolve => req.on("end", resolve));
+    const chunks4 = []; req.on("data", chunk => chunks4.push(chunk)); await new Promise(resolve => req.on("end", resolve));
     const body4 = JSON.parse(Buffer.concat(chunks4).toString() || "{}");
     try {
       const data = await brtRestPost("/pickup/create", body4, false);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
-  // Shopify GraphQL proxy
   if (req.url.startsWith("/shopify-graphql")) {
     const token = await getShopifyToken();
-    const chunks2 = [];
-    req.on("data", chunk => chunks2.push(chunk));
-    await new Promise(resolve => req.on("end", resolve));
+    const chunks2 = []; req.on("data", chunk => chunks2.push(chunk)); await new Promise(resolve => req.on("end", resolve));
     const body2 = Buffer.concat(chunks2).toString();
-    const gqlRes = await fetch("https://" + SHOPIFY_SHOP + "/admin/api/2024-01/graphql.json", {
-      method: "POST",
-      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
-      body: body2
-    });
+    const gqlRes = await fetch("https://" + SHOPIFY_SHOP + "/admin/api/2024-01/graphql.json", { method: "POST", headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" }, body: body2 });
     const gqlData = await gqlRes.text();
-    console.log("[GRAPHQL] status:", gqlRes.status, "body:", gqlData.substring(0, 200));
-    res.writeHead(gqlRes.status, { "Content-Type": "application/json" });
-    res.end(gqlData);
+    res.writeHead(gqlRes.status, { "Content-Type": "application/json" }); res.end(gqlData);
     return;
   }
 
-  // BRT SFTP - leggi file giacenze
   if (req.url.startsWith("/brt/sftp-giacenze")) {
-    if (!SftpClient) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: "ssh2-sftp-client non installato" }));
-      return;
-    }
+    if (!SftpClient) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "ssh2-sftp-client non installato" })); return; }
     const sftp = new SftpClient();
     try {
       await sftp.connect({ host: BRT_SFTP_HOST, port: BRT_SFTP_PORT, username: BRT_SFTP_USER, password: BRT_SFTP_PASS, readyTimeout: 10000, retries: 1 });
-      console.log("[BRT SFTP] Connesso a sftp.brt.it");
       const fileList = await sftp.list(BRT_SFTP_PATH);
       const files = fileList.filter(f => f.type === "-").sort((a,b) => b.modifyTime - a.modifyTime).slice(0, 5);
       const results = [];
       for (const file of files) {
-        try {
-          const content = await sftp.get(BRT_SFTP_PATH + "/" + file.name);
-          results.push({ name: file.name, size: file.size, date: new Date(file.modifyTime).toISOString(), content: content.toString("utf8").substring(0, 5000) });
-        } catch(fe) { results.push({ name: file.name, error: fe.message }); }
+        try { const content = await sftp.get(BRT_SFTP_PATH + "/" + file.name); results.push({ name: file.name, size: file.size, date: new Date(file.modifyTime).toISOString(), content: content.toString("utf8").substring(0, 5000) }); }
+        catch(fe) { results.push({ name: file.name, error: fe.message }); }
       }
       await sftp.end();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, files: results }));
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, files: results }));
     } catch(e) {
-      console.log("[BRT SFTP] Errore:", e.message);
       try { await sftp.end(); } catch(ee) {}
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
   }
 
-  // Creditsyard customer lookup by email
   if (req.url.startsWith("/creditsyard/customer")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const email = params.get("email") || "";
     if (!email) { res.writeHead(400); res.end(JSON.stringify({ error: "email required" })); return; }
     try {
-      const csRes = await fetch("https://creditsyard.com/api/common/customers/get", {
-        method: "POST",
-        headers: { "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114", "Content-Type": "application/json" },
-        body: JSON.stringify({ customer_email: email })
-      });
+      const csRes = await fetch("https://creditsyard.com/api/common/customers/get", { method: "POST", headers: { "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114", "Content-Type": "application/json" }, body: JSON.stringify({ customer_email: email }) });
       const text = await csRes.text();
-      console.log("[CREDITSYARD] status:" + csRes.status + " body:", text.substring(0, 200));
-      let customer = {};
-      try { customer = JSON.parse(text); } catch(pe) {}
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(customer));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: e.message }));
-    }
+      let customer = {}; try { customer = JSON.parse(text); } catch(pe) {}
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(customer));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: e.message })); }
     return;
   }
 
   let targetUrl, requestHeaders;
-
   if (req.url.startsWith("/shopify")) {
     const p = req.url.replace(/^\/shopify/, "");
     const token = await getShopifyToken();
@@ -431,7 +345,6 @@ async function brtRestPost(path, body, useTrackingBase) {
   }
 
   console.log("[PROXY] " + req.method + " " + targetUrl);
-
   const chunks = [];
   req.on("data", function(chunk) { chunks.push(chunk); });
   req.on("end", function() {
