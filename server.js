@@ -2,6 +2,8 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+let SftpClient;
+try { SftpClient = require("ssh2-sftp-client"); } catch(e) { console.log("[SFTP] ssh2-sftp-client non installato:", e.message); }
 
 const PORT = process.env.PORT || 3001;
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
@@ -203,40 +205,30 @@ const server = http.createServer(async function(req, res) {
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
 const BRT_PASS = "Dus0549dsb";
-const BRT_REST_BASE = "https://ftps.brt.it";
-// Path alternativi da provare
-const BRT_REST_PATHS = [
-  "https://ftps.brt.it/services/shipment/rest",
-  "https://ftps.brt.it/wsr/services/shipment/rest",
-  "https://ftps.brt.it/api",
-  "https://wsr.brt.it/wsr/services/shipment/rest",
-  "https://api.brt.it",
-];
+const BRT_SFTP_HOST = "sftp.brt.it";
+const BRT_SFTP_PORT = 22;
+const BRT_SFTP_USER = "1791201";
+const BRT_SFTP_PASS = "qyo^G16^H3";
+const BRT_SFTP_PATH = "/OUT";
+const BRT_REST_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_VAS = "https://vas.brt.it";
 // Token base64 user:pass
 const BRT_AUTH = "Basic " + Buffer.from(BRT_USER + ":" + BRT_PASS).toString("base64");
 
 async function brtRestGet(path) {
-  for (const base of BRT_REST_PATHS) {
-    try {
-      const url = base + path;
-      const res = await fetch(url, {
-        headers: {
-          "Authorization": BRT_AUTH,
-          "Accept": "application/json",
-          "Content-Type": "application/json"
-        }
-      });
-      const text = await res.text();
-      console.log("[BRT REST] GET " + url + " status:" + res.status + " body:" + text.substring(0, 150));
-      if (res.ok) {
-        try { return JSON.parse(text); } catch(e) { return text; }
-      }
-    } catch(e) {
-      console.log("[BRT REST] error on " + base + ": " + e.message);
+  const url = BRT_REST_BASE + path;
+  console.log("[BRT REST] GET " + url);
+  const res = await fetch(url, {
+    headers: {
+      "Authorization": BRT_AUTH,
+      "Accept": "application/json",
+      "Content-Type": "application/json"
     }
-  }
-  throw new Error("BRT: nessun endpoint raggiungibile");
+  });
+  const text = await res.text();
+  console.log("[BRT REST] status:" + res.status + " body:" + text.substring(0, 300));
+  if (!res.ok) throw new Error("BRT " + res.status + ": " + text.substring(0, 100));
+  try { return JSON.parse(text); } catch(e) { return text; }
 }
 
 async function brtRestPost(path, body) {
@@ -256,41 +248,43 @@ async function brtRestPost(path, body) {
 }
 
 
-  // BRT test connessione
+  // BRT test connessione - usa parcelID di esempio
   if (req.url.startsWith("/brt/test")) {
     try {
-      const data = await brtRestGet("/shipment/list?pageSize=1");
+      // Prova con un parcelID di test (numero spedizione)
+      const qs = req.url.split("?")[1] || "";
+      const params = new URLSearchParams(qs);
+      const testId = params.get("id") || "179010735604";
+      const data = await brtRestGet("/parcelID/" + testId);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, data }));
     } catch(e) {
-      // Prova endpoint alternativo
-      try {
-        const data2 = await brtRestGet("/tracking/list?pageSize=1");
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, data: data2 }));
-      } catch(e2) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: e.message, error2: e2.message }));
-      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
   }
 
-  // BRT tracking per numero spedizione
+  // BRT tracking per numero spedizione (parcelID)
   if (req.url.startsWith("/brt/track")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
     try {
-      // Prova API REST ufficiale
-      const data = await brtRestGet("/tracking/shipment?shipmentNumber=" + encodeURIComponent(nspediz));
-      const events = data.events || data.trackingEvents || data.shipmentEvents || [];
-      const lastEvent = events[events.length - 1] || {};
-      const status = (lastEvent.description || lastEvent.status || "").toLowerCase();
-      const delivered = status.includes("consegnat") || status.includes("delivered") || data.delivered === true;
+      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
+      // Dalla doc: dati_consegna.data_consegna_merce valorizzato = consegnato
+      const result = data.ttParcelIdResponse || data;
+      const spedizione = result.spedizione || {};
+      const datiConsegna = spedizione.dati_consegna || {};
+      const delivered = !!(datiConsegna.data_consegna_merce && datiConsegna.data_consegna_merce.trim());
+      const firmatario = datiConsegna.firmatario_consegna || "";
+      const dataConsegna = datiConsegna.data_consegna_merce || "";
+      const eventi = (spedizione.eventi && spedizione.eventi.evento) || [];
+      const ultimoEvento = Array.isArray(eventi) ? eventi[eventi.length-1] : eventi;
+      console.log("[BRT TRACK] " + nspediz + " consegnato:" + delivered + " data:" + dataConsegna);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, delivered, status: lastEvent.description || lastEvent.status, events, raw: data }));
+      res.end(JSON.stringify({ ok: true, delivered, data_consegna: dataConsegna, firmatario, ultimo_evento: ultimoEvento, raw: data }));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -361,6 +355,48 @@ async function brtRestPost(path, body) {
     console.log("[GRAPHQL] status:", gqlRes.status, "body:", gqlData.substring(0, 200));
     res.writeHead(gqlRes.status, { "Content-Type": "application/json" });
     res.end(gqlData);
+    return;
+  }
+
+  // BRT SFTP - leggi file giacenze
+  if (req.url.startsWith("/brt/sftp-giacenze")) {
+    if (!SftpClient) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "ssh2-sftp-client non installato. Aggiungilo al package.json" }));
+      return;
+    }
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect({
+        host: BRT_SFTP_HOST,
+        port: BRT_SFTP_PORT,
+        username: BRT_SFTP_USER,
+        password: BRT_SFTP_PASS,
+        readyTimeout: 10000,
+        retries: 1
+      });
+      console.log("[BRT SFTP] Connesso a sftp.brt.it");
+      // Lista file nella directory OUT
+      const fileList = await sftp.list(BRT_SFTP_PATH);
+      console.log("[BRT SFTP] File trovati:", fileList.length);
+      // Leggi i file più recenti (giacenze)
+      const files = fileList.filter(f => f.type === "-").sort((a,b) => b.modifyTime - a.modifyTime).slice(0, 5);
+      const results = [];
+      for (const file of files) {
+        try {
+          const content = await sftp.get(BRT_SFTP_PATH + "/" + file.name);
+          results.push({ name: file.name, size: file.size, date: new Date(file.modifyTime).toISOString(), content: content.toString("utf8").substring(0, 5000) });
+        } catch(fe) { results.push({ name: file.name, error: fe.message }); }
+      }
+      await sftp.end();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, files: results }));
+    } catch(e) {
+      console.log("[BRT SFTP] Errore:", e.message);
+      try { await sftp.end(); } catch(ee) {}
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
     return;
   }
 

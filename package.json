@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "dependencies": {
-    "imapflow": "^1.0.169"
+    "imapflow": "^1.0.169",
+    "ssh2-sftp-client": "^10.0.0"
   }
 }
