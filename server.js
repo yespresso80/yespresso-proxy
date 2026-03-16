@@ -210,28 +210,52 @@ let brtSessionExpiry = 0;
 async function brtLogin() {
   const now = Date.now();
   if (brtSessionCookie && now < brtSessionExpiry) return brtSessionCookie;
-  console.log("[BRT] Login...");
-  const res = await fetch(BRT_BASE + "/vas/login.hsm", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    },
-    body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe",
-    redirect: "manual"
-  });
-  const setCookie = res.headers.get("set-cookie") || "";
-  const jsessionMatch = setCookie.match(/JSESSIONID=[^;]+/);
-  if (jsessionMatch) {
-    brtSessionCookie = jsessionMatch[0];
-    brtSessionExpiry = now + 25 * 60 * 1000; // 25 minuti
-    console.log("[BRT] Login OK, cookie:", brtSessionCookie.substring(0, 30));
-    return brtSessionCookie;
+  // Prova diversi endpoint di login BRT
+  const loginAttempts = [
+    { url: BRT_BASE + "/vas/login.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe" },
+    { url: BRT_BASE + "/vas/utenti_login.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS },
+    { url: BRT_BASE + "/vas/accesso.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe" },
+    { url: "https://www.brt.it/vas/login.hsm", body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe" },
+  ];
+  for (const attempt of loginAttempts) {
+    console.log("[BRT] Provo login su:", attempt.url);
+    const res = await fetch(attempt.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      },
+      body: attempt.body,
+      redirect: "manual"
+    });
+    console.log("[BRT] Risposta:", res.status, "Location:", res.headers.get("location") || "nessuna");
+    const setCookie = res.headers.get("set-cookie") || "";
+    const jsessionMatch = setCookie.match(/JSESSIONID=[^;]+/);
+    if (jsessionMatch) {
+      brtSessionCookie = jsessionMatch[0];
+      brtSessionExpiry = now + 25 * 60 * 1000;
+      console.log("[BRT] Login OK su", attempt.url);
+      return brtSessionCookie;
+    }
+    // Se redirect a pagina interna = login OK con redirect
+    const location = res.headers.get("location") || "";
+    if (location && !location.includes("login") && !location.includes("error") && res.status >= 300 && res.status < 400) {
+      // Segui il redirect per ottenere il cookie
+      const res2 = await fetch(location.startsWith("http") ? location : BRT_BASE + location, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        redirect: "manual"
+      });
+      const setCookie2 = res2.headers.get("set-cookie") || "";
+      const m2 = setCookie2.match(/JSESSIONID=[^;]+/);
+      if (m2) {
+        brtSessionCookie = m2[0];
+        brtSessionExpiry = now + 25 * 60 * 1000;
+        console.log("[BRT] Login OK via redirect su", attempt.url);
+        return brtSessionCookie;
+      }
+    }
   }
-  // Try redirect location
-  const location = res.headers.get("location") || "";
-  console.log("[BRT] Login redirect:", location, "status:", res.status);
-  throw new Error("BRT login fallito - status: " + res.status);
+  throw new Error("BRT login fallito su tutti gli endpoint");
 }
 
 async function brtFetch(path, options = {}) {
