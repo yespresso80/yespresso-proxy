@@ -1417,7 +1417,7 @@ async function selectTicket(tid){
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
           const tc2=f.tracking_company||"BRT";
-          if(tn2){const brtUrl2="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243"2;html2+='<br>📦 '+tc2+': <strong>'+tn2+'</strong> — <a href="'+brtUrl2+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';}
+          if(tn2){const brtUrl2="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";html2+='<br>📦 '+tc2+': <strong>'+tn2+'</strong> — <a href="'+brtUrl2+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';}
           if(f.created_at)html2+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
@@ -3301,13 +3301,16 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
   box.style.cssText='padding:12px 16px;border-bottom:1px solid #e8eaf0;background:#fdf8ff';
   box.innerHTML='<div class="ds-section-title" style="color:#8e44ad;margin-bottom:8px">📸 POD — PROVA DI CONSEGNA</div>'
     +'<div style="background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden;margin-bottom:8px;text-align:center">'
-    +(isPdf?'<embed src="'+dataUrl+'" type="application/pdf" width="100%" style="height:200px;border:none"/>':'<img id="pod-img-'+ts+'" src="'+dataUrl+'" style="max-width:100%;max-height:220px;object-fit:contain;cursor:zoom-in" onclick="this.style.maxHeight=this.style.maxHeight==='none'?'220px':'none'"/>')
+    +(isPdf?'<embed src="'+dataUrl+'" type="application/pdf" width="100%" style="height:200px;border:none"/>':'<img id="pod-img-'+ts+'" src="'+dataUrl+'" style="max-width:100%;max-height:220px;object-fit:contain;cursor:zoom-in" title="Clicca per espandere"/>')
     +'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
     +'<button id="pod-cp-'+ts+'" style="padding:7px;background:#1a73e8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">📋 Copia</button>'
     +'<button id="pod-ur-'+ts+'" style="padding:7px;background:#e8a000;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">🔗 Aggiungi URL</button>'
     +'<button id="pod-al-'+ts+'" style="padding:7px;background:#8e44ad;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;grid-column:1/-1">📎 Aggiungi Allegato</button>'
     +'</div><div style="font-size:10px;color:#aaa;margin-top:6px">Tracking: '+tn+'</div>';
   sidebar.insertBefore(box,sidebar.firstChild);
+  // Toggle zoom img
+  const podImgEl=document.getElementById('pod-img-'+ts);
+  if(podImgEl) podImgEl.addEventListener('click',function(){this.style.maxHeight=this.style.maxHeight==='none'?'220px':'none';});
   document.getElementById('pod-cp-'+ts).addEventListener('click',()=>{
     if(isPdf){showToast('Usa Aggiungi Allegato per i PDF','error');return;}
     const img=document.getElementById('pod-img-'+ts);
@@ -3316,9 +3319,7 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
   });
   document.getElementById('pod-ur-'+ts).addEventListener('click',()=>{
     const rb=document.getElementById('reply-body');if(!rb){showToast('Apri prima la risposta','error');return;}
-    rb.value=(rb.value?rb.value+'
-
-':'')+'POD consegna: '+podUrl;rb.focus();
+    rb.value=(rb.value?rb.value+'\n\n':'')+'POD consegna: '+podUrl;rb.focus();
     showToast('✅ URL POD aggiunto nella risposta');
   });
   document.getElementById('pod-al-'+ts).addEventListener('click',function(){
