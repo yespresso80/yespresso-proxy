@@ -197,6 +197,88 @@ const server = http.createServer(async function(req, res) {
 
   if (req.url.startsWith("/shopify/callback")) { res.writeHead(200); res.end("OK"); return; }
 
+
+// ═══════════════════════════════════════════════
+// BRT VAS Integration
+// ═══════════════════════════════════════════════
+const BRT_USER = "1791201";
+const BRT_PASS = "YES01307";
+const BRT_BASE = "https://vas.brt.it";
+let brtSessionCookie = null;
+let brtSessionExpiry = 0;
+
+async function brtLogin() {
+  const now = Date.now();
+  if (brtSessionCookie && now < brtSessionExpiry) return brtSessionCookie;
+  console.log("[BRT] Login...");
+  const res = await fetch(BRT_BASE + "/vas/login.hsm", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    },
+    body: "login=" + BRT_USER + "&pwd=" + BRT_PASS + "&area=spe",
+    redirect: "manual"
+  });
+  const setCookie = res.headers.get("set-cookie") || "";
+  const jsessionMatch = setCookie.match(/JSESSIONID=[^;]+/);
+  if (jsessionMatch) {
+    brtSessionCookie = jsessionMatch[0];
+    brtSessionExpiry = now + 25 * 60 * 1000; // 25 minuti
+    console.log("[BRT] Login OK, cookie:", brtSessionCookie.substring(0, 30));
+    return brtSessionCookie;
+  }
+  // Try redirect location
+  const location = res.headers.get("location") || "";
+  console.log("[BRT] Login redirect:", location, "status:", res.status);
+  throw new Error("BRT login fallito - status: " + res.status);
+}
+
+async function brtFetch(path, options = {}) {
+  const cookie = await brtLogin();
+  const res = await fetch(BRT_BASE + path, {
+    ...options,
+    headers: {
+      "Cookie": cookie,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      ...(options.headers || {})
+    }
+  });
+  const text = await res.text();
+  return { status: res.status, text };
+}
+
+  // BRT tracking
+  if (req.url.startsWith("/brt/track")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
+    try {
+      const { status, text } = await brtFetch("/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + nspediz);
+      console.log("[BRT] Track " + nspediz + " status:" + status + " html length:" + text.length);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status, html: text }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // BRT login test
+  if (req.url.startsWith("/brt/test")) {
+    try {
+      const cookie = await brtLogin();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, cookie: cookie.substring(0, 20) + "..." }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
   // Creditsyard customer lookup by email
   if (req.url.startsWith("/creditsyard/customer")) {
     const qs = req.url.split("?")[1] || "";
