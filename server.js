@@ -199,80 +199,145 @@ const server = http.createServer(async function(req, res) {
 
 
 // ═══════════════════════════════════════════════
-// BRT VAS Integration
+// BRT REST API Integration
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
-const BRT_PASS = "YES01307";
-const BRT_BASE = "https://services.brt.it";
+const BRT_PASS = "Dus0549dsb";
+const BRT_REST_BASE = "https://ftps.brt.it";
+// Path alternativi da provare
+const BRT_REST_PATHS = [
+  "https://ftps.brt.it/services/shipment/rest",
+  "https://ftps.brt.it/wsr/services/shipment/rest",
+  "https://ftps.brt.it/api",
+  "https://wsr.brt.it/wsr/services/shipment/rest",
+  "https://api.brt.it",
+];
 const BRT_VAS = "https://vas.brt.it";
-let brtSessionCookie = null;
-let brtSessionExpiry = 0;
+// Token base64 user:pass
+const BRT_AUTH = "Basic " + Buffer.from(BRT_USER + ":" + BRT_PASS).toString("base64");
 
-async function brtLogin() {
-  const now = Date.now();
-  if (brtSessionCookie && now < brtSessionExpiry) return brtSessionCookie;
-  // Prova diversi endpoint di login BRT
-  // Step 1: GET pagina login per ottenere CSRF token e cookie sessione
-  const loginPageUrl = "https://services.brt.it/it/area-clienti";
-  console.log("[BRT] GET pagina login:", loginPageUrl);
-  const pageRes = await fetch(loginPageUrl, {
-    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html,*/*" },
-    redirect: "follow"
-  });
-  const pageHtml = await pageRes.text();
-  const pageCookies = pageRes.headers.get("set-cookie") || "";
-  console.log("[BRT] Pagina login status:", pageRes.status, "url:", pageRes.url, "html length:", pageHtml.length);
-  console.log("[BRT] Cookie ricevuti:", pageCookies.substring(0, 100));
-  
-  // Cerca form action e CSRF token nella pagina
-  const formActionMatch = pageHtml.match(/action=["']([^"']*login[^"']*)["']/i);
-  const csrfMatch = pageHtml.match(/name=["'](_csrf|csrf_token|token|authenticity_token)["'][^>]*value=["']([^"']+)["']/i);
-  const formAction = formActionMatch ? formActionMatch[1] : null;
-  const csrfToken = csrfMatch ? csrfMatch[2] : null;
-  console.log("[BRT] Form action:", formAction, "CSRF:", csrfToken ? "trovato" : "non trovato");
-  console.log("[BRT] HTML snippet (form):", pageHtml.substring(pageHtml.indexOf("form"), pageHtml.indexOf("form") + 500));
-
-  throw new Error("BRT: analisi pagina completata, controlla i log per procedere");
+async function brtRestGet(path) {
+  for (const base of BRT_REST_PATHS) {
+    try {
+      const url = base + path;
+      const res = await fetch(url, {
+        headers: {
+          "Authorization": BRT_AUTH,
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        }
+      });
+      const text = await res.text();
+      console.log("[BRT REST] GET " + url + " status:" + res.status + " body:" + text.substring(0, 150));
+      if (res.ok) {
+        try { return JSON.parse(text); } catch(e) { return text; }
+      }
+    } catch(e) {
+      console.log("[BRT REST] error on " + base + ": " + e.message);
+    }
+  }
+  throw new Error("BRT: nessun endpoint raggiungibile");
 }
 
-async function brtFetch(path, options = {}) {
-  const cookie = await brtLogin();
-  const res = await fetch(BRT_BASE + path, {
-    ...options,
+async function brtRestPost(path, body) {
+  const res = await fetch(BRT_REST_BASE + path, {
+    method: "POST",
     headers: {
-      "Cookie": cookie,
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      ...(options.headers || {})
-    }
+      "Authorization": BRT_AUTH,
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
   });
   const text = await res.text();
-  return { status: res.status, text };
+  console.log("[BRT REST] POST " + path + " status:" + res.status + " body:" + text.substring(0, 300));
+  if (!res.ok) throw new Error("BRT " + res.status + ": " + text.substring(0, 200));
+  try { return JSON.parse(text); } catch(e) { return text; }
 }
 
-  // BRT tracking
+
+  // BRT test connessione
+  if (req.url.startsWith("/brt/test")) {
+    try {
+      const data = await brtRestGet("/shipment/list?pageSize=1");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, data }));
+    } catch(e) {
+      // Prova endpoint alternativo
+      try {
+        const data2 = await brtRestGet("/tracking/list?pageSize=1");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, data: data2 }));
+      } catch(e2) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message, error2: e2.message }));
+      }
+    }
+    return;
+  }
+
+  // BRT tracking per numero spedizione
   if (req.url.startsWith("/brt/track")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
     try {
-      const { status, text } = await brtFetch("/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + nspediz);
-      console.log("[BRT] Track " + nspediz + " status:" + status + " html length:" + text.length);
+      // Prova API REST ufficiale
+      const data = await brtRestGet("/tracking/shipment?shipmentNumber=" + encodeURIComponent(nspediz));
+      const events = data.events || data.trackingEvents || data.shipmentEvents || [];
+      const lastEvent = events[events.length - 1] || {};
+      const status = (lastEvent.description || lastEvent.status || "").toLowerCase();
+      const delivered = status.includes("consegnat") || status.includes("delivered") || data.delivered === true;
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status, html: text }));
+      res.end(JSON.stringify({ ok: true, delivered, status: lastEvent.description || lastEvent.status, events, raw: data }));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: e.message }));
+      res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
   }
 
-  // BRT login test
-  if (req.url.startsWith("/brt/test")) {
+  // BRT lista giacenze
+  if (req.url.startsWith("/brt/giacenze")) {
     try {
-      const cookie = await brtLogin();
+      const data = await brtRestGet("/shipment/storage/list");
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, cookie: cookie.substring(0, 20) + "..." }));
+      res.end(JSON.stringify({ ok: true, data }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT svincola giacenza
+  if (req.url.startsWith("/brt/svincola")) {
+    const chunks3 = [];
+    req.on("data", chunk => chunks3.push(chunk));
+    await new Promise(resolve => req.on("end", resolve));
+    const body3 = JSON.parse(Buffer.concat(chunks3).toString() || "{}");
+    try {
+      const data = await brtRestPost("/shipment/storage/release", body3);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, data }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT crea ritiro
+  if (req.url.startsWith("/brt/ritiro")) {
+    const chunks4 = [];
+    req.on("data", chunk => chunks4.push(chunk));
+    await new Promise(resolve => req.on("end", resolve));
+    const body4 = JSON.parse(Buffer.concat(chunks4).toString() || "{}");
+    try {
+      const data = await brtRestPost("/pickup/create", body4);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, data }));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: e.message }));
