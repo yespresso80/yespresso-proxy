@@ -126,16 +126,14 @@ const server = http.createServer(async function(req, res) {
     const subject = params.get("subject") || "";
     await syncImapAttachments();
     const attachments = findAttachmentsForTicket(email, subject);
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ attachments, cached: attachmentsCache.size }));
+    res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ attachments, cached: attachmentsCache.size }));
     return;
   }
 
   if (req.url === "/imap/sync") {
     lastImapSync = 0;
     syncImapAttachments().catch(e => console.error(e));
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "sync avviato", cached: attachmentsCache.size }));
+    res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "sync avviato", cached: attachmentsCache.size }));
     return;
   }
 
@@ -143,8 +141,7 @@ const server = http.createServer(async function(req, res) {
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
     fs.readFile(filePath, function(err, data) {
       if (err) { res.writeHead(404); res.end("File non trovato"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(data);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
     });
     return;
   }
@@ -169,7 +166,7 @@ async function brtRestGet(p, useTrackingBase) {
   console.log("[BRT REST] GET " + url);
   const r = await fetch(url, { headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" } });
   const text = await r.text();
-  console.log("[BRT REST] status:" + r.status + " body:" + text.substring(0, 300));
+  console.log("[BRT REST] status:" + r.status + " body:" + text.substring(0, 200));
   if (!r.ok) throw new Error("BRT " + r.status + ": " + text.substring(0, 100));
   try { return JSON.parse(text); } catch(e) { return text; }
 }
@@ -178,7 +175,7 @@ async function brtRestPost(p, body, useTrackingBase) {
   const base = useTrackingBase ? BRT_TRACKING_BASE : BRT_REST_BASE;
   const r = await fetch(base + p, { method: "POST", headers: { "Authorization": BRT_AUTH, "Accept": "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const text = await r.text();
-  console.log("[BRT REST] POST " + p + " status:" + r.status + " body:" + text.substring(0, 300));
+  console.log("[BRT REST] POST " + p + " status:" + r.status + " body:" + text.substring(0, 200));
   if (!r.ok) throw new Error("BRT " + r.status + ": " + text.substring(0, 200));
   try { return JSON.parse(text); } catch(e) { return text; }
 }
@@ -217,76 +214,89 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD automatico — login vas.brt.it + scraping immagine firma
+  // BRT POD automatico — vas.brt.it IDSESSIONE + form POD
+  // Flusso: 1) GET sped_numspe_par.htm -> IDSESSIONE
+  //         2) GET sped_det_show.hsm?Nspediz=X&IDSESSIONE=X -> PODChkCde + params
+  //         3) POST conferma_pod_image.htm -> immagine POD
   if (req.url.startsWith("/brt/pod-auto")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "nspediz required" })); return; }
+    const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
     try {
-      // Step 1: Login
-      const loginRes = await fetch("https://vas.brt.it/vas/login.do", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-        body: "user=1791201&pwd=Dus0549dsb&language=it",
-        redirect: "manual"
+      // Step 1: GET pagina pubblica per ottenere IDSESSIONE
+      const pubRes = await fetch("https://vas.brt.it/vas/sped_numspe_par.htm", {
+        headers: { "User-Agent": UA, "Accept": "text/html" }
       });
-      const rawCookies = loginRes.headers.get("set-cookie") || "";
-      const cookies = rawCookies.split(/,(?=[^;]+=[^;]+)/).map(c => c.split(";")[0].trim()).filter(Boolean).join("; ");
-      console.log("[POD-AUTO] Login:", loginRes.status, "| cookies:", cookies.substring(0,100));
+      const pubHtml = await pubRes.text();
+      const sessionMatch = pubHtml.match(/name="IDSESSIONE"[^>]*value="([^"]+)"/i) ||
+                           pubHtml.match(/value="([^"]+)"[^>]*name="IDSESSIONE"/i);
+      const idsessione = sessionMatch ? sessionMatch[1] : "";
+      const pubCookies = (pubRes.headers.get("set-cookie") || "").split(/,(?=[^ ])/).map(c=>c.split(";")[0].trim()).filter(Boolean).join("; ");
+      console.log("[POD-AUTO] IDSESSIONE:", idsessione.substring(0,20), "cookies:", pubCookies.substring(0,60));
 
-      // Step 2: Pagina tracking
-      const trackUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
-      const trackRes = await fetch(trackUrl, { headers: { "Cookie": cookies, "User-Agent": "Mozilla/5.0" } });
-      const trackHtml = await trackRes.text();
-      console.log("[POD-AUTO] Track page:", trackRes.status, trackHtml.length, "chars");
+      // Step 2: GET pagina dettaglio spedizione con IDSESSIONE
+      const detUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz) + (idsessione ? "&IDSESSIONE=" + encodeURIComponent(idsessione) : "");
+      const detRes = await fetch(detUrl, {
+        headers: { "User-Agent": UA, "Cookie": pubCookies, "Accept": "text/html", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" }
+      });
+      const detHtml = await detRes.text();
+      const detCookies = [pubCookies, (detRes.headers.get("set-cookie")||"").split(/,(?=[^ ])/).map(c=>c.split(";")[0].trim()).filter(Boolean).join("; ")].filter(Boolean).join("; ");
+      console.log("[POD-AUTO] Det page:", detRes.status, detHtml.length, "chars");
 
-      // Step 3: Cerca URL immagine POD
-      const patterns = [
-        /src=["']([^"']*(?:pod|firma|signature|proof)[^"']*\.(?:jpg|jpeg|png|gif))["']/i,
-        /href=["']([^"']*(?:pod|firma|signature)[^"']*\.(?:jpg|jpeg|png|pdf))["']/i,
-        /["'](\/vas\/[^"']*(?:pod|firma|immagine)[^"']*)["']/i,
-        /sped_pod[^"']*["']([^"']+)["']/i,
-      ];
-      let podUrl = null;
-      for (const pat of patterns) {
-        const m = trackHtml.match(pat);
-        if (m) { podUrl = m[1]; break; }
-      }
+      // Step 3: Estrai parametri form POD
+      const chkMatch  = detHtml.match(/name="PODChkCde"[^>]*value="([^"]+)"/i)          || detHtml.match(/value="([^"]+)"[^>]*name="PODChkCde"/i);
+      const spedMatch = detHtml.match(/name="SpedizioneImmagineLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="SpedizioneImmagineLDV"/i);
+      const addMatch  = detHtml.match(/name="AddebitoImmagineLDV"[^>]*value="([^"]+)"/i)   || detHtml.match(/value="([^"]+)"[^>]*name="AddebitoImmagineLDV"/i);
+      const dateMatch = detHtml.match(/name="DataFineGratisLDV"[^>]*value="([^"]+)"/i)     || detHtml.match(/value="([^"]+)"[^>]*name="DataFineGratisLDV"/i);
 
-      if (!podUrl) {
+      if (!chkMatch || !spedMatch) {
+        const hasPOD = detHtml.includes("conferma_pod_image") || detHtml.includes("PODChkCde");
+        const podIdx = detHtml.indexOf("POD");
+        const podSnippet = podIdx >= 0 ? detHtml.substring(Math.max(0, podIdx-100), podIdx+800) : detHtml.substring(0, 800);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "POD non trovato nella pagina", html_sample: trackHtml.substring(0, 3000), login_status: loginRes.status }));
+        res.end(JSON.stringify({ ok: false, error: hasPOD ? "Parametri POD non estratti" : "POD non disponibile per questa spedizione", has_pod_form: hasPOD, idsessione_found: !!idsessione, det_status: detRes.status, html_sample: podSnippet }));
         return;
       }
 
-      if (!podUrl.startsWith("http")) podUrl = "https://vas.brt.it" + podUrl;
-      console.log("[POD-AUTO] URL immagine:", podUrl);
+      const podChkCde    = chkMatch[1];
+      const spedImmagine = spedMatch[1];
+      const addebito     = addMatch  ? addMatch[1]  : "1";
+      const dataFine     = dateMatch ? dateMatch[1] : "01.01.0001";
+      console.log("[POD-AUTO] SpedImm:", spedImmagine, "ChkCde:", podChkCde);
 
-      // Step 4: Scarica immagine
-      const imgRes = await fetch(podUrl, { headers: { "Cookie": cookies, "User-Agent": "Mozilla/5.0" } });
-      const ct = imgRes.headers.get("content-type") || "image/jpeg";
-      const buf = await imgRes.arrayBuffer();
-      const b64 = Buffer.from(buf).toString("base64");
-      const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
-      console.log("[POD-AUTO] Immagine:", buf.byteLength, "bytes, mime:", mime);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz, pod_url: podUrl }));
+      // Step 4: POST conferma_pod_image.htm -> immagine
+      const podBody = "SpedizioneImmagineLDV=" + encodeURIComponent(spedImmagine) +
+                      "&AddebitoImmagineLDV=" + encodeURIComponent(addebito) +
+                      "&DataFineGratisLDV=" + encodeURIComponent(dataFine) +
+                      "&PODChkCde=" + encodeURIComponent(podChkCde) +
+                      "&PODImage=P.O.D.+image";
+      const podRes = await fetch("https://vas.brt.it/vas/conferma_pod_image.htm", {
+        method: "POST",
+        headers: { "User-Agent": UA, "Cookie": detCookies, "Content-Type": "application/x-www-form-urlencoded", "Referer": detUrl, "Accept": "image/*, text/html, */*" },
+        body: podBody
+      });
+      const ct = podRes.headers.get("content-type") || "";
+      console.log("[POD-AUTO] POST conferma status:", podRes.status, "ct:", ct);
+
+      if (ct.includes("image") || ct.includes("pdf")) {
+        const buf = await podRes.arrayBuffer();
+        const b64 = Buffer.from(buf).toString("base64");
+        const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
+        console.log("[POD-AUTO] Immagine OK:", buf.byteLength, "bytes");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, mime, data: b64, nspediz }));
+      } else {
+        const podHtml = await podRes.text();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Risposta non immagine", ct, html_sample: podHtml.substring(0, 1000) }));
+      }
     } catch(e) {
       console.log("[POD-AUTO] Errore:", e.message);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
-  }
-
-  // BRT POD via REST (non disponibile)
-  if (req.url.startsWith("/brt/pod")) {
-    const qs = req.url.split("?")[1] || "";
-    const params = new URLSearchParams(qs);
-    const nspediz = params.get("nspediz") || "";
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: false, not_available_via_api: true, pod_url: "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz) }));
     return;
   }
 
