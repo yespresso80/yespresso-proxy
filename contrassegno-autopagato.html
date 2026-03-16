@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Contrassegno Auto-Pagato</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:20px;background:#f5f7fa;color:#1a1a2e}
+  .container{max-width:960px;margin:0 auto}
+  h1{font-size:22px;margin-bottom:4px}
+  .subtitle{color:#888;font-size:13px;margin-bottom:24px}
+  .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+  .btn{padding:9px 18px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-primary{background:#1a73e8;color:#fff}
+  .btn-primary:hover{background:#1557b0}
+  .btn-primary:disabled{background:#aaa;cursor:not-allowed}
+  .btn-secondary{background:#f0f2f5;color:#555;border:1px solid #e0e4ea}
+  .btn-secondary:hover{background:#e0e4ea}
+  .progress-bar{height:6px;background:#e8eaf0;border-radius:3px;overflow:hidden;margin:8px 0}
+  .progress-fill{height:100%;background:#1a73e8;border-radius:3px;transition:width .3s}
+  .log-area{background:#1a1a2e;color:#a8d8a8;border-radius:8px;padding:12px;font-family:monospace;font-size:12px;max-height:350px;overflow-y:auto;margin-top:12px}
+  .log-ok{color:#6fcf97}
+  .log-skip{color:#aaa}
+  .log-err{color:#eb5757}
+  .log-info{color:#56ccf2}
+  .log-warn{color:#f2c94c}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+  .stat{background:#f8f9fc;border-radius:8px;padding:12px 16px;flex:1;min-width:100px;text-align:center}
+  .stat-num{font-size:24px;font-weight:700}
+  .stat-label{font-size:11px;color:#888;margin-top:2px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .badge-green{background:#e8f5e9;color:#2a9d60}
+  .badge-orange{background:#fff3e0;color:#e67e22}
+  .badge-blue{background:#e8f0fe;color:#1a73e8}
+  .badge-grey{background:#f0f2f5;color:#888}
+  .order-row{padding:10px 12px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:10px;font-size:13px}
+  .order-row:last-child{border-bottom:none}
+  .order-row:hover{background:#f8f9fc}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:8px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:2px solid #f0f2f5}
+  td{padding:10px 12px;border-bottom:1px solid #f0f2f5}
+  .spinner{width:16px;height:16px;border:2px solid #e0e4ea;border-top-color:#1a73e8;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+  .dot-green{background:#2a9d60}
+  .dot-orange{background:#e67e22}
+  .dot-grey{background:#aaa}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>💰 Contrassegno Auto-Pagato</h1>
+  <p class="subtitle">Cerca ordini con tag <strong>contrassegno</strong> + <strong>da pagare</strong> e verifica se risultano consegnati su BRT — se sì, li segna come pagati e rimuove il tag "da pagare"</p>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="scan-btn" onclick="startScan()">🔍 Scansiona ordini</button>
+      <button class="btn btn-secondary" id="auto-btn" onclick="startAutoProcess()" style="display:none">⚡ Processa consegnati automaticamente</button>
+      <span id="scan-status" style="font-size:13px;color:#888"></span>
+    </div>
+    <div class="progress-bar" id="scan-progress-bar" style="display:none">
+      <div class="progress-fill" id="scan-progress-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <div class="card" id="results-card" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="font-size:14px;font-weight:600" id="results-title">Ordini trovati</span>
+      <div style="display:flex;gap:8px">
+        <span class="badge badge-orange" id="badge-pending">0 da pagare</span>
+        <span class="badge badge-green" id="badge-delivered">0 consegnati</span>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table id="orders-table">
+        <thead>
+          <tr>
+            <th>Ordine</th>
+            <th>Cliente</th>
+            <th>Totale</th>
+            <th>Spedizione</th>
+            <th>Tracking BRT</th>
+            <th>Stato consegna</th>
+            <th>Azione</th>
+          </tr>
+        </thead>
+        <tbody id="orders-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" id="process-card" style="display:none">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:14px;font-weight:600" id="process-title">⚙️ Elaborazione...</span>
+      <span id="process-text" style="font-size:13px;color:#888">0 / 0</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="process-fill" style="width:0%"></div></div>
+    <div class="stats">
+      <div class="stat"><div class="stat-num" style="color:#2a9d60" id="cnt-paid">0</div><div class="stat-label">✅ Pagati</div></div>
+      <div class="stat"><div class="stat-num" style="color:#aaa" id="cnt-skip">0</div><div class="stat-label">⏭ Non consegnati</div></div>
+      <div class="stat"><div class="stat-num" style="color:#eb5757" id="cnt-err">0</div><div class="stat-label">❌ Errori</div></div>
+    </div>
+    <div class="log-area" id="log-area"></div>
+  </div>
+</div>
+
+<script>
+const PROXY = "https://yespresso-proxy.onrender.com";
+let scannedOrders = [];
+
+async function shopifyGet(path) {
+  const res = await fetch(PROXY + '/shopify/' + path);
+  if (!res.ok) throw new Error('Shopify HTTP ' + res.status);
+  return res.json();
+}
+
+async function shopifyPost(path, body) {
+  const res = await fetch(PROXY + '/shopify/' + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('Shopify ' + res.status + ': ' + err.substring(0, 100));
+  }
+  return res.json();
+}
+
+async function shopifyPut(path, body) {
+  const res = await fetch(PROXY + '/shopify/' + path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('Shopify PUT ' + res.status);
+  return res.json();
+}
+
+async function checkBrtDelivery(trackingNumber) {
+  if (!trackingNumber) return null;
+  try {
+    const res = await fetch(PROXY + '/brt/track?nspediz=' + encodeURIComponent(trackingNumber));
+    const data = await res.json();
+    if (data.error) return null;
+    // Cerca "Consegnato" o "delivered" nell'HTML BRT
+    const html = (data.html || '').toLowerCase();
+    if (html.includes('consegnat') || html.includes('delivered') || html.includes('consegnato')) {
+      return 'delivered';
+    }
+    if (html.includes('giacenz') || html.includes('storage')) return 'giacenza';
+    if (html.includes('transit') || html.includes('spediz')) return 'in_transit';
+    return 'unknown';
+  } catch(e) {
+    return null;
+  }
+}
+
+// Fallback: usa Shopify fulfillment_status se BRT non disponibile
+function getShopifyDeliveryStatus(order) {
+  const f = order.fulfillments && order.fulfillments[0];
+  if (!f) return null;
+  return f.shipment_status; // delivered, in_transit, etc.
+}
+
+async function startScan() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scansione...';
+  document.getElementById('scan-status').textContent = '';
+  document.getElementById('scan-progress-bar').style.display = 'block';
+  document.getElementById('results-card').style.display = 'none';
+  scannedOrders = [];
+
+  try {
+    // Carica ordini con tag "contrassegno" - pagine multiple
+    document.getElementById('scan-status').textContent = 'Carico ordini con tag contrassegno...';
+    let allOrders = [];
+    let pageInfo = null;
+    let page = 0;
+    
+    while (true) {
+      page++;
+      const qs = pageInfo
+        ? 'orders.json?status=open&limit=250&page_info=' + pageInfo
+        : 'orders.json?status=open&limit=250&tag=contrassegno';
+      
+      document.getElementById('scan-fill') && (document.getElementById('scan-progress-fill').style.width = Math.min(page * 15, 80) + '%');
+      
+      const d = await shopifyGet(qs);
+      const batch = (d && d.orders) || [];
+      allOrders = allOrders.concat(batch);
+      
+      if (batch.length < 250 || !d._nextPageInfo) break;
+      pageInfo = d._nextPageInfo;
+      if (page > 10) break;
+    }
+
+    document.getElementById('scan-status').textContent = allOrders.length + ' ordini con tag contrassegno trovati. Filtro "da pagare"...';
+
+    // Filtra solo quelli con ANCHE tag "da pagare"
+    const codOrders = allOrders.filter(o => {
+      const tags = (o.tags || '').split(',').map(t => t.trim().toLowerCase());
+      return tags.includes('contrassegno') && tags.includes('da pagare');
+    });
+
+    document.getElementById('scan-status').textContent = codOrders.length + ' ordini da verificare su BRT...';
+    document.getElementById('scan-progress-fill').style.width = '50%';
+
+    // Per ogni ordine verifica stato consegna
+    for (let i = 0; i < codOrders.length; i++) {
+      const order = codOrders[i];
+      const f = order.fulfillments && order.fulfillments[0];
+      const trackingNum = f && (f.tracking_number || (f.tracking_numbers && f.tracking_numbers[0]));
+      
+      // Prima controlla Shopify fulfillment_status (più veloce)
+      let deliveryStatus = getShopifyDeliveryStatus(order);
+      
+      // Se non disponibile o non chiaro, prova BRT
+      if (!deliveryStatus || deliveryStatus === 'in_transit') {
+        const brtStatus = await checkBrtDelivery(trackingNum);
+        if (brtStatus) deliveryStatus = brtStatus;
+      }
+
+      scannedOrders.push({
+        order,
+        trackingNum,
+        deliveryStatus,
+        shopifyStatus: getShopifyDeliveryStatus(order)
+      });
+
+      const pct = 50 + Math.round(((i + 1) / codOrders.length) * 50);
+      document.getElementById('scan-progress-fill').style.width = pct + '%';
+      document.getElementById('scan-status').textContent = (i+1) + '/' + codOrders.length + ' verificati...';
+    }
+
+    renderResults();
+
+  } catch(e) {
+    document.getElementById('scan-status').textContent = '❌ Errore: ' + e.message;
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🔍 Scansiona di nuovo';
+}
+
+function renderResults() {
+  document.getElementById('results-card').style.display = 'block';
+  document.getElementById('scan-progress-bar').style.display = 'none';
+
+  const delivered = scannedOrders.filter(s => s.deliveryStatus === 'delivered');
+  const pending = scannedOrders.filter(s => s.deliveryStatus !== 'delivered');
+
+  document.getElementById('badge-pending').textContent = pending.length + ' non consegnati';
+  document.getElementById('badge-delivered').textContent = delivered.length + ' consegnati ✅';
+  document.getElementById('results-title').textContent = scannedOrders.length + ' ordini contrassegno da pagare';
+
+  if (delivered.length > 0) {
+    document.getElementById('auto-btn').style.display = 'inline-block';
+    document.getElementById('auto-btn').textContent = '⚡ Segna come pagati (' + delivered.length + ' consegnati)';
+  }
+
+  const tbody = document.getElementById('orders-tbody');
+  tbody.innerHTML = scannedOrders.map(({order, trackingNum, deliveryStatus, shopifyStatus}) => {
+    const isDelivered = deliveryStatus === 'delivered';
+    const statusLabel = isDelivered ? '<span class="badge badge-green">✅ Consegnato</span>'
+      : deliveryStatus === 'giacenza' ? '<span class="badge badge-orange">📦 Giacenza</span>'
+      : deliveryStatus === 'in_transit' ? '<span class="badge badge-blue">🚚 In transito</span>'
+      : '<span class="badge badge-grey">❓ ' + (deliveryStatus || 'N/D') + '</span>';
+
+    const trackLink = trackingNum
+      ? `<a href="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=${trackingNum}" target="_blank" style="color:#1a73e8;font-weight:600">${trackingNum}</a>`
+      : '<span style="color:#aaa">N/D</span>';
+
+    const actionBtn = isDelivered
+      ? `<button class="btn btn-primary" style="padding:5px 12px;font-size:12px" onclick="processOne('${order.id}','${order.name}','${order.total_price}')">💰 Segna pagato</button>`
+      : '<span style="color:#aaa;font-size:12px">—</span>';
+
+    const shopifyUrl = `https://40f758-3.myshopify.com/admin/orders/${order.id}`;
+    const spedDate = order.fulfillments && order.fulfillments[0] && order.fulfillments[0].created_at
+      ? new Date(order.fulfillments[0].created_at).toLocaleDateString('it-IT') : '—';
+
+    return `<tr>
+      <td><a href="${shopifyUrl}" target="_blank" style="color:#1a73e8;font-weight:700">${order.name}</a></td>
+      <td>${(order.customer && (order.customer.first_name + ' ' + order.customer.last_name)) || order.email || '—'}</td>
+      <td><strong>€${parseFloat(order.total_price || 0).toFixed(2)}</strong></td>
+      <td>${spedDate}</td>
+      <td>${trackLink}</td>
+      <td>${statusLabel}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function markAsPaid(orderId, orderName, totalPrice) {
+  // Usa GraphQL orderMarkAsPaid - il metodo ufficiale per COD
+  const gid = "gid://shopify/Order/" + orderId;
+  const mutation = `mutation orderMarkAsPaid($input: OrderMarkAsPaidInput!) {
+    orderMarkAsPaid(input: $input) {
+      order { id name financialStatus }
+      userErrors { field message }
+    }
+  }`;
+  
+  const gqlRes = await fetch(PROXY + '/shopify-graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: mutation, variables: { input: { id: gid } } })
+  });
+  
+  const gqlData = await gqlRes.json();
+  console.log('GraphQL response:', JSON.stringify(gqlData));
+  
+  const errors = gqlData?.data?.orderMarkAsPaid?.userErrors;
+  if (errors && errors.length > 0) {
+    throw new Error(errors.map(e => e.message).join(', '));
+  }
+  if (gqlData?.errors) {
+    throw new Error(gqlData.errors.map(e => e.message).join(', '));
+  }
+
+  // 2. Rimuovi tag "da pagare"
+  const orderData = await shopifyGet('orders/' + orderId + '.json');
+  const order = orderData.order;
+  const tags = (order.tags || '').split(',').map(t => t.trim()).filter(t => t.toLowerCase() !== 'da pagare');
+  await shopifyPut('orders/' + orderId + '.json', {
+    order: { id: orderId, tags: tags.join(', ') }
+  });
+
+  return true;
+}
+
+async function processOne(orderId, orderName, totalPrice) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳...';
+  try {
+    await markAsPaid(orderId, orderName, totalPrice);
+    btn.textContent = '✅ Fatto';
+    btn.style.background = '#2a9d60';
+    // Aggiorna riga
+    const row = btn.closest('tr');
+    if (row) row.style.background = '#f0fff4';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '❌ Errore';
+    btn.style.background = '#eb5757';
+    alert('Errore per ' + orderName + ': ' + e.message);
+  }
+}
+
+async function startAutoProcess() {
+  const delivered = scannedOrders.filter(s => s.deliveryStatus === 'delivered');
+  if (!delivered.length) return;
+
+  if (!confirm('Vuoi segnare come pagati ' + delivered.length + ' ordini consegnati?')) return;
+
+  document.getElementById('process-card').style.display = 'block';
+  document.getElementById('auto-btn').disabled = true;
+
+  let cntPaid = 0, cntSkip = 0, cntErr = 0;
+  const total = delivered.length;
+
+  for (let i = 0; i < total; i++) {
+    const { order } = delivered[i];
+    document.getElementById('process-fill').style.width = Math.round(((i+1)/total)*100) + '%';
+    document.getElementById('process-text').textContent = (i+1) + ' / ' + total;
+
+    try {
+      await markAsPaid(order.id, order.name, order.total_price);
+      log('✅ ' + order.name + ' — €' + order.total_price + ' — pagato + tag rimosso', 'ok');
+      cntPaid++;
+    } catch(e) {
+      log('❌ ' + order.name + ' — ' + e.message, 'err');
+      cntErr++;
+    }
+
+    document.getElementById('cnt-paid').textContent = cntPaid;
+    document.getElementById('cnt-skip').textContent = cntSkip;
+    document.getElementById('cnt-err').textContent = cntErr;
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  document.getElementById('process-title').textContent = '✅ Completato!';
+  log('--- FINE: ' + cntPaid + ' pagati, ' + cntErr + ' errori ---', 'info');
+  document.getElementById('auto-btn').disabled = false;
+}
+
+function log(msg, type = 'info') {
+  const area = document.getElementById('log-area');
+  const line = document.createElement('div');
+  line.className = 'log-' + type;
+  line.style.margin = '1px 0';
+  line.textContent = new Date().toLocaleTimeString('it-IT') + ' ' + msg;
+  area.appendChild(line);
+  area.scrollTop = area.scrollHeight;
+}
+</script>
+</body>
+</html>

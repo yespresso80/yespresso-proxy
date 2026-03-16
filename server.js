@@ -280,6 +280,25 @@ async function brtFetch(path, options = {}) {
     return;
   }
 
+  // Shopify GraphQL proxy
+  if (req.url.startsWith("/shopify-graphql")) {
+    const token = await getShopifyToken();
+    const chunks2 = [];
+    req.on("data", chunk => chunks2.push(chunk));
+    await new Promise(resolve => req.on("end", resolve));
+    const body2 = Buffer.concat(chunks2).toString();
+    const gqlRes = await fetch("https://" + SHOPIFY_SHOP + "/admin/api/2024-01/graphql.json", {
+      method: "POST",
+      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+      body: body2
+    });
+    const gqlData = await gqlRes.text();
+    console.log("[GRAPHQL] status:", gqlRes.status, "body:", gqlData.substring(0, 200));
+    res.writeHead(gqlRes.status, { "Content-Type": "application/json" });
+    res.end(gqlData);
+    return;
+  }
+
   // Creditsyard customer lookup by email
   if (req.url.startsWith("/creditsyard/customer")) {
     const qs = req.url.split("?")[1] || "";
