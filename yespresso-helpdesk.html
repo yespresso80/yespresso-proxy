@@ -2242,24 +2242,20 @@ async function generateReply(lastMsg,email,fullThread){
       const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
       const tc=f.tracking_company||"BRT";
       console.log("📦 Fulfillment:",{tn,tc,status:f.shipment_status});
+      let tnPod='', brtUrl='', podUrl='';
       if(tn){
-        const tnPod=tn.startsWith('26')?tn:'26'+tn;
-
-        const brtUrl="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";
-        html+='<br>📦 '+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
-        // POD — link BRT + pulsante carica immagine nella sidebar        const podUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod+'&PODChkCde=348365243';
-        html+=' — <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 POD ↗</a>';
-                if(f&&f.shipment_status==='delivered'){
+        tnPod=tn.startsWith('26')?tn:'26'+tn;
+        brtUrl="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";
+        html+='<br>'+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
+        if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString('it-IT');
+        podUrl=brtUrl;
+        html+=' — <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 Vedi POD ↗</a>';
+        if(f&&f.shipment_status==='delivered'){
           const podDlBtnId='pod-dl-'+order.id;
           window._podUrlMap=window._podUrlMap||{};
           window._podUrlMap[podDlBtnId]={podUrl,tn,tnPod};
-          html+='<br>📸 <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Vedi POD ↗</a> — <span id="'+podDlBtnId+'" onclick="downloadAndShowPod(this.id)" style="color:#8e44ad;font-size:12px;cursor:pointer;font-weight:700;text-decoration:underline">⬇️ Scarica</span>';
+          html+=' — <span id="'+podDlBtnId+'" onclick="downloadAndShowPod(this.id)" style="color:#8e44ad;font-size:12px;cursor:pointer;font-weight:700;text-decoration:underline">⬇️ Scarica</span>';
         }
-      } else if(f.tracking_url){
-        html+='<br>📦 <a href="'+f.tracking_url+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia spedizione ↗</a>';
-      } else {
-        html+='<br>📦 Spedito (tracking non disponibile)';
-        console.log("⚠️ Nessun tracking number. Fulfillment keys:",Object.keys(f));
       }
       if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
     }
