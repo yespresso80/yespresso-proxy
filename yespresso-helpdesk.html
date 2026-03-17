@@ -745,27 +745,34 @@ async function loadTickets(){
   },1000);
 
   try{
-    // Carica open+pending subito (priorità) e tutte le pagine in parallelo
-    const openPages=[];
-    for(let p=1;p<=6;p++){
-      openPages.push(
-        hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=open&sortBy=lastMessageAt&order=desc")
-          .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
-      );
-      openPages.push(
-        hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=pending&sortBy=lastMessageAt&order=desc")
-          .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
-      );
-    }
-    const openResults=await Promise.all(openPages);
+    // Carica open/pending/on_hold: pagine finché non supera 30 giorni (max 20 pagine)
+    const DAYS_30 = Date.now() - 30*24*60*60*1000;
+    const loadStatus = async (status, maxPages=20) => {
+      const result=[]; const seen=new Set();
+      for(let p=1;p<=maxPages;p++){
+        const batch=await hdFetch("/v1/tickets?pageSize=50&page="+p+"&status="+status+"&sortBy=lastMessageAt&order=desc")
+          .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]);
+        if(!batch.length) break;
+        for(const t of batch){const id=t.ID||t.id;if(!seen.has(id)){seen.add(id);result.push(t);}}
+        const oldest=batch[batch.length-1];
+        const oldestDate=new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime();
+        if(oldestDate<DAYS_30) break;
+        const msg=document.getElementById("load-msg");
+        if(msg) msg.textContent="Caricamento "+status+"... ("+result.length+" ticket, pagina "+p+")";
+      }
+      return result;
+    };
+    const [openBatch, pendingBatch, onHoldBatch] = await Promise.all([
+      loadStatus("open", 20),
+      loadStatus("pending", 10),
+      loadStatus("on_hold", 5)
+    ]);
     clearInterval(loadTimer);
     const openTickets=[];
     const seenIds=new Set();
-    for(const batch of openResults){
-      for(const t of batch){
-        const id=t.ID||t.id;
-        if(!seenIds.has(id)){seenIds.add(id);openTickets.push(t);}
-      }
+    for(const t of [...openBatch, ...pendingBatch, ...onHoldBatch]){
+      const id=t.ID||t.id;
+      if(!seenIds.has(id)){seenIds.add(id);openTickets.push(t);}
     }
     // Ordina per lastMessageAt
     openTickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
@@ -779,15 +786,16 @@ async function loadTickets(){
     // Carica anche solved in background per "All" e "Solved" view
     setTimeout(async()=>{
       try{
-        const solvedPages=await Promise.all([1,2,3].map(p=>
-          hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=solved&sortBy=lastMessageAt&order=desc")
-            .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
-        ));
-        for(const batch of solvedPages){
-          for(const t of batch){
-            const id=t.ID||t.id;
-            if(!seenIds.has(id)){seenIds.add(id);tickets.push(t);}
-          }
+        // Solved: pagine finché non supera 30 giorni (max 10 pagine)
+        const DAYS_30_S = Date.now() - 30*24*60*60*1000;
+        for(let p=1;p<=10;p++){
+          const batch=await hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=solved&sortBy=lastMessageAt&order=desc")
+            .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]);
+          if(!batch.length) break;
+          for(const t of batch){const id=t.ID||t.id;if(!seenIds.has(id)){seenIds.add(id);tickets.push(t);}}
+          const oldest=batch[batch.length-1];
+          const oldestDate=new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime();
+          if(oldestDate<DAYS_30_S) break;
         }
         updateBadges();
         if(currentView==="all"||currentView==="solved")renderTable();
