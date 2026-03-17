@@ -1164,7 +1164,10 @@ async function selectTicket(tid){
   // Ticket Temu post-vendita: NON concatenare
   const isTemuPostVendita=email.includes("orders.temu")&&(base.subject||"").toLowerCase().includes("post-vendita");
   // Non concatenare ticket da Amazon, BRT e Temu post-vendita
-  const noConcat=isTemuPostVendita||email.includes("donotreply@amazon")||email.includes("servizioclienti@brt")||email.includes("vasnoreply@brt")||email.includes("brt.it");
+  const noConcat_subjects=["reso magazzino","richiesta post-vendita in sospeso","notifica di ticket informativo in sospeso"];
+  const baseSubjLow=(base.subject||"").toLowerCase();
+  const isNoContactSubj=noConcat_subjects.some(s=>baseSubjLow.includes(s));
+  const noConcat=isTemuPostVendita||isNoContactSubj||email.includes("donotreply@amazon")||email.includes("servizioclienti@brt")||email.includes("vasnoreply@brt")||email.includes("brt.it");
 
   // Find all open/pending tickets for this customer
   let openTickets=noConcat?[base]:tickets.filter(t=>{
