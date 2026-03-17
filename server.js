@@ -16,10 +16,95 @@ const IMAP_HOST = "imap.ionos.it";
 const IMAP_PORT = 993;
 const CREDITSYARD_KEY = "412b510ba19f72e6eaab40fdf63aa114";
 
+// ── TIKTOK SHOP ──
+const TT_APP_KEY = "6jc8vkkup848i";
+const TT_APP_SECRET = "ba6c0d8d774802160c443dfa956f9c7607aa95be";
+const TT_REDIRECT_URI = "https://yespresso-proxy.onrender.com/tiktok/callback";
+const TT_BASE = "https://open-api.tiktokglobalshop.com";
+// Token in memoria (persistono finché il server è attivo)
+let ttAccessToken = process.env.TT_ACCESS_TOKEN || "";
+let ttRefreshToken = process.env.TT_REFRESH_TOKEN || "";
+let ttShopId = process.env.TT_SHOP_ID || "";
+let ttTokenExpiry = 0;
+
 console.log("[INIT] ANTHROPIC_KEY presente:", !!ANTHROPIC_KEY);
 console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
 console.log("[INIT] IMAP_USER:", IMAP_USER);
 console.log("[INIT] IMAP_PASSWORD presente:", !!IMAP_PASSWORD);
+console.log("[INIT] TT_APP_KEY:", TT_APP_KEY);
+console.log("[INIT] TT_ACCESS_TOKEN presente:", !!ttAccessToken);
+
+// ── TikTok: firma HMAC-SHA256 per API 202309 ──
+async function ttSign(appSecret, params) {
+  const crypto = require("crypto");
+  // Ordina i parametri (escludi sign e sign_method)
+  const sorted = Object.keys(params).filter(k => k !== "sign" && k !== "sign_method").sort();
+  let base = "";
+  for (const k of sorted) base += k + params[k];
+  const hmac = crypto.createHmac("sha256", appSecret);
+  hmac.update(base);
+  return hmac.digest("hex").toUpperCase();
+}
+
+// ── TikTok: chiama API con firma ──
+async function ttApiCall(path, queryParams = {}, method = "GET", body = null) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const params = {
+    app_key: TT_APP_KEY,
+    timestamp: String(timestamp),
+    ...queryParams
+  };
+  params.sign = await ttSign(TT_APP_SECRET, params);
+
+  const qs = Object.entries(params).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+  const url = TT_BASE + path + "?" + qs;
+
+  const headers = {
+    "Content-Type": "application/json",
+    "x-tts-access-token": ttAccessToken || ""
+  };
+
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  console.log("[TT API]", method, url.substring(0, 120));
+  const r = await fetch(url, opts);
+  const text = await r.text();
+  console.log("[TT API] status:", r.status, "body:", text.substring(0, 300));
+  try { return JSON.parse(text); } catch(e) { return { raw: text, status: r.status }; }
+}
+
+// ── TikTok: refresh token se scaduto ──
+async function ttRefreshIfNeeded() {
+  if (!ttRefreshToken) return false;
+  if (ttAccessToken && ttTokenExpiry > Date.now()) return true;
+  try {
+    console.log("[TT] Refreshing access token...");
+    const r = await fetch(`${TT_BASE}/api/v2/token/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        app_key: TT_APP_KEY,
+        app_secret: TT_APP_SECRET,
+        refresh_token: ttRefreshToken,
+        grant_type: "refresh_token"
+      })
+    });
+    const d = await r.json();
+    if (d.data && d.data.access_token) {
+      ttAccessToken = d.data.access_token;
+      ttRefreshToken = d.data.refresh_token || ttRefreshToken;
+      ttTokenExpiry = Date.now() + (d.data.access_token_expire_in || 86400) * 1000 - 60000;
+      console.log("[TT] Token refreshato OK, scade in", d.data.access_token_expire_in, "s");
+      return true;
+    }
+    console.log("[TT] Refresh fallito:", JSON.stringify(d).substring(0, 200));
+    return false;
+  } catch(e) {
+    console.log("[TT] Errore refresh:", e.message);
+    return false;
+  }
+}
 
 const attachmentsCache = new Map();
 let lastImapSync = 0;
@@ -94,49 +179,21 @@ async function syncImapAttachments() {
 
 function findAttachmentsForTicket(requesterEmail, subject) {
   const results = [];
-  // File da escludere sempre (firme email, allegati di sistema Yespresso)
   const EXCLUDE_FILES = ["logo yespresso", "logo_yespresso", "qapla-brt", "qapla_brt", "firma", "signature"];
   const emailLow = (requesterEmail||"").toLowerCase();
-  // Normalizza subject: rimuovi Re:/Fwd: prefix
-  const subjNorm = (subject||"").toLowerCase()
-    .replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
+  const subjNorm = (subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
   const subjSearch = subjNorm.substring(0, 60);
-
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
-    const dataSubjNorm = (data.subject||"").toLowerCase()
-      .replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
-
-    // Subject match: usa almeno 30 char del soggetto normalizzato
+    const dataSubjNorm = (data.subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
     const minLen = Math.min(subjSearch.length, dataSubjNorm.length, 30);
-    const subjMatch = minLen >= 10 && (
-      dataSubjNorm.includes(subjSearch.substring(0, minLen)) ||
-      subjSearch.includes(dataSubjNorm.substring(0, minLen))
-    );
-
-    // Per email marketplace (amazon/temu/tiktok), accetta qualsiasi mittente
-    // perché l'inoltro cambia il from — basta il subject match
-    const isMarketplace = emailLow.includes("marketplace.amazon") ||
-      emailLow.includes("orders.temu") || emailLow.includes("tiktok") ||
-      emailLow.includes("scs3.") || emailLow.includes("vasnoreply@brt");
-    const emailMatch = emailLow && fromLow && (
-      fromLow === emailLow ||
-      fromLow.includes(emailLow) ||
-      emailLow.includes(fromLow)
-    );
-
-    // Subject match sempre richiesto
-    // Email match richiesto solo per email non-marketplace
+    const subjMatch = minLen >= 10 && (dataSubjNorm.includes(subjSearch.substring(0, minLen)) || subjSearch.includes(dataSubjNorm.substring(0, minLen)));
+    const isMarketplace = emailLow.includes("marketplace.amazon") || emailLow.includes("orders.temu") || emailLow.includes("tiktok") || emailLow.includes("scs3.") || emailLow.includes("vasnoreply@brt");
+    const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
     const isMatch = subjMatch && (isMarketplace || emailMatch);
-
     if (isMatch) {
-      const filteredAtts = data.attachments.filter(a => {
-        const fn = (a.filename||"").toLowerCase();
-        return !EXCLUDE_FILES.some(ex => fn.includes(ex));
-      });
-      if (filteredAtts.length > 0) {
-        results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
-      }
+      const filteredAtts = data.attachments.filter(a => { const fn = (a.filename||"").toLowerCase(); return !EXCLUDE_FILES.some(ex => fn.includes(ex)); });
+      if (filteredAtts.length > 0) results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
     }
   }
   return results;
@@ -155,6 +212,244 @@ const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
+
+  // ════════════════════════════════════════════
+  // TIKTOK SHOP — OAuth + API routes
+  // ════════════════════════════════════════════
+
+  // Genera URL di autorizzazione
+  if (req.url === "/tiktok/auth-url") {
+    const state = "yespresso_" + Date.now();
+    const authUrl = `https://auth.tiktok-shops.com/oauth/authorize?app_key=${TT_APP_KEY}&redirect_uri=${encodeURIComponent(TT_REDIRECT_URI)}&state=${state}`;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ auth_url: authUrl, state }));
+    return;
+  }
+
+  // OAuth callback — scambia code con access_token
+  if (req.url.startsWith("/tiktok/callback")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const code = params.get("code") || "";
+    const errParam = params.get("error") || "";
+    if (errParam) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<h2>❌ Errore TikTok: ${errParam}</h2><p>${params.get("error_description")||""}</p>`);
+      return;
+    }
+    if (!code) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<h2>⚠️ Nessun codice ricevuto</h2><pre>${qs}</pre>`);
+      return;
+    }
+    try {
+      console.log("[TT OAuth] Scambio code:", code.substring(0, 20) + "...");
+      const tokenRes = await fetch(`${TT_BASE}/api/v2/token/get`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          app_key: TT_APP_KEY,
+          app_secret: TT_APP_SECRET,
+          auth_code: code,
+          grant_type: "authorized_code"
+        })
+      });
+      const tokenData = await tokenRes.json();
+      console.log("[TT OAuth] Token response:", JSON.stringify(tokenData).substring(0, 400));
+
+      if (tokenData.data && tokenData.data.access_token) {
+        ttAccessToken = tokenData.data.access_token;
+        ttRefreshToken = tokenData.data.refresh_token || "";
+        ttTokenExpiry = Date.now() + (tokenData.data.access_token_expire_in || 86400) * 1000 - 60000;
+
+        // Recupera shop_id
+        if (tokenData.data.open_id) ttShopId = tokenData.data.open_id;
+
+        // Prova a recuperare negozi autorizzati
+        let shopsInfo = "";
+        try {
+          const shopsRes = await ttApiCall("/authorization/202309/shops", {});
+          const shops = shopsRes.data && shopsRes.data.shops ? shopsRes.data.shops : [];
+          if (shops.length > 0) {
+            ttShopId = shops[0].cipher || shops[0].id || ttShopId;
+            shopsInfo = `<p>✅ Negozi: ${shops.map(s => s.name || s.id).join(", ")}</p><p>Shop cipher: <code>${ttShopId}</code></p>`;
+          }
+        } catch(se) { shopsInfo = `<p>⚠️ Shop list error: ${se.message}</p>`; }
+
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>TikTok Auth OK</title></head><body style="font-family:sans-serif;padding:40px;max-width:600px">
+          <h2>✅ TikTok Shop autorizzato!</h2>
+          <p>Access token ottenuto e salvato in memoria.</p>
+          ${shopsInfo}
+          <p>Scade tra: <strong>${Math.round((tokenData.data.access_token_expire_in||86400)/3600)}h</strong></p>
+          <p>Refresh token: <strong>${ttRefreshToken ? "✅ presente" : "❌ assente"}</strong></p>
+          <p style="margin-top:30px"><a href="https://yespresso-proxy.onrender.com/tiktok/test" style="background:#333;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px">▶ Testa le API</a></p>
+          <p><strong>Puoi chiudere questa finestra e tornare all'app.</strong></p>
+        </body></html>`);
+      } else {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<h2>❌ Token non ricevuto</h2><pre>${JSON.stringify(tokenData, null, 2)}</pre>`);
+      }
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<h2>❌ Errore: ${e.message}</h2>`);
+    }
+    return;
+  }
+
+  // Test connessione TikTok
+  if (req.url === "/tiktok/test") {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) {
+      const authUrl = `https://auth.tiktok-shops.com/oauth/authorize?app_key=${TT_APP_KEY}&redirect_uri=${encodeURIComponent(TT_REDIRECT_URI)}&state=test`;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Non autorizzato", auth_url: authUrl }));
+      return;
+    }
+    try {
+      const shops = await ttApiCall("/authorization/202309/shops", {});
+      const orders = await ttApiCall("/order/202309/orders/search", { shop_cipher: ttShopId }, "POST", { page_size: 5 });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, shops: shops.data, orders_sample: orders.data, token_expiry: new Date(ttTokenExpiry).toISOString() }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // Stato token TikTok
+  if (req.url === "/tiktok/status") {
+    const authUrl = `https://auth.tiktok-shops.com/oauth/authorize?app_key=${TT_APP_KEY}&redirect_uri=${encodeURIComponent(TT_REDIRECT_URI)}&state=yespresso`;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      authorized: !!ttAccessToken,
+      shop_id: ttShopId,
+      token_expiry: ttTokenExpiry ? new Date(ttTokenExpiry).toISOString() : null,
+      has_refresh: !!ttRefreshToken,
+      auth_url: authUrl
+    }));
+    return;
+  }
+
+  // Ordini TikTok
+  if (req.url.startsWith("/tiktok/orders")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const qs2 = req.url.split("?")[1] || "";
+      const p2 = new URLSearchParams(qs2);
+      const orderId = p2.get("order_id") || "";
+      let data;
+      if (orderId) {
+        data = await ttApiCall("/order/202309/orders", { shop_cipher: ttShopId, order_id_list: JSON.stringify([orderId]) });
+      } else {
+        const chunks = []; req.on("data", c => chunks.push(c)); await new Promise(r => req.on("end", r));
+        let body = {};
+        try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch(e) {}
+        data = await ttApiCall("/order/202309/orders/search", { shop_cipher: ttShopId }, "POST", { page_size: 20, ...body });
+      }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Dettaglio ordine TikTok
+  if (req.url.startsWith("/tiktok/order/")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const orderId = req.url.split("/tiktok/order/")[1].split("?")[0];
+      const data = await ttApiCall("/order/202309/orders", { shop_cipher: ttShopId, order_id_list: JSON.stringify([orderId]) });
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Resi TikTok
+  if (req.url.startsWith("/tiktok/returns")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const chunks = []; req.on("data", c => chunks.push(c)); await new Promise(r => req.on("end", r));
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch(e) {}
+      const data = await ttApiCall("/return_refund/202309/returns/search", { shop_cipher: ttShopId }, "POST", { page_size: 20, ...body });
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Approva reso TikTok
+  if (req.url.startsWith("/tiktok/return/approve")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const chunks = []; req.on("data", c => chunks.push(c)); await new Promise(r => req.on("end", r));
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch(e) {}
+      const data = await ttApiCall("/return_refund/202309/returns/approve", { shop_cipher: ttShopId }, "POST", body);
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Rifiuta reso TikTok
+  if (req.url.startsWith("/tiktok/return/reject")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const chunks = []; req.on("data", c => chunks.push(c)); await new Promise(r => req.on("end", r));
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch(e) {}
+      const data = await ttApiCall("/return_refund/202309/returns/reject", { shop_cipher: ttShopId }, "POST", body);
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Rimborsi TikTok
+  if (req.url.startsWith("/tiktok/refunds")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const chunks = []; req.on("data", c => chunks.push(c)); await new Promise(r => req.on("end", r));
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch(e) {}
+      const data = await ttApiCall("/return_refund/202309/refunds/search", { shop_cipher: ttShopId }, "POST", { page_size: 20, ...body });
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Approva rimborso TikTok
+  if (req.url.startsWith("/tiktok/refund/approve")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const chunks = []; req.on("data", c => chunks.push(c)); await new Promise(r => req.on("end", r));
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch(e) {}
+      const data = await ttApiCall("/return_refund/202309/refunds/approve", { shop_cipher: ttShopId }, "POST", body);
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // Prodotti TikTok
+  if (req.url.startsWith("/tiktok/products")) {
+    await ttRefreshIfNeeded();
+    if (!ttAccessToken) { res.writeHead(401); res.end(JSON.stringify({ ok: false, error: "Non autorizzato" })); return; }
+    try {
+      const data = await ttApiCall("/product/202309/products/search", { shop_cipher: ttShopId }, "POST", { page_size: 20 });
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+
+  // ════════════════════════════════════════════════════
+  // ROUTES ESISTENTI
+  // ════════════════════════════════════════════════════
 
   if (req.url.startsWith("/imap/attachments")) {
     const qs = req.url.split("?")[1] || "";
@@ -259,28 +554,15 @@ async function brtRestPost(p, body, useTrackingBase) {
     if (!imgUrl || !imgUrl.startsWith("https://vas.brt.it/")) {
       res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "url non valido" })); return;
     }
-    console.log("[POD-IMAGE] Scarico:", imgUrl);
     try {
-      const imgRes = await fetch(imgUrl, {
-        headers: { "User-Agent": BRT_UA, "Referer": "https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM" }
-      });
-      if (!imgRes.ok) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Download fallito: " + imgRes.status }));
-        return;
-      }
+      const imgRes = await fetch(imgUrl, { headers: { "User-Agent": BRT_UA, "Referer": "https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM" } });
+      if (!imgRes.ok) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "Download fallito: " + imgRes.status })); return; }
       const ct = imgRes.headers.get("content-type") || "image/jpeg";
       const buf = await imgRes.arrayBuffer();
       const b64 = Buffer.from(buf).toString("base64");
       const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
-      console.log("[POD-IMAGE] OK:", buf.byteLength, "bytes mime:", mime);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, mime, data: b64 }));
-    } catch(e) {
-      console.log("[POD-IMAGE] Errore:", e.message);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, mime, data: b64 }));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
@@ -290,50 +572,22 @@ async function brtRestPost(p, body, useTrackingBase) {
     const tnPod = params.get("tnPod") || "";
     if (!tnPod) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "tnPod required" })); return; }
     const podPageUrl = "https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=" + encodeURIComponent(tnPod) + "&PODChkCde=348365243";
-    console.log("[POD-CAPTURE] Fetch:", podPageUrl);
     try {
-      const pageRes = await fetch(podPageUrl, {
-        headers: { "User-Agent": BRT_UA, "Accept": "text/html,*/*", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" }
-      });
+      const pageRes = await fetch(podPageUrl, { headers: { "User-Agent": BRT_UA, "Accept": "text/html,*/*", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" } });
       const pageHtml = await pageRes.text();
-      console.log("[POD-CAPTURE] page status:", pageRes.status, "len:", pageHtml.length);
-      const imgPatterns = [
-        /src=["']([^"']*\.(?:jpg|jpeg|png|gif))['\"]/gi,
-        /src=["']([^"']*(?:pod|firma|ldv|immagine|spediz)[^"']*)['\"]/gi,
-        /src=["'](\/vas\/[^"']+)['\"]/gi,
-      ];
+      const imgPatterns = [ /src=["']([^"']*\.(?:jpg|jpeg|png|gif))['\"]/gi, /src=["']([^"']*(?:pod|firma|ldv|immagine|spediz)[^"']*)['\"]/gi, /src=["'](\/vas\/[^"']+)['\"]/gi ];
       let imgSrc = null;
-      for (const pat of imgPatterns) {
-        pat.lastIndex = 0;
-        const m = pat.exec(pageHtml);
-        if (m) { imgSrc = m[1]; break; }
-      }
-      if (!imgSrc) {
-        console.log("[POD-CAPTURE] Nessuna immagine trovata. HTML sample:", pageHtml.substring(0, 500));
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Immagine POD non trovata nella pagina", html_sample: pageHtml.substring(0, 800) }));
-        return;
-      }
+      for (const pat of imgPatterns) { pat.lastIndex = 0; const m = pat.exec(pageHtml); if (m) { imgSrc = m[1]; break; } }
+      if (!imgSrc) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "Immagine POD non trovata", html_sample: pageHtml.substring(0, 800) })); return; }
       if (!imgSrc.startsWith("http")) imgSrc = "https://vas.brt.it" + (imgSrc.startsWith("/") ? "" : "/") + imgSrc;
-      console.log("[POD-CAPTURE] Scarico immagine:", imgSrc);
       const imgRes = await fetch(imgSrc, { headers: { "User-Agent": BRT_UA, "Referer": podPageUrl } });
       const ct = imgRes.headers.get("content-type") || "image/jpeg";
-      if (!imgRes.ok) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Download immagine fallito: " + imgRes.status }));
-        return;
-      }
+      if (!imgRes.ok) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "Download immagine fallito: " + imgRes.status })); return; }
       const buf = await imgRes.arrayBuffer();
       const b64 = Buffer.from(buf).toString("base64");
       const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
-      console.log("[POD-CAPTURE] OK:", buf.byteLength, "bytes mime:", mime);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, mime, data: b64, tnPod, podUrl: podPageUrl }));
-    } catch(e) {
-      console.log("[POD-CAPTURE] Errore:", e.message);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, mime, data: b64, tnPod, podUrl: podPageUrl }));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
@@ -352,9 +606,9 @@ async function brtRestPost(p, body, useTrackingBase) {
       const detRes = await fetch(detUrl, { headers: { "User-Agent": BRT_UA, "Cookie": pubCookies, "Accept": "text/html", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" } });
       const detHtml = await detRes.text();
       const detCookies = [pubCookies, (detRes.headers.get("set-cookie")||"").split(/,(?=[^ ])/).map(c=>c.split(";")[0].trim()).filter(Boolean).join("; ")].filter(Boolean).join("; ");
-      const chkMatch  = detHtml.match(/name="PODChkCde"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="PODChkCde"/i);
+      const chkMatch = detHtml.match(/name="PODChkCde"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="PODChkCde"/i);
       const spedMatch = detHtml.match(/name="SpedizioneImmagineLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="SpedizioneImmagineLDV"/i);
-      const addMatch  = detHtml.match(/name="AddebitoImmagineLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="AddebitoImmagineLDV"/i);
+      const addMatch = detHtml.match(/name="AddebitoImmagineLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="AddebitoImmagineLDV"/i);
       const dateMatch = detHtml.match(/name="DataFineGratisLDV"[^>]*value="([^"]+)"/i) || detHtml.match(/value="([^"]+)"[^>]*name="DataFineGratisLDV"/i);
       if (!chkMatch || !spedMatch) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "POD non disponibile", det_status: detRes.status })); return; }
       const podBody = "SpedizioneImmagineLDV=" + encodeURIComponent(spedMatch[1]) + "&AddebitoImmagineLDV=" + encodeURIComponent(addMatch?addMatch[1]:"1") + "&DataFineGratisLDV=" + encodeURIComponent(dateMatch?dateMatch[1]:"01.01.0001") + "&PODChkCde=" + encodeURIComponent(chkMatch[1]) + "&PODImage=P.O.D.+image";
@@ -374,30 +628,24 @@ async function brtRestPost(p, body, useTrackingBase) {
   }
 
   if (req.url.startsWith("/brt/giacenze")) {
-    try {
-      const data = await brtRestGet("/shipment/storage/list", false);
-      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    try { const data = await brtRestGet("/shipment/storage/list", false); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data })); }
+    catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
   if (req.url.startsWith("/brt/svincola")) {
     const chunks3 = []; req.on("data", c => chunks3.push(c)); await new Promise(r => req.on("end", r));
     const body3 = JSON.parse(Buffer.concat(chunks3).toString() || "{}");
-    try {
-      const data = await brtRestPost("/shipment/storage/release", body3, false);
-      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    try { const data = await brtRestPost("/shipment/storage/release", body3, false); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data })); }
+    catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
   if (req.url.startsWith("/brt/ritiro")) {
     const chunks4 = []; req.on("data", c => chunks4.push(c)); await new Promise(r => req.on("end", r));
     const body4 = JSON.parse(Buffer.concat(chunks4).toString() || "{}");
-    try {
-      const data = await brtRestPost("/pickup/create", body4, false);
-      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data }));
-    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    try { const data = await brtRestPost("/pickup/create", body4, false); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, data })); }
+    catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
@@ -457,21 +705,11 @@ async function brtRestPost(p, body, useTrackingBase) {
       if (customer_id) payload.customer_id = customer_id;
       if (reason) payload.reason = reason;
       payload.send_email_notification = send_email_notification || 0;
-      console.log("[CREDITSYARD] Adjust:", customer_email, "amount:", amount);
-      const csRes = await fetch("https://creditsyard.com/api/common/credits/adjust", {
-        method: "POST",
-        headers: { "X-Shop-Api-Key": CREDITSYARD_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      const csRes = await fetch("https://creditsyard.com/api/common/credits/adjust", { method: "POST", headers: { "X-Shop-Api-Key": CREDITSYARD_KEY, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const text = await csRes.text();
-      console.log("[CREDITSYARD] status:", csRes.status, "body:", text.substring(0, 200));
       let result = {}; try { result = JSON.parse(text); } catch(pe) {}
-      res.writeHead(csRes.ok ? 200 : csRes.status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(result));
-    } catch(e) {
-      console.log("[CREDITSYARD] Errore:", e.message);
-      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+      res.writeHead(csRes.ok ? 200 : csRes.status, { "Content-Type": "application/json" }); res.end(JSON.stringify(result));
+    } catch(e) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 
