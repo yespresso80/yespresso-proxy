@@ -94,14 +94,50 @@ async function syncImapAttachments() {
 
 function findAttachmentsForTicket(requesterEmail, subject) {
   const results = [];
+  // File da escludere sempre (firme email, allegati di sistema Yespresso)
+  const EXCLUDE_FILES = ["logo yespresso", "logo_yespresso", "qapla-brt", "qapla_brt", "firma", "signature"];
   const emailLow = (requesterEmail||"").toLowerCase();
-  const subjLow = (subject||"").toLowerCase().substring(0,50);
+  // Normalizza subject: rimuovi Re:/Fwd: prefix
+  const subjNorm = (subject||"").toLowerCase()
+    .replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
+  const subjSearch = subjNorm.substring(0, 60);
+
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
-    const dataSubjLow = (data.subject||"").toLowerCase();
-    const emailMatch = emailLow && fromLow && (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
-    const subjMatch = subjLow && dataSubjLow && (dataSubjLow.includes(subjLow.substring(0,20)) || subjLow.includes(dataSubjLow.substring(0,20)));
-    if (emailMatch || subjMatch) { results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date }))); }
+    const dataSubjNorm = (data.subject||"").toLowerCase()
+      .replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
+
+    // Subject match: usa almeno 30 char del soggetto normalizzato
+    const minLen = Math.min(subjSearch.length, dataSubjNorm.length, 30);
+    const subjMatch = minLen >= 10 && (
+      dataSubjNorm.includes(subjSearch.substring(0, minLen)) ||
+      subjSearch.includes(dataSubjNorm.substring(0, minLen))
+    );
+
+    // Per email marketplace (amazon/temu/tiktok), accetta qualsiasi mittente
+    // perché l'inoltro cambia il from — basta il subject match
+    const isMarketplace = emailLow.includes("marketplace.amazon") ||
+      emailLow.includes("orders.temu") || emailLow.includes("tiktok") ||
+      emailLow.includes("scs3.") || emailLow.includes("vasnoreply@brt");
+    const emailMatch = emailLow && fromLow && (
+      fromLow === emailLow ||
+      fromLow.includes(emailLow) ||
+      emailLow.includes(fromLow)
+    );
+
+    // Subject match sempre richiesto
+    // Email match richiesto solo per email non-marketplace
+    const isMatch = subjMatch && (isMarketplace || emailMatch);
+
+    if (isMatch) {
+      const filteredAtts = data.attachments.filter(a => {
+        const fn = (a.filename||"").toLowerCase();
+        return !EXCLUDE_FILES.some(ex => fn.includes(ex));
+      });
+      if (filteredAtts.length > 0) {
+        results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
+      }
+    }
   }
   return results;
 }
@@ -216,9 +252,6 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD image — scarica direttamente l'immagine dall'URL trovato dal browser nel popup
-  // Il browser apre il popup, legge img.src (es. https://vas.brt.it/tempimages/xxx.jpg)
-  // e lo manda qui — il proxy lo scarica senza problemi di CORS
   if (req.url.startsWith("/brt/pod-image")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -251,7 +284,6 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD capture — scarica pagina SPED_DET_SHOW_LDV.HTM ed estrae l'immagine firma
   if (req.url.startsWith("/brt/pod-capture")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -305,7 +337,6 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // BRT POD automatico — vas.brt.it IDSESSIONE + form POD (legacy)
   if (req.url.startsWith("/brt/pod-auto")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
