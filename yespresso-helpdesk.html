@@ -2245,7 +2245,7 @@ async function generateReply(lastMsg,email,fullThread){
       let tnPod='', brtUrl='', podUrl='';
       if(tn){
         tnPod=tn.startsWith('26')?tn:'26'+tn;
-        brtUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnPod;
+        brtUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn;
         podUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod+'&PODChkCde=348365243';
         html+='<br>'+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
         if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString('it-IT');
@@ -3288,10 +3288,20 @@ async function downloadAndShowPod(btnId){
   const btn=document.getElementById(btnId);
   if(btn){btn.textContent='⏳...';btn.style.pointerEvents='none';}
   try{
-    const res=await fetch(PROXY+'/brt/pod-capture?tnPod='+encodeURIComponent(d.tnPod));
-    const j=await res.json();
+    // Prova prima pod-capture, poi fallback su pod-auto
+    let j=null;
+    const tnPodParam=d.tnPod||(d.tn.startsWith('26')?d.tn:'26'+d.tn);
+    try{
+      const r1=await fetch(PROXY+'/brt/pod-capture?tnPod='+encodeURIComponent(tnPodParam));
+      j=await r1.json();
+      if(!j.ok) j=null;
+    }catch(e1){}
+    if(!j){
+      const r2=await fetch(PROXY+'/brt/pod-auto?nspediz='+encodeURIComponent(tnPodParam));
+      j=await r2.json();
+    }
     if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
-    if(!j.ok){showToast('POD: '+j.error,'error');return;}
+    if(!j||!j.ok){showToast('POD non disponibile: '+(j&&j.error||'errore'),'error');return;}
     showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d.tn,d.podUrl);
   }catch(e){if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}showToast('Errore: '+e.message,'error');}
 }
