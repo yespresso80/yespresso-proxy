@@ -1298,17 +1298,6 @@ async function selectTicket(tid){
     messagesHtml+='</div>';
   }
 
-  // Mostra allegati CDN dagli eventi type=attachments
-  (function(){
-    const attEvs=(tkEvents||[]).filter(ev=>ev.type==='attachments');
-    const allFiles=[];
-    attEvs.forEach(ev=>{
-      const files=(ev.attachments&&ev.attachments.files)?ev.attachments.files:Array.isArray(ev.attachments)?ev.attachments:[];
-      allFiles.push(...files);
-    });
-    if(allFiles.length) setTimeout(()=>showHelpDeskAttachments(allFiles),200);
-  })();
-
   // Render main area
   document.getElementById("detail-main").innerHTML=
     '<div class="detail-messages"><div style="display:flex;flex-direction:column;gap:12px">'+messagesHtml+'</div></div>'+
