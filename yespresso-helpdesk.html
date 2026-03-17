@@ -2637,9 +2637,8 @@ function showHelpDeskAttachments(files){
 }
 
 async function loadImapAttachments(email, subject, tid){
-  // Non caricare per email marketplace
-  const skipDomains=["donotreply@amazon","marketplace.amazon","orders.temu","tiktok","vasnoreply","brt.it"];
-  if(!email||skipDomains.some(s=>email.includes(s)))return;
+  // Tutti i messaggi (Amazon, Temu, TikTok) inoltrati a allegati@yespresso.it
+  if(!email)return;
 
   try{
     const url=PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject.substring(0,50));
