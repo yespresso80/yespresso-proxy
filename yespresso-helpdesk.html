@@ -1957,10 +1957,24 @@ async function fetchShopifyOrder(message,email,requesterName){
       const ftOrders=(dFt&&dFt.orders)||[];
       const ftFound=findInNoteAttributes(ftOrders,["Amazon Order Id"],amzId);
       if(ftFound){console.log("✅ Trovato via full-text Amazon");return ftFound;}
-      // 1b. Scan paginato completo (copre ordini storici)
-      console.log("→ Full-text non trovato — avvio scan paginato Amazon");
-      const amzFound=await scanAllOrders(orders=>findInNoteAttributes(orders,["Amazon Order Id"],amzId));
-      if(amzFound){return amzFound;}
+      // 1b. Scan paginata su source_name=amazon (copre ordini storici Amazon)
+      console.log("→ Full-text non trovato — avvio scan Amazon source_name=amazon");
+      let amzPageInfo=null, amzFound=null, amzPage=0;
+      while(!amzFound && amzPage<100){
+        amzPage++;
+        let amzPath='orders.json?status=any&limit=250&source_name=amazon&fields=id,name,order_number,note_attributes,fulfillment_status,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
+        if(amzPageInfo) amzPath+='&page_info='+amzPageInfo;
+        const amzR=await shopifyGet(amzPath);
+        const amzOrders=(amzR&&amzR.orders)||[];
+        if(!amzOrders.length) break;
+        amzFound=findInNoteAttributes(amzOrders,["Amazon Order Id"],amzId);
+        if(amzFound) break;
+        const amzLink=amzR._link||'';
+        const amzNext=amzLink.match(/page_info=([^&>]+)[^>]*>;s*rel="next"/);
+        amzPageInfo=amzNext?amzNext[1]:null;
+        if(!amzPageInfo) break;
+      }
+      if(amzFound){console.log("✅ Trovato via scan Amazon source_name page "+amzPage);return amzFound;}
       console.log("❌ Amazon Order Id non trovato");
     }
 
