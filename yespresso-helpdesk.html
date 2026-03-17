@@ -3291,32 +3291,40 @@ async function downloadAndShowPod(btnId){
   var podWin=window.open(podPageUrl,'podWin','width=900,height=650');
   if(!podWin){showToast('⚠️ Consenti i popup per questo sito','error');return;}
   if(btn){btn.textContent='⏳ Scansione...';btn.style.pointerEvents='none';}
-  function onPodMessage(evt){
-    if(!evt.data||evt.data.type!=='podImage') return;
-    window.removeEventListener('message',onPodMessage);
-    if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
-    try{podWin.close();}catch(e){}
-    if(evt.data.dataUrl){
-      showPodSidebar(evt.data.dataUrl,'image/jpeg',d.tn,d.podUrl);
-      showToast('✅ POD acquisito!');
-    } else { showToast('⚠️ POD non trovato','error'); }
-  }
-  window.addEventListener('message',onPodMessage);
   var attempts=0;
-  var extractCode='(function(){var img=document.querySelector(\'img\');if(!img){window.opener&&window.opener.postMessage({type:\'podImage\',dataUrl:null},\'*\');return;}var c=document.createElement(\'canvas\');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext(\'2d\').drawImage(img,0,0);var du=c.toDataURL(\'image/jpeg\',0.95);window.opener&&window.opener.postMessage({type:\'podImage\',dataUrl:du},\'*\');})();';
   var timer=setInterval(function(){
     attempts++;
     try{
-      if(podWin.closed){clearInterval(timer);window.removeEventListener('message',onPodMessage);if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}return;}
+      if(podWin.closed){clearInterval(timer);if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}return;}
       var img=podWin.document.querySelector('img');
       if(img&&img.complete&&img.naturalWidth>0){
         clearInterval(timer);
-        var s=podWin.document.createElement('script');
-        s.textContent=extractCode;
-        podWin.document.head.appendChild(s);
+        var imgSrc=img.src;
+        podWin.close();
+        // Manda l'URL al proxy che scarica l'immagine (no CORS sul proxy)
+        fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(imgSrc))
+          .then(function(r){return r.json();})
+          .then(function(j){
+            if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+            if(j&&j.ok){
+              showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d.tn,d.podUrl);
+              showToast('✅ POD acquisito!');
+            } else {
+              showToast('⚠️ '+((j&&j.error)||'Errore download POD'),'error');
+            }
+          })
+          .catch(function(e){
+            if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+            showToast('⚠️ Errore: '+e.message,'error');
+          });
       }
     }catch(e){}
-    if(attempts>=30){clearInterval(timer);window.removeEventListener('message',onPodMessage);try{podWin.close();}catch(e){}if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}showToast('⚠️ Sei loggato su BRT?','error');}
+    if(attempts>=30){
+      clearInterval(timer);
+      try{podWin.close();}catch(e){}
+      if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+      showToast('⚠️ Sei loggato su BRT? Clicca prima Vedi POD↗','error');
+    }
   },500);
 }
 function showPodSidebar(dataUrl,mime,tn,podUrl){
