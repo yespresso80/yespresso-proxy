@@ -3282,28 +3282,74 @@ async function loadBrtPod(btnId){
 // ─────────────────────────────────────────────────────────────
 // POD — scarica automaticamente e mostra nella sidebar
 // ─────────────────────────────────────────────────────────────
-async function downloadAndShowPod(btnId){
+function downloadAndShowPod(btnId){
+  // SINCRONO: apre popup subito al click (prima di qualsiasi async)
   const d=(window._podUrlMap||{})[btnId];
   if(!d){showToast('Dati POD non disponibili','error');return;}
+  const tnPodParam=d.tnPod||(d.tn?(d.tn.startsWith('26')?d.tn:'26'+d.tn):'');
+  const podPageUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPodParam+'&PODChkCde=348365243';
+  // Apre popup SUBITO (sincrono — non bloccato dal browser)
+  const podWin=window.open(podPageUrl,'podWin','width=900,height=650,left=100,top=100');
+  if(!podWin){
+    showToast('⚠️ Abilita i popup per questo sito','error');
+    return;
+  }
   const btn=document.getElementById(btnId);
-  if(btn){btn.textContent='⏳...';btn.style.pointerEvents='none';}
-  try{
-    // Prova prima pod-capture, poi fallback su pod-auto
-    let j=null;
-    const tnPodParam=d.tnPod||(d.tn.startsWith('26')?d.tn:'26'+d.tn);
+  if(btn){btn.textContent='⏳ Scansione...';btn.style.pointerEvents='none';}
+  // Ora monitora in modo asincrono
+  let attempts=0;
+  const timer=setInterval(function(){
+    attempts++;
     try{
-      const r1=await fetch(PROXY+'/brt/pod-capture?tnPod='+encodeURIComponent(tnPodParam));
-      j=await r1.json();
-      if(!j.ok) j=null;
-    }catch(e1){}
-    if(!j){
-      const r2=await fetch(PROXY+'/brt/pod-auto?nspediz='+encodeURIComponent(tnPodParam));
-      j=await r2.json();
+      if(podWin.closed){
+        clearInterval(timer);
+        if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+        return;
+      }
+      const imgs=podWin.document.querySelectorAll('img');
+      if(imgs.length>0&&imgs[0].complete&&imgs[0].naturalWidth>0){
+        clearInterval(timer);
+        const imgSrc=imgs[0].src;
+        // Scarica immagine con fetch usando i cookie del browser
+        fetch(imgSrc,{credentials:'include',mode:'cors'})
+          .then(function(r){return r.blob();})
+          .then(function(blob){
+            podWin.close();
+            const fr=new FileReader();
+            fr.onload=function(e){
+              if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+              showPodSidebar(e.target.result,blob.type||'image/jpeg',d.tn,d.podUrl);
+              showToast('✅ POD acquisito!');
+            };
+            fr.readAsDataURL(blob);
+          })
+          .catch(function(){
+            // CORS blocca fetch — usa canvas direttamente dalla finestra aperta
+            try{
+              const c=document.createElement('canvas');
+              const img=podWin.document.querySelector('img');
+              c.width=img.naturalWidth; c.height=img.naturalHeight;
+              c.getContext('2d').drawImage(img,0,0);
+              const dataUrl=c.toDataURL('image/jpeg',0.95);
+              podWin.close();
+              if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+              showPodSidebar(dataUrl,'image/jpeg',d.tn,d.podUrl);
+              showToast('✅ POD acquisito!');
+            }catch(ce){
+              podWin.close();
+              if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+              showToast('⚠️ Errore acquisizione: '+ce.message,'error');
+            }
+          });
+      }
+    }catch(e){}
+    if(attempts>=30){
+      clearInterval(timer);
+      podWin.close();
+      if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
+      showToast('⚠️ POD non trovato — sei loggato su BRT?','error');
     }
-    if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
-    if(!j||!j.ok){showToast('POD non disponibile: '+(j&&j.error||'errore'),'error');return;}
-    showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d.tn,d.podUrl);
-  }catch(e){if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}showToast('Errore: '+e.message,'error');}
+  },500);
 }
 function showPodSidebar(dataUrl,mime,tn,podUrl){
   const prev=document.getElementById('pod-sidebar-box');if(prev)prev.remove();
