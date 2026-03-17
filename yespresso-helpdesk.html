@@ -2417,18 +2417,22 @@ async function generateReply(lastMsg,email,fullThread){
           if(!imgs.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
           const parts=[{type:"text",text:"Genera una risposta professionale per questo ticket. Sono allegate "+imgs.length+" foto inviate dal cliente che puoi analizzare:\n\n"+prompt}];
           imgs.forEach(img=>{
-            // Pulisci base64: rimuovi caratteri non validi e tronca al padding corretto
             let cleanData=img.data.replace(/[^A-Za-z0-9+/=]/g,"");
-            // Tronca agli ultimi = di padding validi
-            const lastSlash=cleanData.lastIndexOf("/9j");
-            if(lastSlash>0)cleanData=cleanData; // JPEG valido
-            // Rimuovi caratteri esadecimali in coda (residui parser)
             cleanData=cleanData.replace(/[0-9a-f]{10,}$/,"");
-            // Padding corretto
             const rem=cleanData.length%4;
             if(rem)cleanData+=("===".substring(0,4-rem));
+            // Limite 1.5MB base64 per immagine
+            if(cleanData.length>1500000){
+              console.log("[IMG] Tronco immagine da "+cleanData.length+" a 1.5MB");
+              cleanData=cleanData.substring(0,1500000);
+              const rem2=cleanData.length%4;if(rem2)cleanData+=("===".substring(0,4-rem2));
+            }
+            // Normalizza media_type: Claude accetta solo jpeg/png/gif/webp
+            let mediaType=(img.contentType||"image/jpeg").toLowerCase().trim();
+            if(mediaType==="image/jpg")mediaType="image/jpeg";
+            if(!["image/jpeg","image/png","image/gif","image/webp"].includes(mediaType))mediaType="image/jpeg";
             try{
-              parts.push({type:"image",source:{type:"base64",media_type:img.contentType||"image/jpeg",data:cleanData}});
+              parts.push({type:"image",source:{type:"base64",media_type:mediaType,data:cleanData}});
             }catch(e){console.log("Skip img:",e.message);}
           });
           return parts;
