@@ -1298,6 +1298,17 @@ async function selectTicket(tid){
     messagesHtml+='</div>';
   }
 
+  // Mostra allegati CDN dagli eventi type=attachments
+  (function(){
+    const attEvs=(tkEvents||[]).filter(ev=>ev.type==='attachments');
+    const allFiles=[];
+    attEvs.forEach(ev=>{
+      const files=(ev.attachments&&ev.attachments.files)?ev.attachments.files:Array.isArray(ev.attachments)?ev.attachments:[];
+      allFiles.push(...files);
+    });
+    if(allFiles.length) setTimeout(()=>showHelpDeskAttachments(allFiles),200);
+  })();
+
   // Render main area
   document.getElementById("detail-main").innerHTML=
     '<div class="detail-messages"><div style="display:flex;flex-direction:column;gap:12px">'+messagesHtml+'</div></div>'+
@@ -2597,6 +2608,33 @@ async function sendReply(){
 // ═══════════════════════════════════════════════
 // CUSTOMER HISTORY
 // ═══════════════════════════════════════════════
+
+
+function showHelpDeskAttachments(files){
+  if(!files||!files.length)return;
+  const oArea=document.getElementById('imap-attachments-area')||document.getElementById('order-info-area');
+  if(!oArea)return;
+  let html='<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
+  html+='<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">📎 ALLEGATI CLIENTE ('+files.length+')</div>';
+  files.forEach(f=>{
+    const url=f.url||f.href||'';
+    const name=f.name||f.filename||'File';
+    const mime=f.type||f.contentType||'';
+    const isImg=mime.startsWith('image/')||/\.(jpg|jpeg|png|gif|webp)$/i.test(name);
+    if(!url)return;
+    if(isImg){
+      html+='<div style="margin-bottom:6px">';
+      html+='<img src="'+url+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+name+'">'; 
+      html+='<div style="font-size:10px;color:#888;margin-top:2px">'+name+'</div>';
+      html+='</div>';
+    } else {
+      html+='<a href="'+url+'" target="_blank" style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+name+' <span style="margin-left:auto;font-size:10px">↗ Apri</span></a>';
+    }
+  });
+  html+='</div>';
+  const existing=oArea.innerHTML||'';
+  oArea.innerHTML=existing+html;
+}
 
 async function loadImapAttachments(email, subject, tid){
   // Non caricare per email marketplace
