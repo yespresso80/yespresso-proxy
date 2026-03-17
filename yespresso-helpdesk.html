@@ -1,49 +1,11 @@
-function pastePodFromClipboard(btnId){
-  var d=(window._podUrlMap||{})[btnId];
-  if(!d){showToast('Apri prima un ticket con ordine consegnato','error');return;}
-  // Mostra dialog con campo URL
-  var existing=document.getElementById('pod-url-dialog');
-  if(existing) existing.remove();
-  var dialog=document.createElement('div');
-  dialog.id='pod-url-dialog';
-  dialog.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:9999;width:460px;font-family:sans-serif';
-  dialog.innerHTML='<div style="font-weight:700;font-size:15px;margin-bottom:8px">📸 Inserisci URL immagine POD</div>'+
-    '<div style="font-size:12px;color:#666;margin-bottom:12px">1. Apri la pagina POD su BRT<br>2. Clicca sull\'immagine per aprirla in nuova tab<br>3. Copia l\'URL dalla barra degli indirizzi<br>4. Incollalo qui sotto</div>'+
-    '<input id="pod-url-input" type="text" placeholder="https://vas.brt.it/tempimages/..." style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d4b8ff;border-radius:6px;font-size:13px;margin-bottom:12px">'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end">'+
-    '<span onclick="document.getElementById(\'pod-url-dialog\').remove()" style="padding:7px 16px;border-radius:6px;border:1px solid #ddd;cursor:pointer;font-size:13px">Annulla</span>'+
-    '<span onclick="loadPodFromUrl(\''+ btnId +'\',this)" style="padding:7px 16px;border-radius:6px;background:#8e44ad;color:#fff;cursor:pointer;font-size:13px;font-weight:700">Carica POD</span>'+
-    '</div>';
-  document.body.appendChild(dialog);
-  setTimeout(function(){document.getElementById('pod-url-input')&&document.getElementById('pod-url-input').focus();},100);
-}
-
-function loadPodFromUrl(btnId, btn){
-  var d=(window._podUrlMap||{})[btnId];
-  var input=document.getElementById('pod-url-input');
-  var url=input?input.value.trim():'';
-  if(!url||!url.startsWith('https://vas.brt.it/')){
-    showToast('⚠️ URL non valido — deve iniziare con https://vas.brt.it/','error');
-    return;
-  }
-  if(btn){btn.textContent='⏳ Carico...';btn.style.pointerEvents='none';}
-  fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(url))
-    .then(function(r){return r.json();})
-    .then(function(j){
-      document.getElementById('pod-url-dialog')&&document.getElementById('pod-url-dialog').remove();
-      if(j&&j.ok){
-        showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d?d.tn:'',d?d.podUrl:url);
-        showToast('✅ POD caricato!');
-      } else {
-        showToast('⚠️ '+((j&&j.error)||'Errore download POD'),'error');
-        if(btn){btn.textContent='Carica POD';btn.style.pointerEvents='auto';}
-      }
-    })
-    .catch(function(e){
-      document.getElementById('pod-url-dialog')&&document.getElementById('pod-url-dialog').remove();
-      showToast('⚠️ Errore: '+e.message,'error');
-    });
-}
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Yespresso - Assistenza Clienti</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
 html{zoom:1.25}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fff;color:#1a1a2e;height:calc(100vh / 1.25);display:flex;font-size:13px;overflow:hidden}
 
@@ -2293,6 +2255,7 @@ async function generateReply(lastMsg,email,fullThread){
           window._podUrlMap=window._podUrlMap||{};
           window._podUrlMap[podDlBtnId]={podUrl,tn,tnPod};
           html+=' — <span id="'+podDlBtnId+'" onclick="downloadAndShowPod(this.id)" style="color:#8e44ad;font-size:12px;cursor:pointer;font-weight:700;text-decoration:underline">⬇️ Scarica</span>';
+          html+=' <span id="urp-'+order.id+'" style="color:#fff;background:#8e44ad;font-size:11px;cursor:pointer;font-weight:700;padding:2px 7px;border-radius:4px">🔗 URL POD</span>';
         }
       }
       if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
@@ -2404,14 +2367,14 @@ async function generateReply(lastMsg,email,fullThread){
     const tkEmail=(tk.requester&&tk.requester.email)||"";
     const curEmail=email||"";
     // Marketplace (TikTok/Amazon): email unica per ogni ticket, non raggruppare
+    var isMktEmail=curEmail.includes('scs3.tiktok.com')||curEmail.includes('marketplace.amazon')||curEmail.includes('seller@orders');
+    if(isMktEmail) return false;
     const isMarketplace=curEmail.includes('scs3.tiktok.com')||curEmail.includes('marketplace.amazon')||curEmail.includes('seller@orders');
-    if(isMarketplace) return false;
-    // Oggetti di sistema da non raggruppare mai
-    const skipSubjects=['richiesta post-vendita in sospeso','notifica di ticket informativo in sospeso'];
-    const curSubject=((t.subject||t.name||"")||'').toLowerCase();
-    const tkSubject=((tk.subject||tk.name||"")||'').toLowerCase();
-    const isSkipSubject=skipSubjects.some(function(s){return curSubject.includes(s)||tkSubject.includes(s);});
-    if(isSkipSubject) return false;
+    if(isMktEmail) return false;
+    var skipSubjsArr=['richiesta post-vendita in sospeso','notifica di ticket informativo in sospeso'];
+    var cSubjLow=((t.subject||t.name||'')||'').toLowerCase();
+    var tSubjLow=((tk.subject||tk.name||'')||'').toLowerCase();
+    if(skipSubjsArr.some(function(s){return cSubjLow.includes(s)||tSubjLow.includes(s);})) return false;
     return tkEmail&&curEmail&&tkEmail===curEmail&&(tk.ID||tk.id)!==(t.ID||t.id);
   }).slice(0,3);
   const recentStr=recentCustomerTickets.length?("\n\nTICKET RECENTI DELLO STESSO CLIENTE (per contesto):\n"+recentCustomerTickets.map(tk=>{
@@ -3682,6 +3645,67 @@ loadTickets();
     btn.disabled=false;btn.textContent="📤 Crea Ticket";
   }
 }
+
+function pastePodFromClipboard(btnId){
+  var d=(window._podUrlMap||{})[btnId];
+  if(!d){showToast('Dati POD non disponibili','error');return;}
+  var ex=document.getElementById('pod-url-dialog');
+  if(ex) ex.remove();
+  var dlg=document.createElement('div');
+  dlg.id='pod-url-dialog';
+  dlg.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:9999;width:460px;font-family:sans-serif';
+  dlg.innerHTML='<div style="font-weight:700;font-size:15px;margin-bottom:8px">🔗 Inserisci URL immagine POD</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:12px">1. Clicca <b>📸 Vedi POD ↗</b> per aprire la pagina BRT<br>2. <b>Tasto destro sull\'immagine</b> → Copia indirizzo immagine<br>3. Incolla qui sotto</div>'+
+    '<input id="pod-url-input" type="text" placeholder="https://vas.brt.it/tempimages/..." style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d4b8ff;border-radius:6px;font-size:13px;margin-bottom:12px">'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+    '<button id="pod-url-cancel" style="padding:7px 16px;border-radius:6px;border:1px solid #ddd;cursor:pointer;font-size:13px;background:#fff">Annulla</button>'+
+    '<button id="pod-url-load" style="padding:7px 16px;border-radius:6px;background:#8e44ad;color:#fff;cursor:pointer;font-size:13px;font-weight:700;border:none">📥 Carica POD</button>'+
+    '</div>';
+  document.body.appendChild(dlg);
+  document.getElementById('pod-url-cancel').onclick=function(){dlg.remove();};
+  document.getElementById('pod-url-load').onclick=function(){loadPodFromUrl(btnId,this);};
+  setTimeout(function(){var inp=document.getElementById('pod-url-input');if(inp)inp.focus();},100);
+}
+
+function loadPodFromUrl(btnId,btn){
+  var d=(window._podUrlMap||{})[btnId];
+  var inp=document.getElementById('pod-url-input');
+  var url=inp?inp.value.trim():'';
+  if(!url||url.indexOf('vas.brt.it')<0){
+    showToast('⚠️ URL non valido — deve essere https://vas.brt.it/tempimages/...','error');
+    return;
+  }
+  if(btn){btn.textContent='⏳ Carico...';btn.disabled=true;}
+  fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(url))
+    .then(function(r){return r.json();})
+    .then(function(j){
+      var dlg2=document.getElementById('pod-url-dialog');
+      if(dlg2) dlg2.remove();
+      if(j&&j.ok){
+        showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d?d.tn:'',d?d.podUrl:url);
+        showToast('✅ POD caricato!');
+      } else {
+        showToast('⚠️ '+(j&&j.error?j.error:'Errore download POD'),'error');
+        if(btn){btn.textContent='📥 Carica POD';btn.disabled=false;}
+      }
+    })
+    .catch(function(e){
+      var dlg3=document.getElementById('pod-url-dialog');
+      if(dlg3) dlg3.remove();
+      showToast('⚠️ Errore: '+e.message,'error');
+    });
+}
+
+document.addEventListener('click',function(e){
+  var el=e.target;
+  if(el.id&&el.id.startsWith('urp-')){
+    var orderId=el.id.replace('urp-','');
+    // Trova il podDlBtnId corrispondente
+    var podKey=Object.keys(window._podUrlMap||{}).find(function(k){return k.indexOf(orderId)>=0;});
+    if(podKey) pastePodFromClipboard(podKey);
+    else showToast('⚠️ Dati POD non disponibili','error');
+  }
+});
 </script>
 
 <!-- QUICK REPLIES MODAL -->
