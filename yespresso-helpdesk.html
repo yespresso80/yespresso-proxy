@@ -998,7 +998,7 @@ function updateBadges(){
 
 function viewFilter(t){
   if(currentView==="all")return true;
-  if(currentView==="tohandle"){const agent=t.assignment&&t.assignment.agent&&t.assignment.agent.ID;return (t.status==="open"||t.status==="pending")&&!agent;}
+  if(currentView==="tohandle"){const agent=t.assignment&&t.assignment.agent&&t.assignment.agent.ID;return t.status==="open"&&!agent;}
   if(currentView==="mine")return t.status==="open";
   if(currentView==="giorgio"){const agent=t.assignment&&t.assignment.agent;return t.status==="open"&&agent&&agent.ID&&agent.name&&agent.name.toLowerCase().includes("giorgio");}
   if(currentView==="giulia"){const agent=t.assignment&&t.assignment.agent;return t.status==="open"&&agent&&agent.ID&&agent.name&&agent.name.toLowerCase().includes("giulia");}
