@@ -3288,24 +3288,22 @@ async function downloadAndShowPod(btnId){
   const btn=document.getElementById(btnId);
   if(btn){btn.textContent='⏳...';btn.style.pointerEvents='none';}
   try{
+    // Prova prima pod-capture, poi fallback su pod-auto
+    let j=null;
     const tnPodParam=d.tnPod||(d.tn.startsWith('26')?d.tn:'26'+d.tn);
-    // Usa pod-auto che fa login su vas.brt.it e scarica l'immagine direttamente
-    const r=await fetch(PROXY+'/brt/pod-auto?nspediz='+encodeURIComponent(tnPodParam));
-    const j=await r.json();
-    if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
-    if(j&&j.ok){
-      showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d.tn,d.podUrl);
-    } else {
-      // POD non disponibile via API — apri la pagina BRT direttamente
-      window.open(d.podUrl,'_blank');
-      showToast('Aprire il POD dalla pagina BRT appena aperta','error');
+    try{
+      const r1=await fetch(PROXY+'/brt/pod-capture?tnPod='+encodeURIComponent(tnPodParam));
+      j=await r1.json();
+      if(!j.ok) j=null;
+    }catch(e1){}
+    if(!j){
+      const r2=await fetch(PROXY+'/brt/pod-auto?nspediz='+encodeURIComponent(tnPodParam));
+      j=await r2.json();
     }
-  }catch(e){
     if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
-    // In caso di errore di rete apri direttamente
-    if(d&&d.podUrl) window.open(d.podUrl,'_blank');
-    showToast('Apri il POD dalla pagina BRT','error');
-  }
+    if(!j||!j.ok){showToast('POD non disponibile: '+(j&&j.error||'errore'),'error');return;}
+    showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d.tn,d.podUrl);
+  }catch(e){if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}showToast('Errore: '+e.message,'error');}
 }
 function showPodSidebar(dataUrl,mime,tn,podUrl){
   const prev=document.getElementById('pod-sidebar-box');if(prev)prev.remove();
