@@ -2245,10 +2245,10 @@ async function generateReply(lastMsg,email,fullThread){
       let tnPod='', brtUrl='', podUrl='';
       if(tn){
         tnPod=tn.startsWith('26')?tn:'26'+tn;
-        brtUrl="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV="+tnPod+"&PODChkCde=348365243";
+        brtUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnPod;
+        podUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod+'&PODChkCde=348365243';
         html+='<br>'+tc+': <strong>'+tn+'</strong> — <a href="'+brtUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>';
         if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString('it-IT');
-        podUrl=brtUrl;
         html+=' — <a href="'+podUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 Vedi POD ↗</a>';
         if(f&&f.shipment_status==='delivered'){
           const podDlBtnId='pod-dl-'+order.id;
@@ -2318,6 +2318,14 @@ async function generateReply(lastMsg,email,fullThread){
       window._brtPickupData=window._brtPickupData||{};
       window._brtPickupData[order.id]={name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||''};
       html+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+    }
+    // Credito: mostra solo per clienti sito (non Amazon/Temu/TikTok)
+    const isTemuOrAmazonGen=(email||'').includes('temu')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok')||(email||'').includes('seller@orders');
+    if(order.customer&&order.customer.id&&!isTemuOrAmazonGen){
+      const credInpIdGen='cred-inp-gen-'+order.id;
+      window._credMap=window._credMap||{};
+      window._credMap[credInpIdGen]={email:order.email,customerId:order.customer.id,orderId:order.id};
+      html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
     if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
   loadLastCustomerOrder(email, order.id);
