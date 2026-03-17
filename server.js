@@ -216,8 +216,42 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
+  // BRT POD image — scarica direttamente l'immagine dall'URL trovato dal browser nel popup
+  // Il browser apre il popup, legge img.src (es. https://vas.brt.it/tempimages/xxx.jpg)
+  // e lo manda qui — il proxy lo scarica senza problemi di CORS
+  if (req.url.startsWith("/brt/pod-image")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const imgUrl = params.get("url") || "";
+    if (!imgUrl || !imgUrl.startsWith("https://vas.brt.it/")) {
+      res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "url non valido" })); return;
+    }
+    console.log("[POD-IMAGE] Scarico:", imgUrl);
+    try {
+      const imgRes = await fetch(imgUrl, {
+        headers: { "User-Agent": BRT_UA, "Referer": "https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM" }
+      });
+      if (!imgRes.ok) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Download fallito: " + imgRes.status }));
+        return;
+      }
+      const ct = imgRes.headers.get("content-type") || "image/jpeg";
+      const buf = await imgRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString("base64");
+      const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
+      console.log("[POD-IMAGE] OK:", buf.byteLength, "bytes mime:", mime);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, mime, data: b64 }));
+    } catch(e) {
+      console.log("[POD-IMAGE] Errore:", e.message);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
   // BRT POD capture — scarica pagina SPED_DET_SHOW_LDV.HTM ed estrae l'immagine firma
-  // URL pagina: https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=26XXX&PODChkCde=348365243
   if (req.url.startsWith("/brt/pod-capture")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -226,19 +260,15 @@ async function brtRestPost(p, body, useTrackingBase) {
     const podPageUrl = "https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=" + encodeURIComponent(tnPod) + "&PODChkCde=348365243";
     console.log("[POD-CAPTURE] Fetch:", podPageUrl);
     try {
-      // Step 1: scarica la pagina HTML del POD
       const pageRes = await fetch(podPageUrl, {
         headers: { "User-Agent": BRT_UA, "Accept": "text/html,*/*", "Referer": "https://vas.brt.it/vas/sped_numspe_par.htm" }
       });
       const pageHtml = await pageRes.text();
       console.log("[POD-CAPTURE] page status:", pageRes.status, "len:", pageHtml.length);
-
-      // Step 2: cerca src dell'immagine nella pagina
-      // Patterns tipici: <img src="...pod..."> o <img src="/vas/...jpg">
       const imgPatterns = [
-        /src=["']([^"']*\.(?:jpg|jpeg|png|gif))['"]/gi,
-        /src=["']([^"']*(?:pod|firma|ldv|immagine|spediz)[^"']*)['"]/gi,
-        /src=["'](\/vas\/[^"']+)['"]/gi,
+        /src=["']([^"']*\.(?:jpg|jpeg|png|gif))['\"]/gi,
+        /src=["']([^"']*(?:pod|firma|ldv|immagine|spediz)[^"']*)['\"]/gi,
+        /src=["'](\/vas\/[^"']+)['\"]/gi,
       ];
       let imgSrc = null;
       for (const pat of imgPatterns) {
@@ -246,30 +276,21 @@ async function brtRestPost(p, body, useTrackingBase) {
         const m = pat.exec(pageHtml);
         if (m) { imgSrc = m[1]; break; }
       }
-
       if (!imgSrc) {
-        // Nessuna immagine trovata — la pagina potrebbe essere un redirect o errore
         console.log("[POD-CAPTURE] Nessuna immagine trovata. HTML sample:", pageHtml.substring(0, 500));
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "Immagine POD non trovata nella pagina", html_sample: pageHtml.substring(0, 800) }));
         return;
       }
-
-      // Step 3: scarica l'immagine
       if (!imgSrc.startsWith("http")) imgSrc = "https://vas.brt.it" + (imgSrc.startsWith("/") ? "" : "/") + imgSrc;
       console.log("[POD-CAPTURE] Scarico immagine:", imgSrc);
-
-      const imgRes = await fetch(imgSrc, {
-        headers: { "User-Agent": BRT_UA, "Referer": podPageUrl }
-      });
+      const imgRes = await fetch(imgSrc, { headers: { "User-Agent": BRT_UA, "Referer": podPageUrl } });
       const ct = imgRes.headers.get("content-type") || "image/jpeg";
-
       if (!imgRes.ok) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "Download immagine fallito: " + imgRes.status }));
         return;
       }
-
       const buf = await imgRes.arrayBuffer();
       const b64 = Buffer.from(buf).toString("base64");
       const mime = ct.includes("png") ? "image/png" : ct.includes("pdf") ? "application/pdf" : "image/jpeg";
@@ -394,7 +415,6 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // Creditsyard — aggiungi/sottrai credito cliente
   if (req.url.startsWith("/creditsyard/adjust")) {
     const chunks5 = []; req.on("data", c => chunks5.push(c)); await new Promise(r => req.on("end", r));
     let body5 = {};
