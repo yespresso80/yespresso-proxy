@@ -1,11 +1,49 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Yespresso - Assistenza Clienti</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
+function pastePodFromClipboard(btnId){
+  var d=(window._podUrlMap||{})[btnId];
+  if(!d){showToast('Apri prima un ticket con ordine consegnato','error');return;}
+  // Mostra dialog con campo URL
+  var existing=document.getElementById('pod-url-dialog');
+  if(existing) existing.remove();
+  var dialog=document.createElement('div');
+  dialog.id='pod-url-dialog';
+  dialog.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:9999;width:460px;font-family:sans-serif';
+  dialog.innerHTML='<div style="font-weight:700;font-size:15px;margin-bottom:8px">📸 Inserisci URL immagine POD</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:12px">1. Apri la pagina POD su BRT<br>2. Clicca sull\'immagine per aprirla in nuova tab<br>3. Copia l\'URL dalla barra degli indirizzi<br>4. Incollalo qui sotto</div>'+
+    '<input id="pod-url-input" type="text" placeholder="https://vas.brt.it/tempimages/..." style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d4b8ff;border-radius:6px;font-size:13px;margin-bottom:12px">'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+    '<span onclick="document.getElementById(\'pod-url-dialog\').remove()" style="padding:7px 16px;border-radius:6px;border:1px solid #ddd;cursor:pointer;font-size:13px">Annulla</span>'+
+    '<span onclick="loadPodFromUrl(\''+ btnId +'\',this)" style="padding:7px 16px;border-radius:6px;background:#8e44ad;color:#fff;cursor:pointer;font-size:13px;font-weight:700">Carica POD</span>'+
+    '</div>';
+  document.body.appendChild(dialog);
+  setTimeout(function(){document.getElementById('pod-url-input')&&document.getElementById('pod-url-input').focus();},100);
+}
+
+function loadPodFromUrl(btnId, btn){
+  var d=(window._podUrlMap||{})[btnId];
+  var input=document.getElementById('pod-url-input');
+  var url=input?input.value.trim():'';
+  if(!url||!url.startsWith('https://vas.brt.it/')){
+    showToast('⚠️ URL non valido — deve iniziare con https://vas.brt.it/','error');
+    return;
+  }
+  if(btn){btn.textContent='⏳ Carico...';btn.style.pointerEvents='none';}
+  fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(url))
+    .then(function(r){return r.json();})
+    .then(function(j){
+      document.getElementById('pod-url-dialog')&&document.getElementById('pod-url-dialog').remove();
+      if(j&&j.ok){
+        showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d?d.tn:'',d?d.podUrl:url);
+        showToast('✅ POD caricato!');
+      } else {
+        showToast('⚠️ '+((j&&j.error)||'Errore download POD'),'error');
+        if(btn){btn.textContent='Carica POD';btn.style.pointerEvents='auto';}
+      }
+    })
+    .catch(function(e){
+      document.getElementById('pod-url-dialog')&&document.getElementById('pod-url-dialog').remove();
+      showToast('⚠️ Errore: '+e.message,'error');
+    });
+}
 html{zoom:1.25}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fff;color:#1a1a2e;height:calc(100vh / 1.25);display:flex;font-size:13px;overflow:hidden}
 
