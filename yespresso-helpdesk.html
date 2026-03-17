@@ -2565,11 +2565,17 @@ async function sendReply(){
       if(!statusOk)console.log("⚠️ Stato non aggiornato sul server (aggiornato localmente)");
 
       // Se solved/closed, metti solved anche su tutti gli altri ticket aperti concatenati
+      // MA solo se il ticket corrente NON è di tipo no-concat (es. Reso magazzino)
       if(newStatus==="solved"||newStatus==="closed"){
+        const noConcat_subj=["reso magazzino","richiesta post-vendita in sospeso","notifica di ticket informativo in sospeso"];
+        const currSubjLow=(selectedTicket.subject||"").toLowerCase();
+        const isCurrNoConcat=noConcat_subj.some(s=>currSubjLow.includes(s));
         const email=(selectedTicket.requester&&selectedTicket.requester.email)||"";
-        const otherOpen=tickets.filter(t=>{
+        const otherOpen=isCurrNoConcat?[]:tickets.filter(t=>{
           const te=(t.requester&&t.requester.email)||"";
-          return te===email&&(t.ID||t.id)!==tid&&(t.status==="open"||t.status==="pending");
+          const tSubjLow=(t.subject||"").toLowerCase();
+          const isOtherNoConcat=noConcat_subj.some(s=>tSubjLow.includes(s));
+          return te===email&&(t.ID||t.id)!==tid&&(t.status==="open"||t.status==="pending")&&!isOtherNoConcat;
         });
         if(otherOpen.length){
           console.log("🔄 Metto solved su",otherOpen.length,"altri ticket concatenati");
