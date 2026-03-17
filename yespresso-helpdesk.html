@@ -1371,7 +1371,9 @@ async function selectTicket(tid){
     }
     (async()=>{
       const searchTextAtoz=(t.subject||"")+' '+(allMsgs||"");
+      const _guardTid2=t.ID||t.id;
       const orderAtoz=await fetchShopifyOrder(searchTextAtoz,email||"",name||"");
+      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid2){console.log("AtoZ IIFE: ticket cambiato, skip");return;}
       if(orderAtoz){
         const oArea2=document.getElementById("order-info-area");
         if(oArea2){
@@ -1401,7 +1403,9 @@ async function selectTicket(tid){
     (async()=>{
       const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
       const brtFullBody=isBrtMsg2?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
+      const _guardTid1=t.ID||t.id;
       const order=await fetchShopifyOrder(t.subject+(brtFullBody?" "+brtFullBody:""),email||"",name||"");
+      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid1){console.log("Temu IIFE: ticket cambiato, skip");return;}
       const oArea=document.getElementById("order-info-area");
       if(order&&oArea){
         const f=order.fulfillments&&order.fulfillments[0];
@@ -1497,7 +1501,9 @@ async function selectTicket(tid){
       if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">🔍 Ricerca ordine BRT...</div>';
       const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
       const brtSearchText=(t.subject||"")+" "+brtFullText;
+      const _guardTid3=t.ID||t.id;
       const brtOrder=await fetchShopifyOrder(brtSearchText,email||"",name||"");
+      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid3){console.log("BRT IIFE: ticket cambiato, skip");return;}
       if(brtOrder&&oArea){
         // Popola order-info-area direttamente come per gli altri ticket
         const f=brtOrder.fulfillments&&brtOrder.fulfillments[0];
@@ -1969,9 +1975,9 @@ async function fetchShopifyOrder(message,email,requesterName){
         if(!amzOrders.length) break;
         amzFound=findInNoteAttributes(amzOrders,["Amazon Order Id"],amzId);
         if(amzFound) break;
-        const amzLink=amzR._link||'';
-        const amzNext=amzLink.match(/page_info=([^&>]+)[^>]*>;s*rel="next"/);
-        amzPageInfo=amzNext?amzNext[1]:null;
+        const amzLink=amzR._nextPageInfo||'';
+        // _nextPageInfo contiene direttamente il token
+        amzPageInfo=amzLink||null;
         if(!amzPageInfo) break;
       }
       if(amzFound){console.log("✅ Trovato via scan Amazon source_name page "+amzPage);return amzFound;}
