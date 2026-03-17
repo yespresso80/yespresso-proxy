@@ -1493,17 +1493,10 @@ async function selectTicket(tid){
       }
     },100);
   } else {
-    // Carica prima gli allegati IMAP, poi genera risposta AI
-    const skipAttDomains=["donotreply@amazon","marketplace.amazon","orders.temu","tiktok","vasnoreply","brt.it"];
-    const shouldLoadAtt=email&&!skipAttDomains.some(s=>email.includes(s));
-    if(shouldLoadAtt){
-      // Carica allegati e poi genera risposta
-      loadImapAttachments(email, t.subject||"", tid2).then(()=>{
-        generateReply(allMsgs, email, fullThread);
-      });
-    } else {
+    // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
+    loadImapAttachments(email, t.subject||"", tid2).then(()=>{
       generateReply(allMsgs, email, fullThread);
-    }
+    });
   }
   loadCustomerHistory(email, name, tid2);
   // Per ticket BRT: cerca ordine usando il body completo dei messaggi
