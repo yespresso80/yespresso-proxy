@@ -2368,6 +2368,12 @@ async function generateReply(lastMsg,email,fullThread){
     // Marketplace (TikTok/Amazon): email unica per ogni ticket, non raggruppare
     const isMarketplace=curEmail.includes('scs3.tiktok.com')||curEmail.includes('marketplace.amazon')||curEmail.includes('seller@orders');
     if(isMarketplace) return false;
+    // Oggetti di sistema da non raggruppare mai
+    const skipSubjects=['richiesta post-vendita in sospeso','notifica di ticket informativo in sospeso'];
+    const curSubject=((t.subject||t.name||"")||'').toLowerCase();
+    const tkSubject=((tk.subject||tk.name||"")||'').toLowerCase();
+    const isSkipSubject=skipSubjects.some(function(s){return curSubject.includes(s)||tkSubject.includes(s);});
+    if(isSkipSubject) return false;
     return tkEmail&&curEmail&&tkEmail===curEmail&&(tk.ID||tk.id)!==(t.ID||t.id);
   }).slice(0,3);
   const recentStr=recentCustomerTickets.length?("\n\nTICKET RECENTI DELLO STESSO CLIENTE (per contesto):\n"+recentCustomerTickets.map(tk=>{
