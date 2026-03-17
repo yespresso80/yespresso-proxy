@@ -732,125 +732,132 @@ let autoRefreshTimer=null;
 async function loadTickets(){
   const rowsEl=document.getElementById("ticket-rows");
   const countEl=document.getElementById("ticket-count-bar");
+  const CACHE_KEY="yespresso_tickets_cache";
+  const CACHE_META="yespresso_tickets_meta";
+  const DAYS_30=Date.now()-30*24*60*60*1000;
+
+  // 1. MOSTRA SUBITO LA CACHE se disponibile e fresca (< 4h)
+  try{
+    const cached=localStorage.getItem(CACHE_KEY);
+    const meta=JSON.parse(localStorage.getItem(CACHE_META)||"{}");
+    if(cached&&meta.savedAt&&(Date.now()-meta.savedAt)<4*60*60*1000){
+      tickets=JSON.parse(cached);
+      currentPage=1;
+      updateBadges();
+      renderTable();
+      const ago=Math.round((Date.now()-meta.savedAt)/60000);
+      countEl.textContent=(tickets.length)+" ticket · cache ("+ago+"min fa) · aggiornamento...";
+    } else {
+      rowsEl.innerHTML='<div class="center-msg"><div class="spinner"></div><span id="load-msg">Connessione al server...</span></div>';
+      countEl.textContent="Caricamento...";
+    }
+  }catch(e){ rowsEl.innerHTML='<div class="center-msg"><div class="spinner"></div><span id="load-msg">Connessione al server...</span></div>'; }
+
   let elapsed=0;
-  rowsEl.innerHTML='<div class="center-msg"><div class="spinner"></div><span id="load-msg">Connessione al server...</span></div>';
-  countEl.textContent="Caricamento...";
   const loadTimer=setInterval(()=>{
     elapsed++;
     const msg=document.getElementById("load-msg");
     if(!msg){clearInterval(loadTimer);return;}
     if(elapsed<5)msg.textContent="Connessione al server...";
-    else if(elapsed<15)msg.textContent="Il server si sta avviando... ("+elapsed+"s)";
+    else if(elapsed<20)msg.textContent="Il server si sta avviando... ("+elapsed+"s)";
     else msg.textContent="Quasi pronto... ("+elapsed+"s)";
   },1000);
 
   try{
-    // Carica open/pending/on_hold: pagine finché non supera 30 giorni (max 20 pagine)
-    const DAYS_30 = Date.now() - 30*24*60*60*1000;
-    const loadStatus = async (status, maxPages=20) => {
+    // 2. CARICAMENTO PARALLELO: tutti gli status + tutte le pagine insieme
+    const loadAllStatus=async(status,maxPages=20)=>{
       const result=[]; const seen=new Set();
-      for(let p=1;p<=maxPages;p++){
-        const batch=await hdFetch("/v1/tickets?pageSize=50&page="+p+"&status="+status+"&sortBy=lastMessageAt&order=desc")
-          .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]);
+      // Prima pagina — controlla se serve continuare
+      const first=await hdFetch("/v1/tickets?pageSize=50&page=1&status="+status+"&sortBy=lastMessageAt&order=desc")
+        .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]);
+      if(!first.length) return result;
+      for(const t of first){const id=t.ID||t.id;if(!seen.has(id)){seen.add(id);result.push(t);}}
+      const oldest=first[first.length-1];
+      if(new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime()<DAYS_30||first.length<50) return result;
+      // Pagine 2..N in parallelo
+      const batches=await Promise.all(
+        Array.from({length:maxPages-1},(_,i)=>i+2).map(p=>
+          hdFetch("/v1/tickets?pageSize=50&page="+p+"&status="+status+"&sortBy=lastMessageAt&order=desc")
+            .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
+        )
+      );
+      for(const batch of batches){
         if(!batch.length) break;
         for(const t of batch){const id=t.ID||t.id;if(!seen.has(id)){seen.add(id);result.push(t);}}
-        const oldest=batch[batch.length-1];
-        const oldestDate=new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime();
-        if(oldestDate<DAYS_30) break;
-        const msg=document.getElementById("load-msg");
-        if(msg) msg.textContent="Caricamento "+status+"... ("+result.length+" ticket, pagina "+p+")";
+        const old2=batch[batch.length-1];
+        if(new Date(old2.lastMessageAt||old2.updatedAt||old2.createdAt||0).getTime()<DAYS_30) break;
       }
       return result;
     };
-    const [openBatch, pendingBatch, onHoldBatch] = await Promise.all([
-      loadStatus("open", 20),
-      loadStatus("pending", 10),
-      loadStatus("on_hold", 5)
+
+    // Tutti e 4 gli status in parallelo
+    const [openB,pendingB,onHoldB,solvedB]=await Promise.all([
+      loadAllStatus("open",20),
+      loadAllStatus("pending",10),
+      loadAllStatus("on_hold",5),
+      loadAllStatus("solved",20)
     ]);
     clearInterval(loadTimer);
-    const openTickets=[];
-    const seenIds=new Set();
-    for(const t of [...openBatch, ...pendingBatch, ...onHoldBatch]){
+
+    const allTickets=[]; const seenIds=new Set();
+    for(const t of [...openB,...pendingB,...onHoldB,...solvedB]){
       const id=t.ID||t.id;
-      if(!seenIds.has(id)){seenIds.add(id);openTickets.push(t);}
+      if(!seenIds.has(id)){seenIds.add(id);allTickets.push(t);}
     }
-    // Ordina per lastMessageAt
-    openTickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
-    tickets=openTickets;
+    allTickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
+    tickets=allTickets;
     currentPage=1;
     updateBadges();
     renderTable();
     const now=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
-    countEl.textContent=(tickets.length)+" ticket aperti · aggiornato "+now;
+    countEl.textContent=(tickets.length)+" ticket · aggiornato "+now;
 
-    // Carica anche solved in background per "All" e "Solved" view
-    setTimeout(async()=>{
-      try{
-        // Solved: pagine finché non supera 30 giorni (max 10 pagine)
-        const DAYS_30_S = Date.now() - 30*24*60*60*1000;
-        for(let p=1;p<=10;p++){
-          const batch=await hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=solved&sortBy=lastMessageAt&order=desc")
-            .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]);
-          if(!batch.length) break;
-          for(const t of batch){const id=t.ID||t.id;if(!seenIds.has(id)){seenIds.add(id);tickets.push(t);}}
-          const oldest=batch[batch.length-1];
-          const oldestDate=new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime();
-          if(oldestDate<DAYS_30_S) break;
-        }
-        updateBadges();
-        if(currentView==="all"||currentView==="solved")renderTable();
-        const now2=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
-        countEl.textContent=(tickets.length)+" ticket · aggiornato "+now2;
-      }catch(e){console.log("Solved load error:",e);}
-    },500);
+    // 3. SALVA IN CACHE localStorage
+    try{
+      localStorage.setItem(CACHE_KEY,JSON.stringify(tickets));
+      localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));
+    }catch(e){console.log("Cache save:",e.message);}
 
-    // Auto-refresh ogni 2 minuti: ricarica solo prima pagina e aggiorna nuovi
+    // 4. AUTO-REFRESH ogni 60s: solo open+pending pag 1-3 in parallelo
     if(autoRefreshTimer)clearInterval(autoRefreshTimer);
     autoRefreshTimer=setInterval(async()=>{
       try{
-        // Ricarica open+pending pagine 1-6 come il caricamento iniziale
-        const refreshPages=[];
-        for(let p=1;p<=6;p++){
-          refreshPages.push(hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=open&sortBy=lastMessageAt&order=desc").then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]));
-          refreshPages.push(hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=pending&sortBy=lastMessageAt&order=desc").then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]));
-        }
-        const refreshResults=await Promise.all(refreshPages);
-        const freshBatch=[];
-        const refreshSeen=new Set();
-        for(const batch of refreshResults){for(const t of batch){const id=t.ID||t.id;if(!refreshSeen.has(id)){refreshSeen.add(id);freshBatch.push(t);}}}
-        const existing=new Set(tickets.map(t=>t.ID||t.id));
-        const newOnes=freshBatch.filter(t=>!existing.has(t.ID||t.id));
-        // Aggiorna ticket esistenti (stato potrebbe essere cambiato)
-        freshBatch.forEach(ft=>{
-          const idx=tickets.findIndex(t=>(t.ID||t.id)===(ft.ID||ft.id));
-          if(idx>=0)tickets[idx]={...tickets[idx],...ft};
-          else tickets.push(ft); // aggiungi se non presente
-        });
-        // Rimuovi ticket che non sono più open/pending
-        tickets=tickets.filter(t=>t.status==="open"||t.status==="pending"||t.status==="solved"||t.status==="on_hold");
-        // Aggiorna sempre la lista (nuovi ticket o cambi di stato)
+        const [freshOpen,freshPending]=await Promise.all([
+          Promise.all([1,2,3].map(p=>hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=open&sortBy=lastMessageAt&order=desc").then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]))),
+          Promise.all([1,2].map(p=>hdFetch("/v1/tickets?pageSize=50&page="+p+"&status=pending&sortBy=lastMessageAt&order=desc").then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])))
+        ]);
+        const fresh=[...freshOpen.flat(),...freshPending.flat()];
+        const freshSeen=new Set(); const freshDedup=[];
+        for(const t of fresh){const id=t.ID||t.id;if(!freshSeen.has(id)){freshSeen.add(id);freshDedup.push(t);}}
+        const freshIds=new Set(freshDedup.map(t=>t.ID||t.id));
         let changed=false;
-        if(newOnes.length){
-          tickets=newOnes.concat(tickets);
-          changed=true;
-        }
-        // Controlla se qualche ticket ha cambiato stato
-        freshBatch.forEach(ft=>{
+        for(const ft of freshDedup){
           const idx=tickets.findIndex(t=>(t.ID||t.id)===(ft.ID||ft.id));
-          if(idx>=0&&tickets[idx].status!==ft.status)changed=true;
-        });
-        updateBadges();
-        if(changed)renderTable();
-        const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
-        const countBar=document.getElementById("ticket-count-bar");
-        if(countBar){
-          countBar.textContent=(tickets.length)+" ticket · aggiornato "+nowR;
-          // Flash verde per segnalare aggiornamento
-          countBar.style.color="#2a9d60";
-          setTimeout(()=>{countBar.style.color="";},1500);
+          if(idx>=0){if(tickets[idx].status!==ft.status||tickets[idx].lastMessageAt!==ft.lastMessageAt){tickets[idx]={...tickets[idx],...ft};changed=true;}}
+          else{tickets.push(ft);changed=true;}
         }
-      }catch(e){console.log("Auto-refresh error:",e.message);}
-    },60*1000); // auto-refresh ogni minuto
+        // Ticket che non sono più open/pending: verifica stato attuale
+        const toCheck=tickets.filter(t=>(t.status==="open"||t.status==="pending")&&!freshIds.has(t.ID||t.id));
+        if(toCheck.length>0){
+          const checked=await Promise.all(toCheck.slice(0,10).map(t=>
+            hdFetch("/v1/tickets/"+(t.ID||t.id)).catch(()=>null)
+          ));
+          for(const upd of checked){
+            if(!upd||!upd.status) continue;
+            const idx=tickets.findIndex(t=>(t.ID||t.id)===(upd.ID||upd.id));
+            if(idx>=0&&tickets[idx].status!==upd.status){tickets[idx]={...tickets[idx],...upd};changed=true;}
+          }
+        }
+        if(changed){
+          tickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
+          updateBadges(); renderTable();
+          try{localStorage.setItem(CACHE_KEY,JSON.stringify(tickets));localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));}catch(e){}
+        }
+        const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
+        const bar=document.getElementById("ticket-count-bar");
+        if(bar){bar.textContent=(tickets.length)+" ticket · aggiornato "+nowR;if(changed){bar.style.color="#2a9d60";setTimeout(()=>{bar.style.color="";},1500);}}
+      }catch(e){console.log("Refresh error:",e.message);}
+    },60*1000);
 
   }catch(e){
     clearInterval(loadTimer);
@@ -858,8 +865,6 @@ async function loadTickets(){
     countEl.textContent="Errore";
   }
 }
-
-
 function toggleBulkSelect(tid, cb){
   if(cb.checked) selectedTicketIds.add(tid);
   else selectedTicketIds.delete(tid);
