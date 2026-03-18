@@ -1486,7 +1486,7 @@ async function selectTicket(tid){
         window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order;
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
-        html2+='<br><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="margin-top:8px;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;width:100%">📋 Copia ordine CRM</button>';
+        html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\'",this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><button onclick="copyBrtTracking(\''+order.id+'\'",this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;width:100%">📦 Tracking BRT</button>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
@@ -2922,6 +2922,94 @@ async function copyTemuOrderCRM(orderId,btn){
       if(btn){btn.textContent='📋 Copia ordine CRM';btn.disabled=false;}
     }
   }catch(e){showToast('Errore: '+e.message,'error');if(btn){btn.textContent='📋 Copia ordine CRM';btn.disabled=false;}}
+}
+
+
+// ═══ GENERA JPG TRACKING BRT ═══
+function generateBrtTrackingCanvas(order,temuSn){
+  const W=820,H=580,canvas=document.createElement('canvas');
+  canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#c00';ctx.fillRect(0,0,W,52);
+  ctx.fillStyle='#fff';ctx.font='bold 22px sans-serif';
+  ctx.fillText('BRT — Tracking Spedizione',20,36);
+  ctx.font='12px sans-serif';ctx.textAlign='right';
+  ctx.fillText(new Date().toLocaleString('it-IT'),W-16,36);ctx.textAlign='left';
+  const f=order.fulfillments&&order.fulfillments[0];
+  const tn=f&&(f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0]))||'';
+  const sh=order.shipping_address||{},cu=order.customer||{};
+  let y=72;const lX=20,vX=210,rH=28;
+  function row(lb,val,bold){
+    ctx.fillStyle='#555';ctx.font='11px sans-serif';ctx.fillText(lb,lX,y);
+    ctx.fillStyle='#111';ctx.font=bold?'bold 13px sans-serif':'13px sans-serif';
+    const lines=String(val||'—').match(/.{1,65}/g)||['—'];
+    lines.forEach((l,i)=>ctx.fillText(l,vX,y+i*16));
+    y+=Math.max(rH,lines.length*16+6);
+  }
+  function sep(){ctx.strokeStyle='#e0e0e0';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(lX,y-4);ctx.lineTo(W-lX,y-4);ctx.stroke();y+=6;}
+  row('N. spedizione',tn||'—',true);
+  row('Rif. mittente',temuSn?temuSn:'—');
+  sep();
+  ctx.fillStyle='#555';ctx.font='11px sans-serif';ctx.fillText('Mittente',lX,y);
+  ctx.fillStyle='#111';ctx.font='13px sans-serif';
+  ctx.fillText('YESPRESSO SRL',vX,y);y+=16;
+  ctx.fillText('VIA GALILEO GALILEI 16',vX,y);y+=16;
+  ctx.fillText('20054 SEGRATE MI',vX,y);y+=rH;sep();
+  const addr=[sh.address1,sh.address2].filter(Boolean).join(', ');
+  const cityZip=[sh.zip,sh.city].filter(Boolean).join('  ');
+  ctx.fillStyle='#555';ctx.font='11px sans-serif';ctx.fillText('Destinatario',lX,y);
+  ctx.fillStyle='#111';ctx.font='bold 13px sans-serif';
+  const dest=sh.name||((cu.first_name||'')+' '+(cu.last_name||'')).trim()||'—';
+  ctx.fillText(dest,vX,y);y+=16;
+  ctx.font='13px sans-serif';
+  if(addr){ctx.fillText(addr,vX,y);y+=16;}
+  if(cityZip){ctx.fillText(cityZip,vX,y);y+=16;}
+  if(sh.phone||cu.phone){ctx.fillStyle='#555';ctx.font='12px sans-serif';ctx.fillText('Tel: '+(sh.phone||cu.phone),vX,y);y+=16;}
+  y+=6;sep();
+  const sMap={delivered:'CONSEGNATO',in_transit:'IN TRANSITO',out_for_delivery:'IN CONSEGNA',attempted_delivery:'TENTATIVO FALLITO',failure:'PROBLEMA'};
+  const st=f&&f.shipment_status?(sMap[f.shipment_status]||f.shipment_status.toUpperCase()):(order.fulfillment_status==='fulfilled'?'SPEDITO':'NON SPEDITO');
+  const stCol=f&&f.shipment_status==='delivered'?'#2a9d60':f&&f.shipment_status==='out_for_delivery'?'#e07a00':'#c00';
+  row('Stato spedizione',st);
+  if(f&&f.created_at)row('Data spedizione',new Date(f.created_at).toLocaleDateString('it-IT'));
+  sep();
+  const items=(order.line_items||[]).slice(0,3).map(i=>i.quantity+'x '+(i.name||'').substring(0,35)).join(' | ');
+  row('Prodotti',items||'—');
+  row('Valore ordine','€'+parseFloat(order.total_price||0).toFixed(2),true);
+  ctx.fillStyle=stCol;
+  ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W-198,38,178,26,5);else ctx.rect(W-198,38,178,26);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 12px sans-serif';ctx.textAlign='center';
+  ctx.fillText(st,W-109,56);ctx.textAlign='left';
+  ctx.fillStyle='#f5f5f5';ctx.fillRect(0,H-32,W,32);
+  ctx.fillStyle='#aaa';ctx.font='11px sans-serif';
+  ctx.fillText('Yespresso HelpDesk · '+new Date().toLocaleString('it-IT'),20,H-11);
+  ctx.textAlign='right';ctx.fillText('Tracking: '+(tn||'—'),W-20,H-11);
+  return canvas;
+}
+function generateBrtTrackingBlob(order,temuSn){
+  return new Promise(r=>{generateBrtTrackingCanvas(order,temuSn).toBlob(b=>r(b),'image/png');});
+}
+async function copyBrtTracking(orderId,btn){
+  const order=(window._temuOrderData||{})[orderId],temuSn=(window._temuOrderSn||{})[orderId];
+  if(!order){showToast('Nessun ordine disponibile','error');return;}
+  if(btn){btn.textContent='⏳ Generando...';btn.disabled=true;}
+  try{
+    const blob=await generateBrtTrackingBlob(order,temuSn);
+    try{
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+      showToast('✅ Tracking BRT copiato negli appunti');
+      if(btn){btn.textContent='✅ Copiato!';setTimeout(()=>{btn.textContent='📦 Tracking BRT';btn.disabled=false;},3000);}
+    }catch(e2){
+      const bUrl=URL.createObjectURL(blob);
+      const f2=order.fulfillments&&order.fulfillments[0];
+      const tn2=f2&&(f2.tracking_number||(f2.tracking_numbers&&f2.tracking_numbers[0]))||'tracking';
+      const a=document.createElement('a');a.href=bUrl;a.download='tracking-brt-'+tn2+'.jpg';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(bUrl),2000);
+      showToast('📥 Tracking BRT scaricato');
+      if(btn){btn.textContent='📦 Tracking BRT';btn.disabled=false;}
+    }
+  }catch(e){showToast('Errore: '+e.message,'error');if(btn){btn.textContent='📦 Tracking BRT';btn.disabled=false;}}
 }
 
 // ═══════════════════════════════════════════════
