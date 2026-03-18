@@ -1047,10 +1047,47 @@ function setView(view){
   renderTable();
 }
 
-function applySearch(){searchQuery=document.getElementById("sidebar-search").value.toLowerCase();renderTable()}
+function applySearch(){
+  searchQuery=document.getElementById("sidebar-search").value.toLowerCase().trim();
+  renderTable();
+  // Se la ricerca ha almeno 3 caratteri, cerca anche via API (ticket oltre 30 giorni)
+  clearTimeout(window._searchApiTimer);
+  if(searchQuery.length>=3){
+    window._searchApiTimer=setTimeout(async()=>{
+      try{
+        const enc=encodeURIComponent(searchQuery);
+        // Cerca per subject e per nome richiedente
+        const [r1,r2]=await Promise.all([
+          hdFetch("/v1/tickets?pageSize=20&sortOrder=desc&subject="+enc),
+          hdFetch("/v1/tickets?pageSize=20&sortOrder=desc&requesterName="+enc)
+        ]);
+        const apiTickets=[];
+        const seen=new Set(tickets.map(t=>t.ID||t.id));
+        for(const r of [r1,r2]){
+          if(r&&r.tickets) r.tickets.forEach(t=>{
+            const tid=t.ID||t.id;
+            if(!seen.has(tid)){seen.add(tid);apiTickets.push(t);}
+          });
+        }
+        if(apiTickets.length>0){
+          // Aggiunge i ticket trovati via API all'array temporaneo per mostrarli
+          window._apiSearchResults=apiTickets;
+          renderTable();
+          showToast('🔍 '+apiTickets.length+' ticket trovati oltre 30 giorni');
+        }
+      }catch(e){console.log('[SEARCH API]',e.message);}
+    },500);
+  } else {
+    window._apiSearchResults=[];
+  }
+}
 
 function getFiltered(){
-  return tickets.filter(t=>{
+  // Quando si cerca, include anche i ticket trovati via API (oltre 30 giorni)
+  const allTickets = searchQuery && window._apiSearchResults && window._apiSearchResults.length>0
+    ? [...tickets, ...window._apiSearchResults]
+    : tickets;
+  return allTickets.filter(t=>{
     // Ricerca testo
     if(searchQuery){
       const match=(t.subject||"").toLowerCase().includes(searchQuery)||
