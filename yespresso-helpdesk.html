@@ -2496,7 +2496,7 @@ async function generateReply(lastMsg,email,fullThread){
       window._credMap[credInpIdGen]={email:order.email,customerId:order.customer.id,orderId:order.id};
       html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
-    if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+    if(oArea && !skipBox){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
   loadLastCustomerOrder(email, order.id);
   } else {
     // Anche senza ordine Shopify, mostra link Amazon se ticket da marketplace.amazon
@@ -2522,9 +2522,9 @@ async function generateReply(lastMsg,email,fullThread){
         amzHtml+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Seller Central ↗</a>';
         amzHtml+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
       }
-      if(oArea){oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+      if(oArea && !skipBox){oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
     } else {
-      if(oArea){oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+      if(oArea && !skipBox){oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
     }
   // Carica comunque ultimo ordine cliente per email
   loadLastCustomerOrder(email);
