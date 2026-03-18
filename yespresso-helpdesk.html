@@ -1205,11 +1205,12 @@ async function selectTicket(tid){
 
   // Ticket Temu post-vendita: NON concatenare
   const isTemuPostVendita=email.includes("orders.temu")&&(base.subject||"").toLowerCase().includes("post-vendita");
+  const isTemuInfoSospeso=email.includes("orders.temu")&&(base.subject||"").toLowerCase().includes("notifica di ticket informativo in sospeso");
   // Non concatenare ticket da Amazon, BRT e Temu post-vendita
   const noConcat_subjects=["reso magazzino","richiesta post-vendita in sospeso","notifica di ticket informativo in sospeso"];
   const baseSubjLow=(base.subject||"").toLowerCase();
   const isNoContactSubj=noConcat_subjects.some(s=>baseSubjLow.includes(s));
-  const noConcat=isTemuPostVendita||isNoContactSubj||email.includes("donotreply@amazon")||email.includes("servizioclienti@brt")||email.includes("vasnoreply@brt")||email.includes("brt.it");
+  const noConcat=isTemuPostVendita||isTemuInfoSospeso||isNoContactSubj||email.includes("donotreply@amazon")||email.includes("servizioclienti@brt")||email.includes("vasnoreply@brt")||email.includes("brt.it");
 
   // Find all open/pending tickets for this customer
   let openTickets=noConcat?[base]:tickets.filter(t=>{
@@ -1453,6 +1454,41 @@ async function selectTicket(tid){
   if(isSolved){
     const aiReplyBox=document.querySelector(".ai-reply-box");
     if(aiReplyBox)aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>';
+  } else if(isTemuInfoSospeso){
+    // Ticket Temu "Notifica ticket informativo in sospeso" — stesso box Temu ma con bottone Richiesta
+    (async()=>{
+      const isBrtMsg3=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+      const brtFullBody3=isBrtMsg3?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
+      const searchText3=(t.subject||"")+" "+(lastMsg||"")+(brtFullBody3?" "+brtFullBody3:"");
+      const oArea=document.getElementById("order-info-area");
+      const order=await fetchShopifyOrder(searchText3,email||"",requesterName);
+      if(order&&oArea){
+        window._temuOrderData=window._temuOrderData||{};
+        window._temuOrderData[order.id]=order;
+        const temuAttrInfo=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
+        if(temuAttrInfo) window._temuOrderSn=window._temuOrderSn||{}, window._temuOrderSn[order.id]=temuAttrInfo.value;
+        const shopifyOrderUrl3='https://40f758-3.myshopify.com/admin/orders/'+order.id;
+        const sS3={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema"};
+        const fS3={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
+        const f3o=order.fulfillments&&order.fulfillments[0];
+        const shipStatus3=f3o&&f3o.shipment_status?(sS3[f3o.shipment_status]||("📦 "+f3o.shipment_status)):(fS3[order.fulfillment_status]||"⏳ Non spedito");
+        let html3='<strong>🛍️ <a href="'+shopifyOrderUrl3+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
+        html3+='<br>'+shipStatus3;
+        if(f3o&&f3o.tracking_number){const tn3=f3o.tracking_number||(f3o.tracking_numbers&&f3o.tracking_numbers[0])||"";if(tn3){const tnPod3=tn3.startsWith('26')?tn3:'26'+tn3;html3+='<br>Tracking: <strong>'+tn3+'</strong> — <a href="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn3+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia BRT</a>';}}
+        if(order.created_at)html3+='<br>📅 '+new Date(order.created_at).toLocaleDateString('it-IT');
+        if(order.total_price)html3+='<br>💶 €'+parseFloat(order.total_price).toFixed(2);
+        const items3=(order.line_items||[]).slice(0,3).map(i=>i.quantity+'x '+(i.name||'').substring(0,35)).join(', ');
+        if(items3)html3+='<br>📦 '+items3;
+        oArea.innerHTML='<div class="order-info-box">'+html3
+          +'<br><a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#ff6600;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-top:10px">🟠 Richiesta su Temu ↗</a>'
+          +'<div style="font-size:11px;color:#aaa;margin-top:8px;margin-bottom:14px">Clicca per aprire la lista ticket su Temu Seller</div>'
+          +'<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\'",this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>'
+          +'</div>';
+      } else if(oArea){
+        oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0"><a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="color:#ff6600;font-weight:700">🟠 Richiesta su Temu ↗</a></div>';
+      }
+    })();
+    loadImapAttachments(email, t.subject||"", tid2).then(()=>{ generateReply(allMsgs, email, fullThread); });
   } else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
