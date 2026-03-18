@@ -1455,45 +1455,247 @@ async function selectTicket(tid){
     const aiReplyBox=document.querySelector(".ai-reply-box");
     if(aiReplyBox)aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>';
   } else if(isTemuInfoSospeso){
-    // Ticket Temu "Notifica ticket informativo in sospeso"
-    // async costruisce box Richiesta Temu, poi chiama generateReply — nessuna race condition
-    const oAreaInfo2 = document.getElementById("order-info-area");
-    if(oAreaInfo2) oAreaInfo2.innerHTML = '<div style="font-size:11px;color:#999;padding:4px 0">\u23f3 Cerco ordine Temu...</div>';
+    // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
-      const _lm3=(t.events&&[...t.events].reverse().find(e=>e.message)?.message?.text)||"";
-      const searchText3=(t.subject||"")+" "+_lm3;
+      const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+      const brtFullBody=isBrtMsg2?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
+      const _guardTid1=t.ID||t.id;
+      const order=await fetchShopifyOrder(t.subject+(brtFullBody?" "+brtFullBody:""),email||"",name||"");
+      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid1){console.log("Temu IIFE: ticket cambiato, skip");return;}
       const oArea=document.getElementById("order-info-area");
-      const _reqName3=(t.requester&&t.requester.name)||"";
-      const order=await fetchShopifyOrder(searchText3,email||"",_reqName3);
       if(order&&oArea){
-        window._temuOrderData=window._temuOrderData||{};
-        window._temuOrderData[order.id]=order;
-        const shopifyOrderUrl3='https://40f758-3.myshopify.com/admin/orders/'+order.id;
-        const sS3={delivered:"\u2705 Consegnato",in_transit:"\ud83d\ude9a In transito",out_for_delivery:"\ud83d\udee5\ufe0f In consegna oggi",attempted_delivery:"\u26a0\ufe0f Tentativo fallito",ready_for_pickup:"\ud83d\udcec Pronto al ritiro",confirmed:"\ud83d\udccb Confermato",failure:"\u274c Problema"};
-        const fS3={fulfilled:"\ud83d\udce6 Spedito",unfulfilled:"\u23f3 Non spedito",partial:"\ud83d\udd04 Parz. spedito",pending:"\u23f3 In attesa"};
-        const f3o=order.fulfillments&&order.fulfillments[0];
-        const shipStatus3=f3o&&f3o.shipment_status?(sS3[f3o.shipment_status]||("\ud83d\udce6 "+f3o.shipment_status)):(fS3[order.fulfillment_status]||"\u23f3 Non spedito");
-        let html3='<strong>\ud83d\uded2 <a href="'+shopifyOrderUrl3+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' \u2197</a></strong>';
-        html3+='<br>'+shipStatus3;
-        if(f3o&&f3o.tracking_number){const tn3=f3o.tracking_number||(f3o.tracking_numbers&&f3o.tracking_numbers[0])||"";if(tn3){html3+='<br>Tracking: <strong>'+tn3+'</strong> \u2014 <a href="https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn3+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia BRT</a>';}}
-        if(order.created_at)html3+='<br>\ud83d\udcc5 '+new Date(order.created_at).toLocaleDateString('it-IT');
-        if(order.total_price)html3+='<br>\ud83d\udcb6 \u20ac'+parseFloat(order.total_price).toFixed(2);
-        const items3=(order.line_items||[]).slice(0,3).map(i=>i.quantity+'x '+(i.name||'').substring(0,35)).join(', ');
-        if(items3)html3+='<br>\ud83d\udce6 '+items3;
-        oArea.innerHTML='<div class="order-info-box">'+html3
-          +'<br><a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#ff6600;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-top:10px">\ud83d\udfe0 Richiesta su Temu \u2197</a>'
-          +'<div style="font-size:11px;color:#aaa;margin-top:8px;margin-bottom:14px">Clicca per aprire la lista ticket su Temu Seller</div>'
-          +'<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">\ud83d\udccb Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">\u2b07\ufe0f JPG</button></div>'
-          +'</div>';
+        const f=order.fulfillments&&order.fulfillments[0];
+        const temuAttr2=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
+        const sS2={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema spedizione"};
+        const fS2={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
+        const shipStatus2=f&&f.shipment_status;
+        const displayStatus2=shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
+        const shopifyOrderUrl2="https://40f758-3.myshopify.com/admin/orders/"+order.id;
+        let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
+
+        html2+='<br>'+displayStatus2;
+        if(f){
+          const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+          const tc2=f.tracking_company||"BRT";
+          if(tn2){const tnPod2=tn2.startsWith('26')?tn2:'26'+tn2;const brtUrl2='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn2;const podUrl2='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod2+'&PODChkCde=348365243';html2+='<br>📦 '+tc2+': <strong>'+tn2+'</strong> — <a href="'+brtUrl2+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>'; html2+=' — <a href="'+podUrl2+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 Vedi POD ↗</a>'; const podDlBtnId2='pod-dl-'+order.id;window._podUrlMap=window._podUrlMap||{};window._podUrlMap[podDlBtnId2]={podUrl:podUrl2,tn:tn2,tnPod:tnPod2}; html2+=' <span id="'+podDlBtnId2+'" onclick="downloadAndShowPod(this.id)" style="color:#8e44ad;font-size:12px;cursor:pointer;font-weight:700;text-decoration:underline">⬇️ Scarica</span>'; html2+=' <span id="urp-'+order.id+'" style="color:#fff;background:#8e44ad;font-size:11px;cursor:pointer;font-weight:700;padding:2px 7px;border-radius:4px">🔗 URL POD</span>';}
+          if(f.created_at)html2+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
+        }
+        if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
+        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
+        const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
+        window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order;
+        window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
+        html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
+        html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\'",this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\'",this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️</button></div>';
+        oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
       } else if(oArea){
-        oArea.innerHTML='<div class="order-info-box"><a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#ff6600;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none">\ud83d\udfe0 Richiesta su Temu \u2197</a><div style="font-size:11px;color:#aaa;margin-top:8px">Clicca per aprire la lista ticket su Temu Seller</div></div>';
+        oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
       }
-      // Box costruito — ora genera risposta AI (skipBox impedisce sovrascrittura)
-      window._isTemuInfoActive = true;
-      await loadImapAttachments(email, t.subject||"", tid2);
-      generateReply(allMsgs, email, fullThread);
     })();
-  } else if(isTemuPostVendita){
+    // Risposte rapide Temu
+    const temuQRs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU"));
+    // Estrai parent_order_sn e parent_after_sales_sn dal testo
+    const tkText=allMsgs+" "+t.subject;
+    const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
+    const afterSalesMatch=tkText.match(/(PO-\d{3}-\d+-D\d+)/i);
+    const orderSn=orderSnMatch?orderSnMatch[1]:"";
+    const afterSalesSn=afterSalesMatch?afterSalesMatch[1]:(orderSn?orderSn+"-D01":"");
+    const temuReturnUrl=orderSn?
+      "https://seller-eu.temu.com/return-details.html?parent_order_sn="+encodeURIComponent(orderSn)+"&parent_after_sales_sn="+encodeURIComponent(afterSalesSn):
+      "https://seller-eu.temu.com";
+    const aiReplyBox=document.querySelector(".ai-reply-box");
+    if(aiReplyBox)aiReplyBox.outerHTML=
+      '<div style="background:#fff8f0;border:2px solid #ff6600;border-radius:10px;padding:20px;text-align:center">'+
+        '<div style="font-size:13px;font-weight:700;color:#cc4400;margin-bottom:6px">⚠️ Richiesta post-vendita Temu</div>'+
+        (orderSn?'<div style="font-size:12px;color:#888;margin-bottom:14px">Ordine: <strong>'+orderSn+'</strong>'+
+          (afterSalesSn&&afterSalesSn!==orderSn?'  ·  Reso: <strong>'+afterSalesSn+'</strong>':'')+"</div>":"")+
+        '<a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#ff6600;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none">🟠 Richiesta su Temu ↗</a>'+
+        '<div style="font-size:11px;color:#aaa;margin-top:8px;margin-bottom:14px">Clicca per aprire la lista ticket su Temu Seller</div>'+
+        '<div style="border-top:1px solid #ffe0cc;padding-top:14px;margin-top:4px">'+
+        '<div style="font-size:11px;font-weight:700;color:#cc4400;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">📋 Risposte rapide Temu — clicca per copiare</div>'+
+        '<div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px"></div>'+
+        '</div>'+
+        '<div style="border-top:1px solid #ffe0cc;padding-top:14px;margin-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:10px">'+
+          '<select id="temu-status-select" style="padding:7px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:#fff">'+
+            '<option value="">Non cambiare stato</option>'+
+            '<option value="solved" selected>Solved</option>'+
+            '<option value="pending">Pending</option>'+
+            '<option value="open">Open</option>'+
+          '</select>'+
+          '<button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🚀 Submit</button>'+
+        '</div>'+
+      '</div>';
+    // Popola bottoni risposte rapide Temu
+    setTimeout(()=>{
+      const btnsDiv=document.getElementById("temu-qr-btns");
+      if(btnsDiv&&temuQRs.length){
+        btnsDiv.innerHTML=temuQRs.map((qr,i)=>{
+          window._temuQR=window._temuQR||{};
+          window._temuQR["tqr"+i]=qr.body;
+          const label=qr.name.replace(/TEMU\s*-\s*/i,"");
+          return '<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+label+'</button>';
+        }).join("");
+      }
+    },100);
+  } else {
+    // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
+    loadImapAttachments(email, t.subject||"", tid2).then(()=>{
+      generateReply(allMsgs, email, fullThread);
+    });
+  }
+  loadCustomerHistory(email, name, tid2);
+  // Per ticket BRT: cerca ordine usando il body completo dei messaggi
+  const isBrtTicketSelect=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+  if(isBrtTicketSelect){
+    setTimeout(async()=>{
+      const oArea=document.getElementById("order-info-area");
+      if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">🔍 Ricerca ordine BRT...</div>';
+      const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+      const brtSearchText=(t.subject||"")+" "+brtFullText;
+      const _guardTid3=t.ID||t.id;
+      const brtOrder=await fetchShopifyOrder(brtSearchText,email||"",name||"");
+      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid3){console.log("BRT IIFE: ticket cambiato, skip");return;}
+      if(brtOrder&&oArea){
+        // Popola order-info-area direttamente come per gli altri ticket
+        const f=brtOrder.fulfillments&&brtOrder.fulfillments[0];
+        const sS={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",failure:"❌ Problema"};
+        const fS={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
+        const displayStatus=(f&&f.shipment_status)?(sS[f.shipment_status]||("📦 "+f.shipment_status)):(fS[brtOrder.fulfillment_status]||"⏳ Non spedito");
+        const shopifyUrl="https://40f758-3.myshopify.com/admin/orders/"+brtOrder.id;
+        let html='<strong>🛍️ <a href="'+shopifyUrl+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(brtOrder.name||("#"+brtOrder.order_number))+' ↗</a></strong>';
+        html+='<br>'+displayStatus;
+        if(f){
+          const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+          if(tn){const tnPodBrt=tn.startsWith('26')?tn:'26'+tn;const brtTrackUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn;const brtUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPodBrt+'&PODChkCde=348365243';html+='<br>📦 BRT: <strong>'+tn+'</strong> — <a href="'+brtTrackUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';}
+          if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
+        }
+        // Link modifica indirizzo se non spedito
+        const notShipped2=!brtOrder.fulfillment_status||brtOrder.fulfillment_status==="unfulfilled";
+        if(notShipped2){const cloudUrl2='https://yespresso.cloud/orders-transmission?status=to_transmit&searchString=%23'+(brtOrder.order_number||brtOrder.name.replace("#",""));html+='<br>📍 <a href="'+cloudUrl2+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Modifica indirizzo ↗</a>';}
+        // Detect source
+        const brtSource=detectOrderSource(brtOrder);
+        const amzBrt=(brtOrder.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
+        if(amzBrt){html+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3/order/'+amzBrt.value+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';}
+        const temuBrt=(brtOrder.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id"].includes(a.name));
+        if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
+        if(brtSource==="sito"){
+          html+='<br>📍 <a href="https://yespresso.cloud/orders-transmission?status=to_transmit&searchString=%23'+(brtOrder.order_number||"")+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Modifica indirizzo ↗</a>';
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
+        }
+        oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+      } else if(oArea){
+        oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
+      }
+    },500);
+  } else {
+    setTimeout(()=>{if(email)loadLastCustomerOrder(email);}, 800);
+  }
+  // Allegati IMAP già caricati sopra per ticket normali
+  // Popola tags
+  setTimeout(()=>{
+    const tagsEl=document.getElementById("ticket-tags-area");
+    const agentEl=document.getElementById("ticket-agent-area");
+    if(tagsEl){
+      const tagIDs=t.tagIDs||t.tags||[];
+      if(tagsEl){
+        if(tagIDs.length){
+          const tagNames=tagIDs.map(id=>{const tg=tagsList.find(tg=>tg.ID===id);return tg?tg.name:id;});
+          tagsEl.innerHTML=tagNames.map(name=>'<span style="background:#e8f0fe;color:#1a73e8;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600">🏷️ '+name+'</span>').join(" ");
+        } else {
+          tagsEl.innerHTML='<span style="color:#aaa;font-size:11px">No tags</span>';
+        }
+      }
+    }
+    if(agentEl){
+      const agent=t.assignment&&t.assignment.agent;
+      const team=t.assignment&&t.assignment.team;
+      if(agentEl){
+        if(agent){
+          const agentName=agent.name||agent.fullName||agent.email||"Agente";
+          agentEl.innerHTML='<div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:24px;border-radius:50%;background:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff">'+agentName[0].toUpperCase()+'</div><span style="font-size:13px">'+agentName+'</span></div>'+(team?'<div style="font-size:11px;color:#888;margin-top:2px">Team: '+team.name+'</div>':"");
+        } else if(team){
+          agentEl.innerHTML='<div style="font-size:12px;color:#555">👥 '+team.name+'</div><div style="font-size:11px;color:#aaa">Nessun agente assegnato</div>';
+        } else {
+          agentEl.innerHTML='<span style="color:#aaa;font-size:11px">Non assegnato</span>';
+        }
+      }
+    }
+  }, 100);
+}
+
+function renderMsgBlock(text, attachments){
+  const rendered = renderMessageHtml(text, attachments);
+  const isHtml = rendered.includes('email-inner');
+  if(isHtml){
+    // Crea un div nascosto, inserisci l'HTML, poi copialo in un iframe via JS dopo il render
+    const uid = 'eml_'+Math.random().toString(36).slice(2);
+    // Usa un div con data-html per poi creare l'iframe dinamicamente
+    return '<div class="msg-body msg-body-email"><div class="email-frame-wrap" id="'+uid+'" data-html="'+encodeURIComponent(rendered)+'"><div class="email-inner">'+rendered+'</div></div></div>';
+  }
+  return '<div class="msg-body msg-body-plain">'+rendered+'</div>';
+}
+
+function renderMessageHtml(text, attachments){
+  if(!text&&(!attachments||!attachments.length))return"<em style='color:#aaa'>Nessun messaggio</em>";
+
+  let bodyHtml="";
+  let raw=text||"";
+  console.log("📨 MSG RAW (first 400):", JSON.stringify(raw.substring(0,400)));
+  console.log("📨 MSG RAW (last 400):", JSON.stringify(raw.slice(-400)));
+
+  // Step 1: decodifica entities escaped (&lt;a&gt; -> <a>)
+  if(raw.includes("&lt;")||raw.includes("&amp;")){
+    raw=raw.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,"&");
+  }
+
+  // Step 1b: rimuovi frammenti di attributi HTML che Amazon lascia dopo gli URL
+  // Pattern: URL" target="_blank" class="msg-url-btn"> Testo label
+  raw=raw.replace(/"( target="_blank"| rel="noopener")[^<\n]{0,120}/g,'"');
+  raw=raw.replace(/ target="_blank" class="[^"]*">[^\n<]{0,50}/g,"");
+  raw=raw.replace(/ class="msg-url-btn">[^\n<]{0,50}/g,"");
+
+  // Step 2: rileva HTML reale
+  const hasHtml=/<[a-zA-Z][a-zA-Z0-9]*[\s\/>/]/i.test(raw);
+
+  // Distingui email Amazon (template con <center>/tabelle) da HTML normale
+  const isAmazonEmail=raw.includes('background-color:#e4e3e4')||raw.includes('Ember, Arial')||raw.includes('sellercentral.amazon');
+
+  if(hasHtml && isAmazonEmail){
+    // ── PARSER EMAIL AMAZON ──
+    const tmp=document.createElement('div');
+    tmp.innerHTML=raw;
+    let orderNum="", customerMsg="", extraLinks=[];
+    const allText=tmp.innerText||tmp.textContent||"";
+    const onMatch=allText.match(/Numero ordine[:\s]+([0-9]{3}-[0-9]{7}-[0-9]{7})/i);
+    if(onMatch)orderNum=onMatch[1];
+    const msgStart=allText.indexOf("Messaggio:");
+    if(msgStart>=0){
+      const markers=["Visualizza messaggio","Fine messaggio","Questo servizio","Copyright","Risolvi caso","Segnala attività"];
+      let msgEnd=-1;
+      for(const m of markers){const idx=allText.indexOf(m,msgStart+10);if(idx>0&&(msgEnd<0||idx<msgEnd))msgEnd=idx;}
+      if(msgEnd<0)msgEnd=msgStart+600;
+      customerMsg=allText.slice(msgStart+10,msgEnd).trim();
+    }
+    if(!customerMsg){
+      const footerMarkers=["Nota informativa:","Copyright 20","Questo servizio è fornito","Il nostro obiettivo","Ci auguriamo","Shopping online sicuro","Per interrompere"];
+      let fullText=allText;
+      for(const m of footerMarkers){const idx=fullText.indexOf(m);if(idx>50)fullText=fullText.slice(0,idx);}
+      customerMsg=fullText.replace(/[\n]{3,}/g,"\n\n").trim();
+    }
+    tmp.querySelectorAll('a[href]').forEach(a=>{
+      const href=a.href||a.getAttribute('href')||'';
+      if(href.includes('sellercentral')&&!href.includes('survey')){
+        const t=(a.innerText||a.textContent||'').trim()||'Seller Central';
+        extraLinks.push({href,label:t.substring(0,40)});
+      }
+    });
+    let parts=[];
+    if(orderNum)parts.push('<div style="font-size:11px;color:#888;margin-bottom:6px">📦 Ordine Amazon: <strong>'+orderNum+'</strong></div>');
+    if(customerMsg){const safe=customerMsg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");parts.push('<div style="white-space:pre-wrap;font-size:16px;line-height:1.3;color:#1a1a2e;padding:2px 0">'+safe+'</div>');}
+    if(extraLinks.length){const btns=extraLinks.slice(0,3).map(l=>{const lbl=l.label.toLowerCase();let icon=lbl.includes('visualizza')?'👁':lbl.includes('risolvi')?'✅':lbl.includes('segnala')?'🚩':'📋';return '<a href="'+l.href+'" target="_blank" class="msg-url-btn">'+icon+' '+l.label+'</a>';}).join(' ');parts.push('<div style="margin-top:4px">'+btns+'</div>');}
+    bodyHtml='<div style="font-size:13px;line-height:1.7;word-break:break-word;padding:14px;display:flex;flex-direction:column;gap:8px">'+(parts.join('')||'<em style="color:#aaa">Messaggio vuoto</em>')+'</div>';
+} else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
       const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
