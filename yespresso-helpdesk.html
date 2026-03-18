@@ -1489,6 +1489,8 @@ async function selectTicket(tid){
       }
     })();
     loadImapAttachments(email, t.subject||"", tid2).then(()=>{ generateReply(allMsgs, email, fullThread); });
+    // Segna che l'area ordine è già stata costruita da isTemuInfoSospeso
+    if(oArea) oArea.dataset.builtByInfo = '1';
   } else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
@@ -2379,7 +2381,9 @@ async function generateReply(lastMsg,email,fullThread){
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
 
   const oArea=document.getElementById("order-info-area");
-  if(order){
+  // Non sovrascrivere il box se è già stato costruito da isTemuInfoSospeso
+  const oAreaHasRichiesta = oArea && oArea.innerHTML.includes('Richiesta su Temu');
+  if(order && !oAreaHasRichiesta){
     const f=order.fulfillments&&order.fulfillments[0];
     const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
     // Stato spedizione dettagliato (shipment_status ha precedenza su fulfillment_status)
