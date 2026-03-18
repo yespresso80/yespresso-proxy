@@ -1179,7 +1179,7 @@ async function selectTicket(tid){
     if((t.status!=="open"&&t.status!=="pending"))return false;
     const te=(t.requester&&t.requester.email)||"";
     const tn=(t.requester&&t.requester.name)||"";
-    return (email&&te===email)||(name&&name!=="Cliente"&&tn===name);
+    return email&&te===email; // concatena SOLO per email uguale, mai per nome
   });
 
   // Sort by date asc (oldest first = reading order), newest = main ticket
