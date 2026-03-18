@@ -2711,13 +2711,8 @@ async function loadCustomerHistory(email, name, currentTid){
     });
   }
 
-  // Fallback: match by name if no email match or email is marketplace
-  if(related.length===0&&name&&name.length>3&&name!=="Cliente"){
-    related=tickets.filter(t=>{
-      const tn=(t.requester&&t.requester.name)||"";
-      return tn.toLowerCase()===name.toLowerCase()&&(t.ID||t.id)!==currentTid;
-    });
-  }
+  // Fallback per nome RIMOSSO — nomi comuni (es. Antonio) causano mix tra clienti diversi
+  // La storia ticket si basa SOLO sull'email
 
   // Also try to fetch more solved tickets from API for this customer
   // requesterEmail non supportato da HelpDesk API (422) — usiamo solo i ticket già in memoria
