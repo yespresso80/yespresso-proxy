@@ -2014,25 +2014,37 @@ async function fetchShopifyOrder(message,email,requesterName){
       const ftOrders=(dFt&&dFt.orders)||[];
       const ftFound=findInNoteAttributes(ftOrders,["Amazon Order Id"],amzId);
       if(ftFound){console.log("✅ Trovato via full-text Amazon");return ftFound;}
-      // 1b. Scan paginata su source_name=amazon (copre ordini storici Amazon)
-      console.log("→ Full-text non trovato — avvio scan Amazon source_name=amazon");
-      let amzPageInfo=null, amzFound=null, amzPage=0;
-      while(!amzFound && amzPage<100){
-        amzPage++;
-        let amzPath='orders.json?status=any&limit=250&source_name=amazon&fields=id,name,order_number,note_attributes,fulfillment_status,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
-        if(amzPageInfo) amzPath+='&page_info='+amzPageInfo;
-        const amzR=await shopifyGet(amzPath);
-        const amzOrders=(amzR&&amzR.orders)||[];
-        if(!amzOrders.length) break;
-        amzFound=findInNoteAttributes(amzOrders,["Amazon Order Id"],amzId);
-        if(amzFound) break;
-        const amzLink=amzR._nextPageInfo||'';
-        // _nextPageInfo contiene direttamente il token
-        amzPageInfo=amzLink||null;
-        if(!amzPageInfo) break;
+      // 1b. Full-text senza trattini
+      const dFt2=await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(amzId.replace(/-/g,'')));
+      const ftFound2=findInNoteAttributes((dFt2&&dFt2.orders)||[],['Amazon Order Id'],amzId);
+      if(ftFound2){console.log('✅ Trovato via full-text Amazon v2');return ftFound2;}
+      // 1c. Scan Amazon PARALLELO per finestre temporali (max 3 pagine/finestra)
+      console.log('→ Scan Amazon parallelo per finestre');
+      const amzFlds='id,name,order_number,note_attributes,fulfillment_status,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
+      const amzWins=[
+        ['2026-02-16T12:46:17.863Z','2026-03-18T12:46:17.863Z'],
+        ['2025-11-18T12:46:17.863Z','2026-02-16T12:46:17.863Z'],
+        ['2025-03-18T12:46:17.863Z','2025-11-18T12:46:17.863Z'],
+        ['2024-03-18T12:46:17.863Z','2025-03-18T12:46:17.863Z'],
+        ['2022-03-19T12:46:17.863Z','2024-03-18T12:46:17.863Z'],
+      ];
+      for(const [wMin,wMax] of amzWins){
+        const q='orders.json?status=any&limit=250&source_name=amazon&fields='+amzFlds+'&created_at_min='+wMin+'&created_at_max='+wMax+'&order=created_at+desc';
+        const r1=await shopifyGet(q);
+        const o1=(r1&&r1.orders)||[];
+        const hit1=findInNoteAttributes(o1,['Amazon Order Id'],amzId);
+        if(hit1){console.log('✅ Trovato window p1');return hit1;}
+        if(!o1.length||!r1._nextPageInfo)continue;
+        const r2=await shopifyGet('orders.json?status=any&limit=250&page_info='+r1._nextPageInfo);
+        const hit2=findInNoteAttributes((r2&&r2.orders)||[],['Amazon Order Id'],amzId);
+        if(hit2){console.log('✅ Trovato window p2');return hit2;}
+        if(r2&&r2._nextPageInfo){
+          const r3=await shopifyGet('orders.json?status=any&limit=250&page_info='+r2._nextPageInfo);
+          const hit3=findInNoteAttributes((r3&&r3.orders)||[],['Amazon Order Id'],amzId);
+          if(hit3){console.log('✅ Trovato window p3');return hit3;}
+        }
       }
-      if(amzFound){console.log("✅ Trovato via scan Amazon source_name page "+amzPage);return amzFound;}
-      console.log("❌ Amazon Order Id non trovato");
+      console.log('❌ Amazon Order Id non trovato');
     }
 
     // 2. Temu order number (formato PO-098-XXXXX)
