@@ -168,32 +168,45 @@ function findAttachmentsForTicket(requesterEmail, subject) {
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
     const dataSubjNorm = (data.subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
+    // Normalizza \r\n nel subject IMAP (alcuni client mandano subject multiriga)
+    const dataSubjClean = dataSubjNorm.replace(/\r?\n\s*/g," ");
 
     let isMatch = false;
 
     if (isAmazon && amazonOrderId) {
-      // Prima cerca il numero ordine esatto nel subject IMAP
-      if (dataSubjNorm.includes(amazonOrderId)) {
+      // Match SOLO se il numero ordine Amazon e presente nel subject IMAP
+      // Cerchiamo sia nella versione originale che in quella pulita (senza \r\n)
+      if (dataSubjClean.includes(amazonOrderId) || dataSubjNorm.includes(amazonOrderId)) {
         isMatch = true;
-      } else {
-        // Fallback: match sui primi 50 char del subject (senza la parte con numero ordine)
+      }
+      // Fallback subject SOLO se il ticket NON ha un numero ordine Amazon nel subject
+      // (es. cliente risponde con subject completamente diverso tipo "Ho un problema")
+      // NON usare il fallback se il ticket HA un numero ordine: evita di matchare
+      // ticket diversi con soggetti identici tipo "Articolo danneggiato...(Ordine: xxx)"
+      // (il numero ordine diverso e l'unica differenza e viene rimossa nel fallback)
+    } else if (isAmazon && !amazonOrderId) {
+      // Nessun numero ordine nel subject del ticket: usa fallback su email + subject base
+      // Verifica prima che l'email mittente corrisponda (stessa email Amazon anonima)
+      const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
+      if (emailMatch) {
+        // Match subject escludendo il numero ordine da entrambi i lati
         const subjBase = subjNorm.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").replace(/\s*\(order[:\s]+[\d-]+\)/gi,"").trim();
-        const dataSubjBase = dataSubjNorm.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").replace(/\s*\(order[:\s]+[\d-]+\)/gi,"").trim();
-        const minLen = Math.min(subjBase.length, dataSubjBase.length, 50);
-        if (minLen >= 15 && (dataSubjBase.includes(subjBase.substring(0,minLen)) || subjBase.includes(dataSubjBase.substring(0,minLen)))) {
+        const dataBase = dataSubjClean.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").replace(/\s*\(order[:\s]+[\d-]+\)/gi,"").trim();
+        const minLen = Math.min(subjBase.length, dataBase.length, 50);
+        if (minLen >= 15 && (dataBase.includes(subjBase.substring(0,minLen)) || subjBase.includes(dataBase.substring(0,minLen)))) {
           isMatch = true;
-          console.log("[IMAP] Amazon fallback subject match:", dataSubjNorm.substring(0,70));
+          console.log("[IMAP] Amazon fallback (no order in subject):", dataSubjNorm.substring(0,70));
         }
       }
     } else if (isMarketplace) {
       const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
-      const minLen = Math.min(subjNorm.length, dataSubjNorm.length, 40);
-      const subjMatch = minLen >= 10 && (dataSubjNorm.includes(subjNorm.substring(0, minLen)) || subjNorm.includes(dataSubjNorm.substring(0, minLen)));
+      const minLen = Math.min(subjNorm.length, dataSubjClean.length, 40);
+      const subjMatch = minLen >= 10 && (dataSubjClean.includes(subjNorm.substring(0, minLen)) || subjNorm.includes(dataSubjClean.substring(0, minLen)));
       isMatch = emailMatch && subjMatch;
     } else {
       const emailMatch = emailLow && fromLow && fromLow === emailLow;
-      const minLen = Math.min(subjNorm.length, dataSubjNorm.length, 30);
-      const subjMatch = minLen >= 10 && (dataSubjNorm.includes(subjNorm.substring(0, minLen)) || subjNorm.includes(dataSubjNorm.substring(0, minLen)));
+      const minLen = Math.min(subjNorm.length, dataSubjClean.length, 30);
+      const subjMatch = minLen >= 10 && (dataSubjClean.includes(subjNorm.substring(0, minLen)) || subjNorm.includes(dataSubjClean.substring(0, minLen)));
       isMatch = emailMatch && subjMatch;
     }
 
@@ -219,7 +232,6 @@ const server = http.createServer(async function(req, res) {
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
 
-  // TikTok routes
   if (req.url === "/tiktok/auth-url") {
     const state = "yespresso_" + Date.now();
     const authUrl = `https://auth.tiktok-shops.com/oauth/authorize?app_key=${TT_APP_KEY}&redirect_uri=${encodeURIComponent(TT_REDIRECT_URI)}&state=${state}`;
@@ -354,7 +366,6 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // Debug: lista tutti subject IMAP in cache
   if (req.url.startsWith("/imap/debug")) {
     await syncImapAttachments();
     const qsD = req.url.split("?")[1] || "";
@@ -424,9 +435,6 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-  // Controlla se spedizione e al fermopoint BRT (scraping pagina pubblica VAS)
-  // CRITERI PRECISI: cerca solo indicatori espliciti di fermopoint attivo,
-  // esclude se la pagina mostra una data di consegna effettiva a domicilio
   if (req.url.startsWith("/brt/check-fermopoint")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -437,32 +445,18 @@ async function brtRestPost(p, body, useTrackingBase) {
       const pageRes = await fetch(vasUrl, { headers: { "User-Agent": BRT_UA, "Accept": "text/html" } });
       const pageHtml = await pageRes.text();
       const pageLow = pageHtml.toLowerCase();
-
-      // SEGNALI POSITIVI: testo specifico che indica pacco AL fermopoint in attesa di ritiro
-      // Questi sono testi che appaiono SOLO quando il pacco e effettivamente al fermopoint
       const hasArrivataBRT = pageLow.includes("arrivata al brt-fermopoint");
       const hasRitiroDisponibile = pageLow.includes("ritiro disponibile");
       const hasInAttesaRitiro = pageLow.includes("in attesa di ritiro");
       const hasDisponibileAlRitiro = pageLow.includes("disponibile al brt-fermopoint");
-
-      // SEGNALI NEGATIVI: testo che indica consegna effettiva avvenuta a domicilio
-      // Se la pagina mostra questi, il pacco e stato consegnato (non e al fermopoint)
       const hasConsegnatoAMani = pageLow.includes("consegnato a mani");
       const hasConsegnatoDestinatario = pageLow.includes("consegnato al destinatario");
       const hasFirmatario = pageLow.includes("firmatario") && (pageLow.includes("firma:") || pageLow.includes("firmato da"));
-      // Data consegna effettiva nel formato DD/MM/YYYY nelle celle di consegna
       const hasDataConsegnaEffettiva = /consegn[ao][^<]{0,50}\d{2}[\/.\-]\d{2}[\/.\-]\d{4}/i.test(pageHtml);
-
-      // Logica finale: fermopoint SOLO se c'e almeno un segnale positivo esplicito
-      // E non ci sono segnali di consegna effettiva a domicilio
       const atFermopoint = (hasArrivataBRT || hasRitiroDisponibile || hasInAttesaRitiro || hasDisponibileAlRitiro)
                         && !hasConsegnatoAMani && !hasConsegnatoDestinatario && !hasFirmatario && !hasDataConsegnaEffettiva;
-
-      // Estrai scadenza ritiro
       const scadMatch = pageHtml.match(/fino al\s*([\d.\/-]+)/i) || pageHtml.match(/ritiro disponibile[^<]{0,60}(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
       const scadenza = scadMatch ? scadMatch[1].trim() : "";
-
-      // Estrai ubicazione punto di ritiro
       let puntoInfo = "";
       if (atFermopoint) {
         const rows = [...pageHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
@@ -474,13 +468,7 @@ async function brtRestPost(p, body, useTrackingBase) {
           }
         }
       }
-
-      console.log("[BRT fermopoint] nspediz:", nspediz,
-        "| arrivataBRT:", hasArrivataBRT, "| ritiroDisp:", hasRitiroDisponibile,
-        "| inAttesa:", hasInAttesaRitiro, "| consegnatoAMani:", hasConsegnatoAMani,
-        "| firmatario:", hasFirmatario, "| dataConsegna:", hasDataConsegnaEffettiva,
-        "| RESULT:", atFermopoint, "| scadenza:", scadenza);
-
+      console.log("[BRT fermopoint] nspediz:", nspediz, "| arrivataBRT:", hasArrivataBRT, "| ritiroDisp:", hasRitiroDisponibile, "| RESULT:", atFermopoint);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, at_fermopoint: atFermopoint, scadenza_ritiro: scadenza, punto_info: puntoInfo }));
     } catch(e) {
