@@ -2057,8 +2057,10 @@ async function fetchShopifyOrder(message,email,requesterName){
     const msgNoAmz=decodedMsg.replace(/\d{3}-\d{7}-\d{7}/g,"AMZID");
     const shopifyMatches=[...msgNoAmz.matchAll(/#(\d{4,12})/g)].map(m=>m[1]);
     const uniqueNums=[...new Set(shopifyMatches)].sort((a,b)=>b.length-a.length);
-    const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order)[^\d#]*(\d{8,12})/gi)].map(m=>m[1]);
-    const allNums=[...new Set([...uniqueNums,...orderWordMatches])].sort((a,b)=>b.length-a.length);
+    const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order|shopify)[^\d#]*(\d{4,12})/gi)].map(m=>m[1]);
+    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches])].sort((a,b)=>b.length-a.length);
+    // Escludi numeri che sembrano tracking BRT (12+ cifre che iniziano con 179 o 26)
+    const allNums=allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26'))));
     console.log("🔢 Numeri ordine trovati:", allNums.slice(0,5));
 
     for(const num of allNums.slice(0,5)){
