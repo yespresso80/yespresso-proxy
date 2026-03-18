@@ -809,8 +809,6 @@ async function loadTickets(){
     currentPage=1;
     updateBadges();
     renderTable();
-    // Pre-genera risposte AI in background dopo caricamento ticket
-    setTimeout(() => preGenerateAIReplies(tickets), 4000);
     const now=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
     countEl.textContent=(tickets.length)+" ticket · aggiornato "+now;
 
@@ -1197,79 +1195,7 @@ function goPage(p){
   document.getElementById("ticket-rows").scrollTop=0;
 }
 
-async // ═══ PRE-CARICAMENTO RISPOSTE AI ═══
-window._aiCache = window._aiCache || {};
-window._aiCacheInProgress = window._aiCacheInProgress || new Set();
-
-async function preGenerateAIReplies(tickets) {
-  // Pre-genera risposte AI per i 5 ticket open più recenti non ancora in cache
-  const openTickets = tickets
-    .filter(t => t.status === 'open' || t.status === 'pending')
-    .sort((a,b) => new Date(b.lastMessageAt||b.updatedAt||0) - new Date(a.lastMessageAt||a.updatedAt||0))
-    .slice(0, 5);
-  
-  for(const t of openTickets) {
-    const tid = t.ID||t.id;
-    if(window._aiCache[tid] || window._aiCacheInProgress.has(tid)) continue;
-    window._aiCacheInProgress.add(tid);
-    // Non bloccare: lancia in background senza await
-    preGenSingleTicket(t).catch(e => console.log('[AI pre-gen] errore:', e.message));
-    // Pausa tra un ticket e l'altro per non sovraccaricare
-    await new Promise(r => setTimeout(r, 2000));
-  }
-}
-
-async function preGenSingleTicket(t) {
-  const tid = t.ID||t.id;
-  try {
-    // Carica i dettagli completi del ticket
-    const res = await fetch(PROXY + '/api/v1/tickets/' + tid + '?include=requester,events');
-    if(!res.ok) return;
-    const data = await res.json();
-    const ticket = data.ticket || data;
-    const events = ticket.events || [];
-    const email = (ticket.requester&&ticket.requester.email)||'';
-    const lastEvent = events.filter(e=>e.message).pop();
-    const lastMsg = lastEvent?.message?.text||'';
-    const allMsgs = events.filter(e=>e.message).map(e=>e.message.text||'').join('\n');
-    
-    // Costruisci fullThread (ultimi 3 messaggi)
-    const recentEvents = events.filter(e=>e.message).slice(-3);
-    const fullThread = recentEvents.map(e => {
-      const who = e.fromName||email||'Cliente';
-      return who+': '+(e.message.text||'').substring(0,300);
-    }).join('\n---\n');
-    
-    // Cerca ordine Shopify
-    const subject = ticket.subject||'';
-    const requesterName = (ticket.requester&&ticket.requester.name)||'';
-    const order = await fetchShopifyOrder(subject+' '+lastMsg, email, requesterName);
-    const orderInfo = formatOrderInfo(order);
-    
-    // Chiama Claude API
-    const anthropicRes = await fetch(PROXY+'/anthropic/v1/messages', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-5', max_tokens:1000,
-        system: buildSystemPrompt ? buildSystemPrompt() : 'Sei assistente clienti Yespresso. Rispondi in italiano.',
-        messages:[{role:'user', content: 'Cliente: '+(ticket.requester&&ticket.requester.name)+' | Email: '+email+(orderInfo?'\n\nDati ordine: '+orderInfo:'')+'\n\nUltimo messaggio: '+lastMsg+'\n\nRispondi.'}]
-      })
-    });
-    if(!anthropicRes.ok) return;
-    const anthropicData = await anthropicRes.json();
-    const reply = anthropicData.content?.[0]?.text||'';
-    if(reply.length > 10) {
-      window._aiCache[tid] = { reply, order, orderInfo, timestamp: Date.now() };
-      console.log('[AI pre-gen] \u2705 cached:', subject.substring(0,40));
-    }
-  } catch(e) {
-    console.log('[AI pre-gen] skip:', e.message);
-  } finally {
-    window._aiCacheInProgress.delete(tid);
-  }
-}
-
-function selectTicket(tid){
+async function selectTicket(tid){
   // Find all open tickets for same customer and redirect to newest
   let base=tickets.find(t=>(t.ID||t.id)===tid);
   if(!base)return;
@@ -2381,29 +2307,7 @@ async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
 
 async function generateReply(lastMsg,email,fullThread){
   const t=selectedTicket;
-  const tid=t&&(t.ID||t.id);
   const genBox=document.getElementById("gen-box");
-  
-  // Controlla cache AI pre-generata
-  if(tid && window._aiCache && window._aiCache[tid]) {
-    const cached = window._aiCache[tid];
-    const ageMin = (Date.now() - cached.timestamp) / 60000;
-    if(ageMin < 30) { // valida per 30 minuti
-      if(genBox) genBox.innerHTML = '<div style="font-size:11px;color:#2a9d60;margin-bottom:6px">\u26a1 Risposta pre-generata</div>' + cached.reply;
-      // Mostra anche ordine se in cache
-      if(cached.order) {
-        const oArea=document.getElementById("order-info-area");
-        if(oArea && !oArea.innerHTML.includes('Richiesta su Temu') && !window._skipOrderBox) {
-          // Costruisci il box ordine dalla cache
-          selectedOrder = cached.order;
-        }
-      }
-      delete window._aiCache[tid]; // usa una volta sola
-      console.log('[AI cache] \u26a1 risposta dalla cache, age:', Math.round(ageMin)+'min');
-      return;
-    }
-  }
-  
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
 
   // Controllo numero ordine Amazon mancante
