@@ -424,8 +424,9 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
-
   // Controlla se spedizione e al fermopoint BRT (scraping pagina pubblica VAS)
+  // CRITERI PRECISI: cerca solo indicatori espliciti di fermopoint attivo,
+  // esclude se la pagina mostra una data di consegna effettiva a domicilio
   if (req.url.startsWith("/brt/check-fermopoint")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
@@ -436,32 +437,50 @@ async function brtRestPost(p, body, useTrackingBase) {
       const pageRes = await fetch(vasUrl, { headers: { "User-Agent": BRT_UA, "Accept": "text/html" } });
       const pageHtml = await pageRes.text();
       const pageLow = pageHtml.toLowerCase();
-      const isFermopoint = pageLow.includes("fermopoint") || pageLow.includes("fermo point");
-      const isPickupReady = pageLow.includes("ritiro disponibile") || pageLow.includes("disponibile al ritiro");
-      const scadMatch = pageHtml.match(/fino al\s*([\d./-]+)/i);
-      const scadenza = scadMatch ? scadMatch[1] : "";
-      const atFermopoint = isFermopoint || isPickupReady;
-      // Estrai nome e indirizzo del punto di ritiro dalla pagina BRT
+
+      // SEGNALI POSITIVI: testo specifico che indica pacco AL fermopoint in attesa di ritiro
+      // Questi sono testi che appaiono SOLO quando il pacco e effettivamente al fermopoint
+      const hasArrivataBRT = pageLow.includes("arrivata al brt-fermopoint");
+      const hasRitiroDisponibile = pageLow.includes("ritiro disponibile");
+      const hasInAttesaRitiro = pageLow.includes("in attesa di ritiro");
+      const hasDisponibileAlRitiro = pageLow.includes("disponibile al brt-fermopoint");
+
+      // SEGNALI NEGATIVI: testo che indica consegna effettiva avvenuta a domicilio
+      // Se la pagina mostra questi, il pacco e stato consegnato (non e al fermopoint)
+      const hasConsegnatoAMani = pageLow.includes("consegnato a mani");
+      const hasConsegnatoDestinatario = pageLow.includes("consegnato al destinatario");
+      const hasFirmatario = pageLow.includes("firmatario") && (pageLow.includes("firma:") || pageLow.includes("firmato da"));
+      // Data consegna effettiva nel formato DD/MM/YYYY nelle celle di consegna
+      const hasDataConsegnaEffettiva = /consegn[ao][^<]{0,50}\d{2}[\/.\-]\d{2}[\/.\-]\d{4}/i.test(pageHtml);
+
+      // Logica finale: fermopoint SOLO se c'e almeno un segnale positivo esplicito
+      // E non ci sono segnali di consegna effettiva a domicilio
+      const atFermopoint = (hasArrivataBRT || hasRitiroDisponibile || hasInAttesaRitiro || hasDisponibileAlRitiro)
+                        && !hasConsegnatoAMani && !hasConsegnatoDestinatario && !hasFirmatario && !hasDataConsegnaEffettiva;
+
+      // Estrai scadenza ritiro
+      const scadMatch = pageHtml.match(/fino al\s*([\d.\/-]+)/i) || pageHtml.match(/ritiro disponibile[^<]{0,60}(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
+      const scadenza = scadMatch ? scadMatch[1].trim() : "";
+
+      // Estrai ubicazione punto di ritiro
       let puntoInfo = "";
       if (atFermopoint) {
-        // Cerca il nome del fermopoint (es. "BAR ROMA - VIA ROMA 1, MILANO")
-        const puntoMatch = pageHtml.match(/fermopoint[^<]*<[^>]+>([^<]{5,80})</i) ||
-                           pageHtml.match(/punto di ritiro[^<]*<[^>]+>([^<]{5,80})</i) ||
-                           pageHtml.match(/BRT-fermopoint[\s\S]{0,200}?<td[^>]*>([^<]{10,100})</i);
-        if (puntoMatch) puntoInfo = puntoMatch[1].trim().replace(/\s+/g, ' ');
-        // Se non trovato esplicitamente, cerca in tabelle/celle vicino a fermopoint
-        if (!puntoInfo) {
-          const rows = [...pageHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
-          for (const row of rows) {
-            if (row[1].toLowerCase().includes('fermopoint') || row[1].toLowerCase().includes('punto di ritiro')) {
-              const cells = [...row[1].matchAll(/<td[^>]*>([^<]{5,100})<\/td>/gi)];
-              const vals = cells.map(c => c[1].trim()).filter(v => v.length > 5 && !/^[\s<>]+$/.test(v));
-              if (vals.length > 0) { puntoInfo = vals.join(' - '); break; }
-            }
+        const rows = [...pageHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+        for (const row of rows) {
+          if (row[1].toLowerCase().includes("fermopoint") || row[1].toLowerCase().includes("punto di ritiro")) {
+            const cells = [...row[1].matchAll(/<td[^>]*>([^<]{5,100})<\/td>/gi)];
+            const vals = cells.map(c => c[1].trim()).filter(v => v.length > 5 && !/^[\s<>]+$/.test(v));
+            if (vals.length > 0) { puntoInfo = vals.join(" - "); break; }
           }
         }
       }
-      console.log("[BRT fermopoint] nspediz:", nspediz, "| at_fermopoint:", atFermopoint, "| scadenza:", scadenza, "| punto:", puntoInfo.substring(0,50));
+
+      console.log("[BRT fermopoint] nspediz:", nspediz,
+        "| arrivataBRT:", hasArrivataBRT, "| ritiroDisp:", hasRitiroDisponibile,
+        "| inAttesa:", hasInAttesaRitiro, "| consegnatoAMani:", hasConsegnatoAMani,
+        "| firmatario:", hasFirmatario, "| dataConsegna:", hasDataConsegnaEffettiva,
+        "| RESULT:", atFermopoint, "| scadenza:", scadenza);
+
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, at_fermopoint: atFermopoint, scadenza_ritiro: scadenza, punto_info: puntoInfo }));
     } catch(e) {
