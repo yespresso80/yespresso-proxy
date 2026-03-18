@@ -2649,7 +2649,7 @@ async function loadImapAttachments(email, subject, tid){
   if(!email)return;
 
   try{
-    const url=PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject.substring(0,50));
+    const url=PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject);
     const res=await fetch(url);
     const data=await res.json();
     const attachments=data.attachments||[];
