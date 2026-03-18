@@ -2214,9 +2214,10 @@ function formatOrderInfo(order){
   const items=(order.line_items||[]).map(i=>i.quantity+"x "+i.name).join(", ");
   const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
   const temu=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
-  const sS2={delivered:"Consegnato",in_transit:"In transito",out_for_delivery:"In consegna",attempted_delivery:"Tentativo fallito",failure:"Problema"};
+  const sS2={delivered:"Consegnato",in_transit:"In transito",out_for_delivery:"In consegna",attempted_delivery:"Tentativo fallito",failure:"Problema",ready_for_pickup:"Pronto al ritiro - BRT Fermopoint"};
   const fship=order.fulfillments&&order.fulfillments[0];
-  const shipSt=fship&&fship.shipment_status?(sS2[fship.shipment_status]||fship.shipment_status):null;
+  // Se il pacco ha flag fermopoint (impostato dal check BRT), usa quello
+  const shipSt=order._brtFermopoint?"IN ATTESA DI RITIRO AL BRT-FERMOPOINT":(fship&&fship.shipment_status?(sS2[fship.shipment_status]||fship.shipment_status):null);
   let info="Ordine "+(order.name||"#"+order.order_number)+(amz?" (Amazon: "+amz.value+")":(temu?" (Temu: "+temu.value+")":""))+" | Stato: "+(shipSt||(fS[order.fulfillment_status]||"Non spedito"))+" | €"+order.total_price+(items?" | "+items:"");
   if(f){
     if(f.shipment_status)info+=" | "+(sS[f.shipment_status]||f.shipment_status);
@@ -2299,6 +2300,26 @@ async function generateReply(lastMsg,email,fullThread){
   const requesterName=(t.requester&&t.requester.name)||"";
   console.log("🔍 searchText preview:", searchText.substring(0,200));
   const order=await fetchShopifyOrder(searchText,email||"",requesterName);
+  // Controlla se il pacco è al fermopoint BRT (Shopify segna 'delivered' ma non è consegnato al cliente)
+  if(order){
+    const fCheck=order.fulfillments&&order.fulfillments[0];
+    const tnCheck=fCheck&&(fCheck.tracking_number||(fCheck.tracking_numbers&&fCheck.tracking_numbers[0]))||'';
+    if(fCheck&&fCheck.shipment_status==='delivered'&&tnCheck){
+      try{
+        const tnPodCheck=tnCheck.startsWith('26')?tnCheck:'26'+tnCheck;
+        const brtPageUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnCheck;
+        const brtR=await fetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck));
+        if(brtR.ok){
+          const brtD=await brtR.json();
+          if(brtD.at_fermopoint){
+            order._brtFermopoint=true;
+            order._brtFermopointInfo=brtD;
+            console.log('[BRT] Pacco al fermopoint, correggo stato per AI');
+          }
+        }
+      }catch(e){console.log('[BRT fermopoint check]',e.message);}
+    }
+  }
   const orderInfo=formatOrderInfo(order);
 
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
