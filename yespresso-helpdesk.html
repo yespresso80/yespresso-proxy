@@ -1483,7 +1483,10 @@ async function selectTicket(tid){
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
         const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
+        window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order;
+        window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
+        html2+='<br><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="margin-top:8px;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;width:100%">📋 Copia ordine CRM</button>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
@@ -2836,6 +2839,70 @@ async function loadCustomerHistory(email, name, currentTid){
   } else {
     window._customerOpenTickets=[];
   }
+}
+
+
+// GENERA IMMAGINE ORDINE TEMU PER CRM
+async function generateTemuOrderImage(order, temuSn) {
+  return new Promise(resolve => {
+    const W=800,H=560,canvas=document.createElement('canvas');
+    canvas.width=W;canvas.height=H;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+    // Header
+    ctx.fillStyle='#ff6600';ctx.fillRect(0,0,W,64);
+    ctx.fillStyle='#fff';ctx.font='bold 20px sans-serif';ctx.fillText('Ordine Temu — CRM',22,42);
+    ctx.font='12px sans-serif';ctx.textAlign='right';ctx.fillText(new Date().toLocaleString('it-IT'),W-16,42);ctx.textAlign='left';
+    let y=88;const pad=22,col2=230;
+    const addRow=(label,val,hi)=>{ctx.fillStyle='#999';ctx.font='11px sans-serif';ctx.fillText(label.toUpperCase(),pad,y);ctx.fillStyle=hi?'#ff6600':'#1a1a2e';ctx.font=hi?'bold 14px sans-serif':'14px sans-serif';ctx.fillText(String(val||'-'),col2,y);y+=28;};
+    const sep=()=>{ctx.strokeStyle='#f0f0f0';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke();y+=12;};
+    addRow('Ordine Temu',temuSn||'-',true);
+    addRow('Ordine Shopify',order.name||'-');
+    addRow('Data ordine',order.created_at?new Date(order.created_at).toLocaleString('it-IT'):'-');
+    sep();
+    const sh=order.shipping_address||{},cu=order.customer||{};
+    addRow('Cliente',(sh.name||(cu.first_name+' '+cu.last_name)||'-').trim());
+    if(sh.address1)addRow('Indirizzo',sh.address1+(sh.address2?', '+sh.address2:''));
+    if(sh.city)addRow('Citta / CAP',sh.city+' '+(sh.zip||''));
+    if(cu.email)addRow('Email',cu.email);
+    if(cu.phone||sh.phone)addRow('Telefono',cu.phone||sh.phone);
+    sep();
+    ctx.fillStyle='#999';ctx.font='11px sans-serif';ctx.fillText('PRODOTTI',pad,y);y+=18;
+    (order.line_items||[]).slice(0,5).forEach(item=>{
+      ctx.fillStyle='#1a1a2e';ctx.font='13px sans-serif';ctx.fillText('- '+(item.name||item.title||'').substring(0,52),pad+8,y);
+      ctx.fillStyle='#ff6600';ctx.font='bold 13px sans-serif';ctx.fillText('x'+item.quantity+'  €'+(parseFloat(item.price||0)*item.quantity).toFixed(2),W-130,y);
+      y+=22;
+    });
+    sep();
+    const f=order.fulfillments&&order.fulfillments[0];
+    const tn=f&&(f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0]))||'-';
+    addRow('Tracking BRT',tn);
+    addRow('Totale','€'+parseFloat(order.total_price||0).toFixed(2),true);
+    addRow('Stato',order.fulfillment_status==='fulfilled'?'Spedito OK':'Non spedito');
+    ctx.fillStyle='#f5f5f5';ctx.fillRect(0,H-36,W,36);
+    ctx.fillStyle='#aaa';ctx.font='11px sans-serif';ctx.fillText('Yespresso HelpDesk',pad,H-13);
+    ctx.textAlign='right';ctx.fillText('Shopify '+(order.name||''),W-pad,H-13);
+    resolve(canvas.toDataURL('image/jpeg',0.95));
+  });
+}
+async function copyTemuOrderCRM(orderId,btn){
+  const order=(window._temuOrderData||{})[orderId];
+  const temuSn=(window._temuOrderSn||{})[orderId];
+  if(!order){showToast('Dati ordine non disponibili','error');return;}
+  if(btn){btn.textContent='⏳ Generando...';btn.disabled=true;}
+  try{
+    const dataUrl=await generateTemuOrderImage(order,temuSn);
+    const blob=await(await fetch(dataUrl)).blob();
+    try{
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+      showToast('✅ Immagine copiata negli appunti — incollala su Temu CRM');
+      if(btn){btn.textContent='✅ Copiato!';setTimeout(()=>{btn.textContent='📋 Copia ordine CRM';btn.disabled=false;},3000);}
+    }catch(e2){
+      const a=document.createElement('a');a.href=dataUrl;a.download='ordine-temu-'+(temuSn||orderId)+'.jpg';a.click();
+      showToast('📥 Immagine scaricata — incollala su Temu CRM');
+      if(btn){btn.textContent='📋 Copia ordine CRM';btn.disabled=false;}
+    }
+  }catch(e){showToast('Errore: '+e.message,'error');if(btn){btn.textContent='📋 Copia ordine CRM';btn.disabled=false;}}
 }
 
 // ═══════════════════════════════════════════════
