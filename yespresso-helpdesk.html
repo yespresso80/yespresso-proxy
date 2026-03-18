@@ -2982,7 +2982,7 @@ function renderQRList(){
   if(!filteredQR.length){ body.innerHTML='<div style="color:#aaa;text-align:center;padding:20px">'+( searchVal?"Nessun risultato":"Nessuna risposta rapida. Aggiungine una!")+'</div>'; return; }
   
   // Ordina in base alla modalità
-  let sorted=[...quickReplies].filter(q=>q&&q.cat&&q.name);
+  let sorted=[...filteredQR].filter(q=>q&&q.cat&&q.name);
   if(qrSortMode==="usage"){
     sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
   }
