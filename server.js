@@ -441,9 +441,29 @@ async function brtRestPost(p, body, useTrackingBase) {
       const scadMatch = pageHtml.match(/fino al\s*([\d./-]+)/i);
       const scadenza = scadMatch ? scadMatch[1] : "";
       const atFermopoint = isFermopoint || isPickupReady;
-      console.log("[BRT fermopoint] nspediz:", nspediz, "| at_fermopoint:", atFermopoint, "| scadenza:", scadenza);
+      // Estrai nome e indirizzo del punto di ritiro dalla pagina BRT
+      let puntoInfo = "";
+      if (atFermopoint) {
+        // Cerca il nome del fermopoint (es. "BAR ROMA - VIA ROMA 1, MILANO")
+        const puntoMatch = pageHtml.match(/fermopoint[^<]*<[^>]+>([^<]{5,80})</i) ||
+                           pageHtml.match(/punto di ritiro[^<]*<[^>]+>([^<]{5,80})</i) ||
+                           pageHtml.match(/BRT-fermopoint[\s\S]{0,200}?<td[^>]*>([^<]{10,100})</i);
+        if (puntoMatch) puntoInfo = puntoMatch[1].trim().replace(/\s+/g, ' ');
+        // Se non trovato esplicitamente, cerca in tabelle/celle vicino a fermopoint
+        if (!puntoInfo) {
+          const rows = [...pageHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+          for (const row of rows) {
+            if (row[1].toLowerCase().includes('fermopoint') || row[1].toLowerCase().includes('punto di ritiro')) {
+              const cells = [...row[1].matchAll(/<td[^>]*>([^<]{5,100})<\/td>/gi)];
+              const vals = cells.map(c => c[1].trim()).filter(v => v.length > 5 && !/^[\s<>]+$/.test(v));
+              if (vals.length > 0) { puntoInfo = vals.join(' - '); break; }
+            }
+          }
+        }
+      }
+      console.log("[BRT fermopoint] nspediz:", nspediz, "| at_fermopoint:", atFermopoint, "| scadenza:", scadenza, "| punto:", puntoInfo.substring(0,50));
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, at_fermopoint: atFermopoint, scadenza_ritiro: scadenza }));
+      res.end(JSON.stringify({ ok: true, at_fermopoint: atFermopoint, scadenza_ritiro: scadenza, punto_info: puntoInfo }));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, at_fermopoint: false, error: e.message }));
