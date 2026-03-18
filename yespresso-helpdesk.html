@@ -2721,8 +2721,21 @@ async function loadCustomerHistory(email, name, currentTid){
     });
   }
 
-  // Also try to fetch more solved tickets from API for this customer
-  // requesterEmail non supportato da HelpDesk API (422) — usiamo solo i ticket già in memoria
+  // Se ancora nessun risultato, cerca via API HelpDesk per nome (copre ticket oltre 30 giorni)
+  if(related.length===0&&name&&name.length>3&&name!=="Cliente"){
+    try{
+      const enc=encodeURIComponent(name);
+      const apiRes=await hdFetch("/v1/tickets?pageSize=20&sortOrder=desc&requesterName="+enc);
+      if(apiRes&&apiRes.tickets){
+        const apiTickets=apiRes.tickets.filter(t2=>{
+          const te=(t2.requester&&t2.requester.email)||"";
+          if(email.includes("marketplace.amazon")) return te.includes("marketplace.amazon")&&(t2.ID||t2.id)!==currentTid;
+          return te===email&&(t2.ID||t2.id)!==currentTid;
+        });
+        if(apiTickets.length>0) related=[...related,...apiTickets];
+      }
+    }catch(e){console.log("[CH] API search fallita:",e.message);}
+  }
 
   // Sort by date desc, take last 10
   related.sort((a,b)=>{
