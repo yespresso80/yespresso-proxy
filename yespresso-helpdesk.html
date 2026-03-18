@@ -1488,9 +1488,9 @@ async function selectTicket(tid){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0"><a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="color:#ff6600;font-weight:700">🟠 Richiesta su Temu ↗</a></div>';
       }
     })();
+    // Setta flag globale per evitare che generateReply sovrascriva il box ordine
+    window._skipOrderBox = tid2;
     loadImapAttachments(email, t.subject||"", tid2).then(()=>{ generateReply(allMsgs, email, fullThread); });
-    // Segna che l'area ordine è già stata costruita da isTemuInfoSospeso
-    if(oArea) oArea.dataset.builtByInfo = '1';
   } else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
@@ -2382,8 +2382,10 @@ async function generateReply(lastMsg,email,fullThread){
 
   const oArea=document.getElementById("order-info-area");
   // Non sovrascrivere il box se è già stato costruito da isTemuInfoSospeso
-  const oAreaHasRichiesta = oArea && oArea.innerHTML.includes('Richiesta su Temu');
-  if(order && !oAreaHasRichiesta){
+  // Se il ticket è isTemuInfoSospeso, non sovrascrivere il box ordine
+  const skipBox = window._skipOrderBox && window._skipOrderBox === (selectedTicket&&(selectedTicket.ID||selectedTicket.id));
+  if(skipBox) window._skipOrderBox = null; // reset dopo uso
+  if(order && !skipBox){
     const f=order.fulfillments&&order.fulfillments[0];
     const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
     // Stato spedizione dettagliato (shipment_status ha precedenza su fulfillment_status)
