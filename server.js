@@ -424,6 +424,33 @@ async function brtRestPost(p, body, useTrackingBase) {
     return;
   }
 
+
+  // Controlla se spedizione e al fermopoint BRT (scraping pagina pubblica VAS)
+  if (req.url.startsWith("/brt/check-fermopoint")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
+    try {
+      const vasUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
+      const pageRes = await fetch(vasUrl, { headers: { "User-Agent": BRT_UA, "Accept": "text/html" } });
+      const pageHtml = await pageRes.text();
+      const pageLow = pageHtml.toLowerCase();
+      const isFermopoint = pageLow.includes("fermopoint") || pageLow.includes("fermo point");
+      const isPickupReady = pageLow.includes("ritiro disponibile") || pageLow.includes("disponibile al ritiro");
+      const scadMatch = pageHtml.match(/fino al\s*([\d./-]+)/i);
+      const scadenza = scadMatch ? scadMatch[1] : "";
+      const atFermopoint = isFermopoint || isPickupReady;
+      console.log("[BRT fermopoint] nspediz:", nspediz, "| at_fermopoint:", atFermopoint, "| scadenza:", scadenza);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, at_fermopoint: atFermopoint, scadenza_ritiro: scadenza }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, at_fermopoint: false, error: e.message }));
+    }
+    return;
+  }
+
   if (req.url.startsWith("/brt/track")) {
     const qs = req.url.split("?")[1] || ""; const params = new URLSearchParams(qs); const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
