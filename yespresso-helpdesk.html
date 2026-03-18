@@ -2758,7 +2758,25 @@ async function loadCustomerHistory(email, name, currentTid){
     });
   }
 
-  // Se ancora nessun risultato, cerca via API HelpDesk per nome (copre ticket oltre 30 giorni)
+  // Cerca via API HelpDesk per email — recupera TUTTI gli stati degli ultimi 30gg e oltre
+  if(email&&email.length>3&&!email.includes("marketplace.amazon")){
+    try{
+      const enc=encodeURIComponent(email);
+      const apiStatuses=["open","pending","on_hold","solved"];
+      const apiResults=await Promise.all(apiStatuses.map(s=>
+        hdFetch("/v1/tickets?pageSize=25&status="+s+"&sortOrder=desc&requesterEmail="+enc).catch(()=>null)
+      ));
+      const seen=new Set(related.map(t=>t.ID||t.id)); seen.add(currentTid);
+      for(const res of apiResults){
+        if(res&&res.tickets) res.tickets.forEach(t2=>{
+          const tid2=t2.ID||t2.id;
+          if(!seen.has(tid2)){seen.add(tid2);related.push(t2);}
+        });
+      }
+    }catch(e){console.log("[CH] API email search:",e.message);}
+  }
+
+  // Fallback per nome se ancora nessun risultato
   if(related.length===0&&name&&name.length>3&&name!=="Cliente"){
     try{
       const enc=encodeURIComponent(name);
@@ -2775,12 +2793,9 @@ async function loadCustomerHistory(email, name, currentTid){
   }
 
   // Sort by date desc, take last 10
-  related.sort((a,b)=>{
-    const ad=new Date((a.events&&a.events[0]&&a.events[0].createdAt)||0);
-    const bd=new Date((b.events&&b.events[0]&&b.events[0].createdAt)||0);
-    return bd-ad;
-  });
-  const top10=related.slice(0,10);
+  // Ordina per data più recente
+  related.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||b.createdAt||0)-new Date(a.lastMessageAt||a.updatedAt||a.createdAt||0));
+  const top10=related.slice(0,20); // mostra fino a 20 ticket
 
   if(countEl)countEl.textContent=top10.length||"0";
 
