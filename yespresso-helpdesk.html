@@ -1456,6 +1456,8 @@ async function selectTicket(tid){
     if(aiReplyBox)aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>';
   } else if(isTemuInfoSospeso){
     // Ticket Temu "Notifica ticket informativo in sospeso" — stesso box Temu ma con bottone Richiesta
+    // Setta subito il flag PRIMA dell'async per evitare race condition con generateReply
+    window._skipOrderBox = tid2;
     (async()=>{
       const isBrtMsg3=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
       const brtFullBody3=isBrtMsg3?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
@@ -1488,8 +1490,6 @@ async function selectTicket(tid){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0"><a href="https://seller-eu.temu.com/ticket-list.html?_x_sessn_id=8cqv4032v6" target="_blank" style="color:#ff6600;font-weight:700">🟠 Richiesta su Temu ↗</a></div>';
       }
     })();
-    // Setta flag globale per evitare che generateReply sovrascriva il box ordine
-    window._skipOrderBox = tid2;
     loadImapAttachments(email, t.subject||"", tid2).then(()=>{ generateReply(allMsgs, email, fullThread); });
   } else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
