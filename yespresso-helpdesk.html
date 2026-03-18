@@ -1538,8 +1538,6 @@ async function selectTicket(tid){
         }).join("");
       }
     },100);
-  } else {
-    // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
     loadImapAttachments(email, t.subject||"", tid2).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
@@ -1695,7 +1693,7 @@ function renderMessageHtml(text, attachments){
     if(customerMsg){const safe=customerMsg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");parts.push('<div style="white-space:pre-wrap;font-size:16px;line-height:1.3;color:#1a1a2e;padding:2px 0">'+safe+'</div>');}
     if(extraLinks.length){const btns=extraLinks.slice(0,3).map(l=>{const lbl=l.label.toLowerCase();let icon=lbl.includes('visualizza')?'👁':lbl.includes('risolvi')?'✅':lbl.includes('segnala')?'🚩':'📋';return '<a href="'+l.href+'" target="_blank" class="msg-url-btn">'+icon+' '+l.label+'</a>';}).join(' ');parts.push('<div style="margin-top:4px">'+btns+'</div>');}
     bodyHtml='<div style="font-size:13px;line-height:1.7;word-break:break-word;padding:14px;display:flex;flex-direction:column;gap:8px">'+(parts.join('')||'<em style="color:#aaa">Messaggio vuoto</em>')+'</div>';
-} else if(isTemuPostVendita){
+  } else if(isTemuPostVendita){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
       const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
