@@ -1456,7 +1456,7 @@ async function selectTicket(tid){
     if(aiReplyBox)aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>';
   } else if(isTemuInfoSospeso){
     // Ticket Temu "Notifica ticket informativo in sospeso" — stesso box Temu ma con bottone Richiesta
-    window._skipOrderBox = tid2;
+    window._isTemuInfoActive = true; // Flag: non sovrascrivere box ordine
     // Reset immediato oArea per evitare che il vecchio contenuto resti visibile
     const oAreaInfo = document.getElementById("order-info-area");
     if(oAreaInfo) oAreaInfo.innerHTML = '<div style="font-size:11px;color:#999;padding:4px 0">⏳ Cerco ordine Temu...</div>';
@@ -2385,8 +2385,8 @@ async function generateReply(lastMsg,email,fullThread){
   const oArea=document.getElementById("order-info-area");
   // Non sovrascrivere il box se è già stato costruito da isTemuInfoSospeso
   // Se il ticket è isTemuInfoSospeso, non sovrascrivere il box ordine
-  const skipBox = window._skipOrderBox && window._skipOrderBox === (selectedTicket&&(selectedTicket.ID||selectedTicket.id));
-  if(skipBox) window._skipOrderBox = null; // reset dopo uso
+  const skipBox = window._isTemuInfoActive === true;
+  if(skipBox) window._isTemuInfoActive = false; // reset dopo uso
   if(order && !skipBox){
     const f=order.fulfillments&&order.fulfillments[0];
     const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
