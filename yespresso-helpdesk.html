@@ -239,7 +239,7 @@ textarea.field{min-height:80px;resize:vertical}
   <div class="nav-icon active" title="Ticket">🎫</div>
   <div class="nav-icon" title="Contatti">👥</div>
   <div class="nav-icon" title="Report">📊</div>
-  <div class="nav-icon" title="Risposte rapide" onclick="openQRModal()" style="cursor:pointer">⚡</div>
+  <div class="nav-icon" title="Risposte rapide" onclick="openQRModal()" style="cursor:pointer;background:#FFD700;border-radius:6px">⚡</div>
   <div class="nav-icon" title="Dashboard">⊞</div>
   <div class="nav-spacer"></div>
   <div class="nav-icon" title="Lista">📋</div>
@@ -336,7 +336,7 @@ textarea.field{min-height:80px;resize:vertical}
     <div class="ticket-panel-header">
       <span class="ticket-panel-title" id="panel-title">Tickets to handle</span>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="filter-btn" onclick="openQRModal()" style="display:flex;align-items:center;gap:4px" title="Risposte rapide">⚡</button>
+        <button class="filter-btn" onclick="openQRModal()" style="display:flex;align-items:center;gap:4px;background:#FFD700;border-color:#e6c000;font-weight:700" title="Risposte rapide">⚡</button>
         <div style="position:relative">
           <button class="filter-btn" onclick="toggleFilterPanel()" id="filter-btn" style="display:flex;align-items:center;gap:4px">
             <span>+ Filtri</span><span id="filter-count" style="display:none;background:#1a73e8;color:#fff;border-radius:8px;padding:1px 6px;font-size:10px">0</span>
@@ -417,7 +417,7 @@ textarea.field{min-height:80px;resize:vertical}
       <div class="detail-title" id="detail-title">-</div>
       <a id="hd-link" href="#" target="_blank" title="Apri su HelpDesk" style="flex-shrink:0;background:#f0f2f5;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:11px;color:#555;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:4px">📎 HelpDesk ↗</a>
       <div class="detail-actions">
-        <button class="detail-action-btn" onclick="openQRModal()" title="Risposte rapide">⚡</button>
+        <button class="detail-action-btn" onclick="openQRModal()" title="Risposte rapide" style="background:#FFD700;border:1px solid #e6c000;font-weight:700">⚡</button>
         <button class="detail-action-btn" title="Archivia">🗄</button>
         <button class="detail-action-btn" title="Stato">🕐</button>
         <button class="detail-action-btn" title="Elimina">🗑</button>
@@ -2833,7 +2833,7 @@ let quickReplies = JSON.parse(localStorage.getItem("yespresso_qr") || "null") ||
   // ── GENERALE ──
   {id:90, cat:"💬 Generale", name:"Chatbot - richiesta maggiori info", body:"Buongiorno,\nha aperto una segnalazione, posso aiutarla in qualche modo?\nAttendiamo una sua risposta in caso desideri maggiori informazioni.\nLa ringraziamo per averci scelto.\nCordiali saluti"},
   {id:91, cat:"💬 Generale", name:"Ringraziamento", body:"la ringraziamo per averci scelto.\nCordiali saluti"},
-  {id:92, cat:"💬 Generale", name:"Richiesta informazioni capsule", body:"Gentile cliente,\n\nGrazie per il suo interesse nei nostri prodotti! Le nostre capsule sono compatibili con le macchine Nespresso® e sono disponibili in diverse miscele. Può visualizzare il catalogo completo su yespresso.it.\n\nCordiali saluti,\nIl Team Yespresso"},,
+  {id:92, cat:"💬 Generale", name:"Richiesta informazioni capsule", body:"Gentile cliente,\n\nGrazie per il suo interesse nei nostri prodotti! Le nostre capsule sono compatibili con le macchine Nespresso® e sono disponibili in diverse miscele. Può visualizzare il catalogo completo su yespresso.it.\n\nCordiali saluti,\nIl Team Yespresso"},
 
 // ── AMAZON ──
 {id:100, cat:"🟡 Amazon", name:"PREZZO UNITA ERRATO AMAZON - ACQUISTO EFFETTUATO", body:"Buongiorno, \n\nLa ringraziamo per la sua comunicazione. Desideriamo informarla che il prezzo dell'articolo che visualizza su amazon e ha pagato è corretto. Purtroppo, si è verificato un errore da parte di Amazon nel calcolo del costo per capsula, ma non sul prezzo della confezione. \n\nTuttavia, poiché teniamo molto alla sua soddisfazione, abbiamo deciso di procedere con un rimborso parziale per l'errata visualizzazione del prezzo per unità. Abbiamo anche segnalato nuovamente ad Amazon la necessità di correggere questo errore.\n\nCi scusiamo sinceramente per l'inconveniente e la ringraziamo per la sua comprensione."},
@@ -2962,7 +2962,7 @@ function renderQRList(){
   if(!filteredQR.length){ body.innerHTML='<div style="color:#aaa;text-align:center;padding:20px">'+( searchVal?"Nessun risultato":"Nessuna risposta rapida. Aggiungine una!")+'</div>'; return; }
   
   // Ordina in base alla modalità
-  let sorted=[...quickReplies];
+  let sorted=[...quickReplies].filter(q=>q&&q.cat&&q.name);
   if(qrSortMode==="usage"){
     sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
   }
