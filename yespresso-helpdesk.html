@@ -1460,10 +1460,10 @@ async function selectTicket(tid){
     const oAreaInfo2 = document.getElementById("order-info-area");
     if(oAreaInfo2) oAreaInfo2.innerHTML = '<div style="font-size:11px;color:#999;padding:4px 0">\u23f3 Cerco ordine Temu...</div>';
     (async()=>{
-      const _lastMsgInfo=(t.events&&t.events.filter(e=>e.message).pop()?.message?.text)||"";
-      const searchText3=(t.subject||"")+" "+_lastMsgInfo;
+      const searchText3=(t.subject||"")+" "+(lastMsg||"");
       const oArea=document.getElementById("order-info-area");
-      const order=await fetchShopifyOrder(searchText3,email||"",requesterName);
+      const _reqName3=(t.requester&&t.requester.name)||"";
+      const order=await fetchShopifyOrder(searchText3,email||"",_reqName3);
       if(order&&oArea){
         window._temuOrderData=window._temuOrderData||{};
         window._temuOrderData[order.id]=order;
