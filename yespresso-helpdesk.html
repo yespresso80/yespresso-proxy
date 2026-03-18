@@ -1541,7 +1541,7 @@ async function selectTicket(tid){
   } else {
     // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
     loadImapAttachments(email, t.subject||"", tid2).then(()=>{
-      generateReply(allMsgs, email, fullThread);
+      generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   }
   loadCustomerHistory(email, name, tid2);
@@ -2507,6 +2507,20 @@ async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
   }catch(e){loArea.innerHTML='';}
 }
 
+async function generateReplyNotaInterna(lastMsg,email,fullThread){
+  const t=selectedTicket;
+  const genBox=document.getElementById("gen-box");
+  if(genBox)genBox.innerHTML='<div class="spinner"></div> Genero nota interna...';
+  try{
+    const res=await fetch(PROXY+"/anthropic/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,system:buildSystemPrompt()+buildSolvedContext(),
+        messages:[{role:"user",content:(selectedOrder?"\n\nDati ordine:\n"+formatOrderInfo(selectedOrder):"")+"\n\nUltimo messaggio:\n"+(lastMsg||"")+(fullThread?"\n\nThread:\n"+fullThread:"")}]})});
+    if(!res.ok)throw new Error(res.status);
+    const data=await res.json();const reply=data.content?.[0]?.text||"";
+    if(reply){const rt=document.getElementById("reply-text");const aa=document.getElementById("action-area");
+      if(genBox)genBox.style.display="none";if(aa){aa.style.display="block";if(rt)rt.value=reply;}}
+  }catch(e){console.error("generateReplyNotaInterna:",e);if(genBox)genBox.style.display="none";}
+}
 async function generateReply(lastMsg,email,fullThread){
   const t=selectedTicket;
   const genBox=document.getElementById("gen-box");
@@ -2587,9 +2601,7 @@ async function generateReply(lastMsg,email,fullThread){
   const oArea=document.getElementById("order-info-area");
   // Non sovrascrivere il box se è già stato costruito da isTemuInfoSospeso
   // Se il ticket è isTemuInfoSospeso, non sovrascrivere il box ordine
-  const skipBox = window._isTemuInfoActive === true;
-  if(skipBox) window._isTemuInfoActive = false; // reset dopo uso
-  if(order && !skipBox){
+  if(order){
     const f=order.fulfillments&&order.fulfillments[0];
     const amz=(order.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
     // Stato spedizione dettagliato (shipment_status ha precedenza su fulfillment_status)
@@ -2698,7 +2710,7 @@ async function generateReply(lastMsg,email,fullThread){
       window._credMap[credInpIdGen]={email:order.email,customerId:order.customer.id,orderId:order.id};
       html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
-    if(oArea && !skipBox){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+    if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
   loadLastCustomerOrder(email, order.id);
   } else {
     // Anche senza ordine Shopify, mostra link Amazon se ticket da marketplace.amazon
@@ -2724,9 +2736,9 @@ async function generateReply(lastMsg,email,fullThread){
         amzHtml+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Seller Central ↗</a>';
         amzHtml+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
       }
-      if(oArea && !skipBox){oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+      if(oArea){oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
     } else {
-      if(oArea && !skipBox){oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+      if(oArea){oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
     }
   // Carica comunque ultimo ordine cliente per email
   loadLastCustomerOrder(email);
