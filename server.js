@@ -182,15 +182,40 @@ function findAttachmentsForTicket(requesterEmail, subject) {
   const EXCLUDE_FILES = ["logo yespresso", "logo_yespresso", "qapla-brt", "qapla_brt", "firma", "signature"];
   const emailLow = (requesterEmail||"").toLowerCase();
   const subjNorm = (subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
-  const subjSearch = subjNorm.substring(0, 60);
+
+  // Estrai numero ordine Amazon dal subject (es. 407-9078880-9007547)
+  const amazonOrderMatch = subjNorm.match(/(\d{3}-\d{7}-\d{7})/);
+  const amazonOrderId = amazonOrderMatch ? amazonOrderMatch[1] : null;
+
+  const isAmazon = emailLow.includes("marketplace.amazon") || emailLow.includes("donotreply@amazon") || emailLow.includes("atoz-guarantee");
+  const isTemu = emailLow.includes("orders.temu") || emailLow.includes("temu");
+  const isTiktok = emailLow.includes("tiktok") || emailLow.includes("scs3.");
+  const isBrt = emailLow.includes("vasnoreply@brt") || emailLow.includes("servizioclienti@brt");
+  const isMarketplace = isAmazon || isTemu || isTiktok || isBrt;
+
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
     const dataSubjNorm = (data.subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
-    const minLen = Math.min(subjSearch.length, dataSubjNorm.length, 30);
-    const subjMatch = minLen >= 10 && (dataSubjNorm.includes(subjSearch.substring(0, minLen)) || subjSearch.includes(dataSubjNorm.substring(0, minLen)));
-    const isMarketplace = emailLow.includes("marketplace.amazon") || emailLow.includes("orders.temu") || emailLow.includes("tiktok") || emailLow.includes("scs3.") || emailLow.includes("vasnoreply@brt");
-    const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
-    const isMatch = subjMatch && (isMarketplace || emailMatch);
+
+    let isMatch = false;
+
+    if (isAmazon && amazonOrderId) {
+      // Amazon con numero ordine: match SOLO se il subject IMAP contiene lo stesso numero ordine
+      isMatch = dataSubjNorm.includes(amazonOrderId);
+    } else if (isMarketplace) {
+      // Marketplace senza numero ordine: richiede email match + subject (almeno 40 char)
+      const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
+      const minLen = Math.min(subjNorm.length, dataSubjNorm.length, 40);
+      const subjMatch = minLen >= 10 && (dataSubjNorm.includes(subjNorm.substring(0, minLen)) || subjNorm.includes(dataSubjNorm.substring(0, minLen)));
+      isMatch = emailMatch && subjMatch;
+    } else {
+      // Cliente sito: match solo per email esatta + subject
+      const emailMatch = emailLow && fromLow && fromLow === emailLow;
+      const minLen = Math.min(subjNorm.length, dataSubjNorm.length, 30);
+      const subjMatch = minLen >= 10 && (dataSubjNorm.includes(subjNorm.substring(0, minLen)) || subjNorm.includes(dataSubjNorm.substring(0, minLen)));
+      isMatch = emailMatch && subjMatch;
+    }
+
     if (isMatch) {
       const filteredAtts = data.attachments.filter(a => { const fn = (a.filename||"").toLowerCase(); return !EXCLUDE_FILES.some(ex => fn.includes(ex)); });
       if (filteredAtts.length > 0) results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
