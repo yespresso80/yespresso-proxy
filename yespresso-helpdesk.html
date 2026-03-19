@@ -3332,6 +3332,14 @@ function generateBrtTrackingCanvas(order,temuSn){
 function generateBrtTrackingBlob(order,temuSn){
   return new Promise(r=>{generateBrtTrackingCanvas(order,temuSn).toBlob(b=>r(b),'image/png');});
 }
+async function downloadBrtTracking(orderId,btn){
+  const order=(window._temuOrderData||{})[orderId],temuSn=(window._temuOrderSn||{})[orderId];
+  if(!order){showToast('Nessun ordine disponibile','error');return;}
+  const u=generateBrtTrackingCanvas(order,temuSn).toDataURL('image/jpeg',0.95);
+  const a=document.createElement('a');a.href=u;a.download='tracking-brt-'+(temuSn||orderId)+'.jpg';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  showToast('📥 Tracking BRT scaricato');
+}
 async function copyBrtTracking(orderId,btn){
   const order=(window._temuOrderData||{})[orderId],temuSn=(window._temuOrderSn||{})[orderId];
   if(!order){showToast('Nessun ordine disponibile','error');return;}
