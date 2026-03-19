@@ -1679,7 +1679,7 @@ function renderMessageHtml(text, attachments){
   // Distingui email Amazon (template con <center>/tabelle) da HTML normale
   const isAmazonEmail=raw.includes('background-color:#e4e3e4')||raw.includes('Ember, Arial')||raw.includes('sellercentral.amazon');
 
-  if(hasHtml && isAmazonEmail){
+  if(hasHtml && isAmazonEmail && !isTemuPostVendita && !isTemuInfoSospeso){
     // ── PARSER EMAIL AMAZON ──
     const tmp=document.createElement('div');
     tmp.innerHTML=raw;
@@ -1922,7 +1922,7 @@ function renderMessageHtml(text, attachments){
   // Distingui email Amazon (template con <center>/tabelle) da HTML normale
   const isAmazonEmail=raw.includes('background-color:#e4e3e4')||raw.includes('Ember, Arial')||raw.includes('sellercentral.amazon');
 
-  if(hasHtml && isAmazonEmail){
+  if(hasHtml && isAmazonEmail && !isTemuPostVendita && !isTemuInfoSospeso){
     // ── PARSER EMAIL AMAZON ──
     const tmp=document.createElement('div');
     tmp.innerHTML=raw;
