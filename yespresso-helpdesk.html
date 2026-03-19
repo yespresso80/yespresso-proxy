@@ -1461,7 +1461,6 @@ async function selectTicket(tid){
       const brtFullBody=isBrtMsg2?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
       const _guardTid1=t.ID||t.id;
       const order=await fetchShopifyOrder(t.subject+(brtFullBody?" "+brtFullBody:""),email||"",name||"");
-      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid1){console.log("Temu IIFE: ticket cambiato, skip");return;}
       const oArea=document.getElementById("order-info-area");
       if(order&&oArea){
         const f=order.fulfillments&&order.fulfillments[0];
@@ -2244,6 +2243,11 @@ async function fetchShopifyOrder(message,email,requesterName){
   try{
     console.log("🔍 Shopify search | msg:",message.substring(0,120),"| email:",email,"| name:",requesterName);
 
+    // 0. Avvia ricerca email IN PARALLELO subito (fast path per clienti sito/Amazon)
+    const _skipEmails=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply"];
+    const _emailFast=email&&!_skipEmails.some(s=>email.includes(s))?email:null;
+    const _emailPromise=_emailFast?shopifyGet("orders.json?email="+encodeURIComponent(_emailFast)+"&status=any&limit=250").catch(()=>null):null;
+
     // 1. Amazon order number (formato 123-1234567-1234567)
     const amazonMatch=message.match(/(\d{3}-\d{7}-\d{7})/);
     if(amazonMatch){
@@ -2259,7 +2263,8 @@ async function fetchShopifyOrder(message,email,requesterName){
       const ftFound2=findInNoteAttributes((dFt2&&dFt2.orders)||[],['Amazon Order Id'],amzId);
       if(ftFound2){console.log('✅ Trovato via full-text Amazon v2');return ftFound2;}
       // 1c. Scan Amazon PARALLELO per finestre temporali (max 3 pagine/finestra)
-      console.log('→ Scan Amazon parallelo per finestre');
+      // Scan Amazon in PARALLELO su tutte le finestre temporali
+      console.log('→ Scan Amazon parallelo per finestre (parallel)');
       const amzFlds='id,name,order_number,note_attributes,fulfillment_status,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
       const amzWins=[
         ['2026-02-16T12:46:17.863Z','2026-03-18T12:46:17.863Z'],
@@ -2268,22 +2273,27 @@ async function fetchShopifyOrder(message,email,requesterName){
         ['2024-03-18T12:46:17.863Z','2025-03-18T12:46:17.863Z'],
         ['2022-03-19T12:46:17.863Z','2024-03-18T12:46:17.863Z'],
       ];
-      for(const [wMin,wMax] of amzWins){
+      const amzScanWin = async ([wMin,wMax]) => {
         const q='orders.json?status=any&limit=250&source_name=amazon&fields='+amzFlds+'&created_at_min='+wMin+'&created_at_max='+wMax+'&order=created_at+desc';
         const r1=await shopifyGet(q);
         const o1=(r1&&r1.orders)||[];
         const hit1=findInNoteAttributes(o1,['Amazon Order Id'],amzId);
-        if(hit1){console.log('✅ Trovato window p1');return hit1;}
-        if(!o1.length||!r1._nextPageInfo)continue;
+        if(hit1) return hit1;
+        if(!o1.length||!r1._nextPageInfo) return null;
         const r2=await shopifyGet('orders.json?status=any&limit=250&page_info='+r1._nextPageInfo);
         const hit2=findInNoteAttributes((r2&&r2.orders)||[],['Amazon Order Id'],amzId);
-        if(hit2){console.log('✅ Trovato window p2');return hit2;}
+        if(hit2) return hit2;
         if(r2&&r2._nextPageInfo){
           const r3=await shopifyGet('orders.json?status=any&limit=250&page_info='+r2._nextPageInfo);
           const hit3=findInNoteAttributes((r3&&r3.orders)||[],['Amazon Order Id'],amzId);
-          if(hit3){console.log('✅ Trovato window p3');return hit3;}
+          if(hit3) return hit3;
         }
-      }
+        return null;
+      };
+      // Lancia tutte le finestre in parallelo, prendi il primo risultato non null
+      const amzResults = await Promise.all(amzWins.map(amzScanWin));
+      const amzHit = amzResults.find(r=>r!=null);
+      if(amzHit){console.log('✅ Trovato Amazon window parallelo');return amzHit;}
       console.log('❌ Amazon Order Id non trovato');
     }
 
@@ -2392,8 +2402,8 @@ async function fetchShopifyOrder(message,email,requesterName){
     const emailClean=email&&!skipDomains.some(s=>email.includes(s))?email:null;
     if(emailClean){
       console.log("→ Cercando per email:",emailClean);
-      // Email lookup è esatto e restituisce TUTTI gli ordini del cliente (storici inclusi)
-      const d=await shopifyGet("orders.json?email="+encodeURIComponent(emailClean)+"&status=any&limit=250");
+      // Usa la promise avviata all'inizio (fast path) o fai nuova fetch
+      const d=await(_emailPromise||shopifyGet("orders.json?email="+encodeURIComponent(emailClean)+"&status=any&limit=250"));
       if(d&&d.orders&&d.orders.length>0){
         const sorted=d.orders.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
         console.log("✅ Trovato via email, ordine più recente #"+sorted[0].order_number+" (tot:",d.orders.length,")");
