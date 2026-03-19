@@ -3232,8 +3232,17 @@ function generateTemuOrderCanvas(order, temuSn) {
 async function generateTemuOrderImage(o,s){ return generateTemuOrderCanvas(o,s).toDataURL('image/jpeg',0.95); }
 function generateTemuOrderBlob(o,s){ return new Promise(r=>{ generateTemuOrderCanvas(o,s).toBlob(b=>r(b),'image/png'); }); }
 async function downloadTemuOrderCRM(orderId){
-  const order=(window._temuOrderData||{})[orderId],temuSn=(window._temuOrderSn||{})[orderId];
-  if(!order){showToast('Nessun ordine disponibile');return;}
+  // Attendi fino a 3 secondi che i dati siano disponibili
+  let order=(window._temuOrderData||{})[orderId];
+  if(!order){
+    for(let i=0;i<6;i++){
+      await new Promise(r=>setTimeout(r,500));
+      order=(window._temuOrderData||{})[orderId];
+      if(order)break;
+    }
+  }
+  const temuSn=(window._temuOrderSn||{})[orderId];
+  if(!order){showToast('Ordine non ancora caricato, riprova tra qualche secondo','error');return;}
   const u=generateTemuOrderCanvas(order,temuSn).toDataURL('image/jpeg',0.95);
   const a=document.createElement('a');a.href=u;a.download='ordine-temu-'+(temuSn||orderId)+'.jpg';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
