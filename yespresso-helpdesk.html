@@ -1775,6 +1775,9 @@ function renderMessageHtml(text, attachments){
         }).join("");
       }
     },100);
+    loadImapAttachments(email, t.subject||"", tid2).then(()=>{
+      generateReplyNotaInterna(allMsgs, email, fullThread);
+    });
   } else {
     // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
     loadImapAttachments(email, t.subject||"", tid2).then(()=>{
