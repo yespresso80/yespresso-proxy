@@ -2330,31 +2330,18 @@ async function fetchShopifyOrder(message,email,requesterName){
     const allNums=allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26'))));
     console.log("🔢 Numeri ordine trovati:", allNums.slice(0,5));
 
-    for(const num of allNums.slice(0,5)){
-      console.log("→ Cercando ordine Shopify #"+num);
-      // 3a. Ricerca per name — funziona su TUTTI gli ordini indipendentemente dall'età
-      const d=await shopifyGet("orders.json?name=%23"+num+"&status=any");
-      if(d&&d.orders&&d.orders.length>0){console.log("✅ Trovato via #"+num);return d.orders[0];}
-      const d2=await shopifyGet("orders.json?name="+num+"&status=any");
-      if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ Trovato plain "+num);return d2.orders[0];}
-      // 3b. ID Shopify diretto (numeri >= 8 cifre)
-      if(num.length>=8){
-        try{
-          const d3=await shopifyGet("orders/"+num+".json");
-          if(d3&&d3.order){console.log("✅ Trovato via order ID diretto");return d3.order;}
-        }catch(e3){}
-      }
-      // 3c. Scan paginato completo per order_number
-      console.log("→ Scan paginato per order_number="+num);
-      const numFound=await scanAllOrders(orders=>{
-        return orders.find(o=>
-          String(o.order_number)===num||
-          String(o.name)==="#"+num||
-          String(o.name)===num||
-          String(o.id)===num
-        )||null;
-      });
-      if(numFound){return numFound;}
+    // 3a-3b: tutti i numeri cercati IN PARALLELO
+    if(allNums.length>0){
+      const numResults=await Promise.all(allNums.slice(0,5).map(async num=>{
+        const d=await shopifyGet("orders.json?name=%23"+num+"&status=any");
+        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);return d.orders[0];}
+        const d2=await shopifyGet("orders.json?name="+num+"&status=any");
+        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);return d2.orders[0];}
+        if(num.length>=8){try{const d3=await shopifyGet("orders/"+num+".json");if(d3&&d3.order)return d3.order;}catch(e){}}
+        return null;
+      }));
+      const numHit=numResults.find(r=>r!=null);
+      if(numHit)return numHit;
     }
 
     // 4. Numero spedizione BRT
