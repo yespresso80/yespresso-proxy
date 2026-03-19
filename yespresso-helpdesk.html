@@ -791,16 +791,16 @@ async function loadTickets(){
     };
 
     // Tutti e 4 gli status in parallelo
-    const [openB,pendingB,onHoldB,solvedB]=await Promise.all([
+    const [openB,pendingB,solvedB]=await Promise.all([
       loadAllStatus("open",20),
       loadAllStatus("pending",10),
-      loadAllStatus("on_hold",5),
-      loadAllStatus("solved",20)
+      
+      loadAllStatus("solved",3)
     ]);
     clearInterval(loadTimer);
 
     const allTickets=[]; const seenIds=new Set();
-    for(const t of [...openB,...pendingB,...onHoldB,...solvedB]){
+    for(const t of [...openB,...pendingB,...solvedB]){
       const id=t.ID||t.id;
       if(!seenIds.has(id)){seenIds.add(id);allTickets.push(t);}
     }
@@ -1058,8 +1058,8 @@ function applySearch(){
         const enc=encodeURIComponent(searchQuery);
         // Cerca per subject e per nome richiedente
         const [r1,r2]=await Promise.all([
-          hdFetch("/v1/tickets?pageSize=20&sortOrder=desc&subject="+enc),
-          hdFetch("/v1/tickets?pageSize=20&sortOrder=desc&requesterName="+enc)
+          hdFetch("/v1/tickets?pageSize=20&sortBy=lastMessageAt&order=desc&subject="+enc),
+          Promise.resolve([])
         ]);
         const apiTickets=[];
         const seen=new Set(tickets.map(t=>t.ID||t.id));
@@ -1540,8 +1540,12 @@ async function selectTicket(tid){
         }
       },100);
     },0);
-    loadImapAttachments(email, t.subject||"", tid2).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
+    });
+  } else {
+    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+      generateReply(allMsgs, email, fullThread);
     });
   }
   loadCustomerHistory(email, name, tid2);
@@ -1778,12 +1782,12 @@ function renderMessageHtml(text, attachments){
         }).join("");
       }
     },100);
-    loadImapAttachments(email, t.subject||"", tid2).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else {
     // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
-    loadImapAttachments(email, t.subject||"", tid2).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread);
     });
   }
@@ -2330,8 +2334,25 @@ async function fetchShopifyOrder(message,email,requesterName){
     const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order|shopify)[^\d#]*(\d{4,12})/gi)].map(m=>m[1]);
     const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches])].sort((a,b)=>b.length-a.length);
     // Escludi numeri che sembrano tracking BRT (12+ cifre che iniziano con 179 o 26)
+    const brtTrackingNums=allNumsRaw.filter(n=>n.length>=12&&(n.startsWith('179')||n.startsWith('26')));
     const allNums=allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26'))));
     console.log("🔢 Numeri ordine trovati:", allNums.slice(0,5));
+    // Cerca anche per tracking BRT se il cliente lo ha usato come numero ordine
+    if(brtTrackingNums.length>0){
+      for(const tn of brtTrackingNums.slice(0,2)){
+        const tnPad=tn.startsWith('26')?tn:'26'+tn;
+        for(const tryTn of [tn,tnPad]){
+          const dTn=await shopifyGet("orders.json?status=any&limit=50&query="+encodeURIComponent(tryTn));
+          if(dTn&&dTn.orders&&dTn.orders.length>0){
+            const hit=dTn.orders.find(o=>(o.fulfillments||[]).some(f=>{
+              const t=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+              return t===tryTn||t===tn||t===tnPad;
+            }))||dTn.orders[0];
+            if(hit){console.log("✅ Trovato via tracking BRT",tryTn);return hit;}
+          }
+        }
+      }
+    }
 
     // 3a-3b: tutti i numeri cercati IN PARALLELO
     if(allNums.length>0){
@@ -2513,7 +2534,7 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Genero nota interna...';
   try{
     const res=await fetch(PROXY+"/anthropic/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,system:buildSystemPrompt()+buildSolvedContext(),
+      body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,system:buildSystemPrompt()+buildSolvedContext(selectedTicket),
         messages:[{role:"user",content:(selectedOrder?"\n\nDati ordine:\n"+formatOrderInfo(selectedOrder):"")+"\n\nUltimo messaggio:\n"+(lastMsg||"")+(fullThread?"\n\nThread:\n"+fullThread:"")}]})});
     if(!res.ok)throw new Error(res.status);
     const data=await res.json();const reply=data.content?.[0]?.text||"";
@@ -2521,7 +2542,7 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
       if(genBox)genBox.style.display="none";if(aa){aa.style.display="block";if(rt)rt.value=reply;}}
   }catch(e){console.error("generateReplyNotaInterna:",e);if(genBox)genBox.style.display="none";}
 }
-async function generateReply(lastMsg,email,fullThread){
+async function generateReply(lastMsg,email,fullThread){ console.log("🚀 generateReply CHIAMATA email:",email);
   const t=selectedTicket;
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
@@ -2772,7 +2793,7 @@ async function generateReply(lastMsg,email,fullThread){
     const res=await fetch(PROXY+"/anthropic/v1/messages",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,
-        system:"Sei l\'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell\'ordine, usali per dare una risposta precisa con i dettagli reali. Se c\'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l\'azione da fare. REGOLE PRODOTTI DANNEGGIATI: 1) Se il cliente si lamenta di capsule o buste danneggiate e NON ha ancora fornito foto e quantita: chiedi foto delle capsule/buste danneggiate, foto del pacco e quantita esatta danneggiata. 1b) Se il cliente ha GIA fornito foto (presenti nel ticket come allegati) E ha indicato la quantita di capsule/buste danneggiate: procedi direttamente alla compensazione senza chiedere altri dati. 1c) COMPENSAZIONE PRODOTTI DANNEGGIATI - quando hai foto E quantita: calcola il valore in euro moltiplicando la quantita danneggiata per il prezzo unitario del prodotto (ricavalo dai dati ordine: prezzo totale diviso quantita totale). Poi comunica: SE il cliente ha acquistato sul sito Yespresso (non Amazon/Temu/TikTok): \"Le verra accreditato un buono sconto di €X.XX utilizzabile sul nostro sito\". SE il cliente ha acquistato su Amazon, Temu o TikTok: \"Procedera a emettere un rimborso di €X.XX\". Includi sempre il calcolo trasparente (es: \"10 capsule x €0.49 = €4.90\"). 2) Se il cliente segnala solo pacco esterno ammaccato ma prodotto integro, rispondi con scuse, spiega che il cartone e solo protezione esterna, comunica che segnalerai al corriere e alla logistica. REGOLE EROGAZIONE CAPSULE: 5) Problemi con capsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo. 6a) Problemi con capsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore). 6b) Problemi con capsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula. 6c) Problemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video. NON offrire rimborso prima di avere queste informazioni. REGOLE PACCO NON RICEVUTO: 3a) Se il pacco e AL PUNTO DI RITIRO BRT-FERMOPOINT (stato contiene IN ATTESA DI RITIRO AL BRT-FERMOPOINT): il pacco non e stato consegnato a casa, e in attesa di ritiro. Comunica che il pacco e pronto per il ritiro presso il BRT-fermopoint, includi il link BRT per i dettagli. Se hai il nome/indirizzo del punto di ritiro includilo nella risposta. 3b) Se il pacco e al fermopoint ma le informazioni sull'ubicazione del punto di ritiro non sono disponibili o sono in aggiornamento: comunica che il pacco e arrivato al punto di ritiro BRT ma le informazioni sull'ubicazione sono ancora in aggiornamento; invita il cliente a verificare il link BRT della spedizione tra qualche ora per i dettagli sul punto di ritiro. 3c) Se il cliente dice di non aver ricevuto il pacco ma il tracking risulta consegnato A DOMICILIO (stato Consegnato senza fermopoint): comunica che il pacco risulta consegnato, includi numero tracking e link BRT, non offrire rimborso. 4) Se il cliente insiste dopo la risposta su consegna a domicilio: ribadisci che risulta consegnato e non possiamo procedere con rimborso. REGOLE TICKET AMAZON: Quando il ticket proviene da Amazon (donotreply@amazon, marketplace.amazon, atoz-guarantee), NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. NON includere email esterne. Usa solo riferimenti Amazon. Per il tracking invita il cliente a controllare dal suo account Amazon. REGOLA NUMERO ORDINE AMAZON: Quando il messaggio proviene da un cliente Amazon (email contiene @marketplace.amazon.it) e in NESSUN messaggio del thread e presente un numero ordine Amazon (formato es. 402-1234567-1234567 oppure xxx-xxxxxxx-xxxxxxx con trattini), DEVI come PRIMA risposta chiedere al cliente il suo numero ordine Amazon. Non procedere con rimborsi, sostituzioni, soluzioni tecniche o qualsiasi altra azione senza aver verificato la presenza del numero ordine in tutto il thread. Questa regola NON si applica alle notifiche automatiche Amazon (donotreply@amazon, atoz-guarantee). REGOLE ACQUISTO ERRATO: Se il cliente dichiara di aver acquistato capsule sbagliate o non compatibili con la sua macchina, usa la risposta rapida Acquisto errato - reso cliente (o TEMU - Acquisto errato reso se il cliente proviene da Temu). NON offrire rimborso diretto ma spiega la procedura di reso entro 14 giorni. REGOLA RITIRO BRT - ISTRUZIONI PACCO: Ogni volta che proponi o menzioni un ritiro BRT al domicilio del cliente, includi SEMPRE queste istruzioni per la preparazione del pacco: utilizzare la scatola ricevuta o una scatola equivalente, sigillare bene con nastro adesivo, inserire se possibile una copia dell'ordine all'interno del pacco. REGOLA ERRORE SPEDIZIONE - PRODOTTO SBAGLIATO: Se il cliente ha ricevuto un prodotto diverso da quello ordinato (es. ha ordinato cialde ma ha ricevuto capsule, o viceversa) e il prodotto errato ricevuto e di almeno 100 unita, bisogna: 1) spedire il prodotto corretto ordinato, 2) organizzare il ritiro del prodotto errato tramite corriere BRT all'indirizzo di consegna originale (non a spese del cliente). Se il prodotto errato e meno di 100 unita, valutare caso per caso. Il cliente NON deve rispedire il prodotto a sue spese. REGOLA PRODOTTO ERRATO RICEVUTO: Se il cliente segnala di aver ricevuto un prodotto diverso da quello ordinato (articolo errato, prodotto sbagliato, non corrisponde all'ordine), DEVI come PRIMA risposta richiedere le seguenti informazioni senza procedere con rimborsi o sostituzioni: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco dove sia chiaramente visibile l'etichetta del corriere BRT con il numero ordine, 3) foto della busta che contiene le capsule ricevute. NON procedere con rimborsi o sostituzioni prima di aver ricevuto queste informazioni e foto. REGOLA PRODOTTI DANNEGGIATI - QUANTITA (CRITICA - NON DEROGARE MAI): Conta SEMPRE le capsule danneggiate prima di rispondere. SE MENO DI 100 capsule danneggiate: VIETATO offrire rispedizione, sostituzione o invio di prodotti. Per ordini sito yespresso.it -> offri SOLO credito parziale sul sito. Per ordini Amazon -> offri SOLO rimborso parziale tramite Amazon. Per ordini Temu o TikTok -> offri SOLO rimborso parziale. SE 100 O PIU capsule danneggiate: puoi offrire rispedizione o sostituzione. Questa regola ha PRIORITA ASSOLUTA su qualsiasi altra considerazione, anche se le capsule rimanenti sono utilizzabili o il cliente sembra soddisfatto di una sostituzione. REGOLA CRITICA - ACQUISTO ERRATO: Ogni volta che il cliente menziona di aver acquistato capsule sbagliate, non compatibili con la sua macchina, o di aver commesso un errore di acquisto, DEVI rispondere ESCLUSIVAMENTE con la procedura di reso: reso entro 14 giorni, spese di spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, tutti i prodotti devono essere integri e non aperti. Se proviene da Temu usa la procedura reso Temu. NON suggerire soluzioni tecniche. NON offrire rimborso. NON chiedere informazioni aggiuntive. REGOLA PROBLEMA TECNICO: Solo se il cliente descrive un problema tecnico con capsule compatibili SENZA menzionare errore di acquisto, usa la risposta tecnica specifica: Bialetti usa risposta Bialetti Gioia, Nespresso usa risposta Nespresso acqua prima caffe, Caffitaly usa risposta CAFFITALY Volta, altri usa PROBLEMA PRODOTTO RICHIESTA INFO SUL DIFETTO. REGOLA CALCOLO CREDITO/RIMBORSO PARZIALE: Per meno di 100 capsule danneggiate calcola il valore proporzionale. Identifica il prodotto specifico citato dal cliente nell\'ordine (se ordine con piu prodotti usa quello menzionato dal cliente). Calcola prezzo per capsula (prezzo riga diviso quantita capsule), moltiplica per capsule danneggiate. IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%. Per sito yespresso.it, Temu, TikTok: indica SOLO valore IVA inclusa (es. credito di EUR X,XX IVA inclusa). Per Amazon: indica ENTRAMBI i valori (es. rimborso di EUR X,XX IVA esclusa piu IVA 22% uguale EUR Y,YY IVA inclusa). Se non riesci a identificare il prodotto usa il prezzo medio dell\'ordine. IMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata il tag speciale (non visibile al cliente): per sito/Temu/TikTok scrivi [COPIA_IMPORTO:X,XX] con solo valore IVA inclusa; per Amazon scrivi [COPIA_IMPORTO:X,XX|Y,YY] dove X,XX e IVA esclusa e Y,YY e IVA inclusa. Esempio sito: [COPIA_IMPORTO:1,58] Esempio Amazon: [COPIA_IMPORTO:1,44|1,58]. FORMATI BUSTE PER CALCOLO CREDITO: I prodotti sono venduti in scatole con buste interne. Formato buste: capsule A Modo Mio in buste da 20 capsule, capsule Dolce Gusto in buste da 16 capsule, capsule Nespresso/Caffitaly/Bialetti in buste da 10 capsule, cialde carta ESE 44mm e capsule Fior Fiore Coop/Lui Espresso sono sfuse (1 per confezione). Quando il cliente segnala capsule difettose per busta, moltiplica per il numero di buste danneggiate. Esempio: 12 pacchi da 20 capsule A Modo Mio = 240 capsule totali, ogni busta ha 12 capsule. ISTRUZIONI CREDITO NEGOZIO: Quando proponi un credito sul sito yespresso.it, includi SEMPRE queste istruzioni: Il credito e valido per 90 giorni dalla creazione. Per utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparira un banner con scritto utilizzalo. Se il totale e superiore al credito, saldare la differenza con la modalita di pagamento desiderata. Se il totale e inferiore al credito, e possibile utilizzarlo anche parzialmente. REGOLA RICHIESTA SCONTO: Se il cliente chiede uno sconto o un codice promozionale: 1) Se ha un ordine recente non ancora spedito (fulfillment_status = unfulfilled): rispondi che i prezzi sono gia scontati e non e possibile applicare ulteriori sconti. 2) Se non ha ordini in corso o deve ancora fare un ordine: usa la risposta rapida PROMOZIONE DELLA SETTIMANA."+buildSolvedContext(),
+        system:"Sei l\'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell\'ordine, usali per dare una risposta precisa con i dettagli reali. Se c\'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l\'azione da fare. REGOLE PRODOTTI DANNEGGIATI: 1) Se il cliente si lamenta di capsule o buste danneggiate e NON ha ancora fornito foto e quantita: chiedi foto delle capsule/buste danneggiate, foto del pacco e quantita esatta danneggiata. 1b) Se il cliente ha GIA fornito foto (presenti nel ticket come allegati) E ha indicato la quantita di capsule/buste danneggiate: procedi direttamente alla compensazione senza chiedere altri dati. 1c) COMPENSAZIONE PRODOTTI DANNEGGIATI - quando hai foto E quantita: calcola il valore in euro moltiplicando la quantita danneggiata per il prezzo unitario del prodotto (ricavalo dai dati ordine: prezzo totale diviso quantita totale). Poi comunica: SE il cliente ha acquistato sul sito Yespresso (non Amazon/Temu/TikTok): \"Le verra accreditato un buono sconto di €X.XX utilizzabile sul nostro sito\". SE il cliente ha acquistato su Amazon, Temu o TikTok: \"Procedera a emettere un rimborso di €X.XX\". Includi sempre il calcolo trasparente (es: \"10 capsule x €0.49 = €4.90\"). 2) Se il cliente segnala solo pacco esterno ammaccato ma prodotto integro, rispondi con scuse, spiega che il cartone e solo protezione esterna, comunica che segnalerai al corriere e alla logistica. REGOLE EROGAZIONE CAPSULE: 5) Problemi con capsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo. 6a) Problemi con capsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore). 6b) Problemi con capsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula. 6c) Problemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video. NON offrire rimborso prima di avere queste informazioni. REGOLE PACCO NON RICEVUTO: 3a) Se il pacco e AL PUNTO DI RITIRO BRT-FERMOPOINT (stato contiene IN ATTESA DI RITIRO AL BRT-FERMOPOINT): il pacco non e stato consegnato a casa, e in attesa di ritiro. Comunica che il pacco e pronto per il ritiro presso il BRT-fermopoint, includi il link BRT per i dettagli. Se hai il nome/indirizzo del punto di ritiro includilo nella risposta. 3b) Se il pacco e al fermopoint ma le informazioni sull'ubicazione del punto di ritiro non sono disponibili o sono in aggiornamento: comunica che il pacco e arrivato al punto di ritiro BRT ma le informazioni sull'ubicazione sono ancora in aggiornamento; invita il cliente a verificare il link BRT della spedizione tra qualche ora per i dettagli sul punto di ritiro. 3c) Se il cliente dice di non aver ricevuto il pacco ma il tracking risulta consegnato A DOMICILIO (stato Consegnato senza fermopoint): comunica che il pacco risulta consegnato, includi numero tracking e link BRT, non offrire rimborso. 4) Se il cliente insiste dopo la risposta su consegna a domicilio: ribadisci che risulta consegnato e non possiamo procedere con rimborso. REGOLE TICKET AMAZON: Quando il ticket proviene da Amazon (donotreply@amazon, marketplace.amazon, atoz-guarantee), NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. NON includere email esterne. IMPORTANTE: gli ordini Amazon sono gestiti e spediti direttamente da Yespresso (non da Amazon), quindi NON dire mai al cliente di contattare il servizio clienti Amazon ne di aspettarsi spedizioni o rimborsi da Amazon. Siamo noi Yespresso a gestire spedizioni, rimborsi e sostituzioni. Per il tracking: il pacco e spedito con BRT ma invita il cliente a verificare lo stato dal suo account Amazon senza includere link BRT. REGOLA NUMERO ORDINE AMAZON: Quando il messaggio proviene da un cliente Amazon (email contiene @marketplace.amazon.it) e in NESSUN messaggio del thread e presente un numero ordine Amazon (formato es. 402-1234567-1234567 oppure xxx-xxxxxxx-xxxxxxx con trattini), DEVI come PRIMA risposta chiedere al cliente il suo numero ordine Amazon. Non procedere con rimborsi, sostituzioni, soluzioni tecniche o qualsiasi altra azione senza aver verificato la presenza del numero ordine in tutto il thread. Questa regola NON si applica alle notifiche automatiche Amazon (donotreply@amazon, atoz-guarantee). REGOLE ACQUISTO ERRATO: Se il cliente dichiara di aver acquistato capsule sbagliate o non compatibili con la sua macchina, usa la risposta rapida Acquisto errato - reso cliente (o TEMU - Acquisto errato reso se il cliente proviene da Temu). NON offrire rimborso diretto ma spiega la procedura di reso entro 14 giorni. REGOLA RITIRO BRT - ISTRUZIONI PACCO: Ogni volta che proponi o menzioni un ritiro BRT al domicilio del cliente, includi SEMPRE queste istruzioni per la preparazione del pacco: utilizzare la scatola ricevuta o una scatola equivalente, sigillare bene con nastro adesivo, inserire se possibile una copia dell'ordine all'interno del pacco. REGOLA ERRORE SPEDIZIONE - PRODOTTO SBAGLIATO: Se il cliente ha ricevuto un prodotto diverso da quello ordinato (es. ha ordinato cialde ma ha ricevuto capsule, o viceversa) e il prodotto errato ricevuto e di almeno 100 unita, bisogna: 1) spedire il prodotto corretto ordinato, 2) organizzare il ritiro del prodotto errato tramite corriere BRT all'indirizzo di consegna originale (non a spese del cliente). Se il prodotto errato e meno di 100 unita, valutare caso per caso. Il cliente NON deve rispedire il prodotto a sue spese. REGOLA PRODOTTO ERRATO RICEVUTO: Se il cliente segnala di aver ricevuto un prodotto diverso da quello ordinato (articolo errato, prodotto sbagliato, non corrisponde all'ordine), DEVI come PRIMA risposta richiedere le seguenti informazioni senza procedere con rimborsi o sostituzioni: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco dove sia chiaramente visibile l'etichetta del corriere BRT con il numero ordine, 3) foto della busta che contiene le capsule ricevute. NON procedere con rimborsi o sostituzioni prima di aver ricevuto queste informazioni e foto. REGOLA PRODOTTI DANNEGGIATI - QUANTITA (CRITICA - NON DEROGARE MAI): Conta SEMPRE le capsule danneggiate prima di rispondere. SE MENO DI 100 capsule danneggiate: VIETATO offrire rispedizione, sostituzione o invio di prodotti. Per ordini sito yespresso.it -> offri SOLO credito parziale sul sito. Per ordini Amazon -> offri SOLO rimborso parziale tramite Amazon. Per ordini Temu o TikTok -> offri SOLO rimborso parziale. SE 100 O PIU capsule danneggiate: puoi offrire rispedizione o sostituzione. Questa regola ha PRIORITA ASSOLUTA su qualsiasi altra considerazione, anche se le capsule rimanenti sono utilizzabili o il cliente sembra soddisfatto di una sostituzione. REGOLA CRITICA - ACQUISTO ERRATO: Ogni volta che il cliente menziona di aver acquistato capsule sbagliate, non compatibili con la sua macchina, o di aver commesso un errore di acquisto, DEVI rispondere ESCLUSIVAMENTE con la procedura di reso: reso entro 14 giorni, spese di spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, tutti i prodotti devono essere integri e non aperti. Se proviene da Temu usa la procedura reso Temu. NON suggerire soluzioni tecniche. NON offrire rimborso. NON chiedere informazioni aggiuntive. REGOLA PROBLEMA TECNICO: Solo se il cliente descrive un problema tecnico con capsule compatibili SENZA menzionare errore di acquisto, usa la risposta tecnica specifica: Bialetti usa risposta Bialetti Gioia, Nespresso usa risposta Nespresso acqua prima caffe, Caffitaly usa risposta CAFFITALY Volta, altri usa PROBLEMA PRODOTTO RICHIESTA INFO SUL DIFETTO. REGOLA CALCOLO CREDITO/RIMBORSO PARZIALE: Per meno di 100 capsule danneggiate calcola il valore proporzionale. Identifica il prodotto specifico citato dal cliente nell\'ordine (se ordine con piu prodotti usa quello menzionato dal cliente). Calcola prezzo per capsula (prezzo riga diviso quantita capsule), moltiplica per capsule danneggiate. IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%. Per sito yespresso.it, Temu, TikTok: indica SOLO valore IVA inclusa (es. credito di EUR X,XX IVA inclusa). Per Amazon: indica ENTRAMBI i valori (es. rimborso di EUR X,XX IVA esclusa piu IVA 22% uguale EUR Y,YY IVA inclusa). Se non riesci a identificare il prodotto usa il prezzo medio dell\'ordine. IMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata il tag speciale (non visibile al cliente): per sito/Temu/TikTok scrivi [COPIA_IMPORTO:X,XX] con solo valore IVA inclusa; per Amazon scrivi [COPIA_IMPORTO:X,XX|Y,YY] dove X,XX e IVA esclusa e Y,YY e IVA inclusa. Esempio sito: [COPIA_IMPORTO:1,58] Esempio Amazon: [COPIA_IMPORTO:1,44|1,58]. FORMATI BUSTE PER CALCOLO CREDITO: I prodotti sono venduti in scatole con buste interne. Formato buste: capsule A Modo Mio in buste da 20 capsule, capsule Dolce Gusto in buste da 16 capsule, capsule Nespresso/Caffitaly/Bialetti in buste da 10 capsule, cialde carta ESE 44mm e capsule Fior Fiore Coop/Lui Espresso sono imbustate singolarmente (ogni cialda/capsula e in una bustina individuale, NON ci sono confezioni interne multiple - un ordine da 150 cialde ESE = 150 bustine singole). Quando il cliente segnala capsule difettose per busta, moltiplica per il numero di buste danneggiate. Esempio: 12 pacchi da 20 capsule A Modo Mio = 240 capsule totali, ogni busta ha 12 capsule. ISTRUZIONI CREDITO NEGOZIO: Quando proponi un credito sul sito yespresso.it, includi SEMPRE queste istruzioni: Il credito e valido per 90 giorni dalla creazione. Per utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparira un banner con scritto utilizzalo. Se il totale e superiore al credito, saldare la differenza con la modalita di pagamento desiderata. Se il totale e inferiore al credito, e possibile utilizzarlo anche parzialmente. REGOLA RICHIESTA SCONTO: Se il cliente chiede uno sconto o un codice promozionale: 1) Se ha un ordine recente non ancora spedito (fulfillment_status = unfulfilled): rispondi che i prezzi sono gia scontati e non e possibile applicare ulteriori sconti. 2) Se non ha ordini in corso o deve ancora fare un ordine: usa la risposta rapida PROMOZIONE DELLA SETTIMANA."+buildSolvedContext(selectedTicket),
         messages:[{role:"user",content:(()=>{
           // Deduplicazione e pulizia allegati
           const seen=new Set();
@@ -2866,13 +2887,15 @@ async function generateReply(lastMsg,email,fullThread){
         amounts.forEach(amt=>{
           const btn=document.createElement("button");
           const amtIdx = amounts.indexOf(amt);
-          const amtLabel = (isAmzTicket && amounts.length===2) ? (amtIdx===0 ? amt+' (IVA escl.)' : amt+' (IVA incl.)') : amt;
-          btn.textContent=amtLabel;
+          const amtLabel = (isAmzTicket && amounts.length===2) ? (amtIdx===0 ? '(IVA escl.)' : '(IVA incl.)') : '';
+          btn.textContent=amt;
           btn.style.cssText="background:#fff;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:6px;padding:3px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit";
+          if(amtLabel){const lbl=document.createElement('span');lbl.textContent=' '+amtLabel;lbl.style.cssText="font-size:10px;color:#888;font-weight:400";btn.appendChild(lbl);}
           btn.onclick=function(){
             navigator.clipboard.writeText(amt.replace(',','.'));
-            this.style.background="#e8f5e9";this.style.color="#2a9d60";this.style.borderColor="#2a9d60";this.textContent="✓ "+amtLabel;
-            setTimeout(()=>{this.style.background="#fff";this.style.color="#1a73e8";this.style.borderColor="#1a73e8";this.textContent=amtLabel;},2000);
+            const orig=this.innerHTML;
+            this.style.background="#e8f5e9";this.style.color="#2a9d60";this.style.borderColor="#2a9d60";this.textContent="✓ "+amt;
+            setTimeout(()=>{this.style.background="#fff";this.style.color="#1a73e8";this.style.borderColor="#1a73e8";this.innerHTML=orig;},2000);
           };
           bar.appendChild(btn);
         });
@@ -3088,9 +3111,9 @@ async function loadCustomerHistory(email, name, currentTid){
   if(email&&email.length>3&&!email.includes("marketplace.amazon")){
     try{
       const enc=encodeURIComponent(email);
-      const apiStatuses=["open","pending","on_hold","solved"];
+      const apiStatuses=["open","pending","solved"];
       const apiResults=await Promise.all(apiStatuses.map(s=>
-        hdFetch("/v1/tickets?pageSize=25&status="+s+"&sortOrder=desc&requesterEmail="+enc).catch(()=>null)
+        Promise.resolve(null)
       ));
       const seen=new Set(related.map(t=>t.ID||t.id)); seen.add(currentTid);
       for(const res of apiResults){
@@ -3106,7 +3129,7 @@ async function loadCustomerHistory(email, name, currentTid){
   if(related.length===0&&name&&name.length>3&&name!=="Cliente"){
     try{
       const enc=encodeURIComponent(name);
-      const apiRes=await hdFetch("/v1/tickets?pageSize=20&sortOrder=desc&requesterName="+enc);
+      const apiRes=await Promise.resolve([]);
       if(apiRes&&apiRes.tickets){
         const apiTickets=apiRes.tickets.filter(t2=>{
           const te=(t2.requester&&t2.requester.email)||"";
@@ -3748,7 +3771,23 @@ async function loadSolvedExamples(){
   }
 }
 
-function buildSolvedContext(){
+function buildSolvedContext(currentTicket){
+  if(currentTicket){
+    const subjCur=currentTicket.subject||"";
+    const amzMatch=subjCur.match(/\d{3}-\d{7}-\d{7}/);
+    if(amzMatch){
+      const amzNum=amzMatch[0];
+      const sameOrder=tickets.filter(t=>(t.status==="solved"||t.status==="closed")&&(t.subject||"").includes(amzNum)&&(t.ID||t.id)!==(currentTicket.ID||currentTicket.id));
+      if(sameOrder.length){
+        const hist=sameOrder.slice(0,3).map((t,i)=>{
+          const agentMsgs=(t.events||[]).filter(e=>e.message&&e.message.text&&e.author&&e.author.type==="agent").slice(-2);
+          const reply=agentMsgs.map(e=>e.message.text.substring(0,300)).join(" | ");
+          return "[Storico "+(i+1)+" - stesso ordine "+amzNum+"]\nOggetto: "+t.subject+"\nRisposta Yespresso: "+reply;
+        }).join("\n---\n");
+        return "\n\nSTORICO TICKET CON STESSO ORDINE AMAZON (NON ripetere richieste già fatte in questi ticket):\n"+hist;
+      }
+    }
+  }
   if(!solvedExamples.length)return"";
   const examples=solvedExamples.slice(0,6).map((ex,i)=>
     `[Esempio ${i+1}]\nOggetto: ${ex.subject}\nCliente: ${ex.customer}\nRisposta Yespresso: ${ex.reply}`
