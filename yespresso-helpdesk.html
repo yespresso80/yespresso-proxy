@@ -1699,7 +1699,6 @@ function renderMessageHtml(text, attachments){
       const brtFullBody=isBrtMsg2?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
       const _guardTid1=t.ID||t.id;
       const order=await fetchShopifyOrder(t.subject+(brtFullBody?" "+brtFullBody:""),email||"",name||"");
-      if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid1){console.log("Temu IIFE: ticket cambiato, skip");return;}
       const oArea=document.getElementById("order-info-area");
       if(order&&oArea){
         const f=order.fulfillments&&order.fulfillments[0];
