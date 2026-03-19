@@ -1450,7 +1450,7 @@ async function selectTicket(tid){
     })();
   }
 
-  const isSolved=mainTicket.status==="solved"||mainTicket.status==="closed";
+  const isSolved=(base.status==="solved"||base.status==="closed");
   if(isSolved){
     const aiReplyBox=document.querySelector(".ai-reply-box");
     if(aiReplyBox)aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>';
@@ -1458,9 +1458,11 @@ async function selectTicket(tid){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
       const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
-      const brtFullBody=isBrtMsg2?((t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ")):"";
+      const allBody=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+      const brtFullBody=isBrtMsg2?allBody:"";
       const _guardTid1=t.ID||t.id;
-      const order=await fetchShopifyOrder(t.subject+(brtFullBody?" "+brtFullBody:""),email||"",name||"");
+      const searchMsg=t.subject+" "+allBody;
+      const order=await fetchShopifyOrder(searchMsg,email||"",name||"");
       const oArea=document.getElementById("order-info-area");
       if(order&&oArea){
         const f=order.fulfillments&&order.fulfillments[0];
@@ -1543,7 +1545,7 @@ async function selectTicket(tid){
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
-  } else {
+  } else if(!isTemuPostVendita&&!isTemuInfoSospeso) {
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread);
     });
