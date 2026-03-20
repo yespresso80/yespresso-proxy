@@ -1205,6 +1205,7 @@ async function selectTicket(tid){
 
   // Ticket Temu post-vendita: NON concatenare
   const isTemuPostVendita=email.includes("orders.temu")&&(base.subject||"").toLowerCase().includes("post-vendita");
+  window._isTemuPostVendita=isTemuPostVendita;
   const isTemuInfoSospeso=email.includes("orders.temu")&&(base.subject||"").toLowerCase().includes("notifica di ticket informativo in sospeso");
   // Non concatenare ticket da Amazon, BRT e Temu post-vendita
   const noConcat_subjects=["reso magazzino","richiesta post-vendita in sospeso","notifica di ticket informativo in sospeso"];
@@ -1679,7 +1680,7 @@ function renderMessageHtml(text, attachments){
   // Distingui email Amazon (template con <center>/tabelle) da HTML normale
   const isAmazonEmail=raw.includes('background-color:#e4e3e4')||raw.includes('Ember, Arial')||raw.includes('sellercentral.amazon');
 
-  if(hasHtml && isAmazonEmail){
+  if(hasHtml && isAmazonEmail && !window._isTemuPostVendita){
     // ── PARSER EMAIL AMAZON ──
     const tmp=document.createElement('div');
     tmp.innerHTML=raw;
@@ -1922,7 +1923,7 @@ function renderMessageHtml(text, attachments){
   // Distingui email Amazon (template con <center>/tabelle) da HTML normale
   const isAmazonEmail=raw.includes('background-color:#e4e3e4')||raw.includes('Ember, Arial')||raw.includes('sellercentral.amazon');
 
-  if(hasHtml && isAmazonEmail){
+  if(hasHtml && isAmazonEmail && !window._isTemuPostVendita){
     // ── PARSER EMAIL AMAZON ──
     const tmp=document.createElement('div');
     tmp.innerHTML=raw;
