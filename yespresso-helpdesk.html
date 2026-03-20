@@ -3656,7 +3656,7 @@ function renderQRList(){
         '</div>'+
         '<div class="qr-list-actions" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+
           '<div style="display:flex;gap:4px">'+
-            '<button class="btn-sm" onclick="(()=>{const q2=quickReplies.find(q=>q.id==='+qr.id+');navigator.clipboard.writeText(q2?.body||'');const b=event.target;b.textContent='✅';b.style.background='#2a7a50';b.style.color='#fff';setTimeout(()=>{b.textContent='📋';b.style.background='';b.style.color='';},1500);})()">📋</button>'+'<button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
+            '<button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
             '<button class="btn-sm btn-danger" onclick="deleteQR('+qr.id+')">🗑</button>'+
           '</div>'+
           '<button class="btn-sm" id="qr-expand-'+qr.id+'" onclick="toggleQRExpand('+qr.id+')" style="font-size:10px;padding:2px 8px">⋯</button>'+
