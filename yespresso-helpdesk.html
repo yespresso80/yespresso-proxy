@@ -2394,10 +2394,12 @@ async function fetchShopifyOrder(message,email,requesterName){
     // 3. Numero ordine Shopify (es. #1234, #12345)
     const decodedMsg=message.replace(/%23/g,"#").replace(/\\u0023/g,"#");
     const msgNoAmz=decodedMsg.replace(/\d{3}-\d{7}-\d{7}/g,"AMZID");
-    const shopifyMatches=[...msgNoAmz.matchAll(/#(\d{4,12})/g)].map(m=>m[1]);
+    const shopifyMatches=[...msgNoAmz.matchAll(/#(\d{4,20})/g)].map(m=>m[1]);
     const uniqueNums=[...new Set(shopifyMatches)].sort((a,b)=>b.length-a.length);
-    const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order|shopify)[^\d#]*(\d{4,12})/gi)].map(m=>m[1]);
-    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches])].sort((a,b)=>b.length-a.length);
+    const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order|shopify|cognome|cliente)[^\d#]*(\d{4,20})/gi)].map(m=>m[1]);
+    const tiktokMatches=[...msgNoAmz.matchAll(/\b(5\d{17})\b/g)].map(m=>m[1]);
+    const subjectOrderMatches=[...msgNoAmz.matchAll(/\b(202[0-9]\d{6})\b/g)].map(m=>m[1]);
+    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches,...tiktokMatches,...subjectOrderMatches])].sort((a,b)=>b.length-a.length);
     // Escludi numeri che sembrano tracking BRT (12+ cifre che iniziano con 179 o 26)
     const brtTrackingNums=allNumsRaw.filter(n=>n.length>=12&&(n.startsWith('179')||n.startsWith('26')));
     const allNums=allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26'))));
