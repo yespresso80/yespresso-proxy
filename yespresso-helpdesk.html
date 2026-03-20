@@ -2767,7 +2767,7 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
         const creditBtnId='cred_'+order.id;
         window._creditData=window._creditData||{};
         window._creditData[creditBtnId]={orderId:order.id,customerId:order.customer.id,email:order.customer.email||email};
-        html+='<br>🎁 <span id="'+creditBtnId+'" style="color:#7b2d8b;font-weight:600;cursor:pointer;text-decoration:underline" onclick="openCreditLink(this,this.id)">Crea Credito ↗</span>';
+        
       }
       const dupBtnId='dup_'+order.id;
       window._dupOrders=window._dupOrders||{};
