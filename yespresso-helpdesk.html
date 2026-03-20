@@ -1381,7 +1381,7 @@ async function selectTicket(tid){
         '<div class="reply-footer">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
-            '<button class="cancel-reply-btn" onclick="closeDetail()">Annulla</button>'+
+            '<button class="cancel-reply-btn" onclick="clearReply()">Annulla</button>'+
             '<button class="send-reply-btn" id="send-btn" onclick="sendReply()">&#128228; Submit</button>'+
           '</div>'+
         '</div>'+
@@ -3595,6 +3595,7 @@ let qrEditingId = null;
 let qrSortMode = localStorage.getItem("yespresso_qr_sort") || "manual"; // "manual" o "usage"
 let qrUsageCount = JSON.parse(localStorage.getItem("yespresso_qr_usage") || "{}");
 
+function clearReply(){const rt=document.getElementById("reply-text");if(rt){rt.value="";rt.style.height="80px";}}
 function copyQR(id){const q=quickReplies.find(r=>r.id===id);if(!q)return;navigator.clipboard.writeText(q.body||"");const b=document.getElementById("qrcopy-"+id);if(b){const o=b.textContent;b.textContent="✅";b.style.background="#2a7a50";b.style.color="#fff";setTimeout(()=>{b.textContent=o;b.style.background="";b.style.color="";},1500);}}
 function saveQRToStorage(){ localStorage.setItem("yespresso_qr", JSON.stringify(quickReplies)); }
 function trackQRUsage(id){ qrUsageCount[id]=(qrUsageCount[id]||0)+1; localStorage.setItem("yespresso_qr_usage",JSON.stringify(qrUsageCount)); }
