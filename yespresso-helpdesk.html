@@ -3595,6 +3595,7 @@ let qrEditingId = null;
 let qrSortMode = localStorage.getItem("yespresso_qr_sort") || "manual"; // "manual" o "usage"
 let qrUsageCount = JSON.parse(localStorage.getItem("yespresso_qr_usage") || "{}");
 
+function copyQR(id){const q=quickReplies.find(r=>r.id===id);if(!q)return;navigator.clipboard.writeText(q.body||"");const b=document.getElementById("qrcopy-"+id);if(b){const o=b.textContent;b.textContent="✅";b.style.background="#2a7a50";b.style.color="#fff";setTimeout(()=>{b.textContent=o;b.style.background="";b.style.color="";},1500);}}
 function saveQRToStorage(){ localStorage.setItem("yespresso_qr", JSON.stringify(quickReplies)); }
 function trackQRUsage(id){ qrUsageCount[id]=(qrUsageCount[id]||0)+1; localStorage.setItem("yespresso_qr_usage",JSON.stringify(qrUsageCount)); }
 
@@ -3656,7 +3657,7 @@ function renderQRList(){
         '</div>'+
         '<div class="qr-list-actions" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+
           '<div style="display:flex;gap:4px">'+
-            '<button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
+            '<button class="btn-sm" id="qrcopy-'+qr.id+'" onclick="copyQR('+qr.id+')">📋</button><button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
             '<button class="btn-sm btn-danger" onclick="deleteQR('+qr.id+')">🗑</button>'+
           '</div>'+
           '<button class="btn-sm" id="qr-expand-'+qr.id+'" onclick="toggleQRExpand('+qr.id+')" style="font-size:10px;padding:2px 8px">⋯</button>'+
