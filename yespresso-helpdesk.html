@@ -1554,18 +1554,6 @@ async function selectTicket(tid){
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else if(isTemuPostVendita) {
-    setTimeout(()=>{
-      const tkText=allMsgs+" "+t.subject;
-      const m1=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
-      const m2=tkText.match(/(PO-\d{3}-\d+-D\d+)/i);
-      const sn=m1?m1[1]:"";
-      const asn=m2?m2[1]:(sn?sn+"-D01":"");
-      const url=sn?"https://seller-eu.temu.com/return-details.html?parent_order_sn="+encodeURIComponent(sn)+"&parent_after_sales_sn="+encodeURIComponent(asn):"https://seller-eu.temu.com";
-      const qrs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU"));
-      const box=document.querySelector(".ai-reply-box");
-      if(box)box.outerHTML='<div style="background:#fff8f0;border:2px solid #ff6600;border-radius:10px;padding:20px;text-align:center"><div style="font-size:13px;font-weight:700;color:#cc4400;margin-bottom:6px">⚠️ Richiesta post-vendita Temu</div>'+(sn?'<div style="font-size:12px;color:#888;margin-bottom:14px">Ordine: <strong>'+sn+'</strong></div>':'')+'<a href="'+url+'" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#ff6600;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none">U0001f7e0 Gestisci su Temu ↗</a><div style="border-top:1px solid #ffe0cc;padding-top:14px;margin-top:12px"><div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px"></div></div><div style="border-top:1px solid #ffe0cc;padding-top:14px;margin-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:10px"><select id="temu-status-select" style="padding:7px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:#fff"><option value="">Non cambiare stato</option><option value="solved" selected>Solved</option><option value="pending">Pending</option><option value="open">Open</option></select><button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">U0001f680 Submit</button></div></div>';
-      setTimeout(()=>{const b=document.getElementById("temu-qr-btns");if(b&&qrs.length){b.innerHTML=qrs.map((q,i)=>{window._temuQR=window._temuQR||{};window._temuQR["tqr"+i]=q.body;const lbl=q.name.replace(/TEMU\s*-\s*/i,"");return '<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')">'+lbl+'</button>';}).join("");}},100);
-    },0);
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
