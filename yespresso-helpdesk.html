@@ -1381,7 +1381,7 @@ async function selectTicket(tid){
         '<div class="reply-footer">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
-            '<button class="cancel-reply-btn" onclick="const rt=document.getElementById('reply-text');if(rt){rt.value='';rt.style.height='80px';}">Annulla</button>'+
+            '<button class="cancel-reply-btn" onclick="closeDetail()">Annulla</button>'+
             '<button class="send-reply-btn" id="send-btn" onclick="sendReply()">&#128228; Submit</button>'+
           '</div>'+
         '</div>'+
