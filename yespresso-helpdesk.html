@@ -1555,6 +1555,45 @@ async function selectTicket(tid){
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else if(isTemuPostVendita) {
+    // Cerca ordine Shopify anche per ticket Temu post-vendita
+    (async()=>{
+      const isBrtMsg2=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+      const allBody=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+      const brtFullBody=isBrtMsg2?allBody:"";
+      const _guardTid1=t.ID||t.id;
+      const searchMsg=t.subject+" "+allBody;
+      const order=await fetchShopifyOrder(searchMsg,email||"",name||"");
+      const oArea=document.getElementById("order-info-area");
+      if(order&&oArea){
+        const f=order.fulfillments&&order.fulfillments[0];
+        const temuAttr2=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
+        const sS2={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema spedizione"};
+        const fS2={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
+        const shipStatus2=f&&f.shipment_status;
+        const displayStatus2=shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
+        const shopifyOrderUrl2="https://40f758-3.myshopify.com/admin/orders/"+order.id;
+        let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
+
+        html2+='<br>'+displayStatus2;
+        if(f){
+          const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+          const tc2=f.tracking_company||"BRT";
+          if(tn2){const tnPod2=tn2.startsWith('26')?tn2:'26'+tn2;const brtUrl2='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn2;const podUrl2='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPod2+'&PODChkCde=348365243';html2+='<br>📦 '+tc2+': <strong>'+tn2+'</strong> — <a href="'+brtUrl2+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT</a>'; html2+=' — <a href="'+podUrl2+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">📸 Vedi POD ↗</a>'; const podDlBtnId2='pod-dl-'+order.id;window._podUrlMap=window._podUrlMap||{};window._podUrlMap[podDlBtnId2]={podUrl:podUrl2,tn:tn2,tnPod:tnPod2}; html2+=' <span id="'+podDlBtnId2+'" onclick="downloadAndShowPod(this.id)" style="color:#8e44ad;font-size:12px;cursor:pointer;font-weight:700;text-decoration:underline">⬇️ Scarica</span>'; html2+=' <span id="urp-'+order.id+'" style="color:#fff;background:#8e44ad;font-size:11px;cursor:pointer;font-weight:700;padding:2px 7px;border-radius:4px">🔗 URL POD</span>';}
+          if(f.created_at)html2+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
+        }
+        if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
+        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
+        const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
+        window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order; window._lastTemuOrder=order; window._lastTemuOrder=order;
+        window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
+        html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
+        html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\'",this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\'",this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
+        oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+      } else if(oArea){
+        oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
+      }
+    })();
     setTimeout(()=>{
       const tkText=allMsgs+" "+t.subject;
       const m1=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
