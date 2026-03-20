@@ -1381,7 +1381,7 @@ async function selectTicket(tid){
         '<div class="reply-footer">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
-            '<button class="cancel-reply-btn" onclick="clearReply()">Annulla</button>'+
+            '<button class="cancel-reply-btn" onclick="openSuggestModal()" style="margin-right:4px">Suggerimenti</button><button class="cancel-reply-btn" onclick="clearReply()">Annulla</button>'+
             '<button class="send-reply-btn" id="send-btn" onclick="sendReply()">&#128228; Submit</button>'+
           '</div>'+
         '</div>'+
@@ -3594,6 +3594,21 @@ let quickReplies = JSON.parse(localStorage.getItem("yespresso_qr") || "null") ||
 let qrEditingId = null;
 let qrSortMode = localStorage.getItem("yespresso_qr_sort") || "manual"; // "manual" o "usage"
 let qrUsageCount = JSON.parse(localStorage.getItem("yespresso_qr_usage") || "{}");
+
+function openSuggestModal(){
+  const ex=document.getElementById('suggest-modal');if(ex)ex.remove();
+  const m=document.createElement('div');m.id='suggest-modal';
+  m.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  m.innerHTML='<div style="background:#fff;border-radius:12px;padding:24px;width:420px"><div style="font-size:15px;font-weight:700;margin-bottom:12px">Suggerimenti per riformulare</div><textarea id="suggest-input" placeholder="Es: tono piu formale, sii piu breve..." style="width:100%;height:100px;padding:10px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button onclick="document.getElementById(\'suggest-modal\').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer">Annulla</button><button onclick="doReformulate()" style="padding:8px 16px;background:#1a73e8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">Riformula</button></div></div>';
+  document.body.appendChild(m);
+  setTimeout(()=>document.getElementById('suggest-input').focus(),100);
+}
+async function doReformulate(){
+  const sg=document.getElementById('suggest-input').value.trim();if(!sg)return;
+  const rt=document.getElementById('reply-text');if(!rt||!rt.value.trim())return;
+  const orig=rt.value;document.getElementById('suggest-modal').remove();rt.value='Riformulo...';
+  try{const res=await fetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1000,messages:[{role:'user',content:'Riformula questa risposta email seguendo questi suggerimenti: '+sg+'\n\nRisposta originale:\n'+orig+'\n\nRispondi SOLO con la risposta riformulata.'}]})});const data=await res.json();rt.value=data.content[0].text||orig;}catch(e){rt.value=orig;}
+}
 
 function clearReply(){const rt=document.getElementById("reply-text");if(rt){rt.value="";rt.style.height="80px";}}
 function copyQR(id){const q=quickReplies.find(r=>r.id===id);if(!q)return;navigator.clipboard.writeText(q.body||"");const b=document.getElementById("qrcopy-"+id);if(b){const o=b.textContent;b.textContent="✅";b.style.background="#2a7a50";b.style.color="#fff";setTimeout(()=>{b.textContent=o;b.style.background="";b.style.color="";},1500);}}
