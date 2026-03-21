@@ -3644,7 +3644,7 @@ function trackQRUsage(id){ qrUsageCount[id]=(qrUsageCount[id]||0)+1; localStorag
 
 
 function insertQRFromModal(id){
-  const qr=quickReplies.find(q=>q.id===id); if(!qr)return;
+  const qr=quickReplies.find(q=>q.id==id); if(!qr)return;
   const rt=document.getElementById("reply-text");
   if(rt){
     rt.value=qr.body;
