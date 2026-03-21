@@ -2147,10 +2147,10 @@ async function openTicketPreview(tid){
       const label=isAgent?"👤 Agente":"🙋 Cliente";
       msgsHtml+=`<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:11px;font-weight:700;color:#666">${label}</span>
-          <span style="font-size:11px;color:#aaa">${evDate}</span>
+          <span style="font-size:14px;font-weight:700;color:#666">${label}</span>
+          <span style="font-size:13px;color:#aaa">${evDate}</span>
         </div>
-        <div style="font-size:13px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap">${txt}${(ev.message.text||ev.message.richTextHtml||"").length>500?"…":""}</div>
+        <div style="font-size:16px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap">${txt}${(ev.message.text||ev.message.richTextHtml||"").length>500?"…":""}</div>
       </div>`;
     });
   }
