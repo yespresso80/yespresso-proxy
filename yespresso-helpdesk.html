@@ -3431,7 +3431,7 @@ async function copyBrtTracking(orderId,btn){
 // ═══════════════════════════════════════════════
 // QUICK REPLIES
 // ═══════════════════════════════════════════════
-let quickReplies = JSON.parse(localStorage.getItem("yespresso_qr") || "null") || [
+let quickReplies = [
   // ── ORDINI ──
   {id:1, cat:"📦 Ordini", name:"Ordine in consegna", body:"Buongiorno,\nil suo ordine è in consegna per ___________\nLa ringraziamo per averci scelto.\nCordiali saluti"},
   {id:2, cat:"📦 Ordini", name:"Ordine in spedizione", body:"Gentile cliente,\n\nLe confermiamo che il suo ordine è stato spedito ed è attualmente in transito. Può tracciare la spedizione utilizzando il numero di tracking che le abbiamo fornito.\n\nRimaniamo a sua disposizione per qualsiasi ulteriore informazione.\n\nCordiali saluti,\nIl Team Yespresso"},
