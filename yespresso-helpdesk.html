@@ -228,6 +228,9 @@ textarea.field{min-height:80px;resize:vertical}
 .concat-ticket-label{font-size:11px;font-weight:700;color:#555;display:flex;align-items:center;gap:6px}
 .concat-ticket-date{font-size:10px;color:#bbb}
 .concat-banner{background:#fff3e0;border:1px solid #ffe0b2;border-radius:8px;padding:10px 14px;font-size:12px;color:#e65100;display:flex;align-items:center;gap:8px;flex-shrink:0}
+
+.qrcat-btn{padding:5px 12px;border-radius:20px;border:1.5px solid #e0e4ea;background:#fff;color:#555;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500}
+.qrcat-active{background:#e8f0fe!important;color:#1a73e8!important;border-color:#1a73e8!important}
 </style>
 <!-- deploy:1773904677770 --></head>
 <body>
@@ -3660,6 +3663,8 @@ function openQRModal(){
   document.getElementById("qr-modal").style.display="flex";
   setTimeout(()=>{const s=document.getElementById("qr-search");if(s){s.value="";s.focus();}},50);
 }
+
+function filterQRCat(btn,cat){document.getElementById("qr-search").value=cat;document.querySelectorAll(".qrcat-btn").forEach(b=>b.classList.remove("qrcat-active"));btn.classList.add("qrcat-active");renderQRList();}
 function closeQRModal(){ document.getElementById("qr-modal").style.display="none"; }
 
 function renderQRList(){
@@ -4588,15 +4593,28 @@ document.addEventListener('click',function(e){
 
 <!-- QUICK REPLIES MODAL -->
 <div class="modal-overlay" id="qr-modal" style="display:none" onclick="if(event.target===this)closeQRModal()">
-  <div class="modal" style="width:700px;max-width:96vw">
+  <div class="modal" style="width:1100px;max-width:98vw">
     <div class="modal-header">
       <span class="modal-title">⚡ Risposte Rapide</span>
       <button class="modal-close" onclick="closeQRModal()">×</button>
     </div>
-    <div style="padding:8px 16px;border-bottom:1px solid #e8eaf0;background:#fff">
-      <input type="text" id="qr-search" placeholder="🔍 Cerca per nome, categoria o testo..." oninput="renderQRList()" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">
+    <div style="padding:10px 16px;border-bottom:1px solid #e8eaf0;background:#fff">
+      <input type="text" id="qr-search" placeholder="🔍 Cerca per nome, categoria o testo..." oninput="renderQRList()" style="width:100%;padding:10px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:15px;font-family:inherit;box-sizing:border-box;outline:none">
+      <div id="qr-cat-filter" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+        <button onclick="filterQRCat(this,'')" class="qrcat-btn qrcat-active">Tutte</button>
+        <button onclick="filterQRCat(this,'📦 Ordini')" class="qrcat-btn">📦 Ordini</button>
+        <button onclick="filterQRCat(this,'🚚 Spedizioni BRT')" class="qrcat-btn">🚚 BRT</button>
+        <button onclick="filterQRCat(this,'↩️ Resi e Rimborsi')" class="qrcat-btn">↩️ Resi</button>
+        <button onclick="filterQRCat(this,'⚠️ Prodotti Danneggiati')" class="qrcat-btn">⚠️ Prodotti</button>
+        <button onclick="filterQRCat(this,'☕ Macchine')" class="qrcat-btn">☕ Macchine</button>
+        <button onclick="filterQRCat(this,'🟡 Amazon')" class="qrcat-btn">🟡 Amazon</button>
+        <button onclick="filterQRCat(this,'🟠 Temu')" class="qrcat-btn">🟠 Temu</button>
+        <button onclick="filterQRCat(this,'🎵 TIK RESI')" class="qrcat-btn">🎵 TIK RESI</button>
+        <button onclick="filterQRCat(this,'💬 TIK CHAT')" class="qrcat-btn">💬 TIK CHAT</button>
+        <button onclick="filterQRCat(this,'💬 Generale')" class="qrcat-btn">💬 Generale</button>
+      </div>
     </div>
-    <div class="modal-body" id="qr-modal-body"></div>
+    <div class="modal-body" id="qr-modal-body" style="font-size:15px"></div>
     <div class="modal-footer">
       <button class="btn-sm btn-primary" onclick="showAddQR()">+ Aggiungi risposta</button>
       <button class="btn-sm" onclick="closeQRModal()">Chiudi</button>
