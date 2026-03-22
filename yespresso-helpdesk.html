@@ -1494,6 +1494,23 @@ async function selectTicket(tid){
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        // Mostra ultimi 3 ordini del cliente
+        if(order.customer&&order.customer.id){
+          const custOrders=await shopifyGet("orders.json?customer_id="+order.customer.id+"&status=any&limit=3");
+          if(custOrders&&custOrders.orders&&custOrders.orders.length>1){
+            let hOrders='<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e0e4ea"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px">📋 Ultimi ordini cliente</div>';
+            custOrders.orders.forEach(o=>{
+              if(o.id===order.id)return;
+              const od=new Date(o.created_at).toLocaleDateString("it-IT");
+              const os=o.fulfillment_status==="fulfilled"?"📦":"⏳";
+              const ou="https://40f758-3.myshopify.com/admin/orders/"+o.id;
+              hOrders+='<div style="font-size:11px;padding:2px 0"><a href="'+ou+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">'+o.name+'</a> <span style="color:#888">'+od+'</span> '+os+' <span style="color:#2a5a2a">€'+parseFloat(o.total_price||0).toFixed(2)+'</span></div>';
+            });
+            hOrders+='</div>';
+            const box=oArea.querySelector(".order-info-box");
+            if(box)box.innerHTML+=hOrders;
+          }
+        }
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
       }
