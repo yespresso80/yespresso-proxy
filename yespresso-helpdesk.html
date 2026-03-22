@@ -2790,8 +2790,9 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
     if(order.shipping_address){
       const sa=order.shipping_address;
       window._brtPickupData=window._brtPickupData||{};
-      window._brtPickupData[order.id]={name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||''};
+      window._brtPickupData[order.id]={tn:(f&&f.tracking_number)||'',orderName:order.name||'',name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||''};
       html+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+    html+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
     }
     // Credito: mostra solo per clienti sito (non Amazon/Temu/TikTok)
     const isTemuOrAmazonGen=(email||'').includes('temu')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok')||(email||'').includes('seller@orders');
@@ -4262,7 +4263,18 @@ async function createCredit(inputId){
   }
 }
 
-function openBrtPickup(orderId){
+function openBrtContact(orderId){
+  const d=(window._brtPickupData||{})[orderId];
+  const tn=(d&&d.tn)||"";
+  const on=(d&&d.orderName)||"";
+  box.innerHTML='<div style="font-size:15px;font-weight:700;color:#1a73e8;margin-bottom:12px">📞 Contatta BRT</div><div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px;margin-bottom:6px"><div style="font-size:10px;color:#aaa;font-weight:600">N. SPEDIZIONE BRT</div><div style="font-size:14px;font-weight:700;cursor:pointer" onclick="navigator.clipboard.writeText(this.dataset.v);this.style.color='#2a9d60'" data-v="'+tn+'">'+(tn||'N/D')+' 📋</div></div><div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 10px"><div style="font-size:10px;color:#aaa;font-weight:600">EMAIL</div><div style="font-size:11px;font-weight:600;cursor:pointer" onclick="navigator.clipboard.writeText('assistenza@yespresso.it');this.style.color='#2a9d60'">assistenza@yespresso.it 📋</div></div><div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 10px"><div style="font-size:10px;color:#aaa;font-weight:600">TELEFONO</div><div style="font-size:11px;font-weight:600;cursor:pointer" onclick="navigator.clipboard.writeText('3491031349');this.style.color='#2a9d60'">3491031349 📋</div></div></div><div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px">MESSAGGIO</div>'+mh+'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button onclick="this.closest('[style*=fixed]').remove()" style="padding:7px 14px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Chiudi</button><a href="https://services.brt.it/it/form-info-spedizioni?CA=1&CL=1791201" target="_blank" onclick="this.closest('[style*=fixed]').remove()" style="padding:7px 14px;border-radius:8px;background:#1a73e8;color:#fff;font-size:12px;font-weight:700;text-decoration:none">Apri Form BRT ↗</a></div>';
+  const cn=(d&&d.name)||"";
+  const msgs=[["MODIFICA INDIRIZZO","Per la spedizione in oggetto si richiede cambio indirizzo. Ordine: "+on+" Cliente: "+cn],["NO CONSEGNA","Il cliente non ha ricevuto il collo pur risultando consegnato. Ordine: "+on+" Cliente: "+cn],["RESO MITTENTE","Chiediamo reso al mittente. Ordine: "+on+" Cliente: "+cn],["AGGIORNAMENTI","Chiediamo aggiornamenti sulla consegna. Ordine: "+on+" Cliente: "+cn],["NON IN PUDO","Il cliente segnala che il pacco non e disponibile al pudo. Ordine: "+on+" Cliente: "+cn],["INDIRIZZO PUDO","Non e presente indirizzo del pudo, potete inviarcelo? Ordine: "+on+" Cliente: "+cn],["MANDARE AL PUDO","Il cliente chiede consegna al pudo piu vicino. Ordine: "+on+" Cliente: "+cn]];
+  const mh=msgs.map(m=>'<div style="margin-bottom:5px"><div style="font-size:10px;color:#888;font-weight:700">'+m[0]+'</div><div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer" onclick="navigator.clipboard.writeText(this.dataset.v);this.style.background='#e8f5e9'" data-v="'+m[1]+'">'+m[1]+' 📋</div></div>').join("");
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:12px;padding:20px;max-width:500px;width:95function openBrtPickup(orderId){
   const data=(window._brtPickupData||{})[orderId];
   if(!data){window.open("https://vas.brt.it/vas/orm2_0_1.htm","_blank");return;}
   // Mostra modal con dati pre-compilati da copiare
