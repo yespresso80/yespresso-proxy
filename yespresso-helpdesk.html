@@ -3211,6 +3211,8 @@ async function loadCustomerHistory(email, name, currentTid){
     }catch(e){console.log("[CH] API search fallita:",e.message);}
   }
 
+  const isMP=(email||"").includes("marketplace.amazon")||(email||"").includes("orders.temu")||(email||"").includes("tiktok")||(email||"").includes("donotreply@amazon");
+  if(isMP){const ord=window._lastTemuOrder||window._shopifyOrder;if(ord&&ord.customer&&ord.customer.id){try{const r2=await shopifyGet("orders.json?customer_id="+ord.customer.id+"&status=any&limit=20");if(r2&&r2.orders&&r2.orders.length){const el=document.getElementById("customer-history-list");if(el){const h2=r2.orders.map(o=>{const d=new Date(o.created_at).toLocaleDateString("it-IT");const s=o.fulfillment_status==="fulfilled"?"📦":"⏳";const u2="https://40f758-3.myshopify.com/admin/orders/"+o.id;return'<div style="padding:4px 0;border-bottom:1px solid #f0f2f5;font-size:12px"><a href="'+u2+'" target="_blank" style="font-weight:600;color:#1a73e8;text-decoration:none">'+o.name+'</a> <span style="color:#888">'+d+'</span> '+s+' <span style="color:#2a5a2a;font-weight:600">€'+parseFloat(o.total_price||0).toFixed(2)+'</span></div>';}).join("");el.insertAdjacentHTML("beforebegin",'<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:4px">🛍️ ORDINI SHOPIFY CLIENTE</div>'+h2+'</div>');}}}catch(e){}}}
   // Sort by date desc, take last 10
   // Ordina per data più recente
   related.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||b.createdAt||0)-new Date(a.lastMessageAt||a.updatedAt||a.createdAt||0));
