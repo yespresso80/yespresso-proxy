@@ -1689,8 +1689,8 @@ async function selectTicket(tid){
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(order&&order.customer&&order.customer.id){
-          const custOrds2=await shopifyGet("orders.json?customer_id="+order.customer.id+"&status=any&limit=4");
+        const _ord=brtOrder||order;if(_ord&&_ord.customer&&_ord.customer.id){
+          const custOrds2=await shopifyGet("orders.json?customer_id="+_ord.customer.id+"&status=any&limit=4");
           if(custOrds2&&custOrds2.orders&&custOrds2.orders.length>1){
             let hO2='<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e0e4ea"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px">📋 Ultimi ordini cliente</div>';
             custOrds2.orders.forEach(o2=>{if(o2.id===order.id)return;const od=new Date(o2.created_at).toLocaleDateString("it-IT");const os=o2.fulfillment_status==="fulfilled"?"📦":"⏳";const ou="https://40f758-3.myshopify.com/admin/orders/"+o2.id;hO2+='<div style="font-size:11px;padding:2px 0"><a href="'+ou+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">'+o2.name+'</a> <span style="color:#888">'+od+'</span> '+os+' <span style="color:#2a5a2a">€'+parseFloat(o2.total_price||0).toFixed(2)+'</span></div>';});
@@ -1957,8 +1957,8 @@ function renderMessageHtml(text, attachments){
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(order&&order.customer&&order.customer.id){
-          const custOrds2=await shopifyGet("orders.json?customer_id="+order.customer.id+"&status=any&limit=4");
+        const _ord=brtOrder||order;if(_ord&&_ord.customer&&_ord.customer.id){
+          const custOrds2=await shopifyGet("orders.json?customer_id="+_ord.customer.id+"&status=any&limit=4");
           if(custOrds2&&custOrds2.orders&&custOrds2.orders.length>1){
             let hO2='<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e0e4ea"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px">📋 Ultimi ordini cliente</div>';
             custOrds2.orders.forEach(o2=>{if(o2.id===order.id)return;const od=new Date(o2.created_at).toLocaleDateString("it-IT");const os=o2.fulfillment_status==="fulfilled"?"📦":"⏳";const ou="https://40f758-3.myshopify.com/admin/orders/"+o2.id;hO2+='<div style="font-size:11px;padding:2px 0"><a href="'+ou+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">'+o2.name+'</a> <span style="color:#888">'+od+'</span> '+os+' <span style="color:#2a5a2a">€'+parseFloat(o2.total_price||0).toFixed(2)+'</span></div>';});
