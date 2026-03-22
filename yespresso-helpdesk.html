@@ -2428,9 +2428,9 @@ async function fetchShopifyOrder(message,email,requesterName){
     if(allNums.length>0){
       const numResults=await Promise.all(allNums.slice(0,5).map(async num=>{
         const d=await shopifyGet("orders.json?name=%23"+num+"&status=any");
-        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);window._lastShopifyOrder=d.orders[0];return d.orders[0];}
+        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);return d.orders[0];}
         const d2=await shopifyGet("orders.json?name="+num+"&status=any");
-        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);window._lastShopifyOrder=d2.orders[0];return d2.orders[0];}
+        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);return d2.orders[0];}
         if(num.length>=8){try{const d3=await shopifyGet("orders/"+num+".json");if(d3&&d3.order)return d3.order;}catch(e){}}
         return null;
       }));
@@ -3211,8 +3211,6 @@ async function loadCustomerHistory(email, name, currentTid){
     }catch(e){console.log("[CH] API search fallita:",e.message);}
   }
 
-  const _isMP=(email||"").includes("marketplace.amazon")||(email||"").includes("orders.temu")||(email||"").includes("tiktok")||(email||"").includes("donotreply@amazon");
-  if(_isMP){setTimeout(async()=>{const ord=window._lastShopifyOrder;if(ord&&ord.customer&&ord.customer.id){try{const r2=await shopifyGet("orders.json?customer_id="+ord.customer.id+"&status=any&limit=5");if(r2&&r2.orders&&r2.orders.length){let h2='<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:4px">🛍️ Ordini Shopify cliente</div>';r2.orders.forEach(o=>{const d=new Date(o.created_at).toLocaleDateString("it-IT");const s=o.fulfillment_status==="fulfilled"?"📦":"⏳";const uu="https://40f758-3.myshopify.com/admin/orders/"+o.id;h2+='<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f0f2f5"><a href="'+uu+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">'+o.name+'</a> <span style="color:#888">'+d+'</span> '+s+' <span style="color:#2a5a2a;font-weight:600">€'+parseFloat(o.total_price||0).toFixed(2)+'</span></div>';});h2+='</div>';const el=document.getElementById("customer-history-list");if(el)el.insertAdjacentHTML("beforebegin",h2);}}catch(e){}}},2000);}
   // Sort by date desc, take last 10
   // Ordina per data più recente
   related.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||b.createdAt||0)-new Date(a.lastMessageAt||a.updatedAt||a.createdAt||0));
