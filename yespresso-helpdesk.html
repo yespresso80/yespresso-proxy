@@ -91,8 +91,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .message-thread{background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden}
 .msg-header{padding:12px 16px;border-bottom:1px solid #f0f2f5;background:#fafbfc;font-size:12px;color:#555}
 .msg-body{font-size:13px;color:#333;line-height:1.7}
-.msg-body-plain{padding:16px;white-space:pre-wrap}
+.msg-body-plain{padding:14px 16px;white-space:pre-wrap}
 .msg-body-email{background:#f0f0f0;padding:16px}
+.msg-block{margin:0 0 10px;overflow:hidden;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.msg-block-client{background:#f0f4ff;border-left:4px solid #1a73e8}
+.msg-block-agent{background:#f0fdf4;border-left:4px solid #16a34a}
+.msg-block-private{background:#fffbeb;border-left:4px solid #f59e0b;border:1px dashed #f59e0b;border-left:4px solid #f59e0b}
+.msg-block-header{display:flex;align-items:center;gap:10px;padding:12px 16px 8px;border-bottom:1px solid rgba(0,0,0,.06)}
+.msg-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.msg-avatar-client{background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff}
+.msg-avatar-agent{background:linear-gradient(135deg,#16a34a,#065f46);color:#fff}
+.msg-avatar-private{background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff}
+.msg-author{font-size:13px;font-weight:700;flex:1;color:#1a1a2e}
+.msg-author-client{color:#1a56db}
+.msg-author-agent{color:#166534}
+.msg-author-private{color:#92400e}
+.msg-date{font-size:11px;color:#aaa;font-style:italic;background:rgba(0,0,0,.04);padding:2px 8px;border-radius:10px}
+.msg-body{padding:10px 16px 14px;font-size:14px;line-height:1.7;color:#1a1a2e}
 .msg-body-email .email-inner{background:#fff;border-radius:4px;overflow:hidden;max-width:680px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .msg-body-email .email-inner img{max-width:100%;height:auto}
 .msg-body-email .email-inner a{color:#1a73e8}
@@ -1348,11 +1363,20 @@ async function selectTicket(tid){
         const isAgent=ev.author&&ev.author.type==="agent";
         const isClient=ev.author&&ev.author.type==="client";
         const authorLabel=isAgent?"👤 Agente":isClient?"🙋 Cliente":"";
-        if(idx>0){
-          // Separatore tra messaggi
-          messagesHtml+='<div style="border-top:1px dashed #e8eaf0;margin:0;padding:6px 16px;font-size:10px;color:#aaa;background:#fafbfc;display:flex;justify-content:space-between"><span>'+authorLabel+'</span><span>'+evDate+'</span></div>';
-        }
+        // Blocco messaggio con stile moderno
+        const isPrivate=ev.private||ev.isPrivate||ev.type==="private"||ev.messageType==="private"||(ev.message&&ev.message.private)||false;
+        const blockClass=isPrivate?"msg-block msg-block-private":isAgent?"msg-block msg-block-agent":isClient?"msg-block msg-block-client":"msg-block msg-block-agent";
+        const avatarClass=isPrivate?"msg-avatar msg-avatar-private":isAgent?"msg-avatar msg-avatar-agent":"msg-avatar msg-avatar-client";
+        const avatarIcon=isPrivate?"🔒":isAgent?"👤":"🙋";
+        const authorName=isPrivate?"Nota Privata":isAgent?"Agente":isClient?(ev.author&&ev.author.name)||"Cliente":"Sistema";
+        messagesHtml+='<div class="'+blockClass+'">'+
+          '<div class="msg-block-header">'+
+          '<div class="'+avatarClass+'">'+avatarIcon+'</div>'+
+          '<span class="msg-author '+(isPrivate?'msg-author-private':isAgent?'msg-author-agent':'msg-author-client')+'">'+authorName+'</span>'+
+          '<span class="msg-date">'+evDate+'</span>'+
+          '</div>';
         messagesHtml+=renderMsgBlock(evText,evAttachments);
+        messagesHtml+='</div>';
       });
     }
     messagesHtml+='</div>';
@@ -1360,7 +1384,7 @@ async function selectTicket(tid){
 
   // Render main area
   document.getElementById("detail-main").innerHTML=
-    '<div class="detail-messages"><div style="display:flex;flex-direction:column;gap:12px">'+messagesHtml+'</div></div>'+
+    '<div class="detail-messages"><div style="display:flex;flex-direction:column;gap:0;padding:12px 0">'+messagesHtml+'</div></div>'+
     '<div class="detail-reply-fixed"><div class="ai-reply-box">'+
       '<div class="ai-box-header"><span id="ai-label">&#10024; Generazione risposta AI...</span></div>'+
       '<div class="generating" id="gen-box"><div class="spinner"></div> Cerco ordine su Shopify...</div>'+
@@ -1369,9 +1393,10 @@ async function selectTicket(tid){
           '<textarea class="reply-area" id="reply-text" rows="5" placeholder="Scrivi risposta... (digita # per risposte rapide)"></textarea>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:6px;padding:6px 16px 0;border-top:1px solid #f0f2f5;margin-top:4px">'+
-          '<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#888;cursor:pointer;user-select:none">'+
-            '<input type="checkbox" id="reply-private" style="width:13px;height:13px;accent-color:#1a73e8"> Privato'+
-          '</label>'+
+          '<button id="private-toggle" onclick="togglePrivateMode()" style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;border:1.5px solid #e0e4ea;background:#fff;color:#888;font-size:12px;font-family:inherit;cursor:pointer;font-weight:600;transition:all .2s">'+
+            '<span id="private-toggle-icon" style="font-size:14px">🔓</span>'+
+            '<span id="private-toggle-label">Privato</span>'+
+          '</button>'+
           '<button class="qr-btn" onclick="openQRModal()" style="height:28px;font-size:11px;background:#FFFAAA;border-color:#e0d800;color:#000"># Risposte rapide</button>'+
           '<div style="flex:1"></div>'+
           '<span style="font-size:11px;color:#888;margin-right:4px">Stato:</span>'+
@@ -1384,11 +1409,7 @@ async function selectTicket(tid){
           '</select>'+
         '</div>'+
         '<div class="reply-footer">'+
-          '<div style="display:flex;align-items:center;gap:8px">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
-          '<label title="Allega file" style="cursor:pointer;padding:4px 8px;border:1px solid #dde1e7;border-radius:6px;background:#fff;font-size:16px;line-height:1;display:inline-flex;align-items:center">📎<input type="file" id="reply-attachment" multiple style="display:none" onchange="updateAttachmentLabel(this)"></label>'+
-          '<span id="attachment-label" style="font-size:11px;color:#888"></span>'+
-          '</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
             '<button class="cancel-reply-btn" onclick="openSuggestModal()" style="margin-right:4px;background:#90EE90;border-color:#6dbf6d">Suggerimenti</button><button class="cancel-reply-btn" onclick="clearReply()" style="background:#FFB6B6;border-color:#e08080">Annulla</button>'+
             '<button class="send-reply-btn" id="send-btn" onclick="sendReply()">&#128228; Submit</button>'+
@@ -1731,7 +1752,7 @@ function renderMsgBlock(text, attachments){
     // Usa un div con data-html per poi creare l'iframe dinamicamente
     return '<div class="msg-body msg-body-email"><div class="email-frame-wrap" id="'+uid+'" data-html="'+encodeURIComponent(rendered)+'"><div class="email-inner">'+rendered+'</div></div></div>';
   }
-  return '<div class="msg-body msg-body-plain">'+rendered+'</div>';
+  return '<div class="msg-body msg-body-plain">'+rendered.replace(/\n{2,}/g,"\n").trim()+'</div>';
 }
 
 function renderMessageHtml(text, attachments){
@@ -1741,6 +1762,8 @@ function renderMessageHtml(text, attachments){
   let raw=text||"";
   console.log("📨 MSG RAW (first 400):", JSON.stringify(raw.substring(0,400)));
   console.log("📨 MSG RAW (last 400):", JSON.stringify(raw.slice(-400)));
+  // Rimuovi righe vuote multiple (max 1 riga vuota consecutiva)
+  raw=raw.replace(/\n{2,}/g,"\n").replace(/^\n+/,"").replace(/\n+$/,"").trim();
 
   // Step 1: decodifica entities escaped (&lt;a&gt; -> <a>)
   if(raw.includes("&lt;")||raw.includes("&amp;")){
@@ -1998,6 +2021,8 @@ function renderMessageHtml(text, attachments){
   let raw=text||"";
   console.log("📨 MSG RAW (first 400):", JSON.stringify(raw.substring(0,400)));
   console.log("📨 MSG RAW (last 400):", JSON.stringify(raw.slice(-400)));
+  // Rimuovi righe vuote multiple (max 1 riga vuota consecutiva)
+  raw=raw.replace(/\n{2,}/g,"\n").replace(/^\n+/,"").replace(/\n+$/,"").trim();
 
   // Step 1: decodifica entities escaped (&lt;a&gt; -> <a>)
   if(raw.includes("&lt;")||raw.includes("&amp;")){
@@ -3046,14 +3071,44 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
 }
 
 
-function updateAttachmentLabel(input){
-  var lbl=document.getElementById("attachment-label");
-  if(!lbl)return;
-  if(input.files&&input.files.length>0){
-    lbl.textContent=input.files.length===1?input.files[0].name:input.files.length+" file allegati";
-    lbl.style.color="#1a73e8";
+
+function togglePrivateMode(){
+  const btn = document.getElementById("private-toggle");
+  const icon = document.getElementById("private-toggle-icon");
+  const label = document.getElementById("private-toggle-label");
+  const replyBox = document.querySelector(".reply-area") || document.getElementById("reply-text");
+  const isOn = btn.dataset.private === "1";
+  
+  if(!isOn){
+    // Attiva modalità privata
+    btn.dataset.private = "1";
+    btn.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;font-size:12px;font-family:inherit;cursor:pointer;font-weight:600;transition:all .2s";
+    icon.textContent = "🔒";
+    label.textContent = "Nota Privata ON";
+    if(replyBox){
+      replyBox.style.background = "#fffbeb";
+      replyBox.style.borderColor = "#f59e0b";
+      // Salva il messaggio AI corrente e svuota
+      window._savedAiReply = replyBox.value;
+      replyBox.value = "";
+      replyBox.placeholder = "Scrivi nota privata... (visibile solo agli agenti)";
+    }
   } else {
-    lbl.textContent="";
+    // Disattiva modalità privata
+    btn.dataset.private = "0";
+    btn.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;border:1.5px solid #e0e4ea;background:#fff;color:#888;font-size:12px;font-family:inherit;cursor:pointer;font-weight:600;transition:all .2s";
+    icon.textContent = "🔓";
+    label.textContent = "Privato";
+    if(replyBox){
+      replyBox.style.background = "";
+      replyBox.style.borderColor = "";
+      // Ripristina il messaggio AI salvato
+      if(window._savedAiReply !== undefined){
+        replyBox.value = window._savedAiReply;
+        window._savedAiReply = undefined;
+      }
+      replyBox.placeholder = "Scrivi risposta... (digita # per risposte rapide)";
+    }
   }
 }
 async function sendReply(){
@@ -3069,36 +3124,17 @@ async function sendReply(){
   try{
     if(message){
       // HelpDesk API: PATCH /v1/tickets/{id} con {message:{text:"..."}}
-      // Gestione allegati
-      var attachmentIds=[];
-      var attachInput=document.getElementById("reply-attachment");
-      if(attachInput&&attachInput.files&&attachInput.files.length>0){
-        for(var fi=0;fi<attachInput.files.length;fi++){
-          try{
-            var fd=new FormData();
-            fd.append("file",attachInput.files[fi]);
-            var upRes=await fetch(PROXY+"/api/v1/attachments",{
-              method:"POST",
-              headers:{"Authorization":"Basic "+HD_TOKEN,"User-Agent":"Yespresso/1.0"},
-              body:fd
-            });
-            if(upRes.ok){
-              var upData=await upRes.json();
-              if(upData&&upData.id)attachmentIds.push(upData.id);
-              else if(upData&&upData.attachment&&upData.attachment.id)attachmentIds.push(upData.attachment.id);
-            }
-          }catch(e){console.log("Upload allegato fallito:",e.message);}
-        }
-      }
-      var msgBody={message:{text:message}};
-      if(attachmentIds.length>0)msgBody.message.attachmentIDs=attachmentIds;
       const msgRes=await fetch(PROXY+"/api/v1/tickets/"+tid,{
         method:"PATCH",
         headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-        body:JSON.stringify(msgBody)
+        body:JSON.stringify({message:{text:message,
+        ...(document.getElementById("private-toggle")&&document.getElementById("private-toggle").dataset.private==="1"?{private:true}:{})}})
       });
       if(!msgRes.ok){const b=await msgRes.text();throw new Error("Errore invio messaggio: "+msgRes.status+" "+b.substring(0,150));}
       console.log("✅ Messaggio inviato via PATCH ticket");
+      // Reset toggle privato dopo invio
+      var ptBtn=document.getElementById("private-toggle");
+      if(ptBtn&&ptBtn.dataset.private==="1"){togglePrivateMode();}
     }
     // Change status sul ticket principale
     if(newStatus){
