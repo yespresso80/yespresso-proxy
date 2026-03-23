@@ -1215,6 +1215,7 @@ function goPage(p){
 
 async function selectTicket(tid){
   window._lastShopifyCustomerId=null;
+  var _onb=document.getElementById('order-note-box');if(_onb)_onb.remove();
   var _mpBox=document.getElementById('mp-orders-box');if(_mpBox)_mpBox.parentNode.removeChild(_mpBox);
   // Find all open tickets for same customer and redirect to newest
   let base=tickets.find(t=>(t.ID||t.id)===tid);
@@ -1411,6 +1412,7 @@ async function selectTicket(tid){
         '<div class="reply-footer">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
+            '<button class="cancel-reply-btn" onclick="openResoModal()" style="margin-right:4px;background:#e53e3e;border-color:#c53030;color:#fff">↩️ Reso</button>'+
             '<button class="cancel-reply-btn" onclick="openSuggestModal()" style="margin-right:4px;background:#90EE90;border-color:#6dbf6d">Suggerimenti</button><button class="cancel-reply-btn" onclick="clearReply()" style="background:#FFB6B6;border-color:#e08080">Annulla</button>'+
             '<button class="send-reply-btn" id="send-btn" onclick="sendReply()">&#128228; Submit</button>'+
           '</div>'+
@@ -1523,9 +1525,10 @@ async function selectTicket(tid){
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu=(order&&order.shipping_address)||{};
         window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
-        html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-        html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+        html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
+        html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
@@ -1628,9 +1631,10 @@ async function selectTicket(tid){
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu=(order&&order.shipping_address)||{};
         window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
-        html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-        html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+        html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
+        html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
@@ -1698,10 +1702,11 @@ async function selectTicket(tid){
           var _saBrt=brtOrder.shipping_address;
           window._brtPickupData=window._brtPickupData||{};
           window._brtPickupData[brtOrder.id]={tn:(brtOrder.fulfillments&&brtOrder.fulfillments[0]&&brtOrder.fulfillments[0].tracking_number)||'',orderName:brtOrder.name||'',name:_saBrt.name||'',addr:_saBrt.address1||'',zip:_saBrt.zip||'',city:_saBrt.city||'',prov:_saBrt.province_code||''};
-          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
+          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
@@ -1852,9 +1857,10 @@ function renderMessageHtml(text, attachments){
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu2=(order&&order.shipping_address)||{};
         window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu2.name||'',addr:_saTemu2.address1||'',zip:_saTemu2.zip||'',city:_saTemu2.city||'',prov:_saTemu2.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
-        html2+='​<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-        html2+='​<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+        html2+='​<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
+        html2+='​<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
@@ -1957,10 +1963,11 @@ function renderMessageHtml(text, attachments){
           var _saBrt=brtOrder.shipping_address;
           window._brtPickupData=window._brtPickupData||{};
           window._brtPickupData[brtOrder.id]={tn:(brtOrder.fulfillments&&brtOrder.fulfillments[0]&&brtOrder.fulfillments[0].tracking_number)||'',orderName:brtOrder.name||'',name:_saBrt.name||'',addr:_saBrt.address1||'',zip:_saBrt.zip||'',city:_saBrt.city||'',prov:_saBrt.province_code||''};
-          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
+          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
@@ -2870,8 +2877,8 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
       const sa=order.shipping_address;
       window._brtPickupData=window._brtPickupData||{};
       window._brtPickupData[order.id]={tn:(f&&f.tracking_number)||'',orderName:order.name||'',name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||'',email:(order.customer&&order.customer.email)||'',phone:(order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
-      html+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-    html+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+      html+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
+    html+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
     }
     // Credito: mostra solo per clienti sito (non Amazon/Temu/TikTok)
     const isTemuOrAmazonGen=(email||'').includes('temu')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok')||(email||'').includes('seller@orders');
@@ -2882,6 +2889,7 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
       html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
     if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
         if(order&&order.customer&&order.customer.id){}if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
   loadLastCustomerOrder(email, order.id);
@@ -4564,6 +4572,94 @@ function cancelShopifyOrder(orderId){
   };
 }
 
+function openResoModal(){
+  var order = window._lastShopifyOrder;
+  var orderName = order ? (order.name||'') : '';
+  var orderId = order ? order.id : '';
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:12px;padding:24px;max-width:480px;width:95%;box-shadow:0 8px 32px rgba(0,0,0,.2)';
+  var title = document.createElement('div');
+  title.style.cssText = 'font-size:16px;font-weight:700;color:#e53e3e;margin-bottom:4px';
+  title.textContent = 'Reso Ordine ' + orderName;
+  var subtitle = document.createElement('div');
+  subtitle.style.cssText = 'font-size:12px;color:#888;margin-bottom:12px';
+  subtitle.textContent = 'Il messaggio verra aggiunto come commento ordine su Shopify';
+  var ta = document.createElement('textarea');
+  ta.style.cssText = 'width:100%;height:120px;border:1px solid #e0e4ea;border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box';
+  ta.placeholder = 'Scrivi il messaggio per il reso...';
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
+  var btnCancel = document.createElement('button');
+  btnCancel.style.cssText = 'padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px';
+  btnCancel.textContent = 'Annulla';
+  var btnApply = document.createElement('button');
+  btnApply.style.cssText = 'padding:8px 16px;border:none;border-radius:8px;background:#e53e3e;color:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700';
+  btnApply.textContent = 'Applica';
+  btnRow.appendChild(btnCancel);
+  btnRow.appendChild(btnApply);
+  box.appendChild(title);
+  box.appendChild(subtitle);
+  box.appendChild(ta);
+  box.appendChild(btnRow);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  btnCancel.addEventListener('click',function(){modal.remove();});
+  btnApply.addEventListener('click',function(){applicaReso(orderId,orderName,ta,modal,this);});
+}
+async function applicaReso(orderId,orderName,ta,modal,btn){
+  var note=ta.value.trim();
+  if(!note){showToast('Scrivi un messaggio','error');return;}
+  if(!orderId){showToast('Nessun ordine associato al ticket','error');return;}
+  btn.disabled=true;btn.textContent='Salvataggio...';
+  try{
+    var orig=await shopifyGet('orders/'+orderId+'.json?fields=note');
+    var existingNote=(orig&&orig.order&&orig.order.note)||'';
+    var ts=new Date().toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    var newNote=(existingNote?existingNote+'\n\n':'')+('[RESO '+ts+'] ')+note;
+    var res=await fetch(PROXY+'/shopify/orders/'+orderId+'.json',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({order:{id:orderId,note:newNote}})
+    });
+    if(res.ok){
+      showToast('Reso aggiunto a '+orderName);
+      window._shopifyOrderNote=newNote;
+      aggiornaBoxNoteOrdine(newNote);
+      modal.remove();
+    }else{
+      var err=await res.text();
+      showToast('Errore: '+err.substring(0,100),'error');
+      btn.disabled=false;btn.textContent='Applica';
+    }
+  }catch(e){
+    showToast('Errore: '+e.message,'error');
+    btn.disabled=false;btn.textContent='Applica';
+  }
+}
+
+function aggiornaBoxNoteOrdine(note){
+  if(!note)return;
+  var existing=document.getElementById('order-note-box');
+  var box=document.createElement('div');
+  box.id='order-note-box';
+  box.style.cssText='margin:8px 16px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px';
+  var ttl=document.createElement('div');
+  ttl.style.cssText='font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:4px';
+  ttl.textContent='Note Ordine';
+  var bdy=document.createElement('div');
+  bdy.style.cssText='font-size:12px;color:#78350f;white-space:pre-wrap;line-height:1.5';
+  bdy.textContent=note;
+  box.appendChild(ttl);
+  box.appendChild(bdy);
+  if(existing){existing.parentNode.replaceChild(box,existing);}
+  else{
+    var la=document.getElementById('last-order-area');
+    if(la)la.insertAdjacentElement('afterend',box);
+  }
+}
 async function duplicateOrder(orderId){
   try{
     showToast("Duplicando ordine...","info");
