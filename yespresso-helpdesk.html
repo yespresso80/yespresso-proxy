@@ -1384,7 +1384,11 @@ async function selectTicket(tid){
           '</select>'+
         '</div>'+
         '<div class="reply-footer">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
+          '<label title="Allega file" style="cursor:pointer;padding:4px 8px;border:1px solid #dde1e7;border-radius:6px;background:#fff;font-size:16px;line-height:1;display:inline-flex;align-items:center">📎<input type="file" id="reply-attachment" multiple style="display:none" onchange="updateAttachmentLabel(this)"></label>'+
+          '<span id="attachment-label" style="font-size:11px;color:#888"></span>'+
+          '</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
             '<button class="cancel-reply-btn" onclick="openSuggestModal()" style="margin-right:4px;background:#90EE90;border-color:#6dbf6d">Suggerimenti</button><button class="cancel-reply-btn" onclick="clearReply()" style="background:#FFB6B6;border-color:#e08080">Annulla</button>'+
             '<button class="send-reply-btn" id="send-btn" onclick="sendReply()">&#128228; Submit</button>'+
@@ -3041,6 +3045,17 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
   }
 }
 
+
+function updateAttachmentLabel(input){
+  var lbl=document.getElementById("attachment-label");
+  if(!lbl)return;
+  if(input.files&&input.files.length>0){
+    lbl.textContent=input.files.length===1?input.files[0].name:input.files.length+" file allegati";
+    lbl.style.color="#1a73e8";
+  } else {
+    lbl.textContent="";
+  }
+}
 async function sendReply(){
   const rtEl=document.getElementById("reply-text");
   const message=rtEl?rtEl.value.trim():"";
@@ -3054,10 +3069,33 @@ async function sendReply(){
   try{
     if(message){
       // HelpDesk API: PATCH /v1/tickets/{id} con {message:{text:"..."}}
+      // Gestione allegati
+      var attachmentIds=[];
+      var attachInput=document.getElementById("reply-attachment");
+      if(attachInput&&attachInput.files&&attachInput.files.length>0){
+        for(var fi=0;fi<attachInput.files.length;fi++){
+          try{
+            var fd=new FormData();
+            fd.append("file",attachInput.files[fi]);
+            var upRes=await fetch(PROXY+"/api/v1/attachments",{
+              method:"POST",
+              headers:{"Authorization":"Basic "+HD_TOKEN,"User-Agent":"Yespresso/1.0"},
+              body:fd
+            });
+            if(upRes.ok){
+              var upData=await upRes.json();
+              if(upData&&upData.id)attachmentIds.push(upData.id);
+              else if(upData&&upData.attachment&&upData.attachment.id)attachmentIds.push(upData.attachment.id);
+            }
+          }catch(e){console.log("Upload allegato fallito:",e.message);}
+        }
+      }
+      var msgBody={message:{text:message}};
+      if(attachmentIds.length>0)msgBody.message.attachmentIDs=attachmentIds;
       const msgRes=await fetch(PROXY+"/api/v1/tickets/"+tid,{
         method:"PATCH",
         headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-        body:JSON.stringify({message:{text:message}})
+        body:JSON.stringify(msgBody)
       });
       if(!msgRes.ok){const b=await msgRes.text();throw new Error("Errore invio messaggio: "+msgRes.status+" "+b.substring(0,150));}
       console.log("✅ Messaggio inviato via PATCH ticket");
