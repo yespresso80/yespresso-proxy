@@ -1677,7 +1677,7 @@ async function selectTicket(tid){
           html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(brtOrder.customer.id);}
+        if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
       }
@@ -1934,7 +1934,7 @@ function renderMessageHtml(text, attachments){
           html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(brtOrder.customer.id);}
+        if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
       }
@@ -2853,8 +2853,8 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
       html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
     if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(brtOrder.customer.id);}
-        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){}if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+        if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
+        if(order&&order.customer&&order.customer.id){}if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
   loadLastCustomerOrder(email, order.id);
   } else {
     // Anche senza ordine Shopify, mostra link Amazon se ticket da marketplace.amazon
