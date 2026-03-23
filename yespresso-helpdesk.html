@@ -1199,6 +1199,8 @@ function goPage(p){
 }
 
 async function selectTicket(tid){
+  window._lastShopifyCustomerId=null;
+  var _mpBox=document.getElementById('mp-orders-box');if(_mpBox)_mpBox.parentNode.removeChild(_mpBox);
   // Find all open tickets for same customer and redirect to newest
   let base=tickets.find(t=>(t.ID||t.id)===tid);
   if(!base)return;
@@ -1493,14 +1495,13 @@ async function selectTicket(tid){
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
-        if(order&&order.shipping_address){
-          var _sa2=order.shipping_address;
-          window._brtPickupData=window._brtPickupData||{};
-          window._brtPickupData[order.id]={tn:(order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:order.name||'',name:_sa2.name||'',addr:_sa2.address1||'',zip:_sa2.zip||'',city:_sa2.city||'',prov:_sa2.province_code||''};
-          html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
-          html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
-        }
+        window._brtPickupData=window._brtPickupData||{};
+        var _saTemu=(order&&order.shipping_address)||{};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||''};
+        html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+        html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
       }
@@ -1599,7 +1600,13 @@ async function selectTicket(tid){
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
+        window._brtPickupData=window._brtPickupData||{};
+        var _saTemu=(order&&order.shipping_address)||{};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||''};
+        html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+        html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
       }
@@ -1662,7 +1669,15 @@ async function selectTicket(tid){
           html+='<br>📍 <a href="'+'https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','')+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
+        if(brtOrder&&brtOrder.shipping_address){
+          var _saBrt=brtOrder.shipping_address;
+          window._brtPickupData=window._brtPickupData||{};
+          window._brtPickupData[brtOrder.id]={tn:(brtOrder.fulfillments&&brtOrder.fulfillments[0]&&brtOrder.fulfillments[0].tracking_number)||'',orderName:brtOrder.name||'',name:_saBrt.name||'',addr:_saBrt.address1||'',zip:_saBrt.zip||'',city:_saBrt.city||'',prov:_saBrt.province_code||''};
+          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+        }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(brtOrder.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
       }
@@ -1807,7 +1822,13 @@ function renderMessageHtml(text, attachments){
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
         html2+='<br>📋 <span id="'+dupBtnId2+'" onclick="duplicateOrder(window._dupOrders[this.id])" style="color:#1a73e8;font-weight:600;cursor:pointer">Duplica Ordine</span>';
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️</button></div>';
+        window._brtPickupData=window._brtPickupData||{};
+        var _saTemu2=(order&&order.shipping_address)||{};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu2.name||'',addr:_saTemu2.address1||'',zip:_saTemu2.zip||'',city:_saTemu2.city||'',prov:_saTemu2.province_code||''};
+        html2+='​<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+        html2+='​<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato</div>';
       }
@@ -1905,7 +1926,15 @@ function renderMessageHtml(text, attachments){
           html+='<br>📍 <a href="'+'https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','')+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
+        if(brtOrder&&brtOrder.shipping_address){
+          var _saBrt=brtOrder.shipping_address;
+          window._brtPickupData=window._brtPickupData||{};
+          window._brtPickupData[brtOrder.id]={tn:(brtOrder.fulfillments&&brtOrder.fulfillments[0]&&brtOrder.fulfillments[0].tracking_number)||'',orderName:brtOrder.name||'',name:_saBrt.name||'',addr:_saBrt.address1||'',zip:_saBrt.zip||'',city:_saBrt.city||'',prov:_saBrt.province_code||''};
+          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
+          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
+        }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(brtOrder.customer.id);}
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
       }
@@ -2341,7 +2370,7 @@ async function fetchShopifyOrder(message,email,requesterName){
       const dFt=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(amzId));
       const ftOrders=(dFt&&dFt.orders)||[];
       const ftFound=findInNoteAttributes(ftOrders,["Amazon Order Id"],amzId);
-      if(ftFound){console.log("✅ Trovato via full-text Amazon");return ftFound;}
+      if(ftFound){console.log("✅ Trovato via full-text Amazon");if(ftFound&&ftFound.customer)window._lastShopifyCustomerId=ftFound.customer.id;return ftFound;}
       // 1b. Full-text senza trattini
       const dFt2=await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(amzId.replace(/-/g,'')));
       const ftFound2=findInNoteAttributes((dFt2&&dFt2.orders)||[],['Amazon Order Id'],amzId);
@@ -2392,7 +2421,7 @@ async function fetchShopifyOrder(message,email,requesterName){
       const dFt=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(temuId));
       if(dFt&&dFt.orders&&dFt.orders.length){
         const ft=findInNoteAttributes(dFt.orders,temuKeys,temuId);
-        if(ft){console.log("✅ Trovato via full-text Temu");return ft;}
+        if(ft){console.log("✅ Trovato via full-text Temu");if(ft&&ft.customer)window._lastShopifyCustomerId=ft.customer.id;return ft;}
       }
       // 2b. Scan paginato completo
       console.log("→ Avvio scan paginato Temu");
@@ -2425,7 +2454,7 @@ async function fetchShopifyOrder(message,email,requesterName){
               const t=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
               return t===tryTn||t===tn||t===tnPad;
             }))||dTn.orders[0];
-            if(hit){console.log("✅ Trovato via tracking BRT",tryTn);return hit;}
+            if(hit){console.log("✅ Trovato via tracking BRT",tryTn);if(hit&&hit.customer)window._lastShopifyCustomerId=hit.customer.id;return hit;}
           }
         }
       }
@@ -2435,9 +2464,9 @@ async function fetchShopifyOrder(message,email,requesterName){
     if(allNums.length>0){
       const numResults=await Promise.all(allNums.slice(0,5).map(async num=>{
         const d=await shopifyGet("orders.json?name=%23"+num+"&status=any");
-        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);return d.orders[0];}
+        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);if(d.orders[0]&&d.orders[0].customer)window._lastShopifyCustomerId=d.orders[0].customer.id;return d.orders[0];}
         const d2=await shopifyGet("orders.json?name="+num+"&status=any");
-        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);return d2.orders[0];}
+        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);if(d2.orders[0]&&d2.orders[0].customer)window._lastShopifyCustomerId=d2.orders[0].customer.id;return d2.orders[0];}
         if(num.length>=8){try{const d3=await shopifyGet("orders/"+num+".json");if(d3&&d3.order)return d3.order;}catch(e){}}
         return null;
       }));
@@ -2455,9 +2484,9 @@ async function fetchShopifyOrder(message,email,requesterName){
         console.log("→ BRT Giacenza refs:",brtRef1,brtRef2);
         for(const ref of [brtRef2,brtRef1]){
           const dRef=await shopifyGet("orders.json?name=%23"+ref+"&status=any");
-          if(dRef&&dRef.orders&&dRef.orders.length){console.log("✅ BRT Giacenza via #"+ref);return dRef.orders[0];}
+          if(dRef&&dRef.orders&&dRef.orders.length){console.log("✅ BRT Giacenza via #"+ref);if(dRef.orders[0]&&dRef.orders[0].customer)window._lastShopifyCustomerId=dRef.orders[0].customer.id;return dRef.orders[0];}
           const dRef2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(ref));
-          if(dRef2&&dRef2.orders&&dRef2.orders.length){console.log("✅ BRT Giacenza via query "+ref);return dRef2.orders[0];}
+          if(dRef2&&dRef2.orders&&dRef2.orders.length){console.log("✅ BRT Giacenza via query "+ref);if(dRef2.orders[0]&&dRef2.orders[0].customer)window._lastShopifyCustomerId=dRef2.orders[0].customer.id;return dRef2.orders[0];}
         }
       }
       // 4b. "spedizione 2026 179 X XXXXXX"
@@ -2466,7 +2495,7 @@ async function fetchShopifyOrder(message,email,requesterName){
         const brtShort=spedMatch[1]+spedMatch[3];
         console.log("→ BRT spedizione num:",brtShort);
         const dSped=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtShort));
-        if(dSped&&dSped.orders&&dSped.orders.length){console.log("✅ BRT trovato via spedizione");return dSped.orders[0];}
+        if(dSped&&dSped.orders&&dSped.orders.length){console.log("✅ BRT trovato via spedizione");if(dSped.orders[0]&&dSped.orders[0].customer)window._lastShopifyCustomerId=dSped.orders[0].customer.id;return dSped.orders[0];}
       }
       // 4c. Numeri BRT nel messaggio (26XXXXXXXXXXXX)
       const brtMatches=[...message.matchAll(/\b(26(\d{10,12}))\b/g)];
@@ -2474,7 +2503,7 @@ async function fetchShopifyOrder(message,email,requesterName){
         const brtFull=m[1], brtShort=m[2];
         console.log("→ BRT tracking:",brtFull,"->",brtShort);
         const dBrt2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtShort));
-        if(dBrt2&&dBrt2.orders&&dBrt2.orders.length){console.log("✅ BRT full-text");return dBrt2.orders[0];}
+        if(dBrt2&&dBrt2.orders&&dBrt2.orders.length){console.log("✅ BRT full-text");if(dBrt2.orders[0]&&dBrt2.orders[0].customer)window._lastShopifyCustomerId=dBrt2.orders[0].customer.id;return dBrt2.orders[0];}
         const brtFound=await scanAllOrders(orders=>{
           return orders.find(o=>{
             const fulf=o.fulfillments&&o.fulfillments[0];
@@ -2483,7 +2512,7 @@ async function fetchShopifyOrder(message,email,requesterName){
             return tn.includes(brtShort)||tn.includes(brtFull);
           })||null;
         });
-        if(brtFound){console.log("✅ Trovato via BRT tracking:",brtFound.name);return brtFound;}
+        if(brtFound){console.log("✅ Trovato via BRT tracking:",brtFound.name);if(brtFound&&brtFound.customer)window._lastShopifyCustomerId=brtFound.customer.id;return brtFound;}
       }
     }
 
@@ -2525,7 +2554,7 @@ async function fetchShopifyOrder(message,email,requesterName){
             const ln=((o.customer&&o.customer.last_name)||"").toLowerCase();
             return sn.includes(fullName)||(fn&&ln&&fullName.includes(fn)&&fullName.includes(ln));
           });
-          if(hit){console.log("✅ Trovato via nome full-text");return hit;}
+          if(hit){console.log("✅ Trovato via nome full-text");if(hit&&hit.customer)window._lastShopifyCustomerId=hit.customer.id;return hit;}
         }
         // 6b. Scan paginato per nome (max 15 pagine)
         console.log("→ Scan paginato per nome:",requesterName);
@@ -2573,12 +2602,26 @@ function formatOrderInfo(order){
 async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
   const loArea=document.getElementById("last-order-area");
   if(!loArea||!email)return;
-  const skipDomains=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply","donotreply"];
+  const skipDomains=["bounce-","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply","donotreply"];
   if(skipDomains.some(s=>email.includes(s)))return;
   loArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">Caricamento ordini...</div>';
   try{
+    let orders=[];
+    // Prima prova per email
     const d=await shopifyGet("orders.json?email="+encodeURIComponent(email)+"&status=any&limit=5");
-    const orders=(d&&d.orders)||[];
+    orders=(d&&d.orders)||[];
+    // Se non trova per email (caso Amazon) aspetta e riprova con customer_id
+    if(!orders.length&&(email.includes("marketplace.amazon")||email.includes("orders.temu")||email.includes("seller@orders"))){
+      // Aspetta fino a 5 secondi che fetchShopifyOrder salvi il customer_id
+      for(let _i=0;_i<10;_i++){
+        await new Promise(r=>setTimeout(r,500));
+        if(window._lastShopifyCustomerId)break;
+      }
+      if(window._lastShopifyCustomerId){
+        const d2=await shopifyGet("orders.json?customer_id="+window._lastShopifyCustomerId+"&status=any&limit=5");
+        orders=(d2&&d2.orders)||[];
+      }
+    }
     if(!orders.length){loArea.innerHTML='';return;}
     // Ordina per data decrescente
     orders.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
@@ -2809,7 +2852,9 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
       window._credMap[credInpIdGen]={email:order.email,customerId:order.customer.id,orderId:order.id};
       html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
-    if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+    if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(brtOrder.customer.id);}
+        if(brtOrder&&brtOrder.customer&&brtOrder.customer.id){}if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
   loadLastCustomerOrder(email, order.id);
   } else {
     // Anche senza ordine Shopify, mostra link Amazon se ticket da marketplace.amazon
@@ -3159,6 +3204,30 @@ async function loadImapAttachments(email, subject, tid){
   }
 }
 
+async function showMarketplaceOrders(customerId){
+  if(!customerId)return;
+  var el=document.getElementById("customer-history-list");
+  if(!el)return;
+  // Evita duplicati
+  if(document.getElementById("mp-orders-box"))return;
+  try{
+    var r=await shopifyGet("orders.json?customer_id="+customerId+"&status=any&limit=6");
+    if(!r||!r.orders||!r.orders.length)return;
+    var html='<div id="mp-orders-box" style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e8eaf0">';
+    html+='<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🛍 Ordini Shopify cliente</div>';
+    r.orders.forEach(function(o){
+      var d=new Date(o.created_at).toLocaleDateString("it-IT");
+      var s=o.fulfillment_status==="fulfilled"?"📦":"⏳";
+      var u="https://40f758-3.myshopify.com/admin/orders/"+o.id;
+      html+='<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5">';
+      html+='<a href="'+u+'" target="_blank" style="font-weight:600;color:#1a73e8;text-decoration:none">'+o.name+'</a> ';
+      html+='<span style="color:#888">'+d+'</span> '+s+' ';
+      html+='<span style="color:#2a5a2a;font-weight:600">€'+parseFloat(o.total_price||0).toFixed(2)+'</span></div>';
+    });
+    html+='</div>';
+    el.insertAdjacentHTML("beforebegin",html);
+  }catch(e){console.log("showMarketplaceOrders:",e.message);}
+}
 async function loadCustomerHistory(email, name, currentTid){
   const listEl=document.getElementById("customer-history-list");
   const countEl=document.getElementById("ch-count");
@@ -3175,30 +3244,38 @@ async function loadCustomerHistory(email, name, currentTid){
     });
   }
 
-  // Per Amazon: email unica per ordine, stesso cliente scrive da email diverse
-  // Fallback nome SOLO per marketplace.amazon
-  if(related.length===0&&email&&email.includes("marketplace.amazon")&&name&&name.length>3&&name!=="Cliente"){
-    related=tickets.filter(t=>{
+  // Per Amazon: stesso cliente scrive da email diverse (una per ordine)
+  // Cerca SEMPRE per nome su marketplace.amazon per trovare tutti i ticket del cliente
+  if(email&&email.includes("marketplace.amazon")&&name&&name.length>3&&name!=="Cliente"){
+    const byName=tickets.filter(t=>{
       const tn=(t.requester&&t.requester.name)||"";
       const te=(t.requester&&t.requester.email)||"";
       return tn.toLowerCase()===name.toLowerCase()&&te.includes("marketplace.amazon")&&(t.ID||t.id)!==currentTid;
     });
+    // Aggiungi quelli trovati per nome che non sono già in related
+    const seen=new Set(related.map(t=>t.ID||t.id));
+    byName.forEach(t=>{if(!seen.has(t.ID||t.id)){seen.add(t.ID||t.id);related.push(t);}});
   }
 
   // Cerca via API HelpDesk per email — recupera TUTTI gli stati degli ultimi 30gg e oltre
-  if(email&&email.length>3&&!email.includes("marketplace.amazon")){
+  // Nota: marketplace.amazon.it = email unica per cliente, VA cercata
+  // Escludi solo email generiche: donotreply@amazon, orders.temu, seller@orders
+  if(email&&email.length>3&&!email.includes("donotreply@amazon")&&!email.includes("orders.temu")&&!email.includes("seller@orders")&&!email.includes("tiktok")){
     try{
       const enc=encodeURIComponent(email);
-      const apiStatuses=["open","pending","solved"];
-      const apiResults=await Promise.all(apiStatuses.map(s=>
-        Promise.resolve(null)
-      ));
-      const seen=new Set(related.map(t=>t.ID||t.id)); seen.add(currentTid);
-      for(const res of apiResults){
-        if(res&&res.tickets) res.tickets.forEach(t2=>{
+      // Per email marketplace.amazon.it: cerca per nome cliente tra tutti i ticket in memoria
+      if(email.includes("marketplace.amazon")&&name&&name.length>2&&name!=="Cliente"){
+        const amazonMatches=tickets.filter(t=>{
+          const tn=(t.requester&&t.requester.name)||"";
+          const te=(t.requester&&t.requester.email)||"";
+          return tn.toLowerCase()===name.toLowerCase()&&te.includes("marketplace.amazon")&&(t.ID||t.id)!==currentTid;
+        });
+        const seen=new Set(related.map(t=>t.ID||t.id)); seen.add(currentTid);
+        amazonMatches.forEach(t2=>{
           const tid2=t2.ID||t2.id;
           if(!seen.has(tid2)){seen.add(tid2);related.push(t2);}
         });
+        console.log("[CH] Amazon matches per nome",name,":",amazonMatches.length);
       }
     }catch(e){console.log("[CH] API email search:",e.message);}
   }
