@@ -1497,7 +1497,7 @@ async function selectTicket(tid){
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu=(order&&order.shipping_address)||{};
-        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||''};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
         html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
         html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -1602,7 +1602,7 @@ async function selectTicket(tid){
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu=(order&&order.shipping_address)||{};
-        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||''};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
         html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
         html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -1824,7 +1824,7 @@ function renderMessageHtml(text, attachments){
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️</button></div>';
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu2=(order&&order.shipping_address)||{};
-        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu2.name||'',addr:_saTemu2.address1||'',zip:_saTemu2.zip||'',city:_saTemu2.city||'',prov:_saTemu2.province_code||''};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu2.name||'',addr:_saTemu2.address1||'',zip:_saTemu2.zip||'',city:_saTemu2.city||'',prov:_saTemu2.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
         html2+='​<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
         html2+='​<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -2840,7 +2840,7 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
     if(order.shipping_address){
       const sa=order.shipping_address;
       window._brtPickupData=window._brtPickupData||{};
-      window._brtPickupData[order.id]={tn:(f&&f.tracking_number)||'',orderName:order.name||'',name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||''};
+      window._brtPickupData[order.id]={tn:(f&&f.tracking_number)||'',orderName:order.name||'',name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||'',email:(order.customer&&order.customer.email)||'',phone:(order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
       html+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">Prenota Ritiro BRT</span>';
     html+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">Contatta BRT</span>';
     }
@@ -3205,28 +3205,7 @@ async function loadImapAttachments(email, subject, tid){
 }
 
 async function showMarketplaceOrders(customerId){
-  if(!customerId)return;
-  var el=document.getElementById("customer-history-list");
-  if(!el)return;
-  // Evita duplicati
-  if(document.getElementById("mp-orders-box"))return;
-  try{
-    var r=await shopifyGet("orders.json?customer_id="+customerId+"&status=any&limit=6");
-    if(!r||!r.orders||!r.orders.length)return;
-    var html='<div id="mp-orders-box" style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e8eaf0">';
-    html+='<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🛍 Ordini Shopify cliente</div>';
-    r.orders.forEach(function(o){
-      var d=new Date(o.created_at).toLocaleDateString("it-IT");
-      var s=o.fulfillment_status==="fulfilled"?"📦":"⏳";
-      var u="https://40f758-3.myshopify.com/admin/orders/"+o.id;
-      html+='<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5">';
-      html+='<a href="'+u+'" target="_blank" style="font-weight:600;color:#1a73e8;text-decoration:none">'+o.name+'</a> ';
-      html+='<span style="color:#888">'+d+'</span> '+s+' ';
-      html+='<span style="color:#2a5a2a;font-weight:600">€'+parseFloat(o.total_price||0).toFixed(2)+'</span></div>';
-    });
-    html+='</div>';
-    el.insertAdjacentHTML("beforebegin",html);
-  }catch(e){console.log("showMarketplaceOrders:",e.message);}
+  // Disabilitato - ordini mostrati nella sidebar via loadLastCustomerOrder
 }
 async function loadCustomerHistory(email, name, currentTid){
   const listEl=document.getElementById("customer-history-list");
@@ -4359,15 +4338,18 @@ function openBrtContact(orderId){
     ["AGGIORNAMENTI","Per la spedizione in oggetto chiediamo aggiornamenti sulla consegna. Ordine: "+on2+" - Cliente: "+cn],
     ["NON IN PUDO","Per la spedizione in oggetto il cliente segnala che il pacco non e disponibile al pudo. Ordine: "+on2+" - Cliente: "+cn],
     ["INDIRIZZO PUDO","Per la spedizione in oggetto non e presente indirizzo del pudo, potete inviarcelo? Ordine: "+on2+" - Cliente: "+cn],
-    ["MANDARE AL PUDO","Per la spedizione in oggetto il cliente chiede consegna al pudo piu vicino. Ordine: "+on2+" - Cliente: "+cn]
+    ["MANDARE AL PUDO","Per la spedizione in oggetto il cliente chiede consegna al pudo piu vicino. Ordine: "+on2+" - Cliente: "+cn],
+    ["RICHIESTA PESO SPEDIZIONE","Per la spedizione in oggetto puo inviarmi il peso reale della spedizione? Ordine: "+on2+" - Cliente: "+cn]
   ];
-  var mh=msgs.map(function(m){
-    var d2=document.createElement("div");d2.style.marginBottom="6px";
-    var t2=document.createElement("div");t2.style.cssText="font-size:10px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px";t2.textContent=m[0];
-    var b2=document.createElement("div");b2.style.cssText="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:7px 10px;font-size:12px;color:#1a1a2e;cursor:pointer";b2.textContent=m[1]+" 📋";b2.dataset.v=m[1];
-    b2.addEventListener("click",function(){navigator.clipboard.writeText(this.dataset.v);this.style.background="#e8f5e9";});
-    d2.appendChild(t2);d2.appendChild(b2);return d2.outerHTML;
-  }).join("");
+  var mh='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  msgs.forEach(function(m){
+    var txt=m[1].replace(/"/g,"&quot;");
+    mh+='<div style="margin-bottom:2px"><div style="font-size:10px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">'+m[0]+'</div>';
+    mh+='<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:7px 10px;font-size:11px;color:#1a1a2e;cursor:pointer;line-height:1.4" '+
+         'onclick="navigator.clipboard.writeText(this.dataset.v);this.style.background=\'#e8f5e9\'" '+
+         'data-v="'+txt+'">'+m[1]+' 📋</div></div>';
+  });
+  mh+='</div>';
   var modal=document.createElement("div");
   modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center";
   var box=document.createElement("div");
@@ -4400,41 +4382,57 @@ function openBrtPickup(orderId){
   // Mostra modal con dati pre-compilati da copiare
   const modal=document.createElement("div");
   modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center";
-  modal.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+  modal.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:480px;width:95%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+  <div style="padding:20px 24px 12px;flex-shrink:0">
     <div style="font-size:16px;font-weight:700;color:#c0392b;margin-bottom:4px">📦 Prenotazione Ritiro BRT</div>
-    <div style="font-size:12px;color:#888;margin-bottom:16px">Copia i dati del cliente nel form BRT</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
-      <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">NOMINATIVO</div>
-        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.name}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.name} 📋</div>
+    <div style="font-size:12px;color:#888;margin-bottom:0">Copia i dati del cliente nel form BRT</div>
+  </div>
+  <div style="overflow-y:auto;padding:0 24px;flex:1;display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">NOMINATIVO</div>
+      <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.name}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.name} 📋</div>
+    </div>
+    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">INDIRIZZO</div>
+      <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.addr}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.addr} 📋</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">CAP</div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.zip}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.zip} 📋</div>
       </div>
-      <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">INDIRIZZO</div>
-        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.addr}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.addr} 📋</div>
+      <div style="flex:2;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">CITTÀ</div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.city}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.city} 📋</div>
       </div>
-      <div style="display:flex;gap:8px">
-        <div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-          <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">CAP</div>
-          <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.zip}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.zip} 📋</div>
-        </div>
-        <div style="flex:2;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-          <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">CITTÀ</div>
-          <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.city}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.city} 📋</div>
-        </div>
-        <div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-          <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">PROV</div>
-          <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.prov}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.prov} 📋</div>
-        </div>
+      <div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">PROV</div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.prov}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.prov} 📋</div>
       </div>
     </div>
-    <div style="font-size:11px;color:#888;margin-bottom:12px">💡 Clicca su ogni campo per copiarlo, poi incollalo nel form BRT</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="this.closest('[style]').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px">Chiudi</button>
-      <a href="https://vas.brt.it/vas/orm2_0_1.htm" target="_blank" onclick="this.closest('[style]').remove()" style="padding:8px 16px;border:none;border-radius:8px;background:#c0392b;color:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;text-decoration:none">Apri Form BRT ↗</a>
+    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">EMAIL CLIENTE</div>
+      <div id="brt-email-field" style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" title="Clicca per copiare">${data.email||"N/D"} 📋</div>
     </div>
-  </div>`;
+    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
+      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">TELEFONO CLIENTE</div>
+      <div id="brt-phone-field" style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" title="Clicca per copiare">${data.phone||"N/D"} 📋</div>
+    </div>
+    <div style="font-size:11px;color:#888">💡 Clicca su ogni campo per copiarlo, poi incollalo nel form BRT</div>
+  </div>
+  <div style="padding:12px 24px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">
+    <button id="brt-pickup-close" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px">Chiudi</button>
+    <a href="https://vas.brt.it/vas/orm2_0_1.htm" target="_blank" style="padding:8px 16px;border:none;border-radius:8px;background:#c0392b;color:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;text-decoration:none">Apri Form BRT ↗</a>
+  </div>
+</div>`;
   document.body.appendChild(modal);
   modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+  var closeBtn=modal.querySelector("#brt-pickup-close");
+  if(closeBtn)closeBtn.addEventListener("click",function(){modal.remove();});
+  var emailField=modal.querySelector("#brt-email-field");
+  if(emailField)emailField.addEventListener("click",function(){navigator.clipboard.writeText(data.email||"N/D");this.style.color="#2a9d60";});
+  var phoneField=modal.querySelector("#brt-phone-field");
+  if(phoneField)phoneField.addEventListener("click",function(){navigator.clipboard.writeText(data.phone||"N/D");this.style.color="#2a9d60";});
 }
 
 function cancelShopifyOrder(orderId){
