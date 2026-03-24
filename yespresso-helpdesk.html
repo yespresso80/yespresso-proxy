@@ -2497,8 +2497,7 @@ async function fetchShopifyOrder(message,email,requesterName){
     const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order|shopify|cognome|cliente)[^\d#]*(\d{4,20})/gi)].map(m=>m[1]);
     const tiktokMatches=[...msgNoAmz.matchAll(/\b(5\d{17})\b/g)].map(m=>m[1]);
     const subjectOrderMatches=[...msgNoAmz.matchAll(/\b(202[0-9]\d{6})\b/g)].map(m=>m[1]);
-    const brtNumMatches=[...msgNoAmz.matchAll(/\b((?:26)?179\d{9,10})\b/g)].map(m=>m[1].startsWith('26')?m[1].slice(2):m[1]);
-    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches,...tiktokMatches,...subjectOrderMatches,...brtNumMatches])].sort((a,b)=>b.length-a.length);
+    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches,...tiktokMatches,...subjectOrderMatches])].sort((a,b)=>b.length-a.length);
     // Escludi numeri che sembrano tracking BRT (12+ cifre che iniziano con 179 o 26)
     const brtTrackingNums=allNumsRaw.filter(n=>n.length>=12&&(n.startsWith('179')||n.startsWith('26')));
     const allNums=allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26'))));
@@ -2507,8 +2506,7 @@ async function fetchShopifyOrder(message,email,requesterName){
     if(brtTrackingNums.length>0){
       for(const tn of brtTrackingNums.slice(0,2)){
         const tnPad=tn.startsWith('26')?tn:'26'+tn;
-        const tnNoPfx=tn.startsWith('26')?tn.slice(2):tn;
-        for(const tryTn of [tnNoPfx,tn,tnPad]){
+        for(const tryTn of [tn,tnPad]){
           const dTn=await shopifyGet("orders.json?status=any&limit=50&query="+encodeURIComponent(tryTn));
           if(dTn&&dTn.orders&&dTn.orders.length>0){
             const hit=dTn.orders.find(o=>(o.fulfillments||[]).some(f=>{
@@ -2631,6 +2629,23 @@ async function fetchShopifyOrder(message,email,requesterName){
       }
     }
 
+    // 7. Nome+cognome (solo 2 parole) estratto dal subject
+    const nameFromSubject=message.match(/(?:reso\s+magazzino|reso|restituzione|cliente)[\s:]+([A-ZÀ-Ü][a-zà-ü]+\s+[A-ZÀ-Ü][a-zà-ü]+)/i);
+    const extractedName=(nameFromSubject&&nameFromSubject[1])||"";
+    if(extractedName&&extractedName.trim().split(/\s+/).length>=2){
+      console.log("→ Cercando per nome estratto:",extractedName);
+      const dEx=await shopifyGet("orders.json?status=any&limit=50&query="+encodeURIComponent(extractedName.trim()));
+      if(dEx&&dEx.orders&&dEx.orders.length){
+        const exLow=extractedName.toLowerCase();
+        const hit=dEx.orders.find(o=>{
+          const sn=((o.shipping_address&&o.shipping_address.name)||"").toLowerCase();
+          const fn=((o.customer&&o.customer.first_name)||"").toLowerCase();
+          const ln=((o.customer&&o.customer.last_name)||"").toLowerCase();
+          return sn.includes(exLow)||(fn&&ln&&exLow.includes(fn)&&exLow.includes(ln));
+        })||dEx.orders[0];
+        if(hit){console.log("✅ Trovato via nome estratto",extractedName);if(hit.customer)window._lastShopifyCustomerId=hit.customer.id;window._lastShopifyOrder=hit;return hit;}
+      }
+    }
     console.log("❌ Nessun ordine trovato. Email cercata:", emailClean, "| Nums:", allNums.slice(0,3));
   }catch(e){console.log("Shopify error:",e.message)}
   return null;
