@@ -4147,39 +4147,7 @@ window.debugShopify = async function(num){
 loadTickets();
 loadSolvedExamples();
 loadAgentsAndTags();
-// Auto-refresh ogni 60 secondi (silent, non interrompe ticket aperto)
-setInterval(async function(){
-  try{
-    const data=await hdFetch("/v1/tickets?pageSize=50");
-    const fresh=Array.isArray(data)?data:(data.tickets||data.data||[]);
-    // Merge: aggiorna stati senza perdere il ticket aperto
-    fresh.forEach(ft=>{
-      const fid=ft.ID||ft.id;
-      const existing=tickets.findIndex(t=>(t.ID||t.id)===fid);
-      if(existing>=0)tickets[existing]=ft;
-      else tickets.push(ft);
-    });
-    // Remove closed/deleted tickets no longer in fresh list
-    const freshIds=new Set(fresh.map(t=>t.ID||t.id));
-    tickets=tickets.filter(t=>freshIds.has(t.ID||t.id));
-    // Update selected ticket if open
-    if(selectedTicket){
-      const tid=selectedTicket.ID||selectedTicket.id;
-      const updated=tickets.find(t=>(t.ID||t.id)===tid);
-      if(updated){
-        selectedTicket=updated;
-        // Update sidebar status select silently
-        const sel=document.getElementById("status-select");
-        if(sel&&sel.value!==updated.status)sel.value=updated.status;
-      }
-    }
-    updateBadges();
-    renderTable();
-    // Show subtle indicator
-    const bar=document.getElementById("ticket-count-bar");
-    if(bar){const n=getFiltered().length;bar.textContent=n+" tickets · aggiornato "+new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});}
-  }catch(e){console.log("Auto-refresh failed:",e.message)}
-},60000);
+// Auto-refresh secondario rimosso - gestito dal refresh principale
 
 
 async function openCreditLink(el, btnId){
