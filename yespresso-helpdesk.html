@@ -335,8 +335,8 @@ textarea.field{min-height:80px;resize:vertical}
       <div class="sidebar-item-left">Pending</div>
       <span class="sidebar-badge" id="badge-pending">0</span>
     </div>
-    <div class="sidebar-item" onclick="setView('on_hold')">
-      <div class="sidebar-item-left">On hold</div>
+    <div class="sidebar-item" onclick="setView('closed')">
+      <div class="sidebar-item-left">Closed</div>
       <span class="sidebar-badge" id="badge-onhold">0</span>
     </div>
     <div class="sidebar-item" onclick="setView('solved')">
@@ -783,42 +783,53 @@ async function loadTickets(){
 
   try{
     // 2. CARICAMENTO PARALLELO: tutti gli status + tutte le pagine insieme
+    const DAYS_45=Date.now()-45*24*60*60*1000;
     const loadAllStatus=async(status,maxPages=20)=>{
       const result=[]; const seen=new Set();
-      // Prima pagina — controlla se serve continuare
+      // Prima pagina
       const first=await hdFetch("/v1/tickets?pageSize=50&page=1&status="+status+"&sortBy=lastMessageAt&order=desc")
         .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[]);
       if(!first.length) return result;
       for(const t of first){const id=t.ID||t.id;if(!seen.has(id)){seen.add(id);result.push(t);}}
-      const oldest=first[first.length-1];
-      if(new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime()<DAYS_30||first.length<50) return result;
-      // Pagine 2..N in parallelo
-      const batches=await Promise.all(
-        Array.from({length:maxPages-1},(_,i)=>i+2).map(p=>
+      if(first.length<50) return result;
+      // solved: ferma dopo 45gg; open/pending/closed: carica tutto
+      const useTimeLimit=(status==="solved");
+      if(useTimeLimit){
+        const oldest=first[first.length-1];
+        if(new Date(oldest.lastMessageAt||oldest.updatedAt||oldest.createdAt||0).getTime()<DAYS_45) return result;
+      }
+      // Pagine successive in parallelo (batch da 5)
+      for(let b=0;b<Math.ceil((maxPages-1)/5);b++){
+        const startP=2+b*5;
+        const pages=Array.from({length:Math.min(5,maxPages-startP+1)},(_,i)=>startP+i);
+        const batches=await Promise.all(pages.map(p=>
           hdFetch("/v1/tickets?pageSize=50&page="+p+"&status="+status+"&sortBy=lastMessageAt&order=desc")
             .then(d=>Array.isArray(d)?d:(d.tickets||d.data||[])).catch(()=>[])
-        )
-      );
-      for(const batch of batches){
-        if(!batch.length) break;
-        for(const t of batch){const id=t.ID||t.id;if(!seen.has(id)){seen.add(id);result.push(t);}}
-        const old2=batch[batch.length-1];
-        if(new Date(old2.lastMessageAt||old2.updatedAt||old2.createdAt||0).getTime()<DAYS_30) break;
+        ));
+        let stop=false;
+        for(const batch of batches){
+          if(!batch.length){stop=true;break;}
+          for(const t of batch){const id=t.ID||t.id;if(!seen.has(id)){seen.add(id);result.push(t);}}
+          const last=batch[batch.length-1];
+          if(useTimeLimit&&new Date(last.lastMessageAt||last.updatedAt||last.createdAt||0).getTime()<DAYS_45){stop=true;break;}
+          if(batch.length<50){stop=true;break;}
+        }
+        if(stop) break;
       }
       return result;
     };
 
     // Tutti e 4 gli status in parallelo
-    const [openB,pendingB,solvedB]=await Promise.all([
+    const [openB,pendingB,solvedB,closedB]=await Promise.all([
       loadAllStatus("open",20),
       loadAllStatus("pending",10),
-      
-      loadAllStatus("solved",3)
+      loadAllStatus("solved",20),
+      loadAllStatus("closed",20)
     ]);
     clearInterval(loadTimer);
 
     const allTickets=[]; const seenIds=new Set();
-    for(const t of [...openB,...pendingB,...solvedB]){
+    for(const t of [...openB,...pendingB,...solvedB,...closedB]){
       const id=t.ID||t.id;
       if(!seenIds.has(id)){seenIds.add(id);allTickets.push(t);}
     }
@@ -850,31 +861,30 @@ async function loadTickets(){
         const freshIds=new Set(freshDedup.map(t=>t.ID||t.id));
         let changed=false;
         for(const ft of freshDedup){
-          const idx=tickets.findIndex(t=>(t.ID||t.id)===(ft.ID||ft.id));
-          if(idx>=0){if(tickets[idx].status!==ft.status||tickets[idx].lastMessageAt!==ft.lastMessageAt){tickets[idx]={...tickets[idx],...ft};changed=true;}}
+          const ix=tickets.findIndex(t=>(t.ID||t.id)===(ft.ID||ft.id));
+          if(ix>=0){if(tickets[ix].status!==ft.status||tickets[ix].lastMessageAt!==ft.lastMessageAt){tickets[ix]={...tickets[ix],...ft};changed=true;}}
           else{tickets.push(ft);changed=true;}
         }
-        // Ticket che non sono più open/pending: verifica stato attuale
+        // Ticket open/pending spariti: verifica stato
         const toCheck=tickets.filter(t=>(t.status==="open"||t.status==="pending")&&!freshIds.has(t.ID||t.id));
         if(toCheck.length>0){
-          const checked=await Promise.all(toCheck.slice(0,10).map(t=>
-            hdFetch("/v1/tickets/"+(t.ID||t.id)).catch(()=>null)
-          ));
+          const checked=await Promise.all(toCheck.slice(0,10).map(t=>hdFetch("/v1/tickets/"+(t.ID||t.id)).catch(()=>null)));
           for(const upd of checked){
-            if(!upd||!upd.status) continue;
-            const idx=tickets.findIndex(t=>(t.ID||t.id)===(upd.ID||upd.id));
-            if(idx>=0&&tickets[idx].status!==upd.status){tickets[idx]={...tickets[idx],...upd};changed=true;}
+            if(!upd||!upd.status)continue;
+            const ix=tickets.findIndex(t=>(t.ID||t.id)===(upd.ID||upd.id));
+            if(ix>=0&&tickets[ix].status!==upd.status){tickets[ix]={...tickets[ix],...upd};changed=true;}
           }
         }
+        // solved/closed preservati in memoria - non vengono toccati
         if(changed){
           tickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
-          updateBadges(); renderTable();
+          updateBadges();renderTable();
           try{localStorage.setItem(CACHE_KEY,JSON.stringify(tickets));localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));}catch(e){}
         }
         const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
         const bar=document.getElementById("ticket-count-bar");
         if(bar){bar.textContent=(tickets.length)+" ticket · aggiornato "+nowR;if(changed){bar.style.color="#2a9d60";setTimeout(()=>{bar.style.color="";},1500);}}
-      }catch(e){console.log("Refresh error:",e.message);}
+      }catch(e){console.log("Auto-refresh failed:",e.message)}
     },60*1000);
 
   }catch(e){
@@ -1004,12 +1014,12 @@ async function bulkTrash(){
 }
 
 function updateBadges(){
-  const c={open:0,pending:0,solved:0,on_hold:0};
+  const c={open:0,pending:0,solved:0,on_hold:0,closed:0};
   tickets.forEach(t=>{if(c[t.status]!==undefined)c[t.status]++});
   document.getElementById("badge-open").textContent=c.open;
   document.getElementById("badge-pending").textContent=c.pending;
   document.getElementById("badge-solved").textContent=c.solved;
-  document.getElementById("badge-onhold").textContent=c.on_hold;
+  document.getElementById("badge-onhold").textContent=c.closed;
   const toHandle=tickets.filter(t=>{const agent=t.assignment&&t.assignment.agent&&t.assignment.agent.ID;return (t.status==="open"||t.status==="pending")&&!agent;}).length;
   document.getElementById("badge-tohandle").textContent=toHandle;
   document.getElementById("badge-mine") && (document.getElementById("badge-mine").textContent=c.open);
@@ -1037,6 +1047,7 @@ function viewFilter(t){
   if(currentView==="open")return t.status==="open";
   if(currentView==="pending")return t.status==="pending";
   if(currentView==="on_hold")return t.status==="on_hold";
+  if(currentView==="closed")return t.status==="closed";
   if(currentView==="solved")return t.status==="solved"||t.status==="closed";
   // keyword views — solo open/pending
   if(t.status==="solved"||t.status==="closed")return false;
@@ -1060,7 +1071,8 @@ function setView(view){
   document.querySelectorAll(".sidebar-item").forEach(el=>el.classList.remove("active"));
   const el=document.getElementById("view-"+view);
   if(el)el.classList.add("active");
-  const titles={all:"All recent tickets",tohandle:"Tickets to handle",mine:"My open tickets",giorgio:"Open Giorgio",giulia:"Open Giulia",open:"Open",pending:"Pending",solved:"Solved",on_hold:"On hold",annullamento:"ANNULLAMENTO",doveordine:"DOV'E' ORDINE",garanzia:"GARANZIA A Z",giacenza:"GIACENZA BRT",resi:"RESI MAGAZZINO",richiestabrt:"RICHIESTA BRT",rispedire:"RISPEDIRE E RITIRARE"};
+  currentPage=1; // reset pagina quando si cambia view
+  const titles={all:"All recent tickets",tohandle:"Tickets to handle",mine:"My open tickets",giorgio:"Open Giorgio",giulia:"Open Giulia",open:"Open",pending:"Pending",solved:"Solved",closed:"Closed",on_hold:"On hold",annullamento:"ANNULLAMENTO",doveordine:"DOV'E' ORDINE",garanzia:"GARANZIA A Z",giacenza:"GIACENZA BRT",resi:"RESI MAGAZZINO",richiestabrt:"RICHIESTA BRT",rispedire:"RISPEDIRE E RITIRARE"};
   document.getElementById("panel-title").textContent=titles[view]||view;
   renderTable();
 }
@@ -1410,7 +1422,11 @@ async function selectTicket(tid){
           '</select>'+
         '</div>'+
         '<div class="reply-footer">'+
+          '<div style="display:flex;align-items:center;gap:6px">'+
           '<div style="font-size:11px;color:#bbb">Invio tramite HelpDesk API</div>'+
+          '<label id="attach-label" title="Allega file" style="cursor:pointer;padding:3px 8px;border:1px solid #dde1e7;border-radius:6px;background:#fff;font-size:14px;display:inline-flex;align-items:center;gap:4px">📎<input type="file" id="reply-attachment" multiple style="display:none" onchange="updateAttachLabel(this)"></label>'+
+          '<span id="attach-name" style="font-size:11px;color:#1a73e8;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>'+
+          '</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+
             '<button class="cancel-reply-btn" onclick="openResoModal()" style="margin-right:4px;background:#e53e3e;border-color:#c53030;color:#fff">↩️ Reso</button>'+
             '<button class="cancel-reply-btn" onclick="openSuggestModal()" style="margin-right:4px;background:#90EE90;border-color:#6dbf6d">Suggerimenti</button><button class="cancel-reply-btn" onclick="clearReply()" style="background:#FFB6B6;border-color:#e08080">Annulla</button>'+
@@ -1528,6 +1544,7 @@ async function selectTicket(tid){
         html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order){window._lastShopifyOrder=order;}
         if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
@@ -1634,6 +1651,7 @@ async function selectTicket(tid){
         html2+='<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order){window._lastShopifyOrder=order;}
         if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
@@ -1706,6 +1724,7 @@ async function selectTicket(tid){
           html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        if(order){window._lastShopifyOrder=order;}
         var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
@@ -1860,6 +1879,7 @@ function renderMessageHtml(text, attachments){
         html2+='​<br>📦 <span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='​<br>📞 <span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        if(order){window._lastShopifyOrder=order;}
         if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
@@ -1967,6 +1987,7 @@ function renderMessageHtml(text, attachments){
           html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         }
         oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        if(order){window._lastShopifyOrder=order;}
         var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
       } else if(oArea){
@@ -2316,8 +2337,10 @@ function closeDetail(){
   document.getElementById("detail-view").classList.remove("open");
   document.getElementById("ticket-panel").style.display="flex";
   document.querySelector(".sidebar").style.display="flex";
-  // Ricarica tutto da zero per avere dati freschi
-  loadTickets();
+  // Aggiorna solo la vista senza ricaricare tutto
+  currentPage=1;
+  updateBadges();
+  renderTable();
 }
 
 async function shopifyGet(path){
@@ -2406,7 +2429,7 @@ async function fetchShopifyOrder(message,email,requesterName){
       const dFt=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(amzId));
       const ftOrders=(dFt&&dFt.orders)||[];
       const ftFound=findInNoteAttributes(ftOrders,["Amazon Order Id"],amzId);
-      if(ftFound){console.log("✅ Trovato via full-text Amazon");if(ftFound&&ftFound.customer)window._lastShopifyCustomerId=ftFound.customer.id;return ftFound;}
+      if(ftFound){console.log("✅ Trovato via full-text Amazon");if(ftFound&&ftFound.customer)window._lastShopifyCustomerId=ftFound.customer.id;window._lastShopifyOrder=ftFound;return ftFound;}
       // 1b. Full-text senza trattini
       const dFt2=await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(amzId.replace(/-/g,'')));
       const ftFound2=findInNoteAttributes((dFt2&&dFt2.orders)||[],['Amazon Order Id'],amzId);
@@ -2442,7 +2465,7 @@ async function fetchShopifyOrder(message,email,requesterName){
       // Lancia tutte le finestre in parallelo, prendi il primo risultato non null
       const amzResults = await Promise.all(amzWins.map(amzScanWin));
       const amzHit = amzResults.find(r=>r!=null);
-      if(amzHit){console.log('✅ Trovato Amazon window parallelo');return amzHit;}
+      if(amzHit){console.log('✅ Trovato Amazon window parallelo');window._lastShopifyOrder=amzHit;return amzHit;}
       console.log('❌ Amazon Order Id non trovato');
     }
 
@@ -2457,12 +2480,12 @@ async function fetchShopifyOrder(message,email,requesterName){
       const dFt=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(temuId));
       if(dFt&&dFt.orders&&dFt.orders.length){
         const ft=findInNoteAttributes(dFt.orders,temuKeys,temuId);
-        if(ft){console.log("✅ Trovato via full-text Temu");if(ft&&ft.customer)window._lastShopifyCustomerId=ft.customer.id;return ft;}
+        if(ft){console.log("✅ Trovato via full-text Temu");if(ft&&ft.customer)window._lastShopifyCustomerId=ft.customer.id;window._lastShopifyOrder=ft;return ft;}
       }
       // 2b. Scan paginato completo
       console.log("→ Avvio scan paginato Temu");
       const temuFound=await scanAllOrders(orders=>findInNoteAttributes(orders,temuKeys,temuId));
-      if(temuFound){return temuFound;}
+      if(temuFound){window._lastShopifyOrder=temuFound;return temuFound;}
       console.log("❌ Temu Order Id non trovato");
     }
 
@@ -2490,7 +2513,7 @@ async function fetchShopifyOrder(message,email,requesterName){
               const t=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
               return t===tryTn||t===tn||t===tnPad;
             }))||dTn.orders[0];
-            if(hit){console.log("✅ Trovato via tracking BRT",tryTn);if(hit&&hit.customer)window._lastShopifyCustomerId=hit.customer.id;return hit;}
+            if(hit){console.log("✅ Trovato via tracking BRT",tryTn);if(hit&&hit.customer)window._lastShopifyCustomerId=hit.customer.id;window._lastShopifyOrder=hit;return hit;}
           }
         }
       }
@@ -2500,14 +2523,14 @@ async function fetchShopifyOrder(message,email,requesterName){
     if(allNums.length>0){
       const numResults=await Promise.all(allNums.slice(0,5).map(async num=>{
         const d=await shopifyGet("orders.json?name=%23"+num+"&status=any");
-        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);if(d.orders[0]&&d.orders[0].customer)window._lastShopifyCustomerId=d.orders[0].customer.id;return d.orders[0];}
+        if(d&&d.orders&&d.orders.length>0){console.log("✅ #"+num);if(d.orders[0]&&d.orders[0].customer)window._lastShopifyCustomerId=d.orders[0].customer.id;window._lastShopifyOrder=d.orders[0];return d.orders[0];}
         const d2=await shopifyGet("orders.json?name="+num+"&status=any");
-        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);if(d2.orders[0]&&d2.orders[0].customer)window._lastShopifyCustomerId=d2.orders[0].customer.id;return d2.orders[0];}
-        if(num.length>=8){try{const d3=await shopifyGet("orders/"+num+".json");if(d3&&d3.order)return d3.order;}catch(e){}}
+        if(d2&&d2.orders&&d2.orders.length>0){console.log("✅ plain "+num);if(d2.orders[0]&&d2.orders[0].customer)window._lastShopifyCustomerId=d2.orders[0].customer.id;window._lastShopifyOrder=d2.orders[0];return d2.orders[0];}
+        if(num.length>=8){try{const d3=await shopifyGet("orders/"+num+".json");if(d3&&d3.order)window._lastShopifyOrder=d3.order;return d3.order;}catch(e){}}
         return null;
       }));
       const numHit=numResults.find(r=>r!=null);
-      if(numHit)return numHit;
+      if(numHit)window._lastShopifyOrder=numHit;return numHit;
     }
 
     // 4. Numero spedizione BRT
@@ -2520,9 +2543,9 @@ async function fetchShopifyOrder(message,email,requesterName){
         console.log("→ BRT Giacenza refs:",brtRef1,brtRef2);
         for(const ref of [brtRef2,brtRef1]){
           const dRef=await shopifyGet("orders.json?name=%23"+ref+"&status=any");
-          if(dRef&&dRef.orders&&dRef.orders.length){console.log("✅ BRT Giacenza via #"+ref);if(dRef.orders[0]&&dRef.orders[0].customer)window._lastShopifyCustomerId=dRef.orders[0].customer.id;return dRef.orders[0];}
+          if(dRef&&dRef.orders&&dRef.orders.length){console.log("✅ BRT Giacenza via #"+ref);if(dRef.orders[0]&&dRef.orders[0].customer)window._lastShopifyCustomerId=dRef.orders[0].customer.id;window._lastShopifyOrder=dRef.orders[0];return dRef.orders[0];}
           const dRef2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(ref));
-          if(dRef2&&dRef2.orders&&dRef2.orders.length){console.log("✅ BRT Giacenza via query "+ref);if(dRef2.orders[0]&&dRef2.orders[0].customer)window._lastShopifyCustomerId=dRef2.orders[0].customer.id;return dRef2.orders[0];}
+          if(dRef2&&dRef2.orders&&dRef2.orders.length){console.log("✅ BRT Giacenza via query "+ref);if(dRef2.orders[0]&&dRef2.orders[0].customer)window._lastShopifyCustomerId=dRef2.orders[0].customer.id;window._lastShopifyOrder=dRef2.orders[0];return dRef2.orders[0];}
         }
       }
       // 4b. "spedizione 2026 179 X XXXXXX"
@@ -2531,7 +2554,7 @@ async function fetchShopifyOrder(message,email,requesterName){
         const brtShort=spedMatch[1]+spedMatch[3];
         console.log("→ BRT spedizione num:",brtShort);
         const dSped=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtShort));
-        if(dSped&&dSped.orders&&dSped.orders.length){console.log("✅ BRT trovato via spedizione");if(dSped.orders[0]&&dSped.orders[0].customer)window._lastShopifyCustomerId=dSped.orders[0].customer.id;return dSped.orders[0];}
+        if(dSped&&dSped.orders&&dSped.orders.length){console.log("✅ BRT trovato via spedizione");if(dSped.orders[0]&&dSped.orders[0].customer)window._lastShopifyCustomerId=dSped.orders[0].customer.id;window._lastShopifyOrder=dSped.orders[0];return dSped.orders[0];}
       }
       // 4c. Numeri BRT nel messaggio (26XXXXXXXXXXXX)
       const brtMatches=[...message.matchAll(/\b(26(\d{10,12}))\b/g)];
@@ -2539,7 +2562,7 @@ async function fetchShopifyOrder(message,email,requesterName){
         const brtFull=m[1], brtShort=m[2];
         console.log("→ BRT tracking:",brtFull,"->",brtShort);
         const dBrt2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtShort));
-        if(dBrt2&&dBrt2.orders&&dBrt2.orders.length){console.log("✅ BRT full-text");if(dBrt2.orders[0]&&dBrt2.orders[0].customer)window._lastShopifyCustomerId=dBrt2.orders[0].customer.id;return dBrt2.orders[0];}
+        if(dBrt2&&dBrt2.orders&&dBrt2.orders.length){console.log("✅ BRT full-text");if(dBrt2.orders[0]&&dBrt2.orders[0].customer)window._lastShopifyCustomerId=dBrt2.orders[0].customer.id;window._lastShopifyOrder=dBrt2.orders[0];return dBrt2.orders[0];}
         const brtFound=await scanAllOrders(orders=>{
           return orders.find(o=>{
             const fulf=o.fulfillments&&o.fulfillments[0];
@@ -2548,7 +2571,7 @@ async function fetchShopifyOrder(message,email,requesterName){
             return tn.includes(brtShort)||tn.includes(brtFull);
           })||null;
         });
-        if(brtFound){console.log("✅ Trovato via BRT tracking:",brtFound.name);if(brtFound&&brtFound.customer)window._lastShopifyCustomerId=brtFound.customer.id;return brtFound;}
+        if(brtFound){console.log("✅ Trovato via BRT tracking:",brtFound.name);if(brtFound&&brtFound.customer)window._lastShopifyCustomerId=brtFound.customer.id;window._lastShopifyOrder=brtFound;return brtFound;}
       }
     }
 
@@ -2590,7 +2613,7 @@ async function fetchShopifyOrder(message,email,requesterName){
             const ln=((o.customer&&o.customer.last_name)||"").toLowerCase();
             return sn.includes(fullName)||(fn&&ln&&fullName.includes(fn)&&fullName.includes(ln));
           });
-          if(hit){console.log("✅ Trovato via nome full-text");if(hit&&hit.customer)window._lastShopifyCustomerId=hit.customer.id;return hit;}
+          if(hit){console.log("✅ Trovato via nome full-text");if(hit&&hit.customer)window._lastShopifyCustomerId=hit.customer.id;window._lastShopifyOrder=hit;return hit;}
         }
         // 6b. Scan paginato per nome (max 15 pagine)
         console.log("→ Scan paginato per nome:",requesterName);
@@ -2889,6 +2912,7 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
       html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
     if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
+        if(order){window._lastShopifyOrder=order;}
         var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
         if(order&&order.customer&&order.customer.id){}if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
@@ -3119,6 +3143,14 @@ function togglePrivateMode(){
     }
   }
 }
+
+function updateAttachLabel(input){
+  var sp=document.getElementById("attach-name");
+  if(!sp)return;
+  if(input.files&&input.files.length>0){
+    sp.textContent=input.files.length===1?input.files[0].name:input.files.length+" file";
+  }else{sp.textContent="";}
+}
 async function sendReply(){
   const rtEl=document.getElementById("reply-text");
   const message=rtEl?rtEl.value.trim():"";
@@ -3132,14 +3164,44 @@ async function sendReply(){
   try{
     if(message){
       // HelpDesk API: PATCH /v1/tickets/{id} con {message:{text:"..."}}
+      // Gestione allegati tramite transaction
+      var _txId=null;
+      var _attachInput=document.getElementById("reply-attachment");
+      if(_attachInput&&_attachInput.files&&_attachInput.files.length>0){
+        try{
+          var _txRes=await fetch(PROXY+"/api/v1/transactions",{
+            method:"POST",
+            headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
+            body:JSON.stringify({type:"ticket",ticketID:tid})
+          });
+          if(_txRes.ok){
+            var _txData=await _txRes.json();
+            _txId=_txData.ID||_txData.id;
+            if(_txId){
+              var _fd=new FormData();
+              for(var _fi=0;_fi<_attachInput.files.length;_fi++){
+                _fd.append("attachments",_attachInput.files[_fi]);
+              }
+              await fetch(PROXY+"/api/v1/transactions/"+_txId+"/attachments",{
+                method:"POST",
+                headers:{"Authorization":"Basic "+HD_TOKEN,"User-Agent":"Yespresso/1.0"},
+                body:_fd
+              });
+            }
+          }
+        }catch(_ae){console.log("Allegato upload fallito:",_ae.message);}
+      }
+      var _isPriv=document.getElementById("private-toggle")&&document.getElementById("private-toggle").dataset.private==="1";
+      var _msgBody=Object.assign({message:{text:message}},_isPriv?{isPrivate:true}:{},_txId?{transactionID:_txId}:{});
       const msgRes=await fetch(PROXY+"/api/v1/tickets/"+tid,{
         method:"PATCH",
         headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-        body:JSON.stringify({message:{text:message,
-        ...(document.getElementById("private-toggle")&&document.getElementById("private-toggle").dataset.private==="1"?{private:true}:{})}})
+        body:JSON.stringify(_msgBody)
       });
       if(!msgRes.ok){const b=await msgRes.text();throw new Error("Errore invio messaggio: "+msgRes.status+" "+b.substring(0,150));}
       console.log("✅ Messaggio inviato via PATCH ticket");
+      var _ai=document.getElementById("reply-attachment");if(_ai){_ai.value="";}
+      var _an=document.getElementById("attach-name");if(_an){_an.textContent="";}
       // Reset toggle privato dopo invio
       var ptBtn=document.getElementById("private-toggle");
       if(ptBtn&&ptBtn.dataset.private==="1"){togglePrivateMode();}
@@ -3293,6 +3355,11 @@ async function loadCustomerHistory(email, name, currentTid){
   const listEl=document.getElementById("customer-history-list");
   const countEl=document.getElementById("ch-count");
   if(!listEl)return;
+
+  // Se il ticket corrente ha un customer Shopify collegato, usalo per gli ordini storici
+  if(selectedTicket&&selectedTicket._shopifyCustomerId){
+    window._lastShopifyCustomerId=selectedTicket._shopifyCustomerId;
+  }
 
   // Find all tickets from same customer using email or name
   let related=[];
@@ -4687,32 +4754,51 @@ async function duplicateOrder(orderId){
 
 <!-- NEW TICKET MODAL -->
 <div class="modal-overlay" id="new-ticket-modal" style="display:none" onclick="if(event.target===this)closeNewTicketModal()">
-  <div class="modal" style="max-width:560px;width:700px">
+  <div class="modal" style="max-width:700px;width:95vw;max-height:90vh;overflow-y:auto">
     <div class="modal-header">
       <span class="modal-title">🎫 Nuovo Ticket</span>
       <button class="modal-close" onclick="closeNewTicketModal()">×</button>
     </div>
-    <div class="modal-body" style="gap:14px">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Email cliente *</label>
-        <input class="field" id="nt-email" type="email" placeholder="es. cliente@email.com"/>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Nome cliente</label>
-        <input class="field" id="nt-name" type="text" placeholder="es. Mario Rossi"/>
+    <div class="modal-body" style="gap:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Email cliente *</label>
+          <input class="field" id="nt-email" type="email" placeholder="es. cliente@email.com"/>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Nome cliente</label>
+          <input class="field" id="nt-name" type="text" placeholder="es. Mario Rossi"/>
+        </div>
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Oggetto *</label>
         <input class="field" id="nt-subject" type="text" placeholder="es. Problema con ordine #1234"/>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Stato</label>
+          <select class="field" id="nt-status" style="padding:8px 12px">
+            <option value="open">Open</option>
+            <option value="pending">Pending</option>
+            <option value="solved">Solved</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Allegato</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;font-size:12px;color:#555">
+            📎 <span id="nt-attach-name">Scegli file...</span>
+            <input type="file" id="nt-attachment" multiple style="display:none" onchange="var s=document.getElementById('nt-attach-name');s.textContent=this.files.length===1?this.files[0].name:this.files.length+' file'">
+          </label>
+        </div>
+      </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Messaggio *</label>
         <div style="position:relative">
-          <textarea class="field" id="nt-message" rows="5" placeholder="Scrivi il messaggio... (digita # per risposte rapide)"></textarea>
+          <textarea class="field" id="nt-message" rows="6" placeholder="Scrivi il messaggio... (digita # per risposte rapide)"></textarea>
           <div id="nt-qr-popup" class="qr-popup" style="display:none"></div>
         </div>
         <div style="margin-top:6px">
-          <button class="qr-btn" onclick="openNTQuickReplies()" style="height:28px;font-size:11px">⚡ Risposte rapide</button>
+          <button class="qr-btn" onclick="openNTQuickReplies()" style="height:28px;font-size:11px;background:#FFFAAA;border-color:#e0d800;color:#000">⚡ Risposte rapide</button>
         </div>
       </div>
       <div id="nt-error" style="display:none;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:10px;font-size:12px;color:#c04040"></div>
@@ -4777,22 +4863,118 @@ function insertNTQR(id){
 }
 function openNTQuickReplies(){showNTQRPopup("");document.getElementById("nt-message").focus();}
 function closeNewTicketModal(){hideNTQRPopup();document.getElementById("new-ticket-modal").style.display="none";}
-async function submitNewTicket(){
+async async function submitNewTicket(){
   const email=document.getElementById("nt-email").value.trim();
   const name=document.getElementById("nt-name").value.trim();
   const subject=document.getElementById("nt-subject").value.trim();
   const message=document.getElementById("nt-message").value.trim();
+  const status=document.getElementById("nt-status")?document.getElementById("nt-status").value:"open";
   const errEl=document.getElementById("nt-error");
   const btn=document.getElementById("nt-send-btn");
   if(!email||!subject||!message){errEl.textContent="⚠ Compila tutti i campi obbligatori (email, oggetto, messaggio).";errEl.style.display="block";return;}
   btn.disabled=true;btn.textContent="Invio...";errEl.style.display="none";
   try{
-    const payload={subject:subject,message:{text:message},requester:{email:email,name:name||email}};
+    // 1. Gestione allegati via transaction
+    let txId=null;
+    const attachInput=document.getElementById("nt-attachment");
+    if(attachInput&&attachInput.files&&attachInput.files.length>0){
+      try{
+        const txRes=await fetch(PROXY+"/api/v1/transactions",{
+          method:"POST",
+          headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
+          body:JSON.stringify({type:"ticket"})
+        });
+        if(txRes.ok){
+          const txData=await txRes.json();
+          txId=txData.ID||txData.id;
+          if(txId){
+            const fd=new FormData();
+            for(let i=0;i<attachInput.files.length;i++) fd.append("attachments",attachInput.files[i]);
+            await fetch(PROXY+"/api/v1/transactions/"+txId+"/attachments",{
+              method:"POST",
+              headers:{"Authorization":"Basic "+HD_TOKEN,"User-Agent":"Yespresso/1.0"},
+              body:fd
+            });
+          }
+        }
+      }catch(ae){console.log("Allegato NT:",ae.message);}
+    }
+
+    // 2. Crea ticket
+    const payload={subject:subject,requester:{email:email,name:name||email},message:{text:message},status:status};
+    if(txId) payload.transactionID=txId;
     const res=await fetch(PROXY+"/api/v1/tickets",{method:"POST",headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},body:JSON.stringify(payload)});
     if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,200));}
-    closeNewTicketModal();showToast("✓ Ticket creato con successo!");await // Keepalive ping ogni 10 minuti per tenere sveglio il proxy Render
-setInterval(()=>fetch(PROXY+"/ping").catch(()=>{}), 10*60*1000);
-loadTickets();
+    const newTicket=await res.json();
+    closeNewTicketModal();
+    showToast("✓ Ticket creato con successo!");
+
+    // 3. Aggiunge il ticket all'array locale senza ricaricare tutto
+    const ntObj={
+      ID:newTicket.ID||newTicket.id,
+      id:newTicket.ID||newTicket.id,
+      subject:subject,
+      status:status,
+      createdAt:new Date().toISOString(),
+      lastMessageAt:new Date().toISOString(),
+      requester:{email:email,name:name||email},
+      events:[]
+    };
+    tickets.unshift(ntObj);
+    updateBadges();
+    renderTable();
+
+    // 4. Collegamento automatico allo storico cliente
+    // Prima cerca per email, poi per numero ordine in subject+message
+    setTimeout(async()=>{
+      try{
+        // Cerca per email su Shopify
+        let foundOrder=null;
+        if(email&&!email.includes("marketplace.amazon")&&!email.includes("orders.temu")){
+          const dEmail=await shopifyGet("orders.json?email="+encodeURIComponent(email)+"&status=any&limit=1");
+          if(dEmail&&dEmail.orders&&dEmail.orders.length) foundOrder=dEmail.orders[0];
+        }
+        // Se non trovato per email, cerca numero ordine in subject+message
+        if(!foundOrder){
+          const testo=subject+" "+message;
+          // Ordine Shopify (#2024XXXXX)
+          const shopifyMatch=testo.match(/#?(20\d{7,9})/);
+          if(shopifyMatch){
+            const d=await shopifyGet("orders.json?name=%23"+shopifyMatch[1]+"&status=any&limit=1");
+            if(d&&d.orders&&d.orders.length) foundOrder=d.orders[0];
+          }
+          // Ordine Amazon (XXX-XXXXXXX-XXXXXXX)
+          if(!foundOrder){
+            const amzMatch=testo.match(/(\d{3}-\d{7}-\d{7})/);
+            if(amzMatch){
+              const dA=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,note_attributes");
+              if(dA&&dA.orders){
+                foundOrder=dA.orders.find(o=>(o.note_attributes||[]).some(a=>a.name==="Amazon Order Id"&&a.value===amzMatch[1]))||null;
+              }
+            }
+          }
+          // Ordine Temu (numerico lungo)
+          if(!foundOrder){
+            const temuMatch=testo.match(/(\d{15,20})/);
+            if(temuMatch){
+              const dT=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,note_attributes");
+              if(dT&&dT.orders){
+                const keys=["PARENT_ORDER_SN","Temu Order Id","temu_order_id"];
+                foundOrder=dT.orders.find(o=>(o.note_attributes||[]).some(a=>keys.includes(a.name)&&a.value===temuMatch[1]))||null;
+              }
+            }
+          }
+        }
+        if(foundOrder&&foundOrder.customer&&foundOrder.customer.id){
+          // Salva customer_id per lo storico
+          ntObj._shopifyCustomerId=foundOrder.customer.id;
+          ntObj._shopifyOrderId=foundOrder.id;
+          ntObj._shopifyOrderName=foundOrder.name;
+          console.log("✅ NT collegato a ordine Shopify:",foundOrder.name,"cliente:",foundOrder.customer.id);
+        }
+      }catch(e){console.log("NT link ordine:",e.message);}
+    },500);
+
   }catch(e){
     errEl.textContent="❌ "+e.message;errEl.style.display="block";
     btn.disabled=false;btn.textContent="📤 Crea Ticket";
