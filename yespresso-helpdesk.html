@@ -2107,8 +2107,8 @@ function renderMessageHtml(text, attachments){
   } else if(hasHtml){
     // ── HTML NORMALE (email cliente, HelpDesk) ──
     let html=raw
-      .replace(/<script[\s\S]*?<\/script>/gi,"")
-      .replace(/<style[\s\S]*?<\/style>/gi,"")
+      .replace(/<scr"+"ipt[\s\S]*?<\/scr"+"ipt>/gi,"")
+      .replace(/<sty"+"le[\s\S]*?<\/sty"+"le>/gi,"")
       .replace(/\s+on\w+="[^"]*"/gi,"")
       .replace(/\s+on\w+='[^']*'/gi,"")
       .replace(/javascript:/gi,"");
@@ -4863,7 +4863,7 @@ function insertNTQR(id){
 }
 function openNTQuickReplies(){showNTQRPopup("");document.getElementById("nt-message").focus();}
 function closeNewTicketModal(){hideNTQRPopup();document.getElementById("new-ticket-modal").style.display="none";}
-async async function submitNewTicket(){
+async function submitNewTicket(){
   const email=document.getElementById("nt-email").value.trim();
   const name=document.getElementById("nt-name").value.trim();
   const subject=document.getElementById("nt-subject").value.trim();
@@ -5113,5 +5113,6 @@ document.addEventListener('click',function(e){
     </div>
   </div>
 </div>
+</script>
 </body>
 </html>
