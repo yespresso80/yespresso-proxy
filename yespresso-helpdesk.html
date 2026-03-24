@@ -261,10 +261,37 @@ textarea.field{min-height:80px;resize:vertical}
   <div class="nav-icon" title="Dashboard">⊞</div>
   <div class="nav-spacer"></div>
   <div class="nav-icon" title="Lista">📋</div>
-  <div class="nav-icon" title="Impostazioni">⚙️</div>
+  <div class="nav-icon" title="Impostazioni" onclick="openSettingsModal()" style="cursor:pointer">⚙️</div>
   <div class="nav-icon" title="Notifiche">🔔</div>
   <div class="nav-avatar" title="Profilo">Y</div>
 </nav>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal" style="display:none" onclick="if(event.target===this)closeSettingsModal()">
+  <div class="modal" style="width:600px;max-width:95vw;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <span class="modal-title">⚙️ Impostazioni</span>
+      <button class="modal-close" onclick="closeSettingsModal()">×</button>
+    </div>
+    <div class="modal-body" style="gap:16px">
+      <!-- Sezione: No AI -->
+      <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:10px;padding:16px">
+        <div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:4px">🚫 Non generare messaggi AI</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Per questi indirizzi email o domini la sidebar verrà aggiornata ma l'AI non genererà risposta.</div>
+        <div id="no-ai-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="no-ai-input" placeholder="es. vasnoreply@brt.it oppure @brt.it" style="flex:1;padding:8px 12px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;outline:none">
+          <button onclick="addNoAiEmail()" style="background:#1a73e8;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600">+ Aggiungi</button>
+        </div>
+        <div style="font-size:11px;color:#aaa;margin-top:6px">Puoi inserire email complete (es. vasnoreply@brt.it) o domini (es. @brt.it)</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-sm btn-primary" onclick="saveSettings()">💾 Salva</button>
+      <button class="btn-sm" onclick="closeSettingsModal()">Chiudi</button>
+    </div>
+  </div>
+</div>
 
 <!-- SIDEBAR FILTERS -->
 <aside class="sidebar">
@@ -1672,6 +1699,24 @@ async function selectTicket(tid){
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
+  } else if(isNoAiEmail(email)) {
+    // Per BRT: lascia fare solo a isBrtTicketSelect sotto. Per altri: generateReply senza AI
+    const _isBrt=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+    if(!_isBrt){
+      loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+        generateReply(allMsgs, email, fullThread, true);
+      });
+    } else {
+      // Solo mostra box vuoto senza spinner
+      const genBox=document.getElementById("gen-box");
+      const actionArea=document.getElementById("action-area");
+      if(genBox)genBox.style.display="none";
+      if(actionArea)actionArea.style.display="block";
+      const replyText=document.getElementById("reply-text");
+      if(replyText)replyText.value="";
+      const aiLabel=document.getElementById("ai-label");
+      if(aiLabel)aiLabel.textContent="🚫 AI disabilitata - ticket BRT";
+    }
   } else {
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread);
@@ -1934,14 +1979,16 @@ function renderMessageHtml(text, attachments){
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
+  } else if(isNoAiEmail(email)) {
+    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+      generateReply(allMsgs, email, fullThread, true);
+    });
   } else {
-    // Carica allegati IMAP per tutti i canali (tutti inoltrati a allegati@yespresso.it)
     loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread);
     });
   }
   loadCustomerHistory(email, name, tid2);
-  // Per ticket BRT: cerca ordine usando il body completo dei messaggi
   const isBrtTicketSelect=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
   if(isBrtTicketSelect){
     setTimeout(async()=>{
@@ -2489,24 +2536,59 @@ async function fetchShopifyOrder(message,email,requesterName){
       console.log("❌ Temu Order Id non trovato");
     }
 
+    // 2z. Reso magazzino: estrai nome cliente dal subject "Reso magazzino - Nome Cognome"
+    const resoMagMatch=(selectedTicket&&(selectedTicket.subject||selectedTicket.name||"")).match(/reso\s+magazzino[^-–]*[-–\s]\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)+)/i);
+    if(resoMagMatch){
+      const resoName=resoMagMatch[1].trim();
+      console.log("→ Reso magazzino nome:",resoName);
+      const parts=resoName.trim().split(/\s+/);
+      const cognome=parts[0];
+      const dRM=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(resoName));
+      if(dRM&&dRM.orders&&dRM.orders.length){console.log("✅ Reso magazzino via nome",resoName);if(dRM.orders[0]&&dRM.orders[0].customer)window._lastShopifyCustomerId=dRM.orders[0].customer.id;window._lastShopifyOrder=dRM.orders[0];return dRM.orders[0];}
+      const dRM2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(cognome));
+      if(dRM2&&dRM2.orders&&dRM2.orders.length){console.log("✅ Reso magazzino via cognome",cognome);if(dRM2.orders[0]&&dRM2.orders[0].customer)window._lastShopifyCustomerId=dRM2.orders[0].customer.id;window._lastShopifyOrder=dRM2.orders[0];return dRM2.orders[0];}
+    }
     // 3. Numero ordine Shopify (es. #1234, #12345)
-    const decodedMsg=message.replace(/%23/g,"#").replace(/\\u0023/g,"#");
+    const decodedMsg=message.replace(/%23/g,"#").replace(/\u0023/g,"#");
     const msgNoAmz=decodedMsg.replace(/\d{3}-\d{7}-\d{7}/g,"AMZID");
     const shopifyMatches=[...msgNoAmz.matchAll(/#(\d{4,20})/g)].map(m=>m[1]);
     const uniqueNums=[...new Set(shopifyMatches)].sort((a,b)=>b.length-a.length);
     const orderWordMatches=[...msgNoAmz.matchAll(/(?:ordine|order|shopify|cognome|cliente)[^\d#]*(\d{4,20})/gi)].map(m=>m[1]);
     const tiktokMatches=[...msgNoAmz.matchAll(/\b(5\d{17})\b/g)].map(m=>m[1]);
+    const tikShopMatches=[...msgNoAmz.matchAll(/\b(5768[0-9]{12})\b/g)].map(m=>m[1]);
     const subjectOrderMatches=[...msgNoAmz.matchAll(/\b(202[0-9]\d{6})\b/g)].map(m=>m[1]);
-    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches,...tiktokMatches,...subjectOrderMatches])].sort((a,b)=>b.length-a.length);
+    const brtNumMatches=[...msgNoAmz.matchAll(/\b((?:26)?179\d{9,10})\b/g)].map(m=>m[1].startsWith('26')?m[1].slice(2):m[1]);
+    // Ricerca per nome da giacenza BRT: "Cli: 1791201 NOME COGNOME -XX"
+    const brtGiacenzaNameMatch=message.match(/Cli:\s*\d+\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿa-zà-ÿ]+(?:\s+[A-ZÀ-Ÿ][A-ZÀ-Ÿa-zà-ÿ]+)+)\s*[-–]/);
+    if(brtGiacenzaNameMatch){
+      const brtName=brtGiacenzaNameMatch[1].trim();
+      console.log("→ BRT Giacenza nome:",brtName);
+      const parts=brtName.split(/\s+/);
+      const brtCognome=parts[0];
+      const brtNome=parts.slice(1).join(" ");
+      const dBrtN=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtName));
+      if(dBrtN&&dBrtN.orders&&dBrtN.orders.length){console.log("✅ BRT Giacenza via nome",brtName);if(dBrtN.orders[0]&&dBrtN.orders[0].customer)window._lastShopifyCustomerId=dBrtN.orders[0].customer.id;window._lastShopifyOrder=dBrtN.orders[0];return dBrtN.orders[0];}
+      const dBrtC=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(brtCognome+" "+brtNome));
+      if(dBrtC&&dBrtC.orders&&dBrtC.orders.length){console.log("✅ BRT Giacenza via cognome+nome",brtCognome);if(dBrtC.orders[0]&&dBrtC.orders[0].customer)window._lastShopifyCustomerId=dBrtC.orders[0].customer.id;window._lastShopifyOrder=dBrtC.orders[0];return dBrtC.orders[0];}
+    }
+    const allNumsRaw=[...new Set([...uniqueNums,...orderWordMatches,...tiktokMatches,...tikShopMatches,...subjectOrderMatches,...brtNumMatches])].sort((a,b)=>b.length-a.length);
     // Escludi numeri che sembrano tracking BRT (12+ cifre che iniziano con 179 o 26)
     const brtTrackingNums=allNumsRaw.filter(n=>n.length>=12&&(n.startsWith('179')||n.startsWith('26')));
-    const allNums=allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26'))));
+    const brtStripped=brtTrackingNums.filter(n=>n.startsWith('26')).map(n=>n.slice(2));
+    const allNums=[...new Set([...allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26')))),...brtStripped])];
     console.log("🔢 Numeri ordine trovati:", allNums.slice(0,5));
+    console.log("🔢 allNumsRaw:", allNumsRaw.slice(0,10));
+    console.log("🔢 shopifyMatches:", uniqueNums.slice(0,5));
+    console.log("🔢 subjectMatches:", subjectOrderMatches.slice(0,5));
+    console.log("🔢 brtNumMatches:", brtNumMatches.slice(0,5));
+    console.log("🔢 tiktokMatches:", tiktokMatches.slice(0,5));
+    console.log("🔢 orderWordMatches:", orderWordMatches.slice(0,5));
     // Cerca anche per tracking BRT se il cliente lo ha usato come numero ordine
     if(brtTrackingNums.length>0){
       for(const tn of brtTrackingNums.slice(0,2)){
         const tnPad=tn.startsWith('26')?tn:'26'+tn;
-        for(const tryTn of [tn,tnPad]){
+        const tnNoPfx=tn.startsWith('26')?tn.slice(2):tn;
+        for(const tryTn of [tnNoPfx,tn,tnPad]){
           const dTn=await shopifyGet("orders.json?status=any&limit=50&query="+encodeURIComponent(tryTn));
           if(dTn&&dTn.orders&&dTn.orders.length>0){
             const hit=dTn.orders.find(o=>(o.fulfillments||[]).some(f=>{
@@ -2546,6 +2628,20 @@ async function fetchShopifyOrder(message,email,requesterName){
           if(dRef&&dRef.orders&&dRef.orders.length){console.log("✅ BRT Giacenza via #"+ref);if(dRef.orders[0]&&dRef.orders[0].customer)window._lastShopifyCustomerId=dRef.orders[0].customer.id;window._lastShopifyOrder=dRef.orders[0];return dRef.orders[0];}
           const dRef2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(ref));
           if(dRef2&&dRef2.orders&&dRef2.orders.length){console.log("✅ BRT Giacenza via query "+ref);if(dRef2.orders[0]&&dRef2.orders[0].customer)window._lastShopifyCustomerId=dRef2.orders[0].customer.id;window._lastShopifyOrder=dRef2.orders[0];return dRef2.orders[0];}
+        }
+      }
+      // 4a-bis. Giacenza BRT con nome cliente: "Cli: 1791201 FRANCESCA RIILI -PA (ID5249989)"
+      const giacenzaClienteMatch=message.match(/Cli[:\s]+\d+\s+([A-Z][A-Z\s]+?)\s*[-–(]/);
+      if(giacenzaClienteMatch){
+        const clienteName=giacenzaClienteMatch[1].trim();
+        console.log("→ BRT Giacenza nome cliente:",clienteName);
+        const parts=clienteName.split(/\s+/);
+        if(parts.length>=2){
+          const cognome=parts[0], nome=parts.slice(1).join(" ");
+          const dName=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(cognome+" "+nome));
+          if(dName&&dName.orders&&dName.orders.length){console.log("✅ BRT Giacenza via nome",clienteName);if(dName.orders[0]&&dName.orders[0].customer)window._lastShopifyCustomerId=dName.orders[0].customer.id;window._lastShopifyOrder=dName.orders[0];return dName.orders[0];}
+          const dName2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(cognome));
+          if(dName2&&dName2.orders&&dName2.orders.length){console.log("✅ BRT Giacenza via cognome",cognome);if(dName2.orders[0]&&dName2.orders[0].customer)window._lastShopifyCustomerId=dName2.orders[0].customer.id;window._lastShopifyOrder=dName2.orders[0];return dName2.orders[0];}
         }
       }
       // 4b. "spedizione 2026 179 X XXXXXX"
@@ -2721,7 +2817,8 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
       if(genBox)genBox.style.display="none";if(aa){aa.style.display="block";if(rt)rt.value=reply;}}
   }catch(e){console.error("generateReplyNotaInterna:",e);if(genBox)genBox.style.display="none";}
 }
-async function generateReply(lastMsg,email,fullThread){ console.log("🚀 generateReply CHIAMATA email:",email);
+async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log("🚀 generateReply CHIAMATA email:",email);
+  const _skipAI=skipAI||isNoAiEmail(email);
   const t=selectedTicket;
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
@@ -2972,6 +3069,17 @@ async function generateReply(lastMsg,email,fullThread){ console.log("🚀 genera
     }).join("\n");
     return "=== Ticket: "+tk.subject+" ("+tk.status+") ===\n"+msgs;
   }).join("\n")):"";
+  if(_skipAI){
+    const genBox2=document.getElementById("gen-box");
+    const actionArea2=document.getElementById("action-area");
+    if(genBox2)genBox2.style.display="none";
+    if(actionArea2)actionArea2.style.display="block";
+    const replyText2=document.getElementById("reply-text");
+    if(replyText2)replyText2.value="";
+    const aiLabel2=document.getElementById("ai-label");
+    if(aiLabel2)aiLabel2.textContent="🚫 AI disabilitata per questo mittente";
+    return;
+  }
   const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+(orderInfo?"\n\nDati ordine: "+orderInfo:"")+"\n\nSTORICO CONVERSAZIONE (dal più vecchio al più recente):\n"+fullThread+otherOpenStr+recentStr+"\n\nRispondi all'ultimo messaggio del cliente tenendo conto dell'INTERA conversazione sopra. Se il cliente ha gia fornito informazioni nei messaggi precedenti (es. numero ordine, descrizione problema, quantita prodotti), NON chiederle di nuovo ma usa quelle informazioni per rispondere.";
   try{
     const res=await fetch(PROXY+"/anthropic/v1/messages",{
@@ -3849,6 +3957,62 @@ function openQRModal(){
 
 function filterQRCat(btn,cat){document.getElementById("qr-search").value=cat;document.querySelectorAll(".qrcat-btn").forEach(b=>b.classList.remove("qrcat-active"));btn.classList.add("qrcat-active");renderQRList();}
 function closeQRModal(){ document.getElementById("qr-modal").style.display="none"; }
+
+// ── SETTINGS ──
+const SETTINGS_KEY = "yespresso_settings";
+function loadSettings(){
+  try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}"); }catch(e){ return {}; }
+}
+function saveSettings(){
+  const s=loadSettings();
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  showToast("✅ Impostazioni salvate");
+  closeSettingsModal();
+}
+const NO_AI_DEFAULTS=["vasnoreply@brt.it","ecommerce@yespresso.it","servizioclienti@brt.it","assistenza@paypal.it"];
+function getNoAiEmails(){
+  const s=loadSettings();
+  const saved=s.noAiEmails||[];
+  return [...new Set([...NO_AI_DEFAULTS,...saved])];
+}
+function isNoAiEmail(email){
+  if(!email) return false;
+  const list=getNoAiEmails();
+  return list.some(e=>e.startsWith("@")?email.toLowerCase().endsWith(e.toLowerCase()):email.toLowerCase()===e.toLowerCase());
+}
+function renderNoAiList(){
+  const list=getNoAiEmails();
+  const el=document.getElementById("no-ai-list");
+  if(!el) return;
+  el.innerHTML=list.map((e,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #e0e4ea;border-radius:20px;padding:4px 12px;font-size:12px">${e}<span onclick="removeNoAiEmail(${i})" style="cursor:pointer;color:#c04040;font-weight:700;margin-left:4px">×</span></span>`).join("");
+}
+function addNoAiEmail(){
+  const input=document.getElementById("no-ai-input");
+  const val=(input.value||"").trim().toLowerCase();
+  if(!val) return;
+  const s=loadSettings();
+  const list=s.noAiEmails||getNoAiEmails();
+  if(!list.includes(val)) list.push(val);
+  s.noAiEmails=list;
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  input.value="";
+  renderNoAiList();
+}
+function removeNoAiEmail(idx){
+  const s=loadSettings();
+  const list=s.noAiEmails||getNoAiEmails();
+  list.splice(idx,1);
+  s.noAiEmails=list;
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  renderNoAiList();
+}
+function openSettingsModal(){
+  document.getElementById("settings-modal").style.display="flex";
+  renderNoAiList();
+}
+function closeSettingsModal(){
+  document.getElementById("settings-modal").style.display="none";
+}
 
 function renderQRList(){
   const body=document.getElementById("qr-modal-body");
