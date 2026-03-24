@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Amazon Fattura Tagger</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:20px;background:#f5f7fa;color:#1a1a2e}
+  .container{max-width:900px;margin:0 auto}
+  h1{font-size:22px;color:#1a1a2e;margin-bottom:4px}
+  .subtitle{color:#888;font-size:13px;margin-bottom:24px}
+  .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+  .upload-area{border:2px dashed #c5d8fa;border-radius:10px;padding:30px;text-align:center;cursor:pointer;transition:.2s;background:#f8fbff}
+  .upload-area:hover{border-color:#1a73e8;background:#e8f0fe}
+  .upload-area input{display:none}
+  .btn{padding:10px 20px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn-primary{background:#1a73e8;color:#fff}
+  .btn-primary:hover{background:#1557b0}
+  .btn-primary:disabled{background:#aaa;cursor:not-allowed}
+  .progress-bar{height:6px;background:#e8eaf0;border-radius:3px;overflow:hidden;margin:8px 0}
+  .progress-fill{height:100%;background:#1a73e8;border-radius:3px;transition:width .3s}
+  .log-area{background:#1a1a2e;color:#a8d8a8;border-radius:8px;padding:12px;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;margin-top:12px}
+  .log-line{margin:1px 0}
+  .log-ok{color:#6fcf97}
+  .log-skip{color:#aaa}
+  .log-err{color:#eb5757}
+  .log-info{color:#56ccf2}
+  .stats{display:flex;gap:12px;flex-wrap:wrap}
+  .stat{background:#f8f9fc;border-radius:8px;padding:12px 16px;flex:1;min-width:100px;text-align:center}
+  .stat-num{font-size:24px;font-weight:700;color:#1a73e8}
+  .stat-label{font-size:11px;color:#888;margin-top:2px}
+  .stat-ok .stat-num{color:#2a9d60}
+  .stat-skip .stat-num{color:#888}
+  .stat-err .stat-num{color:#eb5757}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🏷️ Amazon Fattura Tagger</h1>
+  <p class="subtitle">Carica il report CSV Amazon — aggiunge il tag "Fattura Amazon" agli ordini Shopify dove la colonna AT (Buyer Tax Registration Type) contiene CitizenId o VAT</p>
+
+  <div class="card">
+    <div class="upload-area" onclick="document.getElementById('csvFile').click()">
+      <input type="file" id="csvFile" accept=".csv" onchange="onFileSelected(this)">
+      <div style="font-size:32px;margin-bottom:8px">📄</div>
+      <div style="font-weight:600;color:#1a73e8" id="file-label">Clicca per selezionare il file CSV Amazon</div>
+      <div style="font-size:12px;color:#aaa;margin-top:4px">taxReport_*.csv — separatore punto e virgola</div>
+    </div>
+  </div>
+
+  <div class="card" id="preview-card" style="display:none">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px">📋 Ordini da taggare</div>
+    <div id="preview-list" style="font-size:13px;color:#555;max-height:180px;overflow-y:auto"></div>
+    <div style="margin-top:16px;display:flex;align-items:center;gap:12px">
+      <button class="btn btn-primary" id="start-btn" onclick="startTagging()">▶ Avvia tagging</button>
+      <span id="order-count" style="font-size:13px;color:#888"></span>
+    </div>
+  </div>
+
+  <div class="card" id="progress-card" style="display:none">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:14px;font-weight:600" id="progress-title">⚙️ Elaborazione in corso...</span>
+      <span id="progress-text" style="font-size:13px;color:#888">0 / 0</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="stats" style="margin-top:12px">
+      <div class="stat stat-ok"><div class="stat-num" id="cnt-ok">0</div><div class="stat-label">✅ Taggati</div></div>
+      <div class="stat stat-skip"><div class="stat-num" id="cnt-skip">0</div><div class="stat-label">⏭ Già presenti</div></div>
+      <div class="stat stat-err"><div class="stat-num" id="cnt-err">0</div><div class="stat-label">❌ Non trovati</div></div>
+    </div>
+    <div class="log-area" id="log-area"></div>
+  </div>
+</div>
+
+<script>
+const PROXY = "https://yespresso-proxy.onrender.com";
+const TAG = "Fattura Amazon";
+let ordersToTag = [];
+
+function parseCsv(text) {
+  // Normalizza line endings
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const headers = lines[0].split(';').map(h => h.trim().replace(/^"|"$/g, ''));
+  
+  const orderIdIdx = headers.findIndex(h => h === 'Order ID');
+  const taxTypeIdx = headers.findIndex(h => h === 'Buyer Tax Registration Type');
+  
+  if (orderIdIdx === -1 || taxTypeIdx === -1) {
+    alert('Errore: colonne "Order ID" o "Buyer Tax Registration Type" non trovate.\nVerifica che sia il file taxReport corretto.');
+    return [];
+  }
+  
+  const orders = {};
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = lines[i].split(';').map(c => c.trim().replace(/^"|"$/g, ''));
+    if (cols.length <= taxTypeIdx) continue;
+    const orderId = cols[orderIdIdx].trim();
+    const taxType = cols[taxTypeIdx].trim();
+    // Solo se AT contiene CitizenId o VAT
+    if (orderId && (taxType === 'CitizenId' || taxType === 'VAT')) {
+      orders[orderId] = taxType;
+    }
+  }
+  return Object.entries(orders).map(([id, type]) => ({ id, type }));
+}
+
+function onFileSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('file-label').textContent = '📄 ' + file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    ordersToTag = parseCsv(e.target.result);
+    showPreview();
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function showPreview() {
+  if (!ordersToTag.length) {
+    alert('Nessun ordine con CitizenId o VAT trovato nel file.');
+    return;
+  }
+  const list = document.getElementById('preview-list');
+  list.innerHTML = ordersToTag.slice(0, 25).map(o =>
+    `<div style="padding:4px 0;border-bottom:1px solid #f0f2f5;display:flex;gap:8px">
+      <span>🟡</span>
+      <strong>${o.id}</strong>
+      <span style="color:#888;font-size:11px;background:#f0f2f5;padding:1px 6px;border-radius:10px">${o.type}</span>
+    </div>`
+  ).join('') + (ordersToTag.length > 25 ? `<div style="color:#aaa;padding:6px 0;font-size:12px">... e altri ${ordersToTag.length - 25} ordini</div>` : '');
+  
+  document.getElementById('order-count').textContent = ordersToTag.length + ' ordini da processare';
+  document.getElementById('preview-card').style.display = 'block';
+}
+
+async function shopifyGet(path) {
+  const res = await fetch(PROXY + '/shopify/' + path);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function shopifyPut(path, body) {
+  const res = await fetch(PROXY + '/shopify/' + path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function log(msg, type = 'info') {
+  const area = document.getElementById('log-area');
+  const line = document.createElement('div');
+  line.className = 'log-line log-' + type;
+  line.textContent = new Date().toLocaleTimeString('it-IT') + ' ' + msg;
+  area.appendChild(line);
+  area.scrollTop = area.scrollHeight;
+}
+
+async function findShopifyOrder(amazonOrderId) {
+  // Ricerca full-text Shopify per Amazon Order ID
+  const d = await shopifyGet('orders.json?status=any&limit=10&query=' + encodeURIComponent(amazonOrderId));
+  const orders = (d && d.orders) || [];
+  if (!orders.length) return null;
+  // Preferisci ordine con note_attribute esatto
+  const exact = orders.find(o =>
+    (o.note_attributes || []).some(a => a.name === 'Amazon Order Id' && a.value === amazonOrderId)
+  );
+  return exact || orders[0];
+}
+
+async function addTag(order) {
+  const currentTags = order.tags || '';
+  const tagsArr = currentTags ? currentTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+  if (tagsArr.map(t=>t.toLowerCase()).includes(TAG.toLowerCase())) return false; // già presente
+  tagsArr.push(TAG);
+  await shopifyPut('orders/' + order.id + '.json', {
+    order: { id: order.id, tags: tagsArr.join(', ') }
+  });
+  return true;
+}
+
+async function startTagging() {
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('progress-card').style.display = 'block';
+  let cntOk = 0, cntSkip = 0, cntErr = 0;
+  const total = ordersToTag.length;
+
+  for (let i = 0; i < total; i++) {
+    const { id: amazonId, type: taxType } = ordersToTag[i];
+
+    document.getElementById('progress-fill').style.width = Math.round(((i+1)/total)*100) + '%';
+    document.getElementById('progress-text').textContent = (i+1) + ' / ' + total;
+
+    try {
+      const order = await findShopifyOrder(amazonId);
+      if (!order) {
+        log('❌ ' + amazonId + ' — non trovato su Shopify', 'err');
+        cntErr++;
+      } else {
+        const added = await addTag(order);
+        if (added) {
+          log('✅ ' + amazonId + ' → ' + order.name + ' — "Fattura Amazon" aggiunto (' + taxType + ')', 'ok');
+          cntOk++;
+        } else {
+          log('⏭ ' + amazonId + ' → ' + order.name + ' — tag già presente', 'skip');
+          cntSkip++;
+        }
+      }
+    } catch(e) {
+      log('❌ ' + amazonId + ' — errore: ' + e.message, 'err');
+      cntErr++;
+    }
+
+    document.getElementById('cnt-ok').textContent = cntOk;
+    document.getElementById('cnt-skip').textContent = cntSkip;
+    document.getElementById('cnt-err').textContent = cntErr;
+
+    // Piccola pausa per non sovraccaricare le API
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  document.getElementById('progress-fill').style.width = '100%';
+  document.getElementById('progress-title').textContent = '✅ Completato!';
+  log('--- FINE: ' + cntOk + ' taggati, ' + cntSkip + ' già presenti, ' + cntErr + ' non trovati ---', 'info');
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('start-btn').textContent = '🔄 Elabora di nuovo';
+}
+</script>
+</body>
+</html>
