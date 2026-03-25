@@ -283,7 +283,7 @@ textarea.field{min-height:80px;resize:vertical}
           <input type="text" id="no-ai-input" placeholder="es. vasnoreply@brt.it oppure @brt.it" style="flex:1;padding:8px 12px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;outline:none">
           <button onclick="addNoAiEmail()" style="background:#1a73e8;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600">+ Aggiungi</button>
         </div>
-        <div style="font-size:11px;color:#aaa;margin-top:6px">Puoi inserire email complete (es. vasnoreply@brt.it) o domini (es. @brt.it)</div>
+        <div style="font-size:11px;color:#aaa;margin-top:6px">Puoi inserire email complete (es. <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="0a7c6b796465786f7a66734a68787e24637e">[email&#160;protected]</a>) o domini (es. @brt.it)</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -479,7 +479,7 @@ textarea.field{min-height:80px;resize:vertical}
 
 </div>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const PROXY = "https://yespresso-proxy.onrender.com";
 
@@ -4939,11 +4939,15 @@ async function confirmDuplicateOrder(){
     const allItems=(_dupOrderData.line_items||[]).filter(li=>li.variant_id);
     const remaining=allItems.filter((_,i)=>document.getElementById("dup-item-"+i));
     if(!remaining.length){showToast("Aggiungi almeno un articolo","error");btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";return;}
-    const lineItems=remaining.map(li=>({variant_id:li.variant_id,quantity:li.quantity,applied_discount:{value:"100",value_type:"percentage",title:"Ordine rispedito"}}));
+    const motiv=document.getElementById("dup-motivazione")?document.getElementById("dup-motivazione").value:"";
+    if(!motiv){showToast("Seleziona una motivazione","error");btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";return;}
+    const origName=_dupOrderData.name||("#"+_dupOrderData.id);
+    const nota="Rispedito ordine "+origName+" per "+motiv;
+    const lineItems=remaining.map(li=>({variant_id:li.variant_id,quantity:li.quantity,applied_discount:{value:"100",value_type:"percentage",title:nota}}));
     // Crea draft order con sconto 100%
     const payload={draft_order:{
       line_items:lineItems,
-      note:"Ordine rispedito - duplicato da "+(_dupOrderData.name||_dupOrderData.id),
+      note:nota,
       tags:"rispedito",
       send_receipt:false,
       send_fulfillment_receipt:false
@@ -4966,14 +4970,16 @@ async function confirmDuplicateOrder(){
     const complData=await complRes.json();
     const newOrderId=complData&&complData.draft_order&&complData.draft_order.order_id;
     if(newOrderId){
-      // Aggiungi commento "Ordine rispedito" sull'ordine creato
-      document.getElementById("dup-order-status").textContent="Aggiunta nota...";
-      await fetch(PROXY+"/shopify/orders/"+newOrderId+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:newOrderId,note:"Ordine rispedito - duplicato da "+(_dupOrderData.name||_dupOrderData.id)}})});
-      showToast("✅ Ordine duplicato e confermato!","success");
+      document.getElementById("dup-order-status").textContent="Aggiunta nota su entrambi gli ordini...";
+      // Nota su ordine NUOVO
+      await fetch(PROXY+"/shopify/orders/"+newOrderId+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:newOrderId,note:nota}})});
+      // Nota su ordine ORIGINALE
+      const origNoteExisting=_dupOrderData.note?_dupOrderData.note+"\n":"";
+      await fetch(PROXY+"/shopify/orders/"+_dupOrderData.id+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:_dupOrderData.id,note:origNoteExisting+nota}})});
+      showToast("✅ Ordine "+origName+" duplicato con successo!","success");
       closeDupModal();
-      window.open("https://40f758-3.myshopify.com/admin/orders/"+newOrderId,"_blank");
     } else {
-      showToast("Draft creato ma completamento fallito","error");
+      showToast("Draft creato ma completamento fallito - apro Shopify","error");
       window.open("https://admin.shopify.com/store/40f758-3/draft_orders/"+draftId,"_blank");
       closeDupModal();
     }
@@ -4987,13 +4993,14 @@ async function confirmDuplicateOrder(){
 
 <!-- DUPLICA ORDINE MODAL -->
 <div class="modal-overlay" id="dup-order-modal" style="display:none" onclick="if(event.target===this)closeDupModal()">
-  <div class="modal" style="width:600px;max-width:96vw;max-height:90vh;overflow-y:auto">
+  <div class="modal" style="width:850px;max-width:97vw;max-height:92vh;overflow-y:auto">
     <div class="modal-header">
       <span class="modal-title">📋 Duplica Ordine</span>
       <button class="modal-close" onclick="closeDupModal()">×</button>
     </div>
     <div class="modal-body" style="gap:12px">
       <div style="font-size:13px;color:#555;margin-bottom:8px">Seleziona gli articoli da includere nell'ordine duplicato. Lo sconto del 100% verrà applicato automaticamente e l'ordine sarà segnato come pagato.</div>
+      <div style="margin-bottom:8px"><label style="font-size:13px;font-weight:600;color:#555;display:block;margin-bottom:6px">Motivazione rispedizione *</label><select id="dup-motivazione" style="width:100%;padding:10px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff"><option value="">— Seleziona motivazione —</option><option value="Errore spedizione">Errore spedizione</option><option value="Merce mancante">Merce mancante</option><option value="Problema prodotto">Problema prodotto</option><option value="Pacco smarrito">Pacco smarrito</option></select></div>
       <div id="dup-items-list" style="display:flex;flex-direction:column;gap:8px"></div>
       <div id="dup-order-status" style="font-size:13px;color:#888;margin-top:8px"></div>
     </div>
@@ -5359,12 +5366,4 @@ document.addEventListener('click',function(e){
         <textarea class="field" id="qr-edit-body" rows="5" placeholder="Testo della risposta..."></textarea>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn-sm btn-primary" onclick="saveQR()">Salva</button>
-      <button class="btn-sm" onclick="closeEditModal()">Annulla</button>
-    </div>
-  </div>
-</div>
-</script>
-</body>
-</html>
+   
