@@ -3910,6 +3910,7 @@ let quickReplies = [
 {id:190, cat:"🚚 Spedizioni BRT", name:"SPEDIZIONE - RIENTRATA + RIMBORSO", body:"Gentile Cliente, \nLa informiamo cortesemente che la sua spedizione è stata restituita al nostro magazzino. A seguito di questa operazione, abbiamo provveduto ad elaborare il rimborso dell'importo da lei pagato. Se ha ulteriori domande o necessità di assistenza, non esiti a contattarci. Siamo qui per aiutarla."},
 {id:191, cat:"⚠️ Prodotti Danneggiati", name:"PRODOTTO DANNEGGIATO - ORDINE RISPEDITO", body:"Buongiorno, ci scusiamo sinceramente per il danno causato al suo ordine. Siamo lieti di informarla che entro domani effettueremo una nuova spedizione. Una volta spedito riceverà un'email contenente il numero di tracking, così potrà monitorare il suo pacco. La ringraziamo per averci scelto e per la sua comprensione. Cordiali saluti."},
 {id:193, cat:"🟡 Amazon", name:"PREZZO UNITA ERRATO AMAZON - ACQUISTO DA EFFETTUARE", body:"Buongiorno, \nLa informiamo che il prezzo della confezione è corretto. Tuttavia, abbiamo notato che nella vetrina di Amazon viene visualizzato un costo per unità/capsula errato. Abbiamo già provveduto a segnalare ad Amazon la necessità di correggere questo errore. La informiamo che il prezzo dell'articolo rimarrà invariato, mentre il costo per unità/capsula verrà mostrato correttamente e. Ci scusiamo sinceramente per il disagio arrecato."},
+{id:220, cat:"🚚 Spedizioni BRT", name:"SPEDIZIONI - RICHIESTA INFO BRT", body:"Gentile Cliente, per i problemi sulla sua spedizione contattiamo Brt per maggiori informazioni, la ricontattiamo nei prossimi giorni appena recuperiamo le informazioni."},
 {id:195, cat:"🚚 Spedizioni BRT", name:"SPEDIZIONE - VERSO IL PUNTO DI RITIRO", body:"Gentile Cliente,\nLa informiamo cortesemente che Brt, dopo aver tentato la consegna senza successo, procederà con la consegna del suo pacco presso un punto di ritiro BRT. Tra oggi e domani, riceverà un'email contenente i dettagli relativi al luogo, alla data e all'orario per il ritiro del suo ordine.\nLa ringraziamo sinceramente per la sua attenzione."}
 ];
 let qrEditingId = null;
@@ -4891,30 +4892,117 @@ function aggiornaBoxNoteOrdine(note){
     if(la)la.insertAdjacentElement('afterend',box);
   }
 }
+let _dupOrderData=null;
+
 async function duplicateOrder(orderId){
   try{
-    showToast("Duplicando ordine...","info");
-    const orig=await shopifyGet("orders/"+orderId+".json?fields=line_items,customer,shipping_address,note,tags");
+    showToast("Caricamento ordine...","info");
+    const orig=await shopifyGet("orders/"+orderId+".json?fields=id,name,line_items,customer,shipping_address,note,tags,email");
     if(!orig||!orig.order){showToast("Ordine non trovato","error");return;}
-    const o=orig.order;
-    const lineItems=(o.line_items||[]).filter(li=>li.variant_id).map(li=>({variant_id:li.variant_id,quantity:li.quantity}));
-    if(!lineItems.length){showToast("Nessun articolo con variant_id","error");return;}
-    const payload={draft_order:{line_items:lineItems,note:"Duplicato da "+orderId}};
-    if(o.customer&&o.customer.id)payload.draft_order.customer={id:o.customer.id};
-    if(o.shipping_address)payload.draft_order.shipping_address=o.shipping_address;
+    _dupOrderData=orig.order;
+    const items=(_dupOrderData.line_items||[]).filter(li=>li.variant_id);
+    if(!items.length){showToast("Nessun articolo con variant_id","error");return;}
+    // Popola lista articoli nel modal
+    const list=document.getElementById("dup-items-list");
+    list.innerHTML=items.map((li,i)=>`
+      <div id="dup-item-${i}" style="display:flex;align-items:center;gap:10px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;color:#1a1a2e">${li.name}</div>
+          <div style="font-size:12px;color:#888">Qtà: ${li.quantity} | €${parseFloat(li.price).toFixed(2)} cad</div>
+        </div>
+        <button onclick="removeDupItem(${i})" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;font-weight:700">✕</button>
+      </div>
+    `).join("");
+    document.getElementById("dup-order-status").textContent="Ordine: "+(_dupOrderData.name||("#"+_dupOrderData.id));
+    document.getElementById("dup-confirm-btn").disabled=false;
+    document.getElementById("dup-order-modal").style.display="flex";
+  }catch(e){showToast("Errore: "+e.message,"error");}
+}
+
+function removeDupItem(idx){
+  const el=document.getElementById("dup-item-"+idx);
+  if(el)el.remove();
+}
+
+function closeDupModal(){
+  document.getElementById("dup-order-modal").style.display="none";
+  _dupOrderData=null;
+}
+
+async function confirmDuplicateOrder(){
+  if(!_dupOrderData){return;}
+  const btn=document.getElementById("dup-confirm-btn");
+  btn.disabled=true;
+  btn.textContent="⏳ Creazione in corso...";
+  try{
+    // Raccogli articoli rimanenti (non rimossi)
+    const allItems=(_dupOrderData.line_items||[]).filter(li=>li.variant_id);
+    const remaining=allItems.filter((_,i)=>document.getElementById("dup-item-"+i));
+    if(!remaining.length){showToast("Aggiungi almeno un articolo","error");btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";return;}
+    const lineItems=remaining.map(li=>({variant_id:li.variant_id,quantity:li.quantity,applied_discount:{value:"100",value_type:"percentage",title:"Ordine rispedito"}}));
+    // Crea draft order con sconto 100%
+    const payload={draft_order:{
+      line_items:lineItems,
+      note:"Ordine rispedito - duplicato da "+(_dupOrderData.name||_dupOrderData.id),
+      tags:"rispedito",
+      send_receipt:false,
+      send_fulfillment_receipt:false
+    }};
+    if(_dupOrderData.customer&&_dupOrderData.customer.id)payload.draft_order.customer={id:_dupOrderData.customer.id};
+    if(_dupOrderData.shipping_address)payload.draft_order.shipping_address=_dupOrderData.shipping_address;
+    if(_dupOrderData.email)payload.draft_order.email=_dupOrderData.email;
+    document.getElementById("dup-order-status").textContent="Creazione draft order...";
     const res=await fetch(PROXY+"/shopify/draft_orders.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     const data=await res.json();
-    if(data&&data.draft_order&&data.draft_order.id){
-      window.open("https://admin.shopify.com/store/40f758-3/draft_orders/"+data.draft_order.id,"_blank");
-      showToast("Draft creato!","success");
-    } else {
+    if(!data||!data.draft_order||!data.draft_order.id){
       console.error("Draft error:",JSON.stringify(data));
-      showToast("Errore: "+(data.errors?JSON.stringify(data.errors):"risposta inattesa"),"error");
+      showToast("Errore creazione draft: "+(data.errors?JSON.stringify(data.errors):"risposta inattesa"),"error");
+      btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";return;
     }
-  }catch(e){showToast("Errore: "+e.message,"error");}
+    const draftId=data.draft_order.id;
+    document.getElementById("dup-order-status").textContent="Completamento ordine...";
+    // Completa il draft order (segna come pagato)
+    const complRes=await fetch(PROXY+"/shopify/draft_orders/"+draftId+"/complete.json?payment_pending=false",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+    const complData=await complRes.json();
+    const newOrderId=complData&&complData.draft_order&&complData.draft_order.order_id;
+    if(newOrderId){
+      // Aggiungi commento "Ordine rispedito" sull'ordine creato
+      document.getElementById("dup-order-status").textContent="Aggiunta nota...";
+      await fetch(PROXY+"/shopify/orders/"+newOrderId+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:newOrderId,note:"Ordine rispedito - duplicato da "+(_dupOrderData.name||_dupOrderData.id)}})});
+      showToast("✅ Ordine duplicato e confermato!","success");
+      closeDupModal();
+      window.open("https://40f758-3.myshopify.com/admin/orders/"+newOrderId,"_blank");
+    } else {
+      showToast("Draft creato ma completamento fallito","error");
+      window.open("https://admin.shopify.com/store/40f758-3/draft_orders/"+draftId,"_blank");
+      closeDupModal();
+    }
+  }catch(e){
+    showToast("Errore: "+e.message,"error");
+    btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";
+  }
 }
 </script>
 
+
+<!-- DUPLICA ORDINE MODAL -->
+<div class="modal-overlay" id="dup-order-modal" style="display:none" onclick="if(event.target===this)closeDupModal()">
+  <div class="modal" style="width:600px;max-width:96vw;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <span class="modal-title">📋 Duplica Ordine</span>
+      <button class="modal-close" onclick="closeDupModal()">×</button>
+    </div>
+    <div class="modal-body" style="gap:12px">
+      <div style="font-size:13px;color:#555;margin-bottom:8px">Seleziona gli articoli da includere nell'ordine duplicato. Lo sconto del 100% verrà applicato automaticamente e l'ordine sarà segnato come pagato.</div>
+      <div id="dup-items-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div id="dup-order-status" style="font-size:13px;color:#888;margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-sm btn-primary" id="dup-confirm-btn" onclick="confirmDuplicateOrder()">✅ Conferma Duplicazione</button>
+      <button class="btn-sm" onclick="closeDupModal()">Annulla</button>
+    </div>
+  </div>
+</div>
 
 <!-- NEW TICKET MODAL -->
 <div class="modal-overlay" id="new-ticket-modal" style="display:none" onclick="if(event.target===this)closeNewTicketModal()">
