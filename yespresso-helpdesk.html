@@ -512,6 +512,12 @@ function openAgentEditor(){
   </div>`;
   document.body.appendChild(modal);
   modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+  const openBtn=modal.querySelector(".preview-open-btn");
+  if(openBtn)openBtn.addEventListener("click",function(){
+    const btnTid=this.getAttribute("data-tid");
+    modal.remove();
+    selectTicket(btnTid);
+  });
 }
 
 async function assignAgent(agentId){
@@ -1292,6 +1298,16 @@ async function selectTicket(tid){
   const mainTicket=openTickets.length>0?openTickets[openTickets.length-1]:base;
   selectedTicket=mainTicket;
   renderTable();
+  // Carica ticket completo dall'API per avere gli allegati negli eventi
+  try{
+    const fullTicket=await hdFetch("/v1/tickets/"+(mainTicket.ID||mainTicket.id));
+    if(fullTicket&&fullTicket.events){
+      selectedTicket={...mainTicket,...fullTicket};
+      // Aggiorna anche nella cache
+      const cacheIdx=tickets.findIndex(t=>(t.ID||t.id)===(mainTicket.ID||mainTicket.id));
+      if(cacheIdx>=0)tickets[cacheIdx]=selectedTicket;
+    }
+  }catch(e){console.log("Full ticket load error:",e.message);}
 
   document.getElementById("ticket-panel").style.display="none";
   document.querySelector(".sidebar").style.display="none";
@@ -2273,7 +2289,7 @@ async function openTicketPreview(tid){
   const hdUrl="https://app.helpdesk.com/tickets/"+(t.ID||t.id);
 
   // Render messaggi
-  const events=(t.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
+  const events=(t.events||[]).filter(e=>(e.message&&(e.message.text||e.message.richTextHtml||(e.message.attachments&&e.message.attachments.length)))||(e.type==="attachments"));
   let msgsHtml="";
   if(!events.length){
     msgsHtml='<div style="color:#aaa;font-size:13px;text-align:center;padding:20px">Nessun messaggio</div>';
@@ -2281,17 +2297,17 @@ async function openTicketPreview(tid){
     events.forEach((ev,idx)=>{
       const isAgent=ev.author&&ev.author.type==="agent";
       const evDate=ev.createdAt?new Date(ev.createdAt).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
-      const txt=(ev.message.text||ev.message.richTextHtml||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().substring(0,500);
+      const rawText=(ev.message&&(ev.message.text||ev.message.richTextHtml))||"";
+      const txt=rawText.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().substring(0,500);
+      const msgAtts=Array.isArray(ev.message&&ev.message.attachments)?ev.message.attachments:[];
+      const allAtts=msgAtts.filter(a=>a.url&&a.name&&!a.cid);
       const bg=isAgent?"#f0f7ff":"#fff";
       const border=isAgent?"#c5d8fa":"#e8eaf0";
       const label=isAgent?"👤 Agente":"🙋 Cliente";
-      msgsHtml+=`<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:14px;font-weight:700;color:#666">${label}</span>
-          <span style="font-size:13px;color:#aaa">${evDate}</span>
-        </div>
-        <div style="font-size:16px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap">${txt}${(ev.message.text||ev.message.richTextHtml||"").length>500?"…":""}</div>
-      </div>`;
+      let attsHtml2='';allAtts.forEach(a=>{const isImg2=a.type&&a.type.startsWith('image/');if(isImg2)attsHtml2+='<img src="'+a.url+'" style="max-width:100%;max-height:150px;border-radius:6px;margin-top:6px;cursor:pointer" onclick="openLightbox(this.src)">';else attsHtml2+='<a href="'+a.url+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:12px;color:#555;text-decoration:none;margin-top:4px">📎 '+a.name+'</a>';});
+      msgsHtml+='<div style="background:'+bg+';border:1px solid '+border+';border-radius:8px;padding:12px 14px">';
+        msgsHtml+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:14px;font-weight:700;color:#666">'+label+'</span><span style="font-size:13px;color:#aaa">'+evDate+'</span></div>';
+        msgsHtml+=(txt?'<div style="font-size:16px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap">'+txt+(rawText.length>500?'…':'')+'</div>':'')+attsHtml2+'</div>';
     });
   }
 
@@ -2311,7 +2327,7 @@ async function openTicketPreview(tid){
     </div>
     <div class="ticket-preview-body">${msgsHtml}</div>
     <div style="padding:10px 20px;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;background:#fff">
-      <button onclick="this.closest('.ticket-preview-modal').remove();selectTicket('${tid}')" style="background:#1a73e8;border:none;color:#fff;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:15px;font-weight:600">Apri ticket completo</button>
+      <button class="preview-open-btn" data-tid="${tid}" style="background:#1a73e8;border:none;color:#fff;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:15px;font-weight:600">Apri ticket completo</button>
       <button onclick="this.closest('.ticket-preview-modal').remove()" style="background:#fff;border:1px solid #e0e4ea;color:#555;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:15px">Chiudi</button>
     </div>
   </div>`;
@@ -3406,15 +3422,13 @@ function showHelpDeskAttachments(files){
 }
 
 async function loadImapAttachments(email, subject, tid){
-  // Tutti i messaggi (Amazon, Temu, TikTok) inoltrati a allegati@yespresso.it
   if(!email)return;
-
   try{
     const url=PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject);
     const res=await fetch(url);
     const data=await res.json();
     const attachments=data.attachments||[];
-    if(!attachments.length)return;
+    if(!attachments.length){window._imapAttachmentsHtml="";return;}
     // Salva allegati immagine globalmente per l'AI
     const existing=new Set((window._ticketAttachments||[]).map(a=>a.filename+a.data.length));
     const newImgs=attachments.filter(a=>
@@ -3422,11 +3436,8 @@ async function loadImapAttachments(email, subject, tid){
       !existing.has(a.filename+a.data.length)
     ).slice(0,3);
     window._ticketAttachments=(window._ticketAttachments||[]).concat(newImgs);
-
     // Mostra allegati nella sidebar
     const oArea=document.getElementById("imap-attachments-area")||document.getElementById("order-info-area");
-    if(!oArea)return;
-
     let html='<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
     html+='<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">📎 ALLEGATI EMAIL ('+attachments.length+')</div>';
     attachments.forEach(att=>{
@@ -3438,18 +3449,16 @@ async function loadImapAttachments(email, subject, tid){
         html+='<div style="font-size:10px;color:#888;margin-top:2px">'+att.filename+'</div>';
         html+='</div>';
       } else if(att.contentType&&att.contentType.includes("pdf")){
-        const pdfIcon='📄';
         html+='<div style="margin-bottom:6px">';
-        html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:8px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:8px 12px;font-size:12px;color:#c04040;text-decoration:none;font-weight:600">'+pdfIcon+' '+att.filename+' <span style="font-size:10px;color:#aaa;margin-left:auto">⬇ Scarica</span></a>';
-        html+='<button onclick="openPdfPreview(\'"'+dataUrl+'\')" style="margin-top:4px;width:100%;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:5px;font-size:11px;cursor:pointer;color:#555">👁 Anteprima PDF</button>';
+        html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:8px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:8px 12px;font-size:12px;color:#c04040;text-decoration:none;font-weight:600">📄 '+att.filename+' <span style="font-size:10px;color:#aaa;margin-left:auto">⬇ Scarica</span></a>';
         html+='</div>';
       } else {
         html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:11px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+att.filename+' <span style="margin-left:auto;font-size:10px">⬇ Scarica</span></a>';
       }
     });
     html+='</div>';
-
-    oArea.innerHTML=html;
+    window._imapAttachmentsHtml=html;
+    if(oArea)oArea.innerHTML=html;
     console.log("✅ Allegati IMAP caricati:", attachments.length);
   }catch(e){
     console.log("IMAP attachments error:", e.message);

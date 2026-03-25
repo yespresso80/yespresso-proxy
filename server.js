@@ -136,15 +136,59 @@ async function syncImapAttachments() {
 
 function findAttachmentsForTicket(requesterEmail, subject) {
   const results = [];
+  const EXCLUDE_FILES = ["logo yespresso", "logo_yespresso", "qapla-brt", "qapla_brt", "firma", "signature"];
   const emailLow = (requesterEmail||"").toLowerCase();
-  const subjLow = (subject||"").toLowerCase().substring(0,50);
+  const subjNorm = (subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
+
+  // Estrai numero ordine Amazon se presente
+  const amazonOrderMatch = subjNorm.match(/(\d{3}-\d{7}-\d{7})/);
+  const amazonOrderId = amazonOrderMatch ? amazonOrderMatch[1] : null;
+
+  const isAmazon = emailLow.includes("marketplace.amazon") || emailLow.includes("donotreply@amazon") || emailLow.includes("atoz-guarantee");
+  const isTemu = emailLow.includes("orders.temu") || emailLow.includes("temu");
+  const isTiktok = emailLow.includes("tiktok") || emailLow.includes("scs3.");
+  const isBrt = emailLow.includes("vasnoreply@brt") || emailLow.includes("servizioclienti@brt");
+  const isMarketplace = isAmazon || isTemu || isTiktok || isBrt;
+
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
-    const dataSubjLow = (data.subject||"").toLowerCase();
-    const emailMatch = emailLow && fromLow && (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
-    const subjMatch = subjLow && dataSubjLow && (dataSubjLow.includes(subjLow.substring(0,20)) || subjLow.includes(dataSubjLow.substring(0,20)));
-    if (emailMatch || subjMatch) {
-      results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date })));
+    const dataSubjNorm = (data.subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
+    const dataSubjClean = dataSubjNorm.replace(/\r?\n\s*/g," ");
+
+    let isMatch = false;
+
+    if (isAmazon && amazonOrderId) {
+      // Match SOLO se il numero ordine Amazon è presente nel subject IMAP
+      isMatch = dataSubjClean.includes(amazonOrderId) || dataSubjNorm.includes(amazonOrderId);
+    } else if (isAmazon && !amazonOrderId) {
+      // Amazon senza numero ordine: match email + subject simile
+      const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
+      if (emailMatch) {
+        const subjBase = subjNorm.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").trim();
+        const dataBase = dataSubjClean.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").trim();
+        const minLen = Math.min(subjBase.length, dataBase.length, 50);
+        isMatch = minLen >= 15 && (dataBase.includes(subjBase.substring(0,minLen)) || subjBase.includes(dataBase.substring(0,minLen)));
+      }
+    } else if (isMarketplace) {
+      // Temu/TikTok/BRT: richiede ENTRAMBI email E subject simile
+      const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
+      const minLen = Math.min(subjNorm.length, dataSubjClean.length, 40);
+      const subjMatch = minLen >= 10 && (dataSubjClean.includes(subjNorm.substring(0,minLen)) || subjNorm.includes(dataSubjClean.substring(0,minLen)));
+      isMatch = emailMatch && subjMatch;
+    } else {
+      // Ticket normali: richiede email ESATTA + subject simile
+      const emailMatch = emailLow && fromLow && fromLow === emailLow;
+      const minLen = Math.min(subjNorm.length, dataSubjClean.length, 30);
+      const subjMatch = minLen >= 8 && (dataSubjClean.includes(subjNorm.substring(0,minLen)) || subjNorm.includes(dataSubjClean.substring(0,minLen)));
+      isMatch = emailMatch && subjMatch;
+    }
+
+    if (isMatch) {
+      const filteredAtts = data.attachments.filter(a => {
+        const fn = (a.filename||"").toLowerCase();
+        return !EXCLUDE_FILES.some(ex => fn.includes(ex));
+      });
+      if (filteredAtts.length > 0) results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
     }
   }
   return results;
@@ -424,31 +468,6 @@ async function brtRestPost(path, body) {
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: e.message }));
-    }
-    return;
-  }
-
-  // ── BRT ORM API (Ordini Ritiro Merce) ──
-  if (req.url.startsWith("/brt-orm/")) {
-    const brtOrmPath = req.url.replace("/brt-orm", "");
-    const BRT_ORM_BASE = "https://api.brt.it/orm";
-    const BRT_ORM_KEY = "f393e3d3-8402-4614-a90e-8d111fa73ced";
-    const ormChunks = []; req.on("data", c => ormChunks.push(c)); await new Promise(r => req.on("end", r));
-    const ormBody = Buffer.concat(ormChunks);
-    try {
-      const ormRes = await fetch(BRT_ORM_BASE + brtOrmPath, {
-        method: req.method,
-        headers: { "Content-Type": "application/json", "X-Api-Key": BRT_ORM_KEY, "Accept": "application/json" },
-        body: ormBody.length > 0 ? ormBody : undefined
-      });
-      const ormData = await ormRes.text();
-      console.log("[BRT ORM]", req.method, brtOrmPath, "->", ormRes.status, ormData.substring(0, 200));
-      res.writeHead(ormRes.status, { "Content-Type": "application/json" });
-      res.end(ormData);
-    } catch(e) {
-      console.error("[BRT ORM] Errore:", e.message);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
   }
