@@ -4693,60 +4693,124 @@ function openBrtContact(orderId){
 function openBrtPickup(orderId){
   const data=(window._brtPickupData||{})[orderId];
   if(!data){window.open("https://vas.brt.it/vas/orm2_0_1.htm","_blank");return;}
-  // Mostra modal con dati pre-compilati da copiare
+  const tomorrow=new Date();
+  tomorrow.setDate(tomorrow.getDate()+1);
+  if(tomorrow.getDay()===0)tomorrow.setDate(tomorrow.getDate()+1);
+  if(tomorrow.getDay()===6)tomorrow.setDate(tomorrow.getDate()+2);
+  const collDate=tomorrow.toISOString().slice(0,10);
+  const isAmazonEmail=(data.email||"").includes("marketplace.amazon")||(data.email||"").includes("bounce-")||(data.email||"").includes("donotreply@amazon");
+  const alertEmail=isAmazonEmail?"assistenza@yespresso.it":(data.email||"assistenza@yespresso.it");
   const modal=document.createElement("div");
   modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center";
-  modal.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:480px;width:95%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">
-  <div style="padding:20px 24px 12px;flex-shrink:0">
-    <div style="font-size:16px;font-weight:700;color:#c0392b;margin-bottom:4px">📦 Prenotazione Ritiro BRT</div>
-    <div style="font-size:12px;color:#888;margin-bottom:0">Copia i dati del cliente nel form BRT</div>
-  </div>
-  <div style="overflow-y:auto;padding:0 24px;flex:1;display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">NOMINATIVO</div>
-      <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.name}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.name} 📋</div>
-    </div>
-    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">INDIRIZZO</div>
-      <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.addr}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.addr} 📋</div>
-    </div>
-    <div style="display:flex;gap:8px">
-      <div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">CAP</div>
-        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.zip}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.zip} 📋</div>
-      </div>
-      <div style="flex:2;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">CITTÀ</div>
-        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.city}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.city} 📋</div>
-      </div>
-      <div style="flex:1;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-        <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">PROV</div>
-        <div style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" onclick="navigator.clipboard.writeText('${data.prov}');this.style.color='#2a9d60'" title="Clicca per copiare">${data.prov} 📋</div>
-      </div>
-    </div>
-    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">EMAIL CLIENTE</div>
-      <div id="brt-email-field" style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" title="Clicca per copiare">${data.email||"N/D"} 📋</div>
-    </div>
-    <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:8px 12px">
-      <div style="font-size:10px;color:#aaa;font-weight:600;text-transform:uppercase">TELEFONO CLIENTE</div>
-      <div id="brt-phone-field" style="font-size:13px;font-weight:600;color:#1a1a2e;cursor:pointer" title="Clicca per copiare">${data.phone||"N/D"} 📋</div>
-    </div>
-    <div style="font-size:11px;color:#888">💡 Clicca su ogni campo per copiarlo, poi incollalo nel form BRT</div>
-  </div>
-  <div style="padding:12px 24px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">
-    <button id="brt-pickup-close" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px">Chiudi</button>
-    <a href="https://vas.brt.it/vas/orm2_0_1.htm" target="_blank" style="padding:8px 16px;border:none;border-radius:8px;background:#c0392b;color:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;text-decoration:none">Apri Form BRT ↗</a>
-  </div>
-</div>`;
+  const addrStr=(data.addr||"N/D")+", "+(data.zip||"")+" "+(data.city||"")+" ("+(data.prov||"")+")";
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;max-width:520px;width:95%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+  '<div style="padding:20px 24px 12px;flex-shrink:0">'+
+    '<div style="font-size:17px;font-weight:700;color:#c0392b;margin-bottom:4px">&#128230; Prenota Ritiro BRT</div>'+
+    '<div style="font-size:13px;color:#888">Verifica i dati e conferma la prenotazione automatica</div>'+
+  '</div>'+
+  '<div style="overflow-y:auto;padding:0 24px;flex:1;display:flex;flex-direction:column;gap:10px;margin-bottom:12px">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">NOMINATIVO</div>'+
+        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.name||"N/D")+'</div>'+
+      '</div>'+
+      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">DATA RITIRO</div>'+
+        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+collDate+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+      '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">INDIRIZZO RITIRO</div>'+
+      '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+addrStr+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">TELEFONO</div>'+
+        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.phone||"N/D")+'</div>'+
+      '</div>'+
+      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">EMAIL AVVISO</div>'+
+        '<div style="font-size:13px;font-weight:600;color:#1a1a2e">'+alertEmail+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">ORA RITIRO</div>'+
+        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">14:00</div>'+
+      '</div>'+
+      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">ORDINE</div>'+
+        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.orderName||orderId)+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div id="brt-pickup-status" style="font-size:13px;color:#888;text-align:center;padding:4px 0"></div>'+
+  '</div>'+
+  '<div style="padding:12px 24px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">'+
+    '<button id="brt-pickup-close" style="padding:9px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px">Annulla</button>'+
+    '<button id="brt-pickup-confirm" style="padding:9px 20px;border:none;border-radius:8px;background:#c0392b;color:#fff;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700">&#128230; Prenota Ritiro</button>'+
+  '</div>'+
+'</div>';
   document.body.appendChild(modal);
-  modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
-  var closeBtn=modal.querySelector("#brt-pickup-close");
-  if(closeBtn)closeBtn.addEventListener("click",function(){modal.remove();});
-  var emailField=modal.querySelector("#brt-email-field");
-  if(emailField)emailField.addEventListener("click",function(){navigator.clipboard.writeText(data.email||"N/D");this.style.color="#2a9d60";});
-  var phoneField=modal.querySelector("#brt-phone-field");
-  if(phoneField)phoneField.addEventListener("click",function(){navigator.clipboard.writeText(data.phone||"N/D");this.style.color="#2a9d60";});
+  modal.addEventListener("click",function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector("#brt-pickup-close").addEventListener("click",function(){modal.remove();});
+  modal.querySelector("#brt-pickup-confirm").addEventListener("click",async function(){
+    this.disabled=true;
+    this.textContent="Prenotazione in corso...";
+    var statusEl=modal.querySelector("#brt-pickup-status");
+    statusEl.textContent="Invio richiesta a BRT...";
+    try{
+      var fullName=data.name||"Cliente";
+      var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
+      var payload=[{
+        requestInfos:{parcelCount:1,collectionDate:collDate},
+        customerInfos:{custAccNumber:"1791201"},
+        stakeholders:[
+          {type:"RQ",customerInfos:{custAccNumber:"1791201"}},
+          {
+            type:"SE",
+            address:{compName:fullName,state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:data.addr||""},
+            contact:{contactPerson:fullName,phone:data.phone||"0000000000"}
+          }
+        ],
+        brtSpec:{
+          goodDescription:"Capsule caffe",
+          payerType:"Ordering",
+          collectionTime:"14:00",
+          weightKG:2,
+          requestRef:data.orderName||String(orderId),
+          notes:"Reso ordine "+(data.orderName||orderId),
+          alerts:[{type:"CONFIRM",mail:alertEmail}]
+        }
+      }];
+      var res=await fetch(PROXY+"/brt-orm/api/geodata/v410/colreqs",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-Api-Key":"f393e3d3-8402-4614-a90e-8d111fa73ced"},
+        body:JSON.stringify(payload)
+      });
+      var respData=await res.json();
+      console.log("BRT ORM response:",JSON.stringify(respData));
+      var result=Array.isArray(respData)?respData[0]:respData;
+      if(result&&result.ormReservationNumber){
+        statusEl.style.color="#2a9d60";
+        statusEl.textContent="Ritiro prenotato! N. prenotazione: "+result.ormReservationNumber+" - Data: "+(result.collectionDate||collDate);
+        showToast("Ritiro BRT prenotato: "+result.ormReservationNumber,"success");
+        modal.querySelector("#brt-pickup-confirm").style.display="none";
+        modal.querySelector("#brt-pickup-close").textContent="Chiudi";
+      } else if(result&&result.errors&&result.errors.length){
+        statusEl.style.color="#c0392b";
+        statusEl.textContent="Errore BRT: "+JSON.stringify(result.errors);
+        this.disabled=false;this.textContent="Riprova";
+      } else {
+        statusEl.style.color="#c0392b";
+        statusEl.textContent="Risposta inattesa: "+JSON.stringify(respData).slice(0,120);
+        this.disabled=false;this.textContent="Riprova";
+      }
+    }catch(e){
+      statusEl.style.color="#c0392b";
+      statusEl.textContent="Errore: "+e.message;
+      this.disabled=false;this.textContent="Riprova";
+    }
+  });
 }
 
 function cancelShopifyOrder(orderId){
