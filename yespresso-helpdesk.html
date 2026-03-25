@@ -4763,22 +4763,24 @@ function openBrtPickup(orderId){
       var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
       var payload=[{
         requestInfos:{parcelCount:1,collectionDate:collDate},
+        requestingDepot:"179",
         customerInfos:{custAccNumber:"1791201"},
         stakeholders:[
-          {type:"RQ",customerInfos:{custAccNumber:"1791201"}},
+          {type:"RQ",customerInfos:{custAccNumber:"1791201000"}},
           {
             type:"SE",
             address:{compName:fullName,state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:data.addr||""},
-            contact:{contactPerson:fullName,phone:data.phone||"0000000000"}
-          }
+            contact:{contactDetails:{contactPerson:fullName,phone:data.phone||"0200000000"}}
+          },
+          {type:"RE",customerInfos:{custAccNumber:"1791201000"}}
         ],
         brtSpec:{
+          commissioned:false,
           goodDescription:"Capsule caffe",
           payerType:"Ordering",
           collectionTime:"14:00",
           weightKG:1,
           requestRef:data.orderName||String(orderId),
-          notes:"Reso ordine "+(data.orderName||orderId),
           alerts:[{type:"CONFIRM",mail:alertEmail}]
         }
       }];
