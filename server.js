@@ -138,58 +138,17 @@ function findAttachmentsForTicket(requesterEmail, subject) {
   const results = [];
   const EXCLUDE_FILES = ["logo yespresso", "logo_yespresso", "qapla-brt", "qapla_brt", "firma", "signature"];
   const emailLow = (requesterEmail||"").toLowerCase();
-  const subjNorm = (subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
-
-  // Estrai numero ordine Amazon se presente
-  const amazonOrderMatch = subjNorm.match(/(\d{3}-\d{7}-\d{7})/);
-  const amazonOrderId = amazonOrderMatch ? amazonOrderMatch[1] : null;
-
-  const isAmazon = emailLow.includes("marketplace.amazon") || emailLow.includes("donotreply@amazon") || emailLow.includes("atoz-guarantee");
-  const isTemu = emailLow.includes("orders.temu") || emailLow.includes("temu");
-  const isTiktok = emailLow.includes("tiktok") || emailLow.includes("scs3.");
-  const isBrt = emailLow.includes("vasnoreply@brt") || emailLow.includes("servizioclienti@brt");
-  const isMarketplace = isAmazon || isTemu || isTiktok || isBrt;
+  if (!emailLow) return results;
 
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
-    const dataSubjNorm = (data.subject||"").toLowerCase().replace(/^(re|fwd|fw|r|i):\s*/gi,"").trim();
-    const dataSubjClean = dataSubjNorm.replace(/\r?\n\s*/g," ");
-
-    let isMatch = false;
-
-    if (isAmazon && amazonOrderId) {
-      // Match SOLO se il numero ordine Amazon è presente nel subject IMAP
-      isMatch = dataSubjClean.includes(amazonOrderId) || dataSubjNorm.includes(amazonOrderId);
-    } else if (isAmazon && !amazonOrderId) {
-      // Amazon senza numero ordine: match email + subject simile
-      const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
-      if (emailMatch) {
-        const subjBase = subjNorm.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").trim();
-        const dataBase = dataSubjClean.replace(/\s*\(ordine[:\s]+[\d-]+\)/gi,"").trim();
-        const minLen = Math.min(subjBase.length, dataBase.length, 50);
-        isMatch = minLen >= 15 && (dataBase.includes(subjBase.substring(0,minLen)) || subjBase.includes(dataBase.substring(0,minLen)));
-      }
-    } else if (isMarketplace) {
-      // Temu/TikTok/BRT: richiede ENTRAMBI email E subject simile
-      const emailMatch = emailLow && fromLow && (fromLow === emailLow || fromLow.includes(emailLow) || emailLow.includes(fromLow));
-      const minLen = Math.min(subjNorm.length, dataSubjClean.length, 40);
-      const subjMatch = minLen >= 10 && (dataSubjClean.includes(subjNorm.substring(0,minLen)) || subjNorm.includes(dataSubjClean.substring(0,minLen)));
-      isMatch = emailMatch && subjMatch;
-    } else {
-      // Ticket normali: richiede email ESATTA + subject simile
-      const emailMatch = emailLow && fromLow && fromLow === emailLow;
-      const minLen = Math.min(subjNorm.length, dataSubjClean.length, 30);
-      const subjMatch = minLen >= 8 && (dataSubjClean.includes(subjNorm.substring(0,minLen)) || subjNorm.includes(dataSubjClean.substring(0,minLen)));
-      isMatch = emailMatch && subjMatch;
-    }
-
-    if (isMatch) {
-      const filteredAtts = data.attachments.filter(a => {
-        const fn = (a.filename||"").toLowerCase();
-        return !EXCLUDE_FILES.some(ex => fn.includes(ex));
-      });
-      if (filteredAtts.length > 0) results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
-    }
+    // Match solo per email esatta
+    if (fromLow !== emailLow) continue;
+    const filteredAtts = data.attachments.filter(a => {
+      const fn = (a.filename||"").toLowerCase();
+      return !EXCLUDE_FILES.some(ex => fn.includes(ex));
+    });
+    if (filteredAtts.length > 0) results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
   }
   return results;
 }
