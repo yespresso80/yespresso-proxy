@@ -4523,35 +4523,18 @@ function openBrtTrackModal(){
         res.innerHTML='<div style="color:#c04040;font-size:13px;padding:8px 0">Nessun numero di spedizione BRT trovato per l\'ordine '+(order.name||'#'+order.id)+'</div>';
         btn.disabled=false;btn.textContent='Cerca';return;
       }
-      // Normalizza tracking BRT (rimuovi prefisso 26 se presente)
+      // Normalizza tracking BRT (senza prefisso 26)
       var tnBrt=tn.startsWith('26')?tn.slice(2):tn;
-      res.innerHTML='<div style="color:#aaa;font-size:13px;padding:8px 0">Caricamento tracking BRT...</div>';
-      // Chiama proxy BRT tracking
-      var trackRes=await fetch(PROXY+'/brt/track?nspediz='+encodeURIComponent(tnBrt));
-      var trackData=await trackRes.json();
-      // Costruisci UI
-      var brtUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+encodeURIComponent(tnBrt);
-      var stato='N/D';var dataSpedizione='N/D';var consegnato=false;var firmatario='';
-      if(trackData.ok){
-        consegnato=trackData.delivered;
-        if(trackData.data_consegna&&trackData.data_consegna.trim())dataSpedizione=trackData.data_consegna.trim();
-        firmatario=trackData.firmatario||trackData.luogo_consegna||'';
-        if(trackData.ultimo_evento){
-          var ev=trackData.ultimo_evento;
-          var evDesc=ev.des_evento||ev.evento||ev.des_evento_2||ev.descrizione||'';
-          if(evDesc)stato=evDesc;
-          var evData=ev.data_ora_evento||ev.data_evento||ev.data||'';
-          if(evData&&dataSpedizione==='N/D')dataSpedizione=evData;
-        }
-        // Fallback: usa raw spedizione
-        if(stato==='N/D'&&trackData.raw){
-          var sp=trackData.raw.ttParcelIdResponse&&trackData.raw.ttParcelIdResponse.spedizione;
-          if(sp){
-            var evts=sp.eventi&&sp.eventi.evento;
-            if(evts){var last=Array.isArray(evts)?evts[evts.length-1]:evts;stato=last.des_evento||last.des_evento_2||stato;if(dataSpedizione==='N/D')dataSpedizione=last.data_ora_evento||dataSpedizione;}
-          }
-        }
-      }
+      var tnBrtPod=tn.startsWith('26')?tn:'26'+tn;
+      // Usa dati Shopify per stato e data (stesso approccio sidebar)
+      var lastF=fulfillments[fulfillments.length-1];
+      var shopifyStatus=lastF.shipment_status||'';
+      var statusMap={'delivered':'Consegnato','in_transit':'In transito','out_for_delivery':'In consegna','attempted_delivery':'Tentativo consegna','ready_for_pickup':'Pronto al ritiro','confirmed':'Confermato','label_printed':'Etichetta stampata'};
+      var stato=statusMap[shopifyStatus]||shopifyStatus||'N/D';
+      var dataSpedizione=lastF.created_at?new Date(lastF.created_at).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'N/D';
+      var consegnato=shopifyStatus==='delivered';
+      var firmatario='';
+      var brtUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnBrt;
       var statoColor=consegnato?'#2a9d60':'#e8174d';
       var statoIcon=consegnato?'&#9989;':'&#128666;';
       var html='<div style="border:1px solid #e0e4ea;border-radius:10px;overflow:hidden;margin-top:4px">'+
@@ -4580,8 +4563,8 @@ function openBrtTrackModal(){
           '</div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+
             '<a href="'+brtUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#e8174d;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">&#128666; Traccia su BRT</a>'+
-            '<button class="_vedi-pod-btn" data-tn="'+tnBrt+'" style="display:inline-flex;align-items:center;gap:6px;background:#1a73e8;color:#fff;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#128247; Vedi POD</button>'+
-            '<a href="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=26'+tnBrt+'&PODChkCde=348365243" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#6c3483;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">&#128196; POD diretto</a>'+
+
+            '<a href="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnBrtPod+'&PODChkCde=348365243" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#6c3483;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">&#128196; POD</a>'+
             '<button class="_contatta-brt-btn" data-oid="'+order.id+'" style="display:inline-flex;align-items:center;gap:6px;background:#555;color:#fff;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#128222; Contatta BRT</button>'+
           '</div>'+
           '<div id="brttrack-pod-area" style="margin-top:4px"></div>'+
@@ -4603,26 +4586,7 @@ function openBrtTrackModal(){
           openBrtContact(oid);
         });
       }
-      // Bottone POD
-      res.querySelector('._vedi-pod-btn').addEventListener('click',async function(){
-        var tnPod=this.getAttribute('data-tn');
-        var podArea=document.getElementById('brttrack-pod-area');
-        podArea.innerHTML='<div style="color:#aaa;font-size:13px">Caricamento POD...</div>';
-        try{
-          var podRes=await fetch(PROXY+'/brt/pod-auto?nspediz='+encodeURIComponent(tnPod));
-          var podData=await podRes.json();
-          if(podData.ok&&podData.data){
-            var src='data:'+podData.mime+';base64,'+podData.data;
-            if(podData.mime.includes('pdf')){
-              podArea.innerHTML='<iframe src="'+src+'" style="width:100%;height:300px;border:none;border-radius:8px"></iframe>';
-            } else {
-              podArea.innerHTML='<img src="'+src+'" style="max-width:100%;border-radius:8px;cursor:pointer" onclick="openLightbox(this.src)">';
-            }
-          } else {
-            podArea.innerHTML='<div style="color:#c04040;font-size:13px">POD non disponibile</div>';
-          }
-        }catch(e){podArea.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
-      });
+
     }catch(e){res.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
     btn.disabled=false;btn.textContent='Cerca';
   });
