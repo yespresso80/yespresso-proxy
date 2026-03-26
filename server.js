@@ -431,6 +431,29 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // ── BRT ORM API (Ordini Ritiro Merce) ──
+  if (req.url.startsWith("/brt-orm/")) {
+    const brtOrmPath = req.url.replace("/brt-orm", "");
+    const ormChunks = []; req.on("data", c => ormChunks.push(c)); await new Promise(r => req.on("end", r));
+    const ormBody = Buffer.concat(ormChunks);
+    try {
+      const ormRes = await fetch("https://api.brt.it/orm" + brtOrmPath, {
+        method: req.method,
+        headers: { "Content-Type": "application/json", "X-Api-Key": "f393e3d3-8402-4614-a90e-8d111fa73ced", "Accept": "application/json" },
+        body: ormBody.length > 0 ? ormBody : undefined
+      });
+      const ormData = await ormRes.text();
+      console.log("[BRT ORM]", req.method, brtOrmPath, "->", ormRes.status, ormData.substring(0, 200));
+      res.writeHead(ormRes.status, { "Content-Type": "application/json" });
+      res.end(ormData);
+    } catch(e) {
+      console.error("[BRT ORM] Errore:", e.message);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
   let targetUrl, requestHeaders;
 
   if (req.url.startsWith("/shopify")) {
