@@ -382,6 +382,9 @@ textarea.field{min-height:80px;resize:vertical}
       <span class="ticket-panel-title" id="panel-title">Tickets to handle</span>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="filter-btn" onclick="openQRModal()" style="display:flex;align-items:center;gap:4px;background:#FFD700;border-color:#e6c000;font-weight:700" title="Risposte rapide">⚡</button>
+        <button class="filter-btn" onclick="openRitiroOrdineModal()" style="background:#c0392b;border-color:#a93226;color:#fff;font-weight:700" title="Ritiro Ordine">📦 Ritiro</button>
+        <button class="filter-btn" onclick="openRispedisciOrdineModal()" style="background:#1a73e8;border-color:#1557b0;color:#fff;font-weight:700" title="Rispedisci Ordine">🔄 Rispedisci</button>
+        <button class="filter-btn" onclick="openBrtTrackModal()" style="display:flex;align-items:center;gap:4px;background:#e8174d;border-color:#c0102e;color:#fff;font-weight:700" title="Traccia BRT">🚚 BRT</button>
         <div style="position:relative">
           <button class="filter-btn" onclick="toggleFilterPanel()" id="filter-btn" style="display:flex;align-items:center;gap:4px">
             <span>+ Filtri</span><span id="filter-count" style="display:none;background:#1a73e8;color:#fff;border-radius:8px;padding:1px 6px;font-size:10px">0</span>
@@ -4353,6 +4356,279 @@ window.debugShopify = async function(num){
   }
   console.groupEnd();
 };
+
+// ═══ RITIRO ORDINE / RISPEDISCI ORDINE ═══
+async function searchOrderForAction(q){
+  var results=[];
+  var numMatch=q.replace(/[^0-9]/g,'');
+  if(numMatch.length>=6){
+    var d1=await shopifyGet('orders.json?name=%23'+numMatch+'&status=any');
+    if(d1&&d1.orders&&d1.orders.length)results.push(...d1.orders);
+    if(!results.length){try{var d2=await shopifyGet('orders/'+numMatch+'.json');if(d2&&d2.order)results.push(d2.order);}catch(e){}}
+  }
+  if(!results.length){
+    var d3=await shopifyGet('orders.json?status=any&limit=5&query='+encodeURIComponent(q));
+    if(d3&&d3.orders&&d3.orders.length)results.push(...d3.orders);
+  }
+  var seen=new Set();
+  return results.filter(function(o){var id=o.id;if(seen.has(id))return false;seen.add(id);return true;});
+}
+
+function renderOrderSearchResult(order,btnHtml){
+  var sa=order.shipping_address||order.billing_address||{};
+  var name=sa.name||((sa.first_name||'')+(sa.last_name?' '+sa.last_name:''))||'N/D';
+  var addr=(sa.address1||'')+(sa.city?' - '+sa.city:'')+(sa.province_code?' ('+sa.province_code+')':'');
+  var phone=sa.phone||order.phone||'N/D';
+  var email=order.email||'N/D';
+  return '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px 14px;margin-bottom:8px">'+
+    '<div style="font-weight:700;color:#1a1a2e;font-size:15px">'+(order.name||('#'+order.id))+'</div>'+
+    '<div style="font-size:13px;color:#555;margin-top:4px">'+name+'</div>'+
+    '<div style="font-size:13px;color:#555">'+addr+'</div>'+
+    '<div style="font-size:13px;color:#555">'+phone+' | '+email+'</div>'+
+    '<div style="margin-top:8px">'+btnHtml+'</div></div>';
+}
+
+function openRitiroOrdineModal(){
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+    '<div style="padding:20px 24px 12px;border-bottom:1px solid #f0f2f5"><div style="font-size:17px;font-weight:700;color:#c0392b">&#128230; Ritiro Ordine</div>'+
+    '<div style="font-size:13px;color:#888;margin-top:2px">Cerca per numero Shopify, Amazon, Temu o TikTok</div></div>'+
+    '<div style="padding:16px 24px;display:flex;gap:8px">'+
+    '<input id="ritiro-q" placeholder="Es. #2024123456" style="flex:1;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none">'+
+    '<button id="ritiro-search-btn" style="padding:9px 18px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Cerca</button></div>'+
+    '<div id="ritiro-results" style="padding:0 24px 16px"></div>'+
+    '<div style="padding:12px 24px 16px;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end">'+
+    '<button id="ritiro-close" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button></div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#ritiro-close').addEventListener('click',function(){modal.remove();});
+  var inp=modal.querySelector('#ritiro-q');
+  var btn=modal.querySelector('#ritiro-search-btn');
+  var res=modal.querySelector('#ritiro-results');
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')btn.click();});
+  btn.addEventListener('click',async function(){
+    var q=inp.value.trim();if(!q)return;
+    btn.disabled=true;btn.textContent='Ricerca...';
+    res.innerHTML='<div style="color:#aaa;font-size:13px;padding:8px 0">Ricerca...</div>';
+    try{
+      var orders=await searchOrderForAction(q);
+      if(!orders.length){res.innerHTML='<div style="color:#c04040;font-size:13px;padding:8px 0">Nessun ordine trovato</div>';btn.disabled=false;btn.textContent='Cerca';return;}
+      window._ritiroOrders=orders.slice(0,3);
+      res.innerHTML=orders.slice(0,3).map(function(o,i){
+        return renderOrderSearchResult(o,'<button data-i="'+i+'" class="_ritiro-act" style="background:#c0392b;border:none;color:#fff;padding:7px 16px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#128230; Prenota Ritiro</button>');
+      }).join('');
+      res.querySelectorAll('._ritiro-act').forEach(function(b){
+        b.addEventListener('click',function(){
+          var order=window._ritiroOrders[parseInt(this.getAttribute('data-i'))];
+          var sa=order.shipping_address||order.billing_address||{};
+          var name=sa.name||((sa.first_name||'')+(sa.last_name?' '+sa.last_name:''))||'';
+          var prov=(sa.province_code||'').replace(/[^A-Za-z]/g,'').toUpperCase().slice(0,2);
+          window._brtPickupData=window._brtPickupData||{};
+          window._brtPickupData[order.id]={tn:'',orderName:order.name||('#'+order.id),name:name,addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:prov,email:order.email||'',phone:sa.phone||order.phone||''};
+          modal.remove();
+          openBrtPickup(order.id);
+        });
+      });
+    }catch(e){res.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
+    btn.disabled=false;btn.textContent='Cerca';
+  });
+  setTimeout(function(){inp.focus();},100);
+}
+
+function openRispedisciOrdineModal(){
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+    '<div style="padding:20px 24px 12px;border-bottom:1px solid #f0f2f5"><div style="font-size:17px;font-weight:700;color:#1a73e8">&#128260; Rispedisci Ordine</div>'+
+    '<div style="font-size:13px;color:#888;margin-top:2px">Cerca per numero Shopify, Amazon, Temu o TikTok</div></div>'+
+    '<div style="padding:16px 24px;display:flex;gap:8px">'+
+    '<input id="rispedisci-q" placeholder="Es. #2024123456" style="flex:1;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none">'+
+    '<button id="rispedisci-search-btn" style="padding:9px 18px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Cerca</button></div>'+
+    '<div id="rispedisci-results" style="padding:0 24px 16px"></div>'+
+    '<div style="padding:12px 24px 16px;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end">'+
+    '<button id="rispedisci-close" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button></div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#rispedisci-close').addEventListener('click',function(){modal.remove();});
+  var inp=modal.querySelector('#rispedisci-q');
+  var btn=modal.querySelector('#rispedisci-search-btn');
+  var res=modal.querySelector('#rispedisci-results');
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')btn.click();});
+  btn.addEventListener('click',async function(){
+    var q=inp.value.trim();if(!q)return;
+    btn.disabled=true;btn.textContent='Ricerca...';
+    res.innerHTML='<div style="color:#aaa;font-size:13px;padding:8px 0">Ricerca...</div>';
+    try{
+      var orders=await searchOrderForAction(q);
+      if(!orders.length){res.innerHTML='<div style="color:#c04040;font-size:13px;padding:8px 0">Nessun ordine trovato</div>';btn.disabled=false;btn.textContent='Cerca';return;}
+      window._rispedisciOrders=orders.slice(0,3);
+      res.innerHTML=orders.slice(0,3).map(function(o,i){
+        return renderOrderSearchResult(o,'<button data-i="'+i+'" class="_rispedisci-act" style="background:#1a73e8;border:none;color:#fff;padding:7px 16px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#128260; Duplica e Rispedisci</button>');
+      }).join('');
+      res.querySelectorAll('._rispedisci-act').forEach(function(b){
+        b.addEventListener('click',async function(){
+          var order=window._rispedisciOrders[parseInt(this.getAttribute('data-i'))];
+          modal.remove();
+          await duplicateOrder(order.id);
+        });
+      });
+    }catch(e){res.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
+    btn.disabled=false;btn.textContent='Cerca';
+  });
+  setTimeout(function(){inp.focus();},100);
+}
+
+
+// ═══ BRT TRACK MODAL ═══
+function openBrtTrackModal(){
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:600px;max-width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+    '<div style="padding:20px 24px 12px;border-bottom:1px solid #f0f2f5">'+
+      '<div style="font-size:17px;font-weight:700;color:#e8174d">&#128666; Tracciamento BRT</div>'+
+      '<div style="font-size:13px;color:#888;margin-top:2px">Cerca per numero ordine Shopify, Amazon, Temu o TikTok</div>'+
+    '</div>'+
+    '<div style="padding:16px 24px;display:flex;gap:8px">'+
+      '<input id="brttrack-q" placeholder="Es. #2024123456 oppure 402-1234567-1234567" style="flex:1;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none">'+
+      '<button id="brttrack-btn" style="padding:9px 18px;background:#e8174d;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Cerca</button>'+
+    '</div>'+
+    '<div id="brttrack-results" style="padding:0 24px 16px"></div>'+
+    '<div style="padding:12px 24px 16px;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end">'+
+      '<button id="brttrack-close" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#brttrack-close').addEventListener('click',function(){modal.remove();});
+  var inp=modal.querySelector('#brttrack-q');
+  var btn=modal.querySelector('#brttrack-btn');
+  var res=modal.querySelector('#brttrack-results');
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')btn.click();});
+  btn.addEventListener('click',async function(){
+    var q=inp.value.trim();if(!q)return;
+    btn.disabled=true;btn.textContent='Ricerca...';
+    res.innerHTML='<div style="color:#aaa;font-size:13px;padding:8px 0">Ricerca ordine...</div>';
+    try{
+      var orders=await searchOrderForAction(q);
+      if(!orders.length){res.innerHTML='<div style="color:#c04040;font-size:13px;padding:8px 0">Nessun ordine trovato</div>';btn.disabled=false;btn.textContent='Cerca';return;}
+      var order=orders[0];
+      var fulfillments=order.fulfillments||[];
+      var tn='';
+      if(fulfillments.length>0){
+        var lastF=fulfillments[fulfillments.length-1];
+        tn=lastF.tracking_number||(lastF.tracking_numbers&&lastF.tracking_numbers[0])||'';
+      }
+      if(!tn){
+        res.innerHTML='<div style="color:#c04040;font-size:13px;padding:8px 0">Nessun numero di spedizione BRT trovato per l\'ordine '+(order.name||'#'+order.id)+'</div>';
+        btn.disabled=false;btn.textContent='Cerca';return;
+      }
+      // Normalizza tracking BRT (rimuovi prefisso 26 se presente)
+      var tnBrt=tn.startsWith('26')?tn.slice(2):tn;
+      res.innerHTML='<div style="color:#aaa;font-size:13px;padding:8px 0">Caricamento tracking BRT...</div>';
+      // Chiama proxy BRT tracking
+      var trackRes=await fetch(PROXY+'/brt/track?nspediz='+encodeURIComponent(tnBrt));
+      var trackData=await trackRes.json();
+      // Costruisci UI
+      var brtUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+encodeURIComponent(tnBrt);
+      var stato='N/D';var dataSpedizione='N/D';var consegnato=false;var firmatario='';
+      if(trackData.ok){
+        consegnato=trackData.delivered;
+        if(trackData.data_consegna&&trackData.data_consegna.trim())dataSpedizione=trackData.data_consegna.trim();
+        firmatario=trackData.firmatario||trackData.luogo_consegna||'';
+        if(trackData.ultimo_evento){
+          var ev=trackData.ultimo_evento;
+          var evDesc=ev.des_evento||ev.evento||ev.des_evento_2||ev.descrizione||'';
+          if(evDesc)stato=evDesc;
+          var evData=ev.data_ora_evento||ev.data_evento||ev.data||'';
+          if(evData&&dataSpedizione==='N/D')dataSpedizione=evData;
+        }
+        // Fallback: usa raw spedizione
+        if(stato==='N/D'&&trackData.raw){
+          var sp=trackData.raw.ttParcelIdResponse&&trackData.raw.ttParcelIdResponse.spedizione;
+          if(sp){
+            var evts=sp.eventi&&sp.eventi.evento;
+            if(evts){var last=Array.isArray(evts)?evts[evts.length-1]:evts;stato=last.des_evento||last.des_evento_2||stato;if(dataSpedizione==='N/D')dataSpedizione=last.data_ora_evento||dataSpedizione;}
+          }
+        }
+      }
+      var statoColor=consegnato?'#2a9d60':'#e8174d';
+      var statoIcon=consegnato?'&#9989;':'&#128666;';
+      var html='<div style="border:1px solid #e0e4ea;border-radius:10px;overflow:hidden;margin-top:4px">'+
+        '<div style="background:#f8f9fc;padding:12px 16px;border-bottom:1px solid #e0e4ea">'+
+          '<span style="font-weight:700;font-size:15px;color:#1a1a2e">'+(order.name||'#'+order.id)+'</span>'+
+          '<span style="margin-left:12px;font-size:13px;color:#888">&#128230; '+tnBrt+'</span>'+
+        '</div>'+
+        '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="font-size:20px">'+statoIcon+'</span>'+
+            '<div>'+
+              '<div style="font-size:11px;color:#aaa;font-weight:700;text-transform:uppercase">Stato spedizione</div>'+
+              '<div style="font-size:15px;font-weight:700;color:'+statoColor+'">'+stato+'</div>'+
+              (firmatario?'<div style="font-size:12px;color:#888">Firmato da: '+firmatario+'</div>':'')+
+            '</div>'+
+          '</div>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+            '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:8px 12px">'+
+              '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase">Data spedizione</div>'+
+              '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+dataSpedizione+'</div>'+
+            '</div>'+
+            '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:8px 12px">'+
+              '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase">Tracking N.</div>'+
+              '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+tnBrt+'</div>'+
+            '</div>'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+
+            '<a href="'+brtUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#e8174d;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">&#128666; Traccia su BRT</a>'+
+            '<button class="_vedi-pod-btn" data-tn="'+tnBrt+'" style="display:inline-flex;align-items:center;gap:6px;background:#1a73e8;color:#fff;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#128247; Vedi POD</button>'+
+            '<a href="https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV=26'+tnBrt+'&PODChkCde=348365243" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#6c3483;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">&#128196; POD diretto</a>'+
+            '<button class="_contatta-brt-btn" data-oid="'+order.id+'" style="display:inline-flex;align-items:center;gap:6px;background:#555;color:#fff;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#128222; Contatta BRT</button>'+
+          '</div>'+
+          '<div id="brttrack-pod-area" style="margin-top:4px"></div>'+
+        '</div>'+
+      '</div>';
+      res.innerHTML=html;
+      // Bottone Contatta BRT - apre popup openBrtContact
+      var cBrtBtn=res.querySelector('._contatta-brt-btn');
+      if(cBrtBtn){
+        cBrtBtn.addEventListener('click',function(){
+          var oid=this.getAttribute('data-oid');
+          // Assicura che i dati siano in _brtPickupData
+          if(!(window._brtPickupData&&window._brtPickupData[oid])){
+            var sa=order.shipping_address||order.billing_address||{};
+            var nm=sa.name||((sa.first_name||'')+(sa.last_name?' '+sa.last_name:''))||'';
+            window._brtPickupData=window._brtPickupData||{};
+            window._brtPickupData[oid]={tn:tnBrt,orderName:order.name||('#'+order.id),name:nm,email:order.email||''};
+          }
+          openBrtContact(oid);
+        });
+      }
+      // Bottone POD
+      res.querySelector('._vedi-pod-btn').addEventListener('click',async function(){
+        var tnPod=this.getAttribute('data-tn');
+        var podArea=document.getElementById('brttrack-pod-area');
+        podArea.innerHTML='<div style="color:#aaa;font-size:13px">Caricamento POD...</div>';
+        try{
+          var podRes=await fetch(PROXY+'/brt/pod-auto?nspediz='+encodeURIComponent(tnPod));
+          var podData=await podRes.json();
+          if(podData.ok&&podData.data){
+            var src='data:'+podData.mime+';base64,'+podData.data;
+            if(podData.mime.includes('pdf')){
+              podArea.innerHTML='<iframe src="'+src+'" style="width:100%;height:300px;border:none;border-radius:8px"></iframe>';
+            } else {
+              podArea.innerHTML='<img src="'+src+'" style="max-width:100%;border-radius:8px;cursor:pointer" onclick="openLightbox(this.src)">';
+            }
+          } else {
+            podArea.innerHTML='<div style="color:#c04040;font-size:13px">POD non disponibile</div>';
+          }
+        }catch(e){podArea.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
+      });
+    }catch(e){res.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
+    btn.disabled=false;btn.textContent='Cerca';
+  });
+  setTimeout(function(){inp.focus();},100);
+}
+
 loadTickets();
 loadSolvedExamples();
 loadAgentsAndTags();
@@ -4802,6 +5078,15 @@ function openBrtPickup(orderId){
         '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.orderName||orderId)+'</div>'+
       '</div>'+
     '</div>'+
+    '<div style="margin-top:10px">'+
+      '<label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:5px">Motivazione ritiro *</label>'+
+      '<select id="brt-pickup-motivo" style="width:100%;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff">'+
+        '<option value="">— Seleziona motivazione —</option>'+
+        '<option value="acquisto errato -8€">Acquisto errato -8€</option>'+
+        '<option value="errore spedizione">Errore spedizione</option>'+
+        '<option value="problema prodotto">Problema prodotto</option>'+
+      '</select>'+
+    '</div>'+
     '<div id="brt-pickup-status" style="font-size:13px;color:#888;text-align:center;padding:4px 0"></div>'+
   '</div>'+
   '<div style="padding:12px 24px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">'+
@@ -4816,6 +5101,9 @@ function openBrtPickup(orderId){
     this.disabled=true;
     this.textContent="Prenotazione in corso...";
     var statusEl=modal.querySelector("#brt-pickup-status");
+      var motivoEl=modal.querySelector("#brt-pickup-motivo");
+      var motivo=motivoEl?motivoEl.value:"";
+      if(!motivo){showToast("Seleziona una motivazione","error");this.disabled=false;this.textContent="&#128230; Prenota Ritiro";return;}
     statusEl.textContent="Invio richiesta a BRT...";
     try{
       var fullName=data.name||"Cliente";
@@ -4854,7 +5142,17 @@ function openBrtPickup(orderId){
       if(result&&result.ormReservationNumber){
         statusEl.style.color="#2a9d60";
         statusEl.textContent="Ritiro prenotato! N. prenotazione: "+result.ormReservationNumber+" - Data: "+(result.collectionDate||collDate);
+        // Aggiungi nota sull'ordine Shopify
+        var notaRitiro="Effettuato ritiro il "+collDate+" per "+motivo;
+        try{
+          await fetch(PROXY+"/shopify/orders/"+orderId+".json",{
+            method:"PUT",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({order:{id:orderId,note:notaRitiro}})
+          });
+        }catch(ne){console.log("Nota ordine fallita:",ne.message);}
         showToast("Ritiro BRT prenotato: "+result.ormReservationNumber,"success");
+        statusEl.textContent="✅ Ritiro prenotato! N. prenotazione: "+result.ormReservationNumber+" - Data: "+(result.collectionDate||collDate)+"\n📝 Nota ordine: "+notaRitiro;
         modal.querySelector("#brt-pickup-confirm").style.display="none";
         modal.querySelector("#brt-pickup-close").textContent="Chiudi";
       } else if(result&&result.errors&&result.errors.length){
