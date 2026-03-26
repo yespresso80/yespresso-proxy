@@ -816,7 +816,7 @@ async function loadTickets(){
 
   try{
     // 2. CARICAMENTO PARALLELO: tutti gli status + tutte le pagine insieme
-    const DAYS_45=Date.now()-45*24*60*60*1000;
+      const DAYS_45=Date.now()-90*24*60*60*1000;
     const loadAllStatus=async(status,maxPages=20)=>{
       const result=[]; const seen=new Set();
       // Prima pagina
@@ -856,8 +856,8 @@ async function loadTickets(){
     const [openB,pendingB,solvedB,closedB]=await Promise.all([
       loadAllStatus("open",20),
       loadAllStatus("pending",10),
-      loadAllStatus("solved",20),
-      loadAllStatus("closed",20)
+      loadAllStatus("solved",40),
+      loadAllStatus("closed",40)
     ]);
     clearInterval(loadTimer);
 
@@ -874,9 +874,10 @@ async function loadTickets(){
     const now=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
     countEl.textContent=(tickets.length)+" ticket · aggiornato "+now;
 
-    // 3. SALVA IN CACHE localStorage
+    // 3. SALVA IN CACHE localStorage (solo open+pending per non sforare il limite)
     try{
-      localStorage.setItem(CACHE_KEY,JSON.stringify(tickets));
+      const cacheOnly=tickets.filter(t=>t.status==="open"||t.status==="pending").slice(0,200);
+      localStorage.setItem(CACHE_KEY,JSON.stringify(cacheOnly));
       localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));
     }catch(e){console.log("Cache save:",e.message);}
 
@@ -912,7 +913,12 @@ async function loadTickets(){
         if(changed){
           tickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
           updateBadges();renderTable();
-          try{localStorage.setItem(CACHE_KEY,JSON.stringify(tickets));localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));}catch(e){}
+          try{
+            // Salva solo open+pending in cache (solved/closed troppo numerosi per localStorage)
+            const cacheOnly=tickets.filter(t=>t.status==="open"||t.status==="pending").slice(0,200);
+            localStorage.setItem(CACHE_KEY,JSON.stringify(cacheOnly));
+            localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));
+          }catch(e){}
         }
         const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
         const bar=document.getElementById("ticket-count-bar");
@@ -1081,7 +1087,7 @@ function viewFilter(t){
   if(currentView==="pending")return t.status==="pending";
   if(currentView==="on_hold")return t.status==="on_hold";
   if(currentView==="closed")return t.status==="closed";
-  if(currentView==="solved")return t.status==="solved"||t.status==="closed";
+  if(currentView==="solved")return t.status==="solved";
   // keyword views — solo open/pending
   if(t.status==="solved"||t.status==="closed")return false;
   const subj=(t.subject||"").toLowerCase();
@@ -1420,7 +1426,7 @@ async function selectTicket(tid){
         const isClient=ev.author&&ev.author.type==="client";
         const authorLabel=isAgent?"👤 Agente":isClient?"🙋 Cliente":"";
         // Blocco messaggio con stile moderno
-        const isPrivate=ev.private||ev.isPrivate||ev.type==="private"||ev.messageType==="private"||(ev.message&&ev.message.private)||false;
+        const isPrivate=ev.private||ev.isPrivate||ev.type==="private"||ev.messageType==="private"||(ev.message&&(ev.message.private||ev.message.isPrivate))||false;
         const blockClass=isPrivate?"msg-block msg-block-private":isAgent?"msg-block msg-block-agent":isClient?"msg-block msg-block-client":"msg-block msg-block-agent";
         const avatarClass=isPrivate?"msg-avatar msg-avatar-private":isAgent?"msg-avatar msg-avatar-agent":"msg-avatar msg-avatar-client";
         const avatarIcon=isPrivate?"🔒":isAgent?"👤":"🙋";
@@ -2333,6 +2339,37 @@ async function openTicketPreview(tid){
   </div>`;
   document.body.appendChild(modal);
   modal.addEventListener("click",e=>{if(e.target===modal)modal.remove();});
+  const previewOpenBtn=modal.querySelector(".preview-open-btn");
+  if(previewOpenBtn)previewOpenBtn.addEventListener("click",function(){
+    const btnTid=this.getAttribute("data-tid");
+    modal.remove();
+    selectTicket(btnTid);
+  });
+  // Carica allegati IMAP per il ticket in anteprima
+  const previewEmail=(t.requester&&t.requester.email)||"";
+  const previewSubj=t.subject||"";
+  if(previewEmail){
+    fetch(PROXY+"/imap/attachments?email="+encodeURIComponent(previewEmail)+"&subject="+encodeURIComponent(previewSubj))
+      .then(r=>r.json()).then(data=>{
+        const atts=data.attachments||[];
+        if(!atts.length)return;
+        const previewBody=modal.querySelector(".ticket-preview-body");
+        if(!previewBody)return;
+        let attHtml='<div style="margin-top:10px;padding:10px 14px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px">';
+        attHtml+='<div style="font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px">📎 ALLEGATI ('+atts.length+')</div>';
+        atts.forEach(att=>{
+          const isImage=att.contentType&&att.contentType.startsWith("image/");
+          const dataUrl="data:"+att.contentType+";base64,"+att.data;
+          if(isImage){
+            attHtml+='<img src="'+dataUrl+'" style="max-width:100%;max-height:180px;border-radius:6px;cursor:pointer;margin-bottom:6px" onclick="openLightbox(this.src)" title="'+att.filename+'">';
+          } else {
+            attHtml+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+att.filename+'</a>';
+          }
+        });
+        attHtml+='</div>';
+        previewBody.innerHTML+=attHtml;
+      }).catch(()=>{});
+  }
 }
 
 function openPdfPreview(dataUrl){
@@ -3028,7 +3065,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         if(order){window._lastShopifyOrder=order;}
         var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
-        if(order&&order.customer&&order.customer.id){}if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+        if(order&&order.customer&&order.customer.id){}}
   loadLastCustomerOrder(email, order.id);
   } else {
     // Anche senza ordine Shopify, mostra link Amazon se ticket da marketplace.amazon
@@ -3054,9 +3091,9 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         amzHtml+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Seller Central ↗</a>';
         amzHtml+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
       }
-      if(oArea){oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+      if(oArea){oArea.innerHTML='<div class="order-info-box">'+amzHtml+'</div>';}
     } else {
-      if(oArea){oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';if(window._imapAttachmentsHtml)oArea.innerHTML+=window._imapAttachmentsHtml;}
+      if(oArea){oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine Shopify trovato per questo ticket</div>';}
     }
   // Carica comunque ultimo ordine cliente per email
   loadLastCustomerOrder(email);
@@ -3353,7 +3390,9 @@ async function sendReply(){
         const currSubjLow=(selectedTicket.subject||"").toLowerCase();
         const isCurrNoConcat=noConcat_subj.some(s=>currSubjLow.includes(s));
         const email=(selectedTicket.requester&&selectedTicket.requester.email)||"";
-        const otherOpen=isCurrNoConcat?[]:tickets.filter(t=>{
+        // Email di sistema/BRT: non mettere solved su altri ticket con la stessa email
+        const isSystemEmail=email.includes("brt.it")||email.includes("vasnoreply")||email.includes("donotreply@amazon")||email.includes("orders.temu")||email.includes("paypal");
+        const otherOpen=(isCurrNoConcat||isSystemEmail)?[]:tickets.filter(t=>{
           const te=(t.requester&&t.requester.email)||"";
           const tSubjLow=(t.subject||"").toLowerCase();
           const isOtherNoConcat=noConcat_subj.some(s=>tSubjLow.includes(s));
@@ -3424,10 +3463,23 @@ function showHelpDeskAttachments(files){
 async function loadImapAttachments(email, subject, tid){
   if(!email)return;
   try{
-    const url=PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject);
-    const res=await fetch(url);
-    const data=await res.json();
-    const attachments=data.attachments||[];
+    // Se gli eventi del ticket hanno già allegati con URL, non serve IMAP
+    // Controlla se le immagini IMAP sono già visibili nei messaggi (via src nel testo HTML)
+    const imapRes0=await fetch(PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject));
+    const imapData0=await imapRes0.json();
+    const imapAtts0=imapData0.attachments||[];
+    if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
+    // Controlla se i filename IMAP compaiono già nel testo dei messaggi renderizzati
+    const msgArea=document.getElementById("messages-area");
+    const msgHtml=(msgArea&&msgArea.innerHTML)||"";
+    const alreadyShown=imapAtts0.every(a=>{
+      const fn=(a.filename||"").toLowerCase();
+      return msgHtml.toLowerCase().includes(fn)||msgHtml.includes("data:"+a.contentType);
+    });
+    if(alreadyShown){window._imapAttachmentsHtml="";return;}
+    const attachments=imapAtts0;
+    if(false){// placeholder per evitare duplicazione fetch sotto
+    } // fine if(false)
     if(!attachments.length){window._imapAttachmentsHtml="";return;}
     // Salva allegati immagine globalmente per l'AI
     const existing=new Set((window._ticketAttachments||[]).map(a=>a.filename+a.data.length));
@@ -4316,9 +4368,7 @@ setInterval(async function(){
       if(existing>=0)tickets[existing]=ft;
       else tickets.push(ft);
     });
-    // Remove closed/deleted tickets no longer in fresh list
-    const freshIds=new Set(fresh.map(t=>t.ID||t.id));
-    tickets=tickets.filter(t=>freshIds.has(t.ID||t.id));
+    // NON rimuovere ticket storici - l'auto-refresh aggiunge/aggiorna solo i recenti
     // Update selected ticket if open
     if(selectedTicket){
       const tid=selectedTicket.ID||selectedTicket.id;
