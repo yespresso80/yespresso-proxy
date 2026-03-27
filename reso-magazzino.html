@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>📦 Reso Magazzino</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3347;
+    --accent: #e53e3e;
+    --accent2: #ff6b6b;
+    --green: #38c96e;
+    --blue: #4a9eff;
+    --text: #f0f2f8;
+    --muted: #8891a8;
+    --yellow: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; }
+  .header-icon { font-size: 24px; }
+  .header-title { font-size: 18px; font-weight: 700; }
+  .header-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .content { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+  /* Search area */
+  .search-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+  .search-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+  .search-row { display: flex; gap: 8px; }
+  .search-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 15px; color: var(--text); font-family: inherit; outline: none; }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--muted); }
+  .btn { border: none; border-radius: 10px; padding: 12px 16px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; }
+  .btn-red { background: var(--accent); color: #fff; }
+  .btn-red:active { background: #c53030; }
+  .btn-outline { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+
+  .divider { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+  .divider-line { flex: 1; height: 1px; background: var(--border); }
+  .divider-text { font-size: 11px; color: var(--muted); }
+
+  /* Camera */
+  .camera-btn { width: 100%; background: var(--surface2); border: 2px dashed var(--border); border-radius: 12px; padding: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 600; transition: .15s; }
+  .camera-btn:active { border-color: var(--accent); color: var(--accent); }
+  #camera-input { display: none; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 24px; color: var(--muted); font-size: 14px; }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Order card */
+  .order-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 16px; }
+  .order-header { padding: 14px 16px; background: var(--surface2); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .order-name { font-size: 17px; font-weight: 700; color: var(--accent2); }
+  .order-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .order-clear { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 4px; }
+
+  /* Item row */
+  .item-row { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .item-row:last-child { border-bottom: none; }
+  .item-top { display: flex; align-items: center; gap: 12px; }
+  .item-toggle { width: 48px; height: 28px; border-radius: 14px; background: var(--border); position: relative; flex-shrink: 0; cursor: pointer; transition: .2s; }
+  .item-toggle.on { background: var(--green); }
+  .item-toggle-knob { width: 22px; height: 22px; border-radius: 50%; background: #fff; position: absolute; top: 3px; left: 3px; transition: .2s; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .item-toggle.on .item-toggle-knob { left: 23px; }
+  .item-info { flex: 1; }
+  .item-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
+  .item-qty { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .item-note { margin-top: 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); font-family: inherit; width: 100%; resize: none; height: 60px; outline: none; display: none; }
+  .item-note:focus { border-color: var(--yellow); }
+  .item-row.selected .item-note { display: block; }
+
+  /* Extra product */
+  .extra-section { padding: 14px 16px; border-top: 1px solid var(--border); background: var(--surface2); }
+  .extra-label { font-size: 12px; font-weight: 600; color: var(--yellow); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .extra-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); font-family: inherit; outline: none; }
+  .extra-input:focus { border-color: var(--yellow); }
+
+  /* Submit */
+  .submit-section { padding: 16px; }
+  .btn-submit { width: 100%; background: linear-gradient(135deg, var(--accent), #ff6b6b); color: #fff; border: none; border-radius: 14px; padding: 16px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; transition: .15s; }
+  .btn-submit:active { transform: scale(.98); }
+  .btn-submit:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1e2230; border: 1px solid var(--border); color: var(--text); padding: 12px 20px; border-radius: 12px; font-size: 14px; font-weight: 600; z-index: 9999; box-shadow: 0 8px 24px rgba(0,0,0,.4); opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+  .toast.ok { border-color: var(--green); color: var(--green); }
+  .toast.err { border-color: var(--accent); color: var(--accent2); }
+
+  /* Success screen */
+  .success-screen { text-align: center; padding: 48px 24px; }
+  .success-icon { font-size: 64px; margin-bottom: 16px; }
+  .success-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .success-sub { font-size: 14px; color: var(--muted); margin-bottom: 32px; }
+  .btn-new { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 14px 28px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; }
+
+  /* OCR status */
+  .ocr-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 18px; }
+  .ocr-status.loading { color: var(--yellow); }
+  .ocr-status.ok { color: var(--green); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">📦</div>
+  <div>
+    <div class="header-title">Reso Magazzino</div>
+    <div class="header-sub">Gestione resi in entrata</div>
+  </div>
+</div>
+
+<div class="content" id="main-content">
+  <!-- Search -->
+  <div class="search-card">
+    <div class="search-label">Cerca ordine</div>
+    <div class="search-row">
+      <input class="search-input" id="search-input" placeholder="N° ordine o nome cliente..." autocomplete="off" autocorrect="off">
+      <button class="btn btn-red" id="search-btn">🔍</button>
+    </div>
+    <div class="ocr-status" id="ocr-status"></div>
+
+    <div class="divider"><div class="divider-line"></div><div class="divider-text">OPPURE</div><div class="divider-line"></div></div>
+
+    <label class="camera-btn" for="camera-input">
+      📷 Fotografa etichetta o DDT
+    </label>
+    <input type="file" id="camera-input" accept="image/*" capture="environment">
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading-area" style="display:none">
+    <div class="spinner"></div><br>Ricerca in corso...
+  </div>
+
+  <!-- Order area -->
+  <div id="order-area" style="display:none"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PROXY = "https://yespresso-proxy.onrender.com";
+
+// ── Storage per resi — sincronizzato via server ──
+const RESI_PROXY = "https://yespresso-proxy.onrender.com";
+
+async function saveReso(data) {
+  data.id = Date.now();
+  data.timestamp = new Date().toISOString();
+  try {
+    // Carica lista attuale dal server
+    const r = await fetch(RESI_PROXY + '/resi');
+    const list = await r.json();
+    list.unshift(data);
+    // Salva sul server
+    await fetch(RESI_PROXY + '/resi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(list.slice(0, 500))
+    });
+  } catch(e) {
+    // Fallback localStorage
+    try {
+      const list = JSON.parse(localStorage.getItem('yespresso_resi') || '[]');
+      list.unshift(data);
+      localStorage.setItem('yespresso_resi', JSON.stringify(list.slice(0, 200)));
+    } catch(e2) { console.error('saveReso fallback:', e2); }
+  }
+}
+
+function showToast(msg, type = 'ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.className = 'toast', 2800);
+}
+
+async function shopifyGet(path) {
+  const r = await fetch(PROXY + '/shopify/' + path);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ── Ricerca ordine ──
+async function searchOrder(q) {
+  const results = [];
+  const num = q.replace(/[^0-9]/g, '');
+  // Per numero
+  if (num.length >= 6) {
+    const d1 = await shopifyGet('orders.json?name=%23' + num + '&status=any').catch(() => null);
+    if (d1?.orders?.length) results.push(...d1.orders);
+    if (!results.length) {
+      const d2 = await shopifyGet('orders/' + num + '.json').catch(() => null);
+      if (d2?.order) results.push(d2.order);
+    }
+  }
+  // Per testo (nome, email)
+  if (!results.length) {
+    const d3 = await shopifyGet('orders.json?status=any&limit=5&query=' + encodeURIComponent(q)).catch(() => null);
+    if (d3?.orders?.length) results.push(...d3.orders);
+  }
+  const seen = new Set();
+  return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+}
+
+// ── OCR con Anthropic ──
+async function ocrImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const b64 = e.target.result.split(',')[1];
+      const mime = file.type || 'image/jpeg';
+      try {
+        const res = await fetch(PROXY + '/anthropic/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-5',
+            max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario (ignora YESPRESSO, BRT, corrieri). Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+              ]
+            }]
+          })
+        });
+        const data = await res.json();
+        const text = data.content?.[0]?.text || '';
+        const match = text.match(/\{[^}]+\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          resolve(parsed);
+        } else {
+          resolve({ ordine: '', nome: '' });
+        }
+      } catch(e) {
+        resolve({ ordine: '', nome: '' });
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Render ordine ──
+let currentOrder = null;
+let selectedItems = {};
+
+function renderOrder(order) {
+  currentOrder = order;
+  selectedItems = {};
+  const lineItems = (order.line_items || []);
+  const sa = order.shipping_address || order.billing_address || {};
+  const customerName = sa.name || ((sa.first_name || '') + (sa.last_name ? ' ' + sa.last_name : '')) || order.email || '';
+
+  let html = `<div class="order-card">
+    <div class="order-header">
+      <div>
+        <div class="order-name">${order.name || '#' + order.id}</div>
+        <div class="order-meta">${customerName} · ${order.email || ''}</div>
+      </div>
+      <button class="order-clear" onclick="clearOrder()">×</button>
+    </div>`;
+
+  lineItems.forEach((li, i) => {
+    selectedItems[i] = false;
+    html += `<div class="item-row" id="item-row-${i}">
+      <div class="item-top">
+        <div class="item-toggle" id="toggle-${i}" onclick="toggleItem(${i})">
+          <div class="item-toggle-knob"></div>
+        </div>
+        <div class="item-info">
+          <div class="item-name">${li.name}</div>
+          <div class="item-qty">Qtà ordinata: ${li.quantity}</div>
+        </div>
+      </div>
+      <textarea class="item-note" id="note-${i}" placeholder="Note conformità prodotto (opzionale)..."></textarea>
+    </div>`;
+  });
+
+  html += `<div class="extra-section">
+    <div class="extra-label">⚠️ Articolo reso non presente nell'ordine</div>
+    <input class="extra-input" id="extra-product" placeholder="Es: 100 capsule Nespresso Cremoso (non ordinato)...">
+  </div>`;
+
+  html += `</div>
+  <div class="submit-section">
+    <button class="btn-submit" id="submit-btn" onclick="submitReso()">📦 Invia segnalazione reso</button>
+  </div>`;
+
+  document.getElementById('order-area').innerHTML = html;
+  document.getElementById('order-area').style.display = 'block';
+  document.getElementById('order-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleItem(i) {
+  selectedItems[i] = !selectedItems[i];
+  const toggle = document.getElementById('toggle-' + i);
+  const row = document.getElementById('item-row-' + i);
+  if (selectedItems[i]) {
+    toggle.classList.add('on');
+    row.classList.add('selected');
+  } else {
+    toggle.classList.remove('on');
+    row.classList.remove('selected');
+  }
+}
+
+function clearOrder() {
+  currentOrder = null;
+  selectedItems = {};
+  document.getElementById('order-area').style.display = 'none';
+  document.getElementById('order-area').innerHTML = '';
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-input').focus();
+}
+
+async function submitReso() {
+  if (!currentOrder) return;
+  const lineItems = currentOrder.line_items || [];
+  const selected = lineItems.filter((_, i) => selectedItems[i]);
+  const extraProduct = document.getElementById('extra-product')?.value.trim();
+
+  if (!selected.length && !extraProduct) {
+    showToast('Seleziona almeno un articolo o aggiungi un prodotto extra', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;margin-right:8px"></div> Invio...';
+
+  try {
+    // Costruisci dati reso
+    const resoItems = selected.map((li, _) => {
+      const origIdx = lineItems.indexOf(li);
+      const note = document.getElementById('note-' + origIdx)?.value.trim() || '';
+      return { name: li.name, qty: li.quantity, price: li.price, note };
+    });
+
+    const sa = currentOrder.shipping_address || currentOrder.billing_address || {};
+    const customerName = sa.name || ((sa.first_name || '') + (sa.last_name ? ' ' + sa.last_name : '')) || currentOrder.email || '';
+
+    // Trova ordine TikTok ID se presente
+    let tikTokOrderId = order._tikTokOrderId || '';
+    if (!tikTokOrderId) {
+      const ttAttr = (order.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
+      if (ttAttr) tikTokOrderId = ttAttr.value;
+    }
+    const resoData = {
+      orderId: currentOrder.id,
+      orderName: currentOrder.name || ('#' + currentOrder.id),
+      customerName,
+      email: currentOrder.email || '',
+      channel: detectChannel(currentOrder),
+      tiktokOrderId: tikTokOrderId,
+      items: resoItems,
+      extraProduct: extraProduct || '',
+      shopifyNote: currentOrder.note || ''
+    };
+
+    // Salva in localStorage (condiviso con helpdesk)
+    saveReso(resoData);
+
+    // Aggiungi nota su Shopify
+    const today = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    let notaParts = ['[RESO MAGAZZINO ' + today + ']'];
+    if (resoItems.length) {
+      notaParts.push('Prodotti rientrati:');
+      resoItems.forEach(it => {
+        notaParts.push('- ' + it.name + (it.note ? ' → ' + it.note : ''));
+      });
+    }
+    if (extraProduct) notaParts.push('⚠️ Prodotto non ordinato: ' + extraProduct);
+    const nota = notaParts.join('\n');
+
+    const origData = await shopifyGet('orders/' + currentOrder.id + '.json?fields=note').catch(() => null);
+    const existingNote = origData?.order?.note || '';
+    const newNote = (existingNote ? existingNote + '\n\n' : '') + nota;
+
+    await fetch(PROXY + '/shopify/orders/' + currentOrder.id + '.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: { id: currentOrder.id, note: newNote } })
+    });
+
+    // Mostra success
+    document.getElementById('main-content').innerHTML = `
+      <div class="success-screen">
+        <div class="success-icon">✅</div>
+        <div class="success-title">Reso registrato!</div>
+        <div class="success-sub">${resoData.orderName} — ${customerName}<br>La segnalazione è visibile in "Richieste Reso"</div>
+        <button class="btn-new" onclick="location.reload()">📦 Nuovo reso</button>
+      </div>`;
+
+  } catch(e) {
+    showToast('Errore: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.innerHTML = '📦 Invia segnalazione reso';
+  }
+}
+
+function detectChannel(order) {
+  const email = (order.email || '').toLowerCase();
+  const tags = (order.tags || '').toLowerCase();
+  // TikTok: tag "TIK TOK" o "tiktok" o email tiktok
+  if (email.includes('tiktok') || email.includes('scs3.') || tags.includes('tiktok') || tags.includes('tik tok')) {
+    // Estrai numero ordine TikTok dal tag o note_attributes
+    const ttMatch = (order.tags || '').match(/(576\d{15,})/);
+    if (ttMatch) order._tikTokOrderId = ttMatch[1];
+    return 'tiktok';
+  }
+  if (email.includes('marketplace.amazon') || email.includes('donotreply@amazon') || tags.includes('amazon')) return 'amazon';
+  if (email.includes('orders.temu') || tags.includes('temu')) return 'temu';
+  // Cerca nei note_attributes
+  const attrs = order.note_attributes || [];
+  const attrStr = attrs.map(a => (a.name||'')+(a.value||'')).join(' ').toLowerCase();
+  if (attrStr.includes('tiktok') || attrStr.includes('tik tok')) return 'tiktok';
+  if (attrStr.includes('amazon')) return 'amazon';
+  if (attrStr.includes('temu')) return 'temu';
+  return 'shopify';
+}
+
+// ── Event listeners ──
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  document.getElementById('loading-area').style.display = 'block';
+  document.getElementById('order-area').style.display = 'none';
+  try {
+    const orders = await searchOrder(q);
+    if (!orders.length) {
+      showToast('Nessun ordine trovato', 'err');
+    } else {
+      renderOrder(orders[0]);
+    }
+  } catch(e) {
+    showToast('Errore ricerca: ' + e.message, 'err');
+  }
+  document.getElementById('loading-area').style.display = 'none';
+}
+
+// ── Camera / OCR ──
+document.getElementById('camera-input').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  const status = document.getElementById('ocr-status');
+  status.className = 'ocr-status loading';
+  status.textContent = '📷 Analisi immagine in corso...';
+  document.getElementById('loading-area').style.display = 'block';
+  document.getElementById('order-area').style.display = 'none';
+  try {
+    const ocr = await ocrImage(file);
+    const query = ocr.ordine || ocr.nome || '';
+    if (!query) {
+      status.className = 'ocr-status err';
+      status.textContent = '⚠️ Nessun numero ordine o nome trovato nell\'immagine';
+      document.getElementById('loading-area').style.display = 'none';
+      return;
+    }
+    status.className = 'ocr-status ok';
+    status.textContent = '✅ Trovato: ' + (ocr.ordine ? 'Ordine ' + ocr.ordine : 'Nome ' + ocr.nome);
+    document.getElementById('search-input').value = query;
+    const orders = await searchOrder(query);
+    if (!orders.length) {
+      showToast('Immagine letta ma ordine non trovato. Cerca manualmente.', 'err');
+    } else {
+      renderOrder(orders[0]);
+    }
+  } catch(e) {
+    status.className = 'ocr-status';
+    status.textContent = '';
+    showToast('Errore OCR: ' + e.message, 'err');
+  }
+  document.getElementById('loading-area').style.display = 'none';
+  this.value = '';
+});
+</script>
+</body>
+</html>

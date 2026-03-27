@@ -1086,7 +1086,7 @@ function updateBadges(){
   // keyword badges (approximate)
   // Badge richieste reso
   try{
-    var resiList=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+    var resiList=_resiCache||[];
     var resiPendenti=resiList.filter(function(r){return !r.risolto;}).length;
     var badgeResi=document.getElementById('badge-richieste-reso');
     if(badgeResi){badgeResi.textContent=resiPendenti>0?resiPendenti:'0';}
@@ -4923,7 +4923,7 @@ function openRichiesteResoPanel(){
   var chL={shopify:'Shopify',amazon:'Amazon',temu:'Temu',tiktok:'TikTok'};
 
   function getList(){
-    var all=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+    var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
     var f=all.filter(function(r){
       if(tab==='pendenti') return !r.risolto&&!r.sospeso;
       if(tab==='sospesi') return !!r.sospeso&&!r.risolto;
@@ -4934,16 +4934,16 @@ function openRichiesteResoPanel(){
   }
 
   function badges(){
-    var all=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+    var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
     header.querySelector('#rtb-p').textContent=all.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
     header.querySelector('#rtb-s').textContent=all.filter(function(r){return !!r.sospeso&&!r.risolto;}).length;
     header.querySelector('#rtb-r').textContent=all.filter(function(r){return !!r.risolto;}).length;
   }
 
   function setStatus(id,status){
-    var all=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+    var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
     var i=all.findIndex(function(r){return r.id===id;});
-    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');localStorage.setItem('yespresso_resi',JSON.stringify(all));}
+    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');saveResiList(all);}
     aggiornaResoBadge();
   }
 
@@ -5005,7 +5005,7 @@ function openRichiesteResoPanel(){
     body.querySelectorAll('._rc-apri').forEach(function(b){
       b.addEventListener('click',function(){
         var rid=parseInt(this.getAttribute('data-rid'));
-        var all=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+        var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
         var r=all.find(function(x){return x.id===rid;});
         if(!r)return;
         var ov=document.createElement('div');
@@ -5057,13 +5057,74 @@ function apriCreditoResoModal(orderId,btn){
   else{showToast('Apri il ticket del cliente per emettere il credito','info');}
 }
 
-function aggiornaResoBadge(){
+// ── RESI SYNC API ──
+var _resiCache=null;
+async function getResiList(){
   try{
-    var list=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+    var r=await fetch(PROXY+'/resi');
+    var data=await r.json();
+    _resiCache=Array.isArray(data)?data:[];
+    return _resiCache;
+  }catch(e){
+    // fallback localStorage
+    try{return JSON.parse(localStorage.getItem('yespresso_resi')||'[]');}catch(e2){return [];}
+  }
+}
+async function saveResiList(list){
+  _resiCache=list;
+  try{
+    await fetch(PROXY+'/resi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(list)});
+  }catch(e){
+    try{localStorage.setItem('yespresso_resi',JSON.stringify(list));}catch(e2){}
+  }
+}
+
+// Cache locale resi (si aggiorna dal server)
+var _resiCache = [];
+var _resiCacheTime = 0;
+
+async function getResiFromServer(forceRefresh) {
+  if (!forceRefresh && Date.now() - _resiCacheTime < 30000 && _resiCache.length > 0) {
+    return _resiCache;
+  }
+  try {
+    const res = await fetch(PROXY + '/resi');
+    const data = await res.json();
+    _resiCache = Array.isArray(data) ? data : [];
+    _resiCacheTime = Date.now();
+    // Sync con localStorage come backup
+    try { localStorage.setItem('yespresso_resi', JSON.stringify(_resiCache.slice(0,200))); } catch(e) {}
+    return _resiCache;
+  } catch(e) {
+    console.warn('[RESI] Fallback localStorage:', e.message);
+    try { return JSON.parse(localStorage.getItem('yespresso_resi') || '[]'); } catch(e2) { return []; }
+  }
+}
+
+async function updateResoOnServer(id, data) {
+  try {
+    await fetch(PROXY + '/resi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', id, data })
+    });
+    _resiCacheTime = 0; // forza refresh
+  } catch(e) {
+    // Fallback localStorage
+    try {
+      const list = JSON.parse(localStorage.getItem('yespresso_resi') || '[]');
+      const idx = list.findIndex(r => r.id === id);
+      if (idx >= 0) { Object.assign(list[idx], data); localStorage.setItem('yespresso_resi', JSON.stringify(list)); }
+    } catch(e2) {}
+  }
+}
+
+function aggiornaResoBadge(){
+  getResiList().then(function(list){
     var pendenti=list.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
     var badge=document.getElementById('reso-badge-menu');
-    if(badge)badge.textContent=pendenti;
-  }catch(e){}
+    if(badge)badge.textContent=pendenti>0?pendenti:'0';
+  }).catch(function(){});
 }
 setTimeout(aggiornaResoBadge, 1000);
 

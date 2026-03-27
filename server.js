@@ -15,6 +15,7 @@ const IMAP_PASSWORD = process.env.IMAP_PASSWORD || "";
 const IMAP_HOST = "imap.ionos.it";
 const IMAP_PORT = 993;
 
+let resiStore = [];
 console.log("[INIT] ANTHROPIC_KEY presente:", !!ANTHROPIC_KEY);
 console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
 console.log("[INIT] IMAP_USER:", IMAP_USER);
@@ -136,19 +137,16 @@ async function syncImapAttachments() {
 
 function findAttachmentsForTicket(requesterEmail, subject) {
   const results = [];
-  const EXCLUDE_FILES = ["logo yespresso", "logo_yespresso", "qapla-brt", "qapla_brt", "firma", "signature"];
   const emailLow = (requesterEmail||"").toLowerCase();
-  if (!emailLow) return results;
-
+  const subjLow = (subject||"").toLowerCase().substring(0,50);
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
-    // Match solo per email esatta
-    if (fromLow !== emailLow) continue;
-    const filteredAtts = data.attachments.filter(a => {
-      const fn = (a.filename||"").toLowerCase();
-      return !EXCLUDE_FILES.some(ex => fn.includes(ex));
-    });
-    if (filteredAtts.length > 0) results.push(...filteredAtts.map(a => ({ ...a, from: data.from, date: data.date })));
+    const dataSubjLow = (data.subject||"").toLowerCase();
+    const emailMatch = emailLow && fromLow && (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
+    const subjMatch = subjLow && dataSubjLow && (dataSubjLow.includes(subjLow.substring(0,20)) || subjLow.includes(dataSubjLow.substring(0,20)));
+    if (emailMatch || subjMatch) {
+      results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date })));
+    }
   }
   return results;
 }
@@ -431,24 +429,36 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // ── BRT ORM API (Ordini Ritiro Merce) ──
-  if (req.url.startsWith("/brt-orm/")) {
-    const brtOrmPath = req.url.replace("/brt-orm", "");
-    const ormChunks = []; req.on("data", c => ormChunks.push(c)); await new Promise(r => req.on("end", r));
-    const ormBody = Buffer.concat(ormChunks);
+  // ── RESI MAGAZZINO (storage server-side) ──
+  if (req.url === '/resi' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(resiStore));
+    return;
+  }
+  if (req.url === '/resi' && req.method === 'POST') {
+    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
     try {
-      const ormRes = await fetch("https://api.brt.it/orm" + brtOrmPath, {
-        method: req.method,
-        headers: { "Content-Type": "application/json", "X-Api-Key": "f393e3d3-8402-4614-a90e-8d111fa73ced", "Accept": "application/json" },
-        body: ormBody.length > 0 ? ormBody : undefined
-      });
-      const ormData = await ormRes.text();
-      console.log("[BRT ORM]", req.method, brtOrmPath, "->", ormRes.status, ormData.substring(0, 200));
-      res.writeHead(ormRes.status, { "Content-Type": "application/json" });
-      res.end(ormData);
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      if (Array.isArray(body)) {
+        // Sostituzione lista completa
+        resiStore = body;
+        console.log('[RESI] Lista aggiornata:', resiStore.length, 'resi');
+      } else if (body.action === 'add') {
+        body.data.id = Date.now();
+        body.data.timestamp = new Date().toISOString();
+        resiStore.unshift(body.data);
+        if (resiStore.length > 500) resiStore = resiStore.slice(0, 500);
+        console.log('[RESI] Aggiunto reso:', body.data.orderName);
+      } else if (body.action === 'update') {
+        const idx = resiStore.findIndex(r => r.id === body.id);
+        if (idx >= 0) { resiStore[idx] = Object.assign(resiStore[idx], body.data); }
+      } else if (body.action === 'delete') {
+        resiStore = resiStore.filter(r => r.id !== body.id);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, count: resiStore.length }));
     } catch(e) {
-      console.error("[BRT ORM] Errore:", e.message);
-      res.writeHead(500, { "Content-Type": "application/json" });
+      res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
