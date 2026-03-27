@@ -188,6 +188,23 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
+  if (req.url === "/reso-magazzino.html") {
+    const rpFile = path.join(__dirname, "reso-magazzino.html");
+    fs.readFile(rpFile, function(err, data) {
+      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
+    });
+    return;
+  }
+  if (req.url === "/reso-magazzino.html") {
+    const resoFile = path.join(__dirname, "reso-magazzino.html");
+    fs.readFile(resoFile, function(err, data) {
+      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
+    });
+    return;
+  }
+
   if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
     fs.readFile(filePath, function(err, data) {
