@@ -36,14 +36,14 @@
 <body>
 <div class="container">
   <h1>🏷️ Amazon Fattura Tagger</h1>
-  <p class="subtitle">Carica il report CSV Amazon — aggiunge il tag "Fattura Amazon" agli ordini Shopify dove la colonna AT (Buyer Tax Registration Type) contiene CitizenId o VAT</p>
+  <p class="subtitle">Carica il report CSV Amazon — aggiunge il tag "Fattura Amazon" agli ordini Shopify dove <b>Buyer Tax Registration Type</b> è CitizenId o VAT <strong>e</strong> <b>E-Invoice Delivery Status</b> è ACCEPTED</p>
 
   <div class="card">
     <div class="upload-area" onclick="document.getElementById('csvFile').click()">
       <input type="file" id="csvFile" accept=".csv" onchange="onFileSelected(this)">
       <div style="font-size:32px;margin-bottom:8px">📄</div>
       <div style="font-weight:600;color:#1a73e8" id="file-label">Clicca per selezionare il file CSV Amazon</div>
-      <div style="font-size:12px;color:#aaa;margin-top:4px">taxReport_*.csv — separatore punto e virgola</div>
+      <div style="font-size:12px;color:#aaa;margin-top:4px">taxReport_*.csv — separatore virgola o punto e virgola (rilevato automaticamente)</div>
     </div>
   </div>
 
@@ -76,28 +76,51 @@ const PROXY = "https://yespresso-proxy.onrender.com";
 const TAG = "Fattura Amazon";
 let ordersToTag = [];
 
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 function parseCsv(text) {
-  // Normalizza line endings
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  const headers = lines[0].split(';').map(h => h.trim().replace(/^"|"$/g, ''));
-  
+  const headers = parseCsvLine(lines[0]);
+
   const orderIdIdx = headers.findIndex(h => h === 'Order ID');
   const taxTypeIdx = headers.findIndex(h => h === 'Buyer Tax Registration Type');
-  
+  const boIdx = headers.findIndex(h => h === 'E-Invoice Delivery Status');
+
   if (orderIdIdx === -1 || taxTypeIdx === -1) {
     alert('Errore: colonne "Order ID" o "Buyer Tax Registration Type" non trovate.\nVerifica che sia il file taxReport corretto.');
     return [];
   }
-  
+  if (boIdx === -1) {
+    alert('Errore: colonna "E-Invoice Delivery Status" non trovata.\nVerifica che sia il file taxReport corretto.');
+    return [];
+  }
+
   const orders = {};
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
-    const cols = lines[i].split(';').map(c => c.trim().replace(/^"|"$/g, ''));
+    const cols = parseCsvLine(lines[i]);
     if (cols.length <= taxTypeIdx) continue;
-    const orderId = cols[orderIdIdx].trim();
-    const taxType = cols[taxTypeIdx].trim();
-    // Solo se AT contiene CitizenId o VAT
-    if (orderId && (taxType === 'CitizenId' || taxType === 'VAT')) {
+    const orderId = cols[orderIdIdx];
+    const taxType = cols[taxTypeIdx];
+    const boVal = cols.length > boIdx ? cols[boIdx] : '';
+    if (orderId && (taxType === 'CitizenId' || taxType === 'VAT') && boVal === 'ACCEPTED') {
       orders[orderId] = taxType;
     }
   }
@@ -202,7 +225,7 @@ async function startTagging() {
       } else {
         const added = await addTag(order);
         if (added) {
-          log('✅ ' + amazonId + ' → ' + order.name + ' — "Fattura Amazon" aggiunto (' + taxType + ')', 'ok');
+          log('✅ ' + amazonId + ' → ' + order.name + ' — "Fattura Amazon" aggiunto (' + taxType + ' / ACCEPTED)', 'ok');
           cntOk++;
         } else {
           log('⏭ ' + amazonId + ' → ' + order.name + ' — tag già presente', 'skip');
