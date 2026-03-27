@@ -351,7 +351,7 @@ async function submitReso() {
     const customerName = sa.name || ((sa.first_name || '') + (sa.last_name ? ' ' + sa.last_name : '')) || currentOrder.email || '';
 
     // Trova ordine TikTok ID se presente
-    let tikTokOrderId = order._tikTokOrderId || '';
+    let tikTokOrderId = currentOrder._tikTokOrderId || '';
     if (!tikTokOrderId) {
       const ttAttr = (order.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
