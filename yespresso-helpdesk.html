@@ -499,15 +499,123 @@ textarea.field{min-height:80px;resize:vertical}
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const PROXY = "https://yespresso-proxy.onrender.com";
-const APP_TOKEN = ""; // Configurare con il valore di APP_TOKEN su Render
+const APP_TOKEN = "";
 
-// Helper: fetch al proxy con X-App-Token automatico
+// ── Nomi prodotti short ──
+var _shortNameMap = [
+  ['Yespresso 240 Capsule Compatibili con Caffitaly Miscela Cremoso', '240 CAFFITALY - CREMOSO'],
+  ['Yespresso 240 Capsule Compatibili con Lavazza A Modo Mio Cremoso (12 confezioni da 20 capsule)', '240 A MODO MIO - CREMOSO'],
+  ['Yespresso 240 capsule compatibili LAVAZZA A MODO MIO Cremoso (12 confezioni da 20 capsule)', '240 A MODO MIO - CREMOSO'],
+  ['Yespresso 80 Capsule Compatibili CAFFITALY Miscela Cremoso', '80 CAFFITALY - CREMOSO'],
+  ['Yespresso, Cremoso Napoli - 100 Capsule compatibili con Bialetti Mokona e Mokespresso', '100 BIALETTI - CREMOSO'],
+  ['Yespresso, Cremoso Napoli – 100 Capsule compatibili con Bialetti Mokona e Mokespresso', '100 BIALETTI - CREMOSO'],
+  ['OFFERTA! 150 CIALDE IN CARTA ESE 44MM (ESPRESSO INTENSO)', '150 CIALDE ESE44 - INTENSO'],
+  ['OFFERTA! 150 CIALDE IN CARTA ESE 44MM (ESPRESSO)', '150 CIALDE ESE44 - INTENSO'],
+  ['Yespresso 100 capsule compatibili con Bialetti miscela Cremoso', '100 BIALETTI - CREMOSO'],
+  ['Yespresso 100 Capsule Compatibili Con Nespresso Miscela Cremoso', '100 NESPRESSO - CREMOSO'],
+  ['Yespresso 240 Capsule Compatibili CAFFITALY Miscela Cremoso', '240 CAFFITALY - CREMOSO'],
+  ['Yespresso 240 Capsule Compatibili con Bialetti miscela Cremoso', '240 BIALETTI - CREMOSO'],
+  ['64 Capsule DOLCE GUSTO CAPPUCCINO compatibili', '64 DOLCE GUSTO - CAPPUCCINO'],
+  ['80 Capsule CAFFITALY compatibili - CREMOSO', '80 CAFFITALY - CREMOSO'],
+  ['80 Capsule CAFFITALY CREMOSO caffè compatibili', '80 CAFFITALY - CREMOSO'],
+  ['80 Capsule compatibili CAFFITALY - CREMOSO', '80 CAFFITALY - CREMOSO'],
+  ['80 Capsule Compatibili con Caffitaly Miscela Cremoso', '80 CAFFITALY - CREMOSO'],
+  ['80 Capsule Compatibili con Caffitaly Miscela Cremoso (Non funzionano sulle macchine modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)', '80 CAFFITALY - CREMOSO'],
+  ['300 Capsule LINEA S - Espresso INTENSO', '300 LINEA S - INTENSO'],
+  ['300 Cialde Carta ESE 44 - ESPRESSO INTENSO', '300 Cialde ESE 44 - INTENSO'],
+  ['300 Capsule compatibili con Nespresso CREMOSO', '300 NESPRESSO - CREMOSO'],
+  ['300 Capsule compatibili FIOR LUI - INTENSO', '300 FIOR LUI - INTENSO'],
+  ['300 Capsule compatibili NESPRESSO - CREMOSO', '300 NESPRESSO - CREMOSO'],
+  ['240 Capsule Compatibili con Bialetti Miscela Cremoso', '240 BIALETTI - CREMOSO'],
+  ['240 Capsule compatibili con Nespresso GRANBAR', '240 NESPRESSO - GRANBAR'],
+  ['240 Capsule compatibili Lavazza A MODO MIO - CREMOSO', '240 A MODO MIO - CREMOSO'],
+  ['240 Capsule compatibili NESPRESSO - GRANBAR', '240 NESPRESSO - GRANBAR'],
+  ['240 Capsule LAVAZZA A MODO MIO CREMOSO caffè compatibili', '240 A MODO MIO - CREMOSO'],
+  ['240 Capsule LAVAZZA A MODO MIO CREMOSO caffè compatibili, Cialde caffèLavazza a Modo Mio', '240 A MODO MIO - CREMOSO'],
+  ['240 Capsule NESPRESSO caffè compatibili GRANBAR, cialde compatibili caffè per Nespresso', '240 NESPRESSO - GRANBAR'],
+  ['240 Capsule NESPRESSO GRANBAR caffè compatibili', '240 NESPRESSO - GRANBAR'],
+  ['240 Capsule BIALETTI compatibili caffè CREMOSO, ccapsule compatibili Bialetti, cialde compatibili bialetti', '240 BIALETTI - CREMOSO'],
+  ['240 Capsule CAFFITALY CREMOSO caffè compatibili', '240 CAFFITALY - CREMOSO'],
+  ['240 Capsule compatibili BIALETTI - CREMOSO', '240 BIALETTI - CREMOSO'],
+  ['240 capsule compatibili BIALETTI miscela CREMOSO', '240 BIALETTI - CREMOSO'],
+  ['240 Capsule compatibili CAFFITALY - CREMOSO', '240 CAFFITALY - CREMOSO'],
+  ['240 capsule compatibili CAFFITALY miscela Cremoso', '240 CAFFITALY - CREMOSO'],
+  ['240 capsule compatibili CAFFITALY miscela Cremoso (Non funzionano sulle macchine modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)', '240 CAFFITALY - CREMOSO'],
+  ['160 Capsule DOLCE GUSTO CREMOSO caffè compatibili', '160 DOLCE GUSTO - CREMOSO'],
+  ['20 Capsule compatibili BIALETTI - CREMOSO', '20 BIALETTI - CREMOSO'],
+  ['200 Capsule Compatibili con Nespresso Cremoso Napoli - 2 Confezioni da 100 capsule', '200 NESPRESSO - CREMOSO'],
+  ['200 Capsule compatibili NESPRESSO - CREMOSO', '200 NESPRESSO - CREMOSO'],
+  ['200 Capsule Compatibili Nespresso Cremoso Napoli - 2 Confezioni da 100 capsule', '200 NESPRESSO - CREMOSO'],
+  ['16 Capsule DOLCE GUSTO GINSENG compatibili', '16 DOLCE GUSTO - GINSENG'],
+  ['16 Capsule DOLCE GUSTO ORZO compatibili, capsule caffè dolce e gusto', '16 DOLCE GUSTO - ORZO'],
+  ['160 Capsule Compatibili con Dolce Gusto Nescafè Miscela Cremoso - 10 confezioni da 16 capsule', '160 DOLCE GUSTO - CREMOSO'],
+  ['160 Capsule Compatibili conDolce Gusto Nescafè Cremoso - 10 confezioni da 16 capsule', '160 DOLCE GUSTO - CREMOSO'],
+  ['160 Capsule compatibili DOLCE GUSTO - CREMOSO', '160 DOLCE GUSTO - CREMOSO'],
+  ['160 Capsule compatibili Dolce Gusto Nescafè Cremoso - 10 confezioni da 16 capsule', '160 DOLCE GUSTO - CREMOSO'],
+  ['160 Capsule DOLCE GUSTO caffè compatibili CREMOSO , capsule caffe dolce e gusto, capsule caffe per dolce gusto', '160 DOLCE GUSTO - CREMOSO'],
+  ['16 Capsule compatibili DOLCE GUSTO - GINSENG', '16 DOLCE GUSTO - GINSENG'],
+  ['16 Capsule compatibili DOLCE GUSTO - NOCCIOLINO', '16 DOLCE GUSTO - NOCCIOLINO'],
+  ['16 Capsule compatibili DOLCE GUSTO - ORZO', '16 DOLCE GUSTO - ORZO'],
+  ['16 Capsule compatibili DOLCE GUSTO - Tè AL LIMONE', '16 DOLCE GUSTO - LIMONE'],
+  ['16 Capsule compatibili DOLCE GUSTO - TE\' AL LIMONE', '16 DOLCE GUSTO - TE\' AL LIMONE'],
+  ['16 Capsule DOLCE GUSTO CAPPUCCINO compatibili', '16 DOLCE GUSTO - CAPPUCCINO'],
+  ['16 Capsule DOLCE GUSTO CIOCCOLATA compatibili', '16 DOLCE GUSTO - CIOCCOLATA'],
+  ['150 Cialde caffè CARTA ESE44 - Espresso INTENSO', '150 CIALDE ESE44 - INTENSO'],
+  ['150 Cialde CARTA ESE44 - Espresso INTENSO', '150 CIALDE ESE44 - INTENSO'],
+  ['16 Capsule compatibili DOLCE GUSTO - CAPPUCCINO', '16 DOLCE GUSTO - CAPPUCCINO'],
+  ['16 Capsule compatibili DOLCE GUSTO - CIOCCOLATA', '16 DOLCE GUSTO - CIOCCOLATA'],
+  ['16 Capsule compatibili DOLCE GUSTO - CORTADO', '16 DOLCE GUSTO - CORTADO'],
+  ['16 Capsule compatibili DOLCE GUSTO - CREMOSO', '16 DOLCE GUSTO - CREMOSO'],
+  ['16 Capsule compatibili DOLCE GUSTO - DECAFFEINATO', '16 DOLCE GUSTO - DECA'],
+  ['100 Capsule FIOR LUI - Espresso INTENSO', '100 FIOR LUI - NTENSO'],
+  ['100 Capsule FIOR LUI caffè Espresso INTENSO compatibili', '100 FIOR LUI - INTENSO'],
+  ['100 Capsule LAVAZZA A MODO MIO CREMOSO', '100 A MODO MIO - CREMOSO'],
+  ['100 Capsule LAVAZZA A MODO MIO CREMOSO compatibili', '100 A MODO MIO - CREMOSO'],
+  ['100 Capsule LINEA S - Espresso INTENSO', '100 LINEA S - INTENSO'],
+  ['100 Capsule NESPRESSO ALLUMINIO caffè compatibili - Miscela SUPREMO', '100 NESPRESSO - ALLUMINIO'],
+  ['100 Capsule NESPRESSO ALLUMINIO compatibili - Miscela SUPREMO', '100 NESPRESSO - ALLUMINIO'],
+  ['100 Capsule NESPRESSO caffè compatibili - Miscela SUPREMO', '100 CAPSULE NESPRESSO - ALLUMINIO'],
+  ['100 Capsule NESPRESSO CREMOSO caffè compatibili', '100 NESPRESSO - CREMOSO'],
+  ['100 Capsule FIOR FIORE Coop e LUI caffè compatibili - INTENSO', '100 FIOR LUI - NTENSO'],
+  ['100 Capsule FIOR LUI - Espresso INTENSO', '100 FIOR LUI - NTENSO'],
+  ['100 Capsule Compatibili con Lavazza A Modo Mio miscela Cremoso', '100 A MODO MIO - CREMOSO'],
+  ['100 Capsule compatibili Lavazza A MODO MIO - CREMOSO', '100 A MODO MIO - CREMOSO'],
+  ['100 Capsule compatibili NESPRESSO - CREMOSO', '100 NESPRESSO - CREMOSO'],
+  ['10 Capsule compatibili NESPRESSO - ORZO', '10 NESPRESSO - ORZO'],
+  ['100 Capsule ALLUMINIO compatibili con Nespresso SUPREMO', '100 NESPRESSO - ALLUMINIO'],
+  ['100 Capsule ALLUMINIO compatibili NESPRESSO - SUPREMO', '100 NESPRESSO - ALLUMINIO'],
+  ['100 Capsule BIALETTI compatibili CREMOSO, cialde caffè compaibili bialetti', '100 BIALETTI - CREMOSO'],
+  ['100 Capsule compatibili BIALETTI - CREMOSO', '100 BIALETTI - CREMOSO'],
+  ['100 Capsule Compatibili con Lavazza A Modo Mio miscela Cremoso', '100 A MODO MIO - CREMOSO'],
+  ['10 Capsule compatibili NESPRESSO - GINSENG', '10 NESPRESSO - GINSENG'],
+  ['10 Capsule compatibili NESPRESSO - ORZO', '10 NESPRESSO - ORZO'],
+  ['100 Capsule NESPRESSO caffè compatibili - Miscela SUPREMO', '100 NESPRESSO - ALLUMINIO'],
+  ['240 capsule compatibili CAFFITALY miscela Cremoso (Non funzionano sulle macchine Caffitaly modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)', '240 CAFFITALY - CREMOSO']
+];
+function shortName(name) {
+  if (!name) return name;
+  var n = name.trim();
+  // Match esatto (case-insensitive)
+  for (var i = 0; i < _shortNameMap.length; i++) {
+    if (_shortNameMap[i][0].toLowerCase() === n.toLowerCase()) return _shortNameMap[i][1];
+  }
+  // Match parziale: il nome long è contenuto nel titolo prodotto
+  for (var i = 0; i < _shortNameMap.length; i++) {
+    if (n.toLowerCase().includes(_shortNameMap[i][0].toLowerCase()) ||
+        _shortNameMap[i][0].toLowerCase().includes(n.toLowerCase())) return _shortNameMap[i][1];
+  }
+  // Nessun match: tronca a 35 caratteri
+  return n.length > 35 ? n.substring(0, 33) + '…' : n;
+}
+
+// Helper fetch con token automatico
 function proxyFetch(url, opts) {
   opts = opts || {};
   opts.headers = opts.headers || {};
   if(APP_TOKEN) opts.headers["X-App-Token"] = APP_TOKEN;
   return fetch(url, opts);
 }
+
 
 const STATUS_LABELS = {open:"Open",pending:"Pending",solved:"Solved",closed:"Closed",on_hold:"On hold"};
 const STATUS_CLASS = {open:"s-open",pending:"s-pending",solved:"s-solved",closed:"s-closed",on_hold:"s-on_hold"};
@@ -2495,7 +2603,7 @@ function closeDetail(){
 }
 
 async function shopifyGet(path){
-  const res=await proxyFetch(PROXY+"/shopify/"+path, APP_TOKEN?{headers:{"X-App-Token":APP_TOKEN}}:{});
+  const res=await proxyFetch(PROXY+"/shopify/"+path);
   if(!res.ok)return null;
   const d=await res.json();
   // Estrai next page_info dall'header Link (paginazione Shopify cursor-based)
@@ -4840,7 +4948,7 @@ function openAutorizzaResoModal(){
           '<div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div>'+
         '</div>'+
         '<div style="flex:1">'+
-          '<div style="font-size:13px;font-weight:600;color:#1a1a2e">'+li.name+'</div>'+
+          '<div style="font-size:13px;font-weight:600;color:#1a1a2e">'+shortName(li.name)+'</div>'+
           '<div style="font-size:12px;color:#888">Qtà: '+li.quantity+' | €'+parseFloat(li.price).toFixed(2)+'</div>'+
         '</div>'+
         '<input type="number" id="reso-ht-qty-'+i+'" min="1" max="'+li.quantity+'" value="'+li.quantity+'" style="width:60px;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;text-align:center;font-family:inherit;outline:none" onclick="event.stopPropagation()">';
@@ -4875,7 +4983,7 @@ function openAutorizzaResoModal(){
         var origIdx=lineItems.indexOf(li);
         var qtyEl=modal.querySelector('#reso-ht-qty-'+origIdx);
         var qty=qtyEl?parseInt(qtyEl.value)||li.quantity:li.quantity;
-        return '- '+li.name+' x'+qty;
+        return '- '+shortName(li.name)+' x'+qty;
       }).join('\n');
       var nota='Autorizzato reso il '+today+' per '+motivazione+' dei seguenti prodotti:\n'+prodList;
       var orig=await shopifyGet('orders/'+currentOrder.id+'.json?fields=note');
@@ -4917,369 +5025,175 @@ function detectChannelFromOrder(order){
 
 function openRichiesteResoPanel(){
   document.getElementById('tools-menu-dropdown').style.display='none';
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:flex;align-items:center;justify-content:center';
+  var box=document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:14px;width:97vw;max-width:1200px;height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden';
+  modal.appendChild(box);
 
-  var page=document.createElement('div');
-  page.id='resi-fullpage';
-  page.style.cssText='position:fixed;inset:0;background:#f5f7fa;z-index:9500;display:flex;flex-direction:column;overflow:hidden';
-  document.body.appendChild(page);
-
-  // Header
   var header=document.createElement('div');
-  header.style.cssText='padding:12px 24px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);flex-wrap:wrap';
+  header.style.cssText='padding:14px 24px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#fff';
   header.innerHTML=
-    '<button id="resi-back" style="display:flex;align-items:center;gap:6px;background:#f0f2f5;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit">&#8592; Lista Ticket</button>'+
-    '<span style="font-size:17px;font-weight:700;color:#e53e3e">&#128230; Richieste Reso</span>'+
-    '<div style="display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px;margin-left:4px">'+
-      '<button class="rtb" data-tab="tutti" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Tutti <span id="rtb-a" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
-      '<button class="rtb" data-tab="pendenti" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)">In attesa <span id="rtb-p" style="background:#e53e3e;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
-      '<button class="rtb" data-tab="sospesi" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Sospesi <span id="rtb-s" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
-      '<button class="rtb" data-tab="risolti" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Risolti <span id="rtb-r" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
-    '</div>';
-  page.appendChild(header);
+    '<div style="display:flex;align-items:center;gap:16px">'+
+      '<span style="font-size:17px;font-weight:700;color:#e53e3e">&#128230; Richieste Reso</span>'+
+      '<div id="resi-tabs" style="display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px">'+
+        '<button class="rtb" data-tab="pendenti" style="padding:5px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)">In attesa <span id="rtb-p" style="background:#e53e3e;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+        '<button class="rtb" data-tab="sospesi" style="padding:5px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Sospesi <span id="rtb-s" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+        '<button class="rtb" data-tab="risolti" style="padding:5px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Risolti <span id="rtb-r" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+      '</div>'+
+    '</div>'+
+    '<button id="rc-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:#aaa;padding:0 4px">&#215;</button>';
+  box.appendChild(header);
 
-  // Barra ricerca con tasto annulla
-  var searchBar=document.createElement('div');
-  searchBar.style.cssText='padding:10px 24px;border-bottom:1px solid #e8eaf0;flex-shrink:0;background:#fff;display:flex;align-items:center;gap:8px';
-  searchBar.innerHTML=
-    '<div style="position:relative;flex:1;max-width:600px">'+
-      '<input id="rc-search" placeholder="&#128269; Cerca per ordine, cliente, prodotto..." style="width:100%;padding:9px 36px 9px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#f8f9fc;box-sizing:border-box">'+
-      '<button id="rc-search-clear" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:16px;cursor:pointer;color:#aaa;display:none;padding:0;line-height:1">&#215;</button>'+
-    '</div>';
-  page.appendChild(searchBar);
+  var searchDiv=document.createElement('div');
+  searchDiv.style.cssText='padding:10px 24px;border-bottom:1px solid #e8eaf0;flex-shrink:0;background:#fafbfc';
+  searchDiv.innerHTML='<input id="rc-search" placeholder="&#128269; Cerca per ordine, cliente, prodotto..." style="width:100%;padding:9px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff">';
+  box.appendChild(searchDiv);
 
-  // Body scrollabile
   var body=document.createElement('div');
-  body.id='rc-body';
-  body.style.cssText='flex:1;overflow-y:scroll;padding:20px 24px;min-height:0';
-  page.appendChild(body);
+  body.style.cssText='flex:1;overflow-y:auto;padding:16px 24px';
+  box.appendChild(body);
 
-  // Paginazione
   var pagDiv=document.createElement('div');
-  pagDiv.style.cssText='padding:10px 24px;border-top:1px solid #e8eaf0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;background:#fff;font-size:13px;color:#888;min-height:44px';
-  page.appendChild(pagDiv);
+  pagDiv.style.cssText='padding:10px 24px;border-top:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#fafbfc;font-size:13px;color:#888;min-height:44px';
+  box.appendChild(pagDiv);
 
-  header.querySelector('#resi-back').addEventListener('click',function(){document.getElementById('resi-fullpage').remove();});
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  header.querySelector('#rc-close').addEventListener('click',function(){modal.remove();});
 
-  var tab='pendenti', pg=1, PG=10, q='';
+  var tab='pendenti', page=1, PG=8, q='';
   var chI={shopify:'🛒',amazon:'📦',temu:'🟠',tiktok:'🎵'};
   var chL={shopify:'Shopify',amazon:'Amazon',temu:'Temu',tiktok:'TikTok'};
-  var statoLabel={pendenti:'In attesa',sospesi:'Sospeso',risolti:'Risolto'};
-  var statoColor={pendenti:'#e53e3e',sospesi:'#f59e0b',risolti:'#2a9d60'};
 
   function getList(){
     var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
-    var f;
-    if(tab==='tutti') f=all;
-    else if(tab==='pendenti') f=all.filter(function(r){return !r.risolto&&!r.sospeso;});
-    else if(tab==='sospesi') f=all.filter(function(r){return !!r.sospeso&&!r.risolto;});
-    else f=all.filter(function(r){return !!r.risolto;});
+    var f=all.filter(function(r){
+      if(tab==='pendenti') return !r.risolto&&!r.sospeso;
+      if(tab==='sospesi') return !!r.sospeso&&!r.risolto;
+      return !!r.risolto;
+    });
     if(q){var ql=q.toLowerCase();f=f.filter(function(r){return (r.orderName||'').toLowerCase().includes(ql)||(r.customerName||'').toLowerCase().includes(ql)||(r.items||[]).some(function(i){return (i.name||'').toLowerCase().includes(ql);});});}
     return f;
   }
 
   function badges(){
     var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
-    document.getElementById('rtb-a').textContent=all.length;
-    document.getElementById('rtb-p').textContent=all.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
-    document.getElementById('rtb-s').textContent=all.filter(function(r){return !!r.sospeso&&!r.risolto;}).length;
-    document.getElementById('rtb-r').textContent=all.filter(function(r){return !!r.risolto;}).length;
+    header.querySelector('#rtb-p').textContent=all.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
+    header.querySelector('#rtb-s').textContent=all.filter(function(r){return !!r.sospeso&&!r.risolto;}).length;
+    header.querySelector('#rtb-r').textContent=all.filter(function(r){return !!r.risolto;}).length;
   }
 
-  function getResoStato(reso){
-    if(reso.risolto) return {label:'Risolto',color:'#2a9d60',bg:'#e8f5e9'};
-    if(reso.sospeso) return {label:'Sospeso',color:'#f59e0b',bg:'#fff8e1'};
-    return {label:'In attesa',color:'#e53e3e',bg:'#fff5f5'};
-  }
-
-  async function eliminaReso(id){
-    if(!confirm('Eliminare definitivamente questo reso?'))return;
-    var all=await getResiList();
-    var filtered=all.filter(function(r){return r.id!==id;});
-    _resiCache=filtered;
-    await saveResiList(filtered);
-    aggiornaResoBadge();
-    showToast('Reso eliminato');
-    render();
-  }
-
-  async function setStatus(id,status){
-    var all=await getResiList();
+  function setStatus(id,status){
+    var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
     var i=all.findIndex(function(r){return r.id===id;});
-    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');}
-    _resiCache=all;
-    await saveResiList(all);
+    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');saveResiList(all);}
     aggiornaResoBadge();
-    render();
-  }
-
-  function renderCard(reso){
-    var ci=chI[reso.channel||'shopify']||'🛒';
-    var cl=chL[reso.channel||'shopify']||'Shopify';
-    var ds=reso.timestamp?new Date(reso.timestamp).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
-    var stato=getResoStato(reso);
-    // Tracking e spedizione dal reso (se salvati)
-    var tn=reso.trackingNumber||'';
-    var spedStatus=reso.spedStatus||'';
-    var spedDate=reso.spedDate||'';
-    var brtTrackUrl=tn?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn):'';
-    var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
-
-    var itemsHtml=(reso.items||[]).map(function(it){
-      return '<div style="padding:5px 0;border-bottom:1px solid #f0f2f5;font-size:13px;display:flex;align-items:flex-start;gap:8px">'+
-        '<div style="flex:1">'+
-          '<span style="font-weight:600">'+it.name+'</span>'+
-          (it.note?'<div style="color:#e67e22;font-size:12px">&#9888; '+it.note+'</div>':'')+
-        '</div>'+
-        '<div style="text-align:right;flex-shrink:0">'+
-          (it.qty?'<div style="font-size:12px;color:#555">Qtà: <strong>'+it.qty+'</strong></div>':'')+
-          (it.price?'<div style="font-size:12px;color:#555">€'+parseFloat(it.price).toFixed(2)+'</div>':'')+
-        '</div>'+
-      '</div>';
-    }).join('');
-    if(reso.extraProduct)itemsHtml+='<div style="padding:5px 0;font-size:13px;color:#e67e22">&#9888; <strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
-
-    var actionBtn='';
-    if(reso.channel==='amazon')actionBtn='<button onclick="window.open(\'https://sellercentral.amazon.it/orders-v3\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa Amazon</button>';
-    else if(reso.channel==='temu')actionBtn='<button onclick="window.open(\'https://seller-eu.temu.com/ticket-list.html\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu</button>';
-    else if(reso.channel==='tiktok'){var ttId=reso.tiktokOrderId||'';actionBtn='<button onclick="window.open(\'https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok</button>';}
-    else actionBtn='<button data-oid="'+reso.orderId+'" class="_rc-credito" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
-
-    return '<div data-reso-id="'+reso.id+'" style="background:#fff;border:1px solid #e8eaf0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05);margin-bottom:14px">'+
-      // Header card
-      '<div style="background:#f8f9fc;padding:10px 16px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;flex-wrap:wrap;gap:8px">'+
-        '<a href="'+shopifyOrderUrl+'" target="_blank" style="font-size:16px;font-weight:700;color:#1a73e8;text-decoration:none">'+reso.orderName+' ↗</a>'+
-        '<span style="background:#e8f0fe;color:#1a73e8;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+ci+' '+cl+'</span>'+
-        '<span style="font-size:13px;color:#555">'+reso.customerName+'</span>'+
-        '<span style="background:'+stato.bg+';color:'+stato.color+';border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+stato.label+'</span>'+
-        '<span style="margin-left:auto;font-size:11px;color:#aaa">'+ds+'</span>'+
-      '</div>'+
-      // Grid prodotti + note shopify
-      '<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e8eaf0">'+
-        '<div style="padding:10px 16px;border-right:1px solid #e8eaf0">'+
-          '<div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px">Prodotti resi</div>'+
-          itemsHtml+
-        '</div>'+
-        '<div style="padding:10px 16px;background:#fffbeb">'+
-          '<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px">Note Shopify</div>'+
-          '<div style="font-size:12px;color:#78350f;white-space:pre-wrap;max-height:120px;overflow-y:auto">'+(reso.shopifyNote||'<em style="color:#aaa">Nessuna nota</em>')+'</div>'+
-        '</div>'+
-      '</div>'+
-      // Tracking BRT
-      (tn||spedStatus?
-        '<div style="padding:8px 16px;border-bottom:1px solid #e8eaf0;background:#f0f7ff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
-          (tn?'<span style="font-size:12px;font-weight:600;color:#1a1a2e">&#128666; '+tn+'</span>':'')+
-          (spedStatus?'<span style="font-size:12px;color:#555">'+spedStatus+'</span>':'')+
-          (spedDate?'<span style="font-size:12px;color:#888">'+spedDate+'</span>':'')+
-          (brtTrackUrl?'<a href="'+brtTrackUrl+'" target="_blank" style="font-size:12px;font-weight:700;color:#e8174d;text-decoration:none">Traccia BRT ↗</a>':'')+
-          (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-storico" style="background:#f0f2f5;border:none;color:#555;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128196; Ordini storici</button>':'')+
-          (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-vediticket" style="background:#e8f0fe;border:none;color:#1a73e8;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127902; Vedi Ticket</button>':'')+
-        '</div>':'')+
-      // Azioni
-      '<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
-        actionBtn+
-        '<button data-id="'+reso.id+'" class="_rc-sospendi" style="background:#f59e0b;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9208; Sospendi</button>'+
-        '<button data-id="'+reso.id+'" class="_rc-risolto" style="background:#2a9d60;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9989; Risolto</button>'+
-        '<button data-id="'+reso.id+'" class="_rc-elimina" style="background:#fff;border:1px solid #e0e4ea;color:#c04040;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;margin-left:auto">&#128465; Elimina</button>'+
-      '</div>'+
-    '</div>';
   }
 
   function render(){
     badges();
     var data=getList(),total=data.length,tp=Math.max(1,Math.ceil(total/PG));
-    if(pg>tp)pg=1;
-    var slice=data.slice((pg-1)*PG,pg*PG);
+    if(page>tp)page=1;
+    var pg=data.slice((page-1)*PG,page*PG);
+    if(!pg.length){body.innerHTML='<div style="text-align:center;padding:60px 20px;color:#aaa"><div style="font-size:48px;margin-bottom:10px">&#128230;</div><div style="font-size:15px;font-weight:600;color:#555">Nessun reso'+(q?' trovato':'')+' in questa sezione</div></div>';pagDiv.innerHTML='<span>0 risultati</span>';return;}
 
-    if(!slice.length){
-      body.innerHTML='<div style="text-align:center;padding:60px 20px;color:#aaa"><div style="font-size:48px;margin-bottom:12px">&#128230;</div><div style="font-size:15px;font-weight:600;color:#555">Nessun reso'+(q?' trovato':' in questa sezione')+'</div></div>';
-      pagDiv.innerHTML='';
-      return;
-    }
-
-    if(tab!=='pendenti'&&tab!=='tutti'){
-      // Lista compatta per sospesi/risolti
-      var html='<div style="display:flex;flex-direction:column;gap:6px">';
-      slice.forEach(function(reso){
-        var stato=getResoStato(reso);
-        var ci=chI[reso.channel||'shopify']||'🛒';
-        var ds=reso.timestamp?new Date(reso.timestamp).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'-';
-        var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
-        html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;border:1px solid #e8eaf0;border-radius:10px">'+
-          '<a href="'+shopifyOrderUrl+'" target="_blank" style="font-size:14px;font-weight:700;color:#1a73e8;text-decoration:none;flex:1">'+reso.orderName+' ↗</a>'+
-          '<span style="font-size:13px;color:#888">'+reso.customerName+'</span>'+
-          '<span style="font-size:12px">'+ci+'</span>'+
-          '<span style="background:'+stato.bg+';color:'+stato.color+';border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700">'+stato.label+'</span>'+
-          '<span style="font-size:12px;color:#aaa">'+ds+'</span>'+
-          '<button data-id="'+reso.id+'" class="_apri-btn" style="background:#1a73e8;border:none;color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Apri</button>'+
-          '<button data-id="'+reso.id+'" class="_rc-elimina" style="background:#fff;border:1px solid #e0e4ea;color:#c04040;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128465;</button>'+
+    var html='<div style="display:flex;flex-direction:column;gap:'+(tab==='pendenti'?'14':'6')+'px">';
+    pg.forEach(function(reso){
+      var ch=reso.channel||'shopify',icon=chI[ch]||'🛒',label=chL[ch]||'Shopify';
+      var date=reso.timestamp?new Date(reso.timestamp).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+      if(tab!=='pendenti'){
+        html+='<div style="display:flex;align-items:center;gap:10px;padding:11px 16px;background:#fff;border:1px solid #e8eaf0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.04)">'+
+          '<span style="font-size:15px;font-weight:700;color:#1a1a2e;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+reso.orderName+'</span>'+
+          '<span style="font-size:13px;color:#555;flex-shrink:0">'+reso.customerName+'</span>'+
+          '<span style="background:#f0f2f5;border-radius:8px;padding:2px 8px;font-size:12px;flex-shrink:0">'+icon+' '+label+'</span>'+
+          '<span style="font-size:11px;color:#aaa;flex-shrink:0">'+date+'</span>'+
+          '<button data-rid="'+reso.id+'" class="_rc-apri" style="background:#1a73e8;border:none;color:#fff;padding:6px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;flex-shrink:0">Apri</button>'+
         '</div>';
-      });
-      html+='</div>';
-      body.innerHTML=html;
-      body.querySelectorAll('._apri-btn').forEach(function(btn){
-        btn.addEventListener('click',function(){
-          var id=parseInt(this.getAttribute('data-id'));
-          var reso=(_resiCache||[]).find(function(r){return r.id===id;});
-          if(reso){body.scrollTop=0;body.innerHTML='';mostraDettaglioReso(reso,body,function(){render();});}
-        });
-      });
-    } else {
-      // Vista completa per In attesa e Tutti
-      body.innerHTML=slice.map(function(reso){return renderCard(reso);}).join('');
-      body.querySelectorAll('._rc-credito').forEach(function(btn){btn.addEventListener('click',function(){apriCreditoResoModal(this.getAttribute('data-oid'),this);});});
-    }
-
-    // Event listeners comuni
-    body.querySelectorAll('._rc-risolto').forEach(function(btn){btn.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-id')),'risolto').then(function(){showToast('Reso risolto');});});});
-    body.querySelectorAll('._rc-sospendi').forEach(function(btn){btn.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-id')),'sospeso').then(function(){showToast('Reso sospeso');});});});
-    body.querySelectorAll('._rc-elimina').forEach(function(btn){btn.addEventListener('click',function(){eliminaReso(parseInt(this.getAttribute('data-id')));});});
-    body.querySelectorAll('._rc-vediticket').forEach(function(btn){
-      btn.addEventListener('click',function(){
-        var email=this.getAttribute('data-email');
-        var name=this.getAttribute('data-name');
-        // Cerca ticket del cliente per email
-        var clientTickets=tickets.filter(function(t){
-          return (t.requester&&t.requester.email)===email;
-        });
-        if(!clientTickets.length){
-          showToast('Il cliente non ha ticket','error');
-          return;
-        }
-        // Ordina per data decrescente e prende il più recente
-        clientTickets.sort(function(a,b){return new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0);});
-        var lastTicket=clientTickets[0];
-        // Chiudi la pagina resi e apri il ticket
-        document.getElementById('resi-fullpage').remove();
-        selectTicket(lastTicket.ID||lastTicket.id);
-      });
-    });
-    body.querySelectorAll('._rc-storico').forEach(function(btn){
-      btn.addEventListener('click',function(){
-        var email=this.getAttribute('data-email');
-        var name=this.getAttribute('data-name');
-        if(!email)return;
-        // Apri pannello ordini storici in una finestra overlay
-        var ov=document.createElement('div');
-        ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
-        ov.innerHTML='<div style="background:#fff;border-radius:12px;width:90vw;max-width:900px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2);overflow:hidden">'+
-          '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
-            '<span style="font-size:15px;font-weight:700">&#128196; Ordini storici — '+name+'</span>'+
-            '<button id="sto-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#888">&#215;</button>'+
+      } else {
+        var itH=(reso.items||[]).map(function(it){return '<div style="padding:5px 0;border-bottom:1px solid #f0f2f5;font-size:13px"><strong style="color:#1a1a2e">'+shortName(it.name)+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:12px">&#9888; '+it.note+'</div>':'')+'</div>';}).join('');
+        if(reso.extraProduct)itH+='<div style="padding:5px 0;font-size:13px;color:#e67e22">&#9888; <strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
+        var ttId=reso.tiktokOrderId||reso.orderId||'';
+        var aBtn='';
+        if(ch==='amazon')aBtn='<a href="https://sellercentral.amazon.it/orders-v3" target="_blank" style="background:#e8a000;border-radius:8px;color:#fff;padding:7px 14px;font-size:12px;font-weight:700;text-decoration:none;display:inline-block">&#128230; Rimborsa Amazon</a>';
+        else if(ch==='temu')aBtn='<a href="https://seller-eu.temu.com/ticket-list.html" target="_blank" style="background:#ff6600;border-radius:8px;color:#fff;padding:7px 14px;font-size:12px;font-weight:700;text-decoration:none;display:inline-block">&#129042; Vedi Temu</a>';
+        else if(ch==='tiktok')aBtn='<a href="https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT" target="_blank" style="background:#111;border-radius:8px;color:#fff;padding:7px 14px;font-size:12px;font-weight:700;text-decoration:none;display:inline-block">&#127925; Vedi TikTok</a>';
+        else aBtn='<button data-oid="'+reso.orderId+'" class="_rc-credito" style="background:#1a73e8;border:none;color:#fff;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
+        html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)">'+
+          '<div style="background:#f8f9fc;padding:10px 16px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<span style="font-size:16px;font-weight:700;color:#1a1a2e">'+reso.orderName+'</span>'+
+              '<span style="background:#e8f0fe;color:#1a73e8;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+icon+' '+label+'</span>'+
+              '<span style="font-size:13px;color:#555">'+reso.customerName+'</span>'+
+            '</div>'+
+            '<span style="font-size:11px;color:#aaa">'+date+'</span>'+
           '</div>'+
-          '<div id="sto-body" style="flex:1;overflow-y:auto;padding:16px 20px"><div style="color:#aaa;text-align:center;padding:20px">Caricamento...</div></div>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e8eaf0">'+
+            '<div style="padding:10px 16px;border-right:1px solid #e8eaf0"><div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px">Prodotti resi</div>'+itH+'</div>'+
+            '<div style="padding:10px 16px;background:#fffbeb"><div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px">Note Shopify</div><div style="font-size:12px;color:#78350f;white-space:pre-wrap;max-height:110px;overflow-y:auto">'+(reso.shopifyNote||'<em style="color:#aaa">Nessuna nota</em>')+'</div></div>'+
+          '</div>'+
+          '<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap">'+
+            aBtn+
+            '<button data-rid="'+reso.id+'" class="_rc-sospendi" style="background:#f59e0b;border:none;color:#fff;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9208; Sospendi</button>'+
+            '<button data-rid="'+reso.id+'" class="_rc-risolto" style="background:#2a9d60;border:none;color:#fff;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9989; Risolto</button>'+
+          '</div>'+
         '</div>';
-        document.body.appendChild(ov);
-        ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
-        ov.querySelector('#sto-close').addEventListener('click',function(){ov.remove();});
-        // Carica ordini
-        var stoBody=ov.querySelector('#sto-body');
-        proxyFetch(PROXY+'/shopify/orders.json?email='+encodeURIComponent(email)+'&status=any&limit=20')
-          .then(function(r){return r.json();})
-          .then(function(d){
-            var orders=(d&&d.orders)||[];
-            if(!orders.length){stoBody.innerHTML='<div style="text-align:center;padding:30px;color:#aaa">Nessun ordine trovato per '+email+'</div>';return;}
-            var shipMap={delivered:'&#9989; Consegnato',in_transit:'&#128666; In transito',out_for_delivery:'&#128665; In consegna',attempted_delivery:'&#9888; Tentativo fallito',ready_for_pickup:'&#128236; Pronto al ritiro',confirmed:'&#128203; Confermato'};
-            var fulMap={fulfilled:'&#128230; Spedito',unfulfilled:'&#9203; Non spedito',partial:'&#128260; Parziale'};
-            var html=orders.map(function(o){
-              // Usa shipment_status dal fulfillment se disponibile (più preciso)
-              var lastF=(o.fulfillments&&o.fulfillments.length)?o.fulfillments[o.fulfillments.length-1]:null;
-              var fst=lastF&&lastF.shipment_status?shipMap[lastF.shipment_status]||(fulMap[o.fulfillment_status]||'&#9203;'):(fulMap[o.fulfillment_status]||'&#9203;');
-              var dt=o.created_at?new Date(o.created_at).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'-';
-              var tot=parseFloat(o.total_price||0).toFixed(2);
-              var items=(o.line_items||[]).map(function(li){return li.name+' (x'+li.quantity+')';}).join(', ');
-              var url='https://admin.shopify.com/store/40f758-3/orders/'+o.id;
-              return '<div style="padding:10px 0;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:12px">'+
-                '<a href="'+url+'" target="_blank" style="font-size:14px;font-weight:700;color:#1a73e8;text-decoration:none;flex-shrink:0">'+o.name+'&#8599;</a>'+
-                '<span style="font-size:12px;color:#888;flex-shrink:0">'+dt+'</span>'+
-                '<span style="font-size:12px;flex-shrink:0">'+fst+'</span>'+
-                '<span style="font-size:12px;color:#555;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+items+'</span>'+
-                '<span style="font-size:13px;font-weight:700;flex-shrink:0">€'+tot+'</span>'+
-              '</div>';
-            }).join('');
-            stoBody.innerHTML='<div style="font-size:12px;color:#888;margin-bottom:8px">'+orders.length+' ordini trovati per '+email+'</div>'+html;
-          })
-          .catch(function(e){stoBody.innerHTML='<div style="color:#c04040;padding:20px">Errore: '+e.message+'</div>';});
+      }
+    });
+    html+='</div>';
+    body.innerHTML=html;
+
+    body.querySelectorAll('._rc-risolto').forEach(function(b){b.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-rid')),'risolto');render();showToast('Reso risolto');});});
+    body.querySelectorAll('._rc-sospendi').forEach(function(b){b.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-rid')),'sospeso');render();showToast('Reso sospeso');});});
+    body.querySelectorAll('._rc-credito').forEach(function(b){b.addEventListener('click',function(){apriCreditoResoModal(this.getAttribute('data-oid'),this);});});
+    body.querySelectorAll('._rc-apri').forEach(function(b){
+      b.addEventListener('click',function(){
+        var rid=parseInt(this.getAttribute('data-rid'));
+        var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
+        var r=all.find(function(x){return x.id===rid;});
+        if(!r)return;
+        var ov=document.createElement('div');
+        ov.style.cssText='position:absolute;inset:0;background:#fff;z-index:20;border-radius:14px;overflow-y:auto;padding:20px 24px';
+        box.style.position='relative';
+        var ch2=r.channel||'shopify',ttId2=r.tiktokOrderId||r.orderId||'';
+        var itH2=(r.items||[]).map(function(it){return '<div style="padding:7px 0;border-bottom:1px solid #f0f2f5;font-size:14px"><strong>'+shortName(it.name)+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:13px">'+it.note+'</div>':'')+'</div>';}).join('');
+        if(r.extraProduct)itH2+='<div style="padding:7px 0;font-size:14px;color:#e67e22"><strong>Non ordinato:</strong> '+r.extraProduct+'</div>';
+        ov.innerHTML='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'+
+          '<button id="ov-back" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">&#8592; Indietro</button>'+
+          '<span style="font-size:17px;font-weight:700">'+r.orderName+'</span>'+
+          '<span style="background:#e8f0fe;color:#1a73e8;border-radius:10px;padding:2px 9px;font-size:12px;font-weight:700">'+(chI[ch2]||'🛒')+' '+(chL[ch2]||'Shopify')+'</span>'+
+          '<span style="font-size:14px;color:#555">'+r.customerName+'</span>'+
+          (r.risolto?'<span style="background:#e8f5e9;color:#2a9d60;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700">&#9989; Risolto</span>':'')+(r.sospeso?'<span style="background:#fff8e1;color:#f59e0b;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700">&#9208; Sospeso</span>':'')+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+
+          '<div><div style="font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px">Prodotti resi</div>'+itH2+'</div>'+
+          '<div style="background:#fffbeb;border-radius:10px;padding:14px"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:8px">Note Shopify</div><div style="font-size:13px;color:#78350f;white-space:pre-wrap">'+(r.shopifyNote||'Nessuna nota')+'</div></div>'+
+        '</div>';
+        box.appendChild(ov);
+        ov.querySelector('#ov-back').addEventListener('click',function(){ov.remove();});
       });
     });
 
-    // Paginazione
-    if(tp>1){
-      var ph='<span>'+((pg-1)*PG+1)+'-'+Math.min(pg*PG,total)+' di '+total+'</span><div style="display:flex;gap:4px">';
-      for(var p=1;p<=tp;p++){ph+='<button data-p="'+p+'" class="_rpg" style="padding:4px 10px;border-radius:6px;border:1px solid '+(p===pg?'#1a73e8':'#e0e4ea')+';background:'+(p===pg?'#1a73e8':'#fff')+';color:'+(p===pg?'#fff':'#555')+';cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">'+p+'</button>';}
+    if(total>PG){
+      var ph='<span>'+(((page-1)*PG)+1)+'-'+Math.min(page*PG,total)+' di '+total+'</span><div style="display:flex;gap:4px">';
+      for(var p=1;p<=tp;p++){var isC=p===page;ph+='<button data-pg="'+p+'" class="_rc-pg" style="padding:4px 10px;border-radius:6px;border:1px solid '+(isC?'#1a73e8':'#e0e4ea')+';background:'+(isC?'#1a73e8':'#fff')+';color:'+(isC?'#fff':'#555')+';cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">'+p+'</button>';}
       ph+='</div>';
       pagDiv.innerHTML=ph;
-      pagDiv.querySelectorAll('._rpg').forEach(function(btn){btn.addEventListener('click',function(){pg=parseInt(this.getAttribute('data-p'));render();body.scrollTop=0;});});
-    } else {
-      pagDiv.innerHTML='<span>'+total+' risultati</span>';
-    }
+      pagDiv.querySelectorAll('._rc-pg').forEach(function(b){b.addEventListener('click',function(){page=parseInt(this.getAttribute('data-pg'));render();body.scrollTop=0;});});
+    } else {pagDiv.innerHTML='<span>'+total+' risultati</span>';}
   }
 
-  // Tab click
-  header.querySelectorAll('.rtb').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      tab=this.getAttribute('data-tab');pg=1;
-      header.querySelectorAll('.rtb').forEach(function(b){
-        var active=b.getAttribute('data-tab')===tab;
-        b.style.background=active?'#fff':'transparent';
-        b.style.color=active?'#1a1a2e':'#888';
-        b.style.boxShadow=active?'0 1px 3px rgba(0,0,0,.1)':'none';
-      });
+  header.querySelectorAll('.rtb').forEach(function(b){
+    b.addEventListener('click',function(){
+      tab=this.getAttribute('data-tab');page=1;
+      header.querySelectorAll('.rtb').forEach(function(x){var a=x.getAttribute('data-tab')===tab;x.style.background=a?'#fff':'transparent';x.style.color=a?'#1a1a2e':'#888';x.style.boxShadow=a?'0 1px 3px rgba(0,0,0,.1)':'none';});
       render();
     });
   });
-
-  // Ricerca con tasto annulla
   var st;
-  var inp=searchBar.querySelector('#rc-search');
-  var clr=searchBar.querySelector('#rc-search-clear');
-  inp.addEventListener('input',function(){
-    q=this.value;
-    clr.style.display=q?'block':'none';
-    clearTimeout(st);st=setTimeout(function(){pg=1;render();},250);
-  });
-  clr.addEventListener('click',function(){inp.value='';q='';clr.style.display='none';pg=1;render();inp.focus();});
-
-  // Carica e render
-  getResiList().then(function(){render();}).catch(function(){render();});
+  searchDiv.querySelector('#rc-search').addEventListener('input',function(){clearTimeout(st);var v=this.value;st=setTimeout(function(){q=v;page=1;render();},250);});
+  render();
 }
-
-function mostraDettaglioReso(reso,container,onBack){
-  var ci={shopify:'🛒',amazon:'📦',temu:'🟠',tiktok:'🎵'}[reso.channel||'shopify']||'🛒';
-  var stato={label:reso.risolto?'Risolto':reso.sospeso?'Sospeso':'In attesa',color:reso.risolto?'#2a9d60':reso.sospeso?'#f59e0b':'#e53e3e',bg:reso.risolto?'#e8f5e9':reso.sospeso?'#fff8e1':'#fff5f5'};
-  var tn=reso.trackingNumber||'';
-  var brtTrackUrl=tn?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn):'';
-  var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
-  var itemsHtml=(reso.items||[]).map(function(it){
-    return '<div style="padding:8px 0;border-bottom:1px solid #f0f2f5;font-size:14px;display:flex;align-items:flex-start;gap:8px">'+
-      '<div style="flex:1"><strong>'+it.name+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:13px">'+it.note+'</div>':'')+' </div>'+
-      '<div style="text-align:right">'+(it.qty?'<div style="font-size:12px;color:#555">Qtà: <strong>'+it.qty+'</strong></div>':'')+(it.price?'<div style="font-size:12px;color:#555">€'+parseFloat(it.price).toFixed(2)+'</div>':'')+' </div>'+
-    '</div>';
-  }).join('');
-  if(reso.extraProduct)itemsHtml+='<div style="padding:8px 0;font-size:14px;color:#e67e22"><strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
-  container.innerHTML=
-    '<div style="padding:4px 0 16px">'+
-      '<button id="det-back" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;margin-bottom:16px">&#8592; Indietro</button>'+
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'+
-        '<a href="'+shopifyOrderUrl+'" target="_blank" style="font-size:17px;font-weight:700;color:#1a73e8;text-decoration:none">'+reso.orderName+' ↗</a>'+
-        '<span>'+ci+'</span>'+
-        '<span style="background:'+stato.bg+';color:'+stato.color+';border-radius:10px;padding:2px 8px;font-size:12px;font-weight:700">'+stato.label+'</span>'+
-      '</div>'+
-      '<div style="font-size:13px;color:#888;margin-bottom:16px">'+reso.customerName+'</div>'+
-      (tn?'<div style="margin-bottom:12px;padding:8px 12px;background:#f0f7ff;border-radius:8px;display:flex;align-items:center;gap:12px">'+
-        '<span style="font-size:13px;font-weight:600">&#128666; '+tn+'</span>'+
-        (reso.spedStatus?'<span style="font-size:12px;color:#555">'+reso.spedStatus+'</span>':'')+
-        (reso.spedDate?'<span style="font-size:12px;color:#888">'+reso.spedDate+'</span>':'')+
-        '<a href="'+brtTrackUrl+'" target="_blank" style="font-size:12px;font-weight:700;color:#e8174d;text-decoration:none">Traccia BRT ↗</a>'+
-      '</div>':'')+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+
-        '<div><div style="font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px">Prodotti resi</div>'+itemsHtml+'</div>'+
-        '<div style="background:#fffbeb;border-radius:10px;padding:12px"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:8px">Note Shopify</div><div style="font-size:13px;color:#78350f;white-space:pre-wrap">'+(reso.shopifyNote||'Nessuna')+'</div></div>'+
-      '</div>'+
-    '</div>';
-  container.querySelector('#det-back').addEventListener('click',function(){if(onBack)onBack();});
-}
-
-
 
 function apriCreditoResoModal(orderId,btn){
   var found=tickets.find(function(t){return t._shopifyOrderId==orderId||(window._lastShopifyOrder&&window._lastShopifyOrder.id==orderId);});
@@ -5289,36 +5203,32 @@ function apriCreditoResoModal(orderId,btn){
 
 // ── RESI SYNC API ──
 var _resiCache=null;
-
+var _resiSha=null;
+// GH_RESI_TOKEN rimosso — usa proxy
+var GH_RESI_API="https://api.github.com/repos/yespresso80/yespresso-proxy/contents/resi.json";
 async function getResiList(){
   try{
-    var r=await proxyFetch(PROXY+'/resi', APP_TOKEN?{headers:{"X-App-Token":APP_TOKEN}}:{});
-    var serverData=await r.json();
-    // Unisci con localStorage per non perdere resi salvati localmente
-    var localData=[];
-    try{localData=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');}catch(e2){}
-    // Merge: prendi tutti, deduplicati per id
-    var merged=serverData.slice();
-    var serverIds=new Set(serverData.map(function(r){return r.id;}));
-    localData.forEach(function(r){if(!serverIds.has(r.id))merged.push(r);});
-    // Se ci sono resi locali non sul server, salvali
-    if(localData.length>0&&merged.length>serverData.length){
-      proxyFetch(PROXY+'/resi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){});
-      localStorage.removeItem('yespresso_resi'); // svuota locale dopo sync
-    }
-    _resiCache=merged;
+    var r=await fetch(GH_RESI_API,{headers:{"Authorization":"token "+GH_RESI_TOKEN,"Accept":"application/vnd.github.v3+json"}});
+    if(r.status===404){_resiCache=[];_resiSha=null;return [];}
+    var j=await r.json();
+    _resiSha=j.sha;
+    var b64=(j.content||'').replace(/\n/g,'').replace(/\r/g,'');
+    _resiCache=JSON.parse(atob(b64));
     return _resiCache;
   }catch(e){
     console.error('getResiList:',e);
-    try{_resiCache=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');return _resiCache;}catch(e2){return [];}
+    try{return JSON.parse(localStorage.getItem('yespresso_resi')||'[]');}catch(e2){return [];}
   }
 }
 async function saveResiList(list){
   _resiCache=list;
   try{
-    var resiHeaders={'Content-Type':'application/json'};
-    if(APP_TOKEN)resiHeaders['X-App-Token']=APP_TOKEN;
-    await proxyFetch(PROXY+'/resi',{method:'POST',headers:resiHeaders,body:JSON.stringify(list)});
+    var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(list))));
+    var body={message:"update resi",content:encoded};
+    if(_resiSha)body.sha=_resiSha;
+    var r=await fetch(GH_RESI_API,{method:"PUT",headers:{"Authorization":"token "+GH_RESI_TOKEN,"Content-Type":"application/json"},body:JSON.stringify(body)});
+    var j=await r.json();
+    if(j.content&&j.content.sha)_resiSha=j.content.sha;
   }catch(e){
     console.error('saveResiList:',e);
     try{localStorage.setItem('yespresso_resi',JSON.stringify(list));}catch(e2){}
@@ -5981,7 +5891,7 @@ function openResoModal(){
       '<div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div>'+
     '</div>'+
     '<div style="flex:1">'+
-      '<div style="font-size:13px;font-weight:600;color:#1a1a2e">'+li.name+'</div>'+
+      '<div style="font-size:13px;font-weight:600;color:#1a1a2e">'+shortName(li.name)+'</div>'+
       '<div style="font-size:12px;color:#888">Qtà ordinata: '+li.quantity+' | €'+parseFloat(li.price).toFixed(2)+' cad</div>'+
     '</div>'+
     '<input type="number" id="reso-qty-'+i+'" min="1" max="'+li.quantity+'" value="'+li.quantity+'" '+
@@ -6022,7 +5932,7 @@ function openResoModal(){
         var origIdx=lineItems.indexOf(li);
         var qtyEl=modal.querySelector('#reso-qty-'+origIdx);
         var qty=qtyEl?parseInt(qtyEl.value)||li.quantity:li.quantity;
-        return '- '+li.name+' x'+qty;
+        return '- '+shortName(li.name)+' x'+qty;
       }).join('\n');
       var nota='Autorizzato reso il '+today+' per '+motivazione+' dei seguenti prodotti:\n'+prodList;
       // Salva nota su Shopify
