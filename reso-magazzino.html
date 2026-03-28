@@ -208,7 +208,12 @@ async function searchOrder(q) {
     if (d3?.orders?.length) results.push(...d3.orders);
   }
   const seen = new Set();
-  return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+  const dedup = results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+  if (!dedup.length) return [];
+  // Carica sempre ordine completo con line_items + fulfillments
+  const full = await shopifyGet('orders/' + dedup[0].id + '.json').catch(() => null);
+  if (full?.order) return [full.order];
+  return dedup;
 }
 
 // ── OCR con Anthropic ──
@@ -356,6 +361,19 @@ async function submitReso() {
       const ttAttr = (currentOrder.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
     }
+    // Estrai tracking BRT dal fulfillment
+    let trackingNumber = '';
+    let spedStatus = '';
+    let spedDate = '';
+    const fulfillments = currentOrder.fulfillments || [];
+    if (fulfillments.length > 0) {
+      const lastF = fulfillments[fulfillments.length - 1];
+      trackingNumber = lastF.tracking_number || (lastF.tracking_numbers && lastF.tracking_numbers[0]) || '';
+      const statusMap = {delivered:'Consegnato',in_transit:'In transito',out_for_delivery:'In consegna',attempted_delivery:'Tentativo consegna',ready_for_pickup:'Al punto di ritiro',confirmed:'Confermato'};
+      spedStatus = statusMap[lastF.shipment_status] || lastF.shipment_status || '';
+      spedDate = lastF.created_at ? new Date(lastF.created_at).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
+    }
+
     const resoData = {
       orderId: currentOrder.id,
       orderName: currentOrder.name || ('#' + currentOrder.id),
@@ -365,7 +383,10 @@ async function submitReso() {
       tiktokOrderId: tikTokOrderId,
       items: resoItems,
       extraProduct: extraProduct || '',
-      shopifyNote: currentOrder.note || ''
+      shopifyNote: currentOrder.note || '',
+      trackingNumber,
+      spedStatus,
+      spedDate
     };
 
     // Salva in localStorage (condiviso con helpdesk)

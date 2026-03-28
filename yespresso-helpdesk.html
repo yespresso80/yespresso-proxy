@@ -4909,77 +4909,170 @@ function detectChannelFromOrder(order){
 function openRichiesteResoPanel(){
   document.getElementById('tools-menu-dropdown').style.display='none';
 
-  // Pagina a tutta schermata
   var page=document.createElement('div');
   page.id='resi-fullpage';
   page.style.cssText='position:fixed;inset:0;background:#f5f7fa;z-index:9500;display:flex;flex-direction:column;overflow:hidden';
   document.body.appendChild(page);
 
-  // Header con bottone indietro
+  // Header
   var header=document.createElement('div');
-  header.style.cssText='padding:12px 24px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:16px;flex-shrink:0;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06)';
+  header.style.cssText='padding:12px 24px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);flex-wrap:wrap';
   header.innerHTML=
     '<button id="resi-back" style="display:flex;align-items:center;gap:6px;background:#f0f2f5;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit">&#8592; Lista Ticket</button>'+
     '<span style="font-size:17px;font-weight:700;color:#e53e3e">&#128230; Richieste Reso</span>'+
-    '<div style="display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px;margin-left:8px">'+
-      '<button class="rtb" data-tab="pendenti" style="padding:5px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)">In attesa <span id="rtb-p" style="background:#e53e3e;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
-      '<button class="rtb" data-tab="sospesi" style="padding:5px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Sospesi <span id="rtb-s" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
-      '<button class="rtb" data-tab="risolti" style="padding:5px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Risolti <span id="rtb-r" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+    '<div style="display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px;margin-left:4px">'+
+      '<button class="rtb" data-tab="tutti" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Tutti <span id="rtb-a" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+      '<button class="rtb" data-tab="pendenti" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)">In attesa <span id="rtb-p" style="background:#e53e3e;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+      '<button class="rtb" data-tab="sospesi" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Sospesi <span id="rtb-s" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
+      '<button class="rtb" data-tab="risolti" style="padding:5px 12px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">Risolti <span id="rtb-r" style="background:#aaa;color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>'+
     '</div>';
   page.appendChild(header);
 
-  // Barra ricerca
+  // Barra ricerca con tasto annulla
   var searchBar=document.createElement('div');
-  searchBar.style.cssText='padding:10px 24px;border-bottom:1px solid #e8eaf0;flex-shrink:0;background:#fff';
-  searchBar.innerHTML='<input id="rc-search" placeholder="&#128269; Cerca per ordine, cliente, prodotto..." style="width:100%;max-width:600px;padding:9px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#f8f9fc">';
+  searchBar.style.cssText='padding:10px 24px;border-bottom:1px solid #e8eaf0;flex-shrink:0;background:#fff;display:flex;align-items:center;gap:8px';
+  searchBar.innerHTML=
+    '<div style="position:relative;flex:1;max-width:600px">'+
+      '<input id="rc-search" placeholder="&#128269; Cerca per ordine, cliente, prodotto..." style="width:100%;padding:9px 36px 9px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#f8f9fc;box-sizing:border-box">'+
+      '<button id="rc-search-clear" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:16px;cursor:pointer;color:#aaa;display:none;padding:0;line-height:1">&#215;</button>'+
+    '</div>';
   page.appendChild(searchBar);
 
   // Body scrollabile
   var body=document.createElement('div');
   body.id='rc-body';
-  body.style.cssText='flex:1;overflow-y:auto;padding:20px 24px';
+  body.style.cssText='flex:1;overflow-y:scroll;padding:20px 24px;min-height:0';
   page.appendChild(body);
 
   // Paginazione
   var pagDiv=document.createElement('div');
-  pagDiv.id='rc-pag';
   pagDiv.style.cssText='padding:10px 24px;border-top:1px solid #e8eaf0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;background:#fff;font-size:13px;color:#888;min-height:44px';
   page.appendChild(pagDiv);
 
-  // Chiudi con bottone indietro
-  header.querySelector('#resi-back').addEventListener('click',function(){
-    document.getElementById('resi-fullpage').remove();
-  });
+  header.querySelector('#resi-back').addEventListener('click',function(){document.getElementById('resi-fullpage').remove();});
 
   var tab='pendenti', pg=1, PG=10, q='';
   var chI={shopify:'🛒',amazon:'📦',temu:'🟠',tiktok:'🎵'};
   var chL={shopify:'Shopify',amazon:'Amazon',temu:'Temu',tiktok:'TikTok'};
+  var statoLabel={pendenti:'In attesa',sospesi:'Sospeso',risolti:'Risolto'};
+  var statoColor={pendenti:'#e53e3e',sospesi:'#f59e0b',risolti:'#2a9d60'};
 
   function getList(){
     var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
-    var f=all.filter(function(r){
-      if(tab==='pendenti') return !r.risolto&&!r.sospeso;
-      if(tab==='sospesi') return !!r.sospeso&&!r.risolto;
-      return !!r.risolto;
-    });
+    var f;
+    if(tab==='tutti') f=all;
+    else if(tab==='pendenti') f=all.filter(function(r){return !r.risolto&&!r.sospeso;});
+    else if(tab==='sospesi') f=all.filter(function(r){return !!r.sospeso&&!r.risolto;});
+    else f=all.filter(function(r){return !!r.risolto;});
     if(q){var ql=q.toLowerCase();f=f.filter(function(r){return (r.orderName||'').toLowerCase().includes(ql)||(r.customerName||'').toLowerCase().includes(ql)||(r.items||[]).some(function(i){return (i.name||'').toLowerCase().includes(ql);});});}
     return f;
   }
 
   function badges(){
     var all=_resiCache?JSON.parse(JSON.stringify(_resiCache)):[];
-    header.querySelector('#rtb-p').textContent=all.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
-    header.querySelector('#rtb-s').textContent=all.filter(function(r){return !!r.sospeso&&!r.risolto;}).length;
-    header.querySelector('#rtb-r').textContent=all.filter(function(r){return !!r.risolto;}).length;
+    document.getElementById('rtb-a').textContent=all.length;
+    document.getElementById('rtb-p').textContent=all.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
+    document.getElementById('rtb-s').textContent=all.filter(function(r){return !!r.sospeso&&!r.risolto;}).length;
+    document.getElementById('rtb-r').textContent=all.filter(function(r){return !!r.risolto;}).length;
   }
 
-  function setStatus(id,status){
-    var all=JSON.parse(localStorage.getItem('yespresso_resi')||'[]');
+  function getResoStato(reso){
+    if(reso.risolto) return {label:'Risolto',color:'#2a9d60',bg:'#e8f5e9'};
+    if(reso.sospeso) return {label:'Sospeso',color:'#f59e0b',bg:'#fff8e1'};
+    return {label:'In attesa',color:'#e53e3e',bg:'#fff5f5'};
+  }
+
+  async function eliminaReso(id){
+    if(!confirm('Eliminare definitivamente questo reso?'))return;
+    var all=await getResiList();
+    var filtered=all.filter(function(r){return r.id!==id;});
+    _resiCache=filtered;
+    await saveResiList(filtered);
+    aggiornaResoBadge();
+    showToast('Reso eliminato');
+    render();
+  }
+
+  async function setStatus(id,status){
+    var all=await getResiList();
     var i=all.findIndex(function(r){return r.id===id;});
-    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');localStorage.setItem('yespresso_resi',JSON.stringify(all));}
+    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');}
     _resiCache=all;
+    await saveResiList(all);
     aggiornaResoBadge();
     render();
+  }
+
+  function renderCard(reso){
+    var ci=chI[reso.channel||'shopify']||'🛒';
+    var cl=chL[reso.channel||'shopify']||'Shopify';
+    var ds=reso.timestamp?new Date(reso.timestamp).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+    var stato=getResoStato(reso);
+    // Tracking e spedizione dal reso (se salvati)
+    var tn=reso.trackingNumber||'';
+    var spedStatus=reso.spedStatus||'';
+    var spedDate=reso.spedDate||'';
+    var brtTrackUrl=tn?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn):'';
+    var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
+
+    var itemsHtml=(reso.items||[]).map(function(it){
+      return '<div style="padding:5px 0;border-bottom:1px solid #f0f2f5;font-size:13px;display:flex;align-items:flex-start;gap:8px">'+
+        '<div style="flex:1">'+
+          '<span style="font-weight:600">'+it.name+'</span>'+
+          (it.note?'<div style="color:#e67e22;font-size:12px">&#9888; '+it.note+'</div>':'')+
+        '</div>'+
+        '<div style="text-align:right;flex-shrink:0">'+
+          (it.qty?'<div style="font-size:12px;color:#555">Qtà: <strong>'+it.qty+'</strong></div>':'')+
+          (it.price?'<div style="font-size:12px;color:#555">€'+parseFloat(it.price).toFixed(2)+'</div>':'')+
+        '</div>'+
+      '</div>';
+    }).join('');
+    if(reso.extraProduct)itemsHtml+='<div style="padding:5px 0;font-size:13px;color:#e67e22">&#9888; <strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
+
+    var actionBtn='';
+    if(reso.channel==='amazon')actionBtn='<button onclick="window.open(\'https://sellercentral.amazon.it/orders-v3\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa Amazon</button>';
+    else if(reso.channel==='temu')actionBtn='<button onclick="window.open(\'https://seller-eu.temu.com/ticket-list.html\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu</button>';
+    else if(reso.channel==='tiktok'){var ttId=reso.tiktokOrderId||'';actionBtn='<button onclick="window.open(\'https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok</button>';}
+    else actionBtn='<button data-oid="'+reso.orderId+'" class="_rc-credito" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
+
+    return '<div data-reso-id="'+reso.id+'" style="background:#fff;border:1px solid #e8eaf0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05);margin-bottom:14px">'+
+      // Header card
+      '<div style="background:#f8f9fc;padding:10px 16px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;flex-wrap:wrap;gap:8px">'+
+        '<a href="'+shopifyOrderUrl+'" target="_blank" style="font-size:16px;font-weight:700;color:#1a73e8;text-decoration:none">'+reso.orderName+' ↗</a>'+
+        '<span style="background:#e8f0fe;color:#1a73e8;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+ci+' '+cl+'</span>'+
+        '<span style="font-size:13px;color:#555">'+reso.customerName+'</span>'+
+        '<span style="background:'+stato.bg+';color:'+stato.color+';border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+stato.label+'</span>'+
+        '<span style="margin-left:auto;font-size:11px;color:#aaa">'+ds+'</span>'+
+      '</div>'+
+      // Grid prodotti + note shopify
+      '<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e8eaf0">'+
+        '<div style="padding:10px 16px;border-right:1px solid #e8eaf0">'+
+          '<div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px">Prodotti resi</div>'+
+          itemsHtml+
+        '</div>'+
+        '<div style="padding:10px 16px;background:#fffbeb">'+
+          '<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px">Note Shopify</div>'+
+          '<div style="font-size:12px;color:#78350f;white-space:pre-wrap;max-height:120px;overflow-y:auto">'+(reso.shopifyNote||'<em style="color:#aaa">Nessuna nota</em>')+'</div>'+
+        '</div>'+
+      '</div>'+
+      // Tracking BRT
+      (tn||spedStatus?
+        '<div style="padding:8px 16px;border-bottom:1px solid #e8eaf0;background:#f0f7ff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+          (tn?'<span style="font-size:12px;font-weight:600;color:#1a1a2e">&#128666; '+tn+'</span>':'')+
+          (spedStatus?'<span style="font-size:12px;color:#555">'+spedStatus+'</span>':'')+
+          (spedDate?'<span style="font-size:12px;color:#888">'+spedDate+'</span>':'')+
+          (brtTrackUrl?'<a href="'+brtTrackUrl+'" target="_blank" style="font-size:12px;font-weight:700;color:#e8174d;text-decoration:none">Traccia BRT ↗</a>':'')+
+          (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-storico" style="background:#f0f2f5;border:none;color:#555;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128196; Ordini storici</button>':'')+
+          (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-vediticket" style="background:#e8f0fe;border:none;color:#1a73e8;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127902; Vedi Ticket</button>':'')+
+        '</div>':'')+
+      // Azioni
+      '<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+        actionBtn+
+        '<button data-id="'+reso.id+'" class="_rc-sospendi" style="background:#f59e0b;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9208; Sospendi</button>'+
+        '<button data-id="'+reso.id+'" class="_rc-risolto" style="background:#2a9d60;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9989; Risolto</button>'+
+        '<button data-id="'+reso.id+'" class="_rc-elimina" style="background:#fff;border:1px solid #e0e4ea;color:#c04040;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;margin-left:auto">&#128465; Elimina</button>'+
+      '</div>'+
+    '</div>';
   }
 
   function render(){
@@ -4989,24 +5082,27 @@ function openRichiesteResoPanel(){
     var slice=data.slice((pg-1)*PG,pg*PG);
 
     if(!slice.length){
-      body.innerHTML='<div style="text-align:center;padding:60px 20px;color:#aaa"><div style="font-size:48px;margin-bottom:12px">&#128230;</div><div style="font-size:15px;font-weight:600;color:#555">Nessun reso'+(q?' trovato':'')+' in questa sezione</div></div>';
-      pagDiv.innerHTML='<span>0 risultati</span>';
+      body.innerHTML='<div style="text-align:center;padding:60px 20px;color:#aaa"><div style="font-size:48px;margin-bottom:12px">&#128230;</div><div style="font-size:15px;font-weight:600;color:#555">Nessun reso'+(q?' trovato':' in questa sezione')+'</div></div>';
+      pagDiv.innerHTML='';
       return;
     }
 
-    if(tab!=='pendenti'){
-      // Vista compatta per sospesi/risolti
+    if(tab!=='pendenti'&&tab!=='tutti'){
+      // Lista compatta per sospesi/risolti
       var html='<div style="display:flex;flex-direction:column;gap:6px">';
       slice.forEach(function(reso){
+        var stato=getResoStato(reso);
         var ci=chI[reso.channel||'shopify']||'🛒';
-        var cl=chL[reso.channel||'shopify']||'Shopify';
         var ds=reso.timestamp?new Date(reso.timestamp).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'-';
-        html+='<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border:1px solid #e8eaf0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.04)">'+
-          '<span style="font-size:14px;font-weight:700;color:#1a1a2e;flex:1">'+reso.orderName+'</span>'+
+        var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
+        html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;border:1px solid #e8eaf0;border-radius:10px">'+
+          '<a href="'+shopifyOrderUrl+'" target="_blank" style="font-size:14px;font-weight:700;color:#1a73e8;text-decoration:none;flex:1">'+reso.orderName+' ↗</a>'+
           '<span style="font-size:13px;color:#888">'+reso.customerName+'</span>'+
-          '<span style="font-size:13px">'+ci+' '+cl+'</span>'+
+          '<span style="font-size:12px">'+ci+'</span>'+
+          '<span style="background:'+stato.bg+';color:'+stato.color+';border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700">'+stato.label+'</span>'+
           '<span style="font-size:12px;color:#aaa">'+ds+'</span>'+
-          '<button data-id="'+reso.id+'" class="_apri-btn" style="background:#1a73e8;border:none;color:#fff;padding:6px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Apri</button>'+
+          '<button data-id="'+reso.id+'" class="_apri-btn" style="background:#1a73e8;border:none;color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Apri</button>'+
+          '<button data-id="'+reso.id+'" class="_rc-elimina" style="background:#fff;border:1px solid #e0e4ea;color:#c04040;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128465;</button>'+
         '</div>';
       });
       html+='</div>';
@@ -5014,62 +5110,88 @@ function openRichiesteResoPanel(){
       body.querySelectorAll('._apri-btn').forEach(function(btn){
         btn.addEventListener('click',function(){
           var id=parseInt(this.getAttribute('data-id'));
-          var all=_resiCache||[];
-          var reso=all.find(function(r){return r.id===id;});
-          if(reso)mostraDettaglioReso(reso,body,render);
+          var reso=(_resiCache||[]).find(function(r){return r.id===id;});
+          if(reso){body.scrollTop=0;body.innerHTML='';mostraDettaglioReso(reso,body,function(){render();});}
         });
       });
     } else {
-      // Vista completa per In attesa
-      var html2='<div style="display:flex;flex-direction:column;gap:14px">';
-      slice.forEach(function(reso){
-        var ci=chI[reso.channel||'shopify']||'🛒';
-        var cl=chL[reso.channel||'shopify']||'Shopify';
-        var ds=reso.timestamp?new Date(reso.timestamp).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
-        var itemsHtml=(reso.items||[]).map(function(it){
-          return '<div style="padding:5px 0;border-bottom:1px solid #f0f2f5;font-size:13px">'+
-            '<span style="font-weight:600">'+it.name+'</span>'+
-            (it.note?'<div style="color:#e67e22;font-size:12px">&#9888; '+it.note+'</div>':'')+
-          '</div>';
-        }).join('');
-        if(reso.extraProduct)itemsHtml+='<div style="padding:5px 0;font-size:13px;color:#e67e22">&#9888; <strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
-
-        var actionBtn='';
-        if(reso.channel==='amazon')actionBtn='<button onclick="window.open(\'https://sellercentral.amazon.it/orders-v3\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa Amazon</button>';
-        else if(reso.channel==='temu')actionBtn='<button onclick="window.open(\'https://seller-eu.temu.com/ticket-list.html\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu</button>';
-        else if(reso.channel==='tiktok'){var ttId=reso.tiktokOrderId||reso.orderId||'';actionBtn='<button onclick="window.open(\'https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok</button>';}
-        else actionBtn='<button data-oid="'+reso.orderId+'" class="_rc-credito" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
-
-        html2+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)">'+
-          '<div style="background:#f8f9fc;padding:10px 16px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;flex-wrap:wrap;gap:8px">'+
-            '<span style="font-size:16px;font-weight:700;color:#1a1a2e">'+reso.orderName+'</span>'+
-            '<span style="background:#e8f0fe;color:#1a73e8;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+ci+' '+cl+'</span>'+
-            '<span style="font-size:13px;color:#555">'+reso.customerName+'</span>'+
-            '<span style="margin-left:auto;font-size:11px;color:#aaa">'+ds+'</span>'+
-          '</div>'+
-          '<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e8eaf0">'+
-            '<div style="padding:10px 16px;border-right:1px solid #e8eaf0">'+
-              '<div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px">Prodotti resi</div>'+
-              itemsHtml+
-            '</div>'+
-            '<div style="padding:10px 16px;background:#fffbeb">'+
-              '<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px">Note Shopify</div>'+
-              '<div style="font-size:12px;color:#78350f;white-space:pre-wrap;max-height:120px;overflow-y:auto">'+(reso.shopifyNote||'<em style="color:#aaa">Nessuna nota</em>')+'</div>'+
-            '</div>'+
-          '</div>'+
-          '<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap">'+
-            actionBtn+
-            '<button data-id="'+reso.id+'" class="_rc-sospendi" style="background:#f59e0b;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9208; Sospendi</button>'+
-            '<button data-id="'+reso.id+'" class="_rc-risolto" style="background:#2a9d60;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#9989; Risolto</button>'+
-          '</div>'+
-        '</div>';
-      });
-      html2+='</div>';
-      body.innerHTML=html2;
-      body.querySelectorAll('._rc-risolto').forEach(function(btn){btn.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-id')),'risolto');showToast('Reso risolto');});});
-      body.querySelectorAll('._rc-sospendi').forEach(function(btn){btn.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-id')),'sospeso');showToast('Reso sospeso');});});
+      // Vista completa per In attesa e Tutti
+      body.innerHTML=slice.map(function(reso){return renderCard(reso);}).join('');
       body.querySelectorAll('._rc-credito').forEach(function(btn){btn.addEventListener('click',function(){apriCreditoResoModal(this.getAttribute('data-oid'),this);});});
     }
+
+    // Event listeners comuni
+    body.querySelectorAll('._rc-risolto').forEach(function(btn){btn.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-id')),'risolto').then(function(){showToast('Reso risolto');});});});
+    body.querySelectorAll('._rc-sospendi').forEach(function(btn){btn.addEventListener('click',function(){setStatus(parseInt(this.getAttribute('data-id')),'sospeso').then(function(){showToast('Reso sospeso');});});});
+    body.querySelectorAll('._rc-elimina').forEach(function(btn){btn.addEventListener('click',function(){eliminaReso(parseInt(this.getAttribute('data-id')));});});
+    body.querySelectorAll('._rc-vediticket').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var email=this.getAttribute('data-email');
+        var name=this.getAttribute('data-name');
+        // Cerca ticket del cliente per email
+        var clientTickets=tickets.filter(function(t){
+          return (t.requester&&t.requester.email)===email;
+        });
+        if(!clientTickets.length){
+          showToast('Il cliente non ha ticket','error');
+          return;
+        }
+        // Ordina per data decrescente e prende il più recente
+        clientTickets.sort(function(a,b){return new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0);});
+        var lastTicket=clientTickets[0];
+        // Chiudi la pagina resi e apri il ticket
+        document.getElementById('resi-fullpage').remove();
+        selectTicket(lastTicket.ID||lastTicket.id);
+      });
+    });
+    body.querySelectorAll('._rc-storico').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var email=this.getAttribute('data-email');
+        var name=this.getAttribute('data-name');
+        if(!email)return;
+        // Apri pannello ordini storici in una finestra overlay
+        var ov=document.createElement('div');
+        ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
+        ov.innerHTML='<div style="background:#fff;border-radius:12px;width:90vw;max-width:900px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2);overflow:hidden">'+
+          '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
+            '<span style="font-size:15px;font-weight:700">&#128196; Ordini storici — '+name+'</span>'+
+            '<button id="sto-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#888">&#215;</button>'+
+          '</div>'+
+          '<div id="sto-body" style="flex:1;overflow-y:auto;padding:16px 20px"><div style="color:#aaa;text-align:center;padding:20px">Caricamento...</div></div>'+
+        '</div>';
+        document.body.appendChild(ov);
+        ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+        ov.querySelector('#sto-close').addEventListener('click',function(){ov.remove();});
+        // Carica ordini
+        var stoBody=ov.querySelector('#sto-body');
+        fetch(PROXY+'/shopify/orders.json?email='+encodeURIComponent(email)+'&status=any&limit=20')
+          .then(function(r){return r.json();})
+          .then(function(d){
+            var orders=(d&&d.orders)||[];
+            if(!orders.length){stoBody.innerHTML='<div style="text-align:center;padding:30px;color:#aaa">Nessun ordine trovato per '+email+'</div>';return;}
+            var shipMap={delivered:'&#9989; Consegnato',in_transit:'&#128666; In transito',out_for_delivery:'&#128665; In consegna',attempted_delivery:'&#9888; Tentativo fallito',ready_for_pickup:'&#128236; Pronto al ritiro',confirmed:'&#128203; Confermato'};
+            var fulMap={fulfilled:'&#128230; Spedito',unfulfilled:'&#9203; Non spedito',partial:'&#128260; Parziale'};
+            var html=orders.map(function(o){
+              // Usa shipment_status dal fulfillment se disponibile (più preciso)
+              var lastF=(o.fulfillments&&o.fulfillments.length)?o.fulfillments[o.fulfillments.length-1]:null;
+              var fst=lastF&&lastF.shipment_status?shipMap[lastF.shipment_status]||(fulMap[o.fulfillment_status]||'&#9203;'):(fulMap[o.fulfillment_status]||'&#9203;');
+              var dt=o.created_at?new Date(o.created_at).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'-';
+              var tot=parseFloat(o.total_price||0).toFixed(2);
+              var items=(o.line_items||[]).map(function(li){return li.name+' (x'+li.quantity+')';}).join(', ');
+              var url='https://admin.shopify.com/store/40f758-3/orders/'+o.id;
+              return '<div style="padding:10px 0;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:12px">'+
+                '<a href="'+url+'" target="_blank" style="font-size:14px;font-weight:700;color:#1a73e8;text-decoration:none;flex-shrink:0">'+o.name+'&#8599;</a>'+
+                '<span style="font-size:12px;color:#888;flex-shrink:0">'+dt+'</span>'+
+                '<span style="font-size:12px;flex-shrink:0">'+fst+'</span>'+
+                '<span style="font-size:12px;color:#555;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+items+'</span>'+
+                '<span style="font-size:13px;font-weight:700;flex-shrink:0">€'+tot+'</span>'+
+              '</div>';
+            }).join('');
+            stoBody.innerHTML='<div style="font-size:12px;color:#888;margin-bottom:8px">'+orders.length+' ordini trovati per '+email+'</div>'+html;
+          })
+          .catch(function(e){stoBody.innerHTML='<div style="color:#c04040;padding:20px">Errore: '+e.message+'</div>';});
+      });
+    });
 
     // Paginazione
     if(tp>1){
@@ -5079,7 +5201,7 @@ function openRichiesteResoPanel(){
       pagDiv.innerHTML=ph;
       pagDiv.querySelectorAll('._rpg').forEach(function(btn){btn.addEventListener('click',function(){pg=parseInt(this.getAttribute('data-p'));render();body.scrollTop=0;});});
     } else {
-      pagDiv.innerHTML='<span>'+total+' '+(tab==='pendenti'?'in attesa':tab==='sospesi'?'sospesi':'risolti')+'</span>';
+      pagDiv.innerHTML='<span>'+total+' risultati</span>';
     }
   }
 
@@ -5097,31 +5219,57 @@ function openRichiesteResoPanel(){
     });
   });
 
-  // Ricerca
+  // Ricerca con tasto annulla
   var st;
-  searchBar.querySelector('#rc-search').addEventListener('input',function(){clearTimeout(st);var v=this.value;st=setTimeout(function(){q=v;pg=1;render();},250);});
+  var inp=searchBar.querySelector('#rc-search');
+  var clr=searchBar.querySelector('#rc-search-clear');
+  inp.addEventListener('input',function(){
+    q=this.value;
+    clr.style.display=q?'block':'none';
+    clearTimeout(st);st=setTimeout(function(){pg=1;render();},250);
+  });
+  clr.addEventListener('click',function(){inp.value='';q='';clr.style.display='none';pg=1;render();inp.focus();});
 
-  // Carica resi e render
+  // Carica e render
   getResiList().then(function(){render();}).catch(function(){render();});
 }
 
 function mostraDettaglioReso(reso,container,onBack){
   var ci={shopify:'🛒',amazon:'📦',temu:'🟠',tiktok:'🎵'}[reso.channel||'shopify']||'🛒';
-  var itemsHtml=(reso.items||[]).map(function(it){return '<div style="padding:8px 0;border-bottom:1px solid #f0f2f5;font-size:14px"><strong>'+it.name+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:13px">'+it.note+'</div>':'')+' </div>';}).join('');
+  var stato={label:reso.risolto?'Risolto':reso.sospeso?'Sospeso':'In attesa',color:reso.risolto?'#2a9d60':reso.sospeso?'#f59e0b':'#e53e3e',bg:reso.risolto?'#e8f5e9':reso.sospeso?'#fff8e1':'#fff5f5'};
+  var tn=reso.trackingNumber||'';
+  var brtTrackUrl=tn?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn):'';
+  var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
+  var itemsHtml=(reso.items||[]).map(function(it){
+    return '<div style="padding:8px 0;border-bottom:1px solid #f0f2f5;font-size:14px;display:flex;align-items:flex-start;gap:8px">'+
+      '<div style="flex:1"><strong>'+it.name+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:13px">'+it.note+'</div>':'')+' </div>'+
+      '<div style="text-align:right">'+(it.qty?'<div style="font-size:12px;color:#555">Qtà: <strong>'+it.qty+'</strong></div>':'')+(it.price?'<div style="font-size:12px;color:#555">€'+parseFloat(it.price).toFixed(2)+'</div>':'')+' </div>'+
+    '</div>';
+  }).join('');
   if(reso.extraProduct)itemsHtml+='<div style="padding:8px 0;font-size:14px;color:#e67e22"><strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
-  var prev=container.innerHTML;
-  container.innerHTML='<div style="padding:4px 0 16px">'+
-    '<button id="det-back" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;margin-bottom:16px">&#8592; Indietro</button>'+
-    '<div style="font-size:17px;font-weight:700;margin-bottom:4px">'+reso.orderName+' <span style="font-size:14px">'+ci+'</span></div>'+
-    '<div style="font-size:13px;color:#888;margin-bottom:16px">'+reso.customerName+'</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+
-      '<div><div style="font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px">Prodotti resi</div>'+itemsHtml+'</div>'+
-      '<div style="background:#fffbeb;border-radius:10px;padding:12px"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:8px">Note Shopify</div><div style="font-size:13px;color:#78350f;white-space:pre-wrap">'+(reso.shopifyNote||'Nessuna')+'</div></div>'+
-    '</div>'+
-    (reso.risolto?'<span style="display:inline-block;margin-top:12px;background:#e8f5e9;color:#2a9d60;padding:4px 12px;border-radius:8px;font-size:13px;font-weight:700">&#9989; Risolto</span>':'')+(reso.sospeso?'<span style="display:inline-block;margin-top:12px;background:#fff8e1;color:#f59e0b;padding:4px 12px;border-radius:8px;font-size:13px;font-weight:700">&#9208; Sospeso</span>':'')+
-  '</div>';
-  container.querySelector('#det-back').addEventListener('click',function(){container.innerHTML=prev;if(onBack)onBack();});
+  container.innerHTML=
+    '<div style="padding:4px 0 16px">'+
+      '<button id="det-back" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;margin-bottom:16px">&#8592; Indietro</button>'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'+
+        '<a href="'+shopifyOrderUrl+'" target="_blank" style="font-size:17px;font-weight:700;color:#1a73e8;text-decoration:none">'+reso.orderName+' ↗</a>'+
+        '<span>'+ci+'</span>'+
+        '<span style="background:'+stato.bg+';color:'+stato.color+';border-radius:10px;padding:2px 8px;font-size:12px;font-weight:700">'+stato.label+'</span>'+
+      '</div>'+
+      '<div style="font-size:13px;color:#888;margin-bottom:16px">'+reso.customerName+'</div>'+
+      (tn?'<div style="margin-bottom:12px;padding:8px 12px;background:#f0f7ff;border-radius:8px;display:flex;align-items:center;gap:12px">'+
+        '<span style="font-size:13px;font-weight:600">&#128666; '+tn+'</span>'+
+        (reso.spedStatus?'<span style="font-size:12px;color:#555">'+reso.spedStatus+'</span>':'')+
+        (reso.spedDate?'<span style="font-size:12px;color:#888">'+reso.spedDate+'</span>':'')+
+        '<a href="'+brtTrackUrl+'" target="_blank" style="font-size:12px;font-weight:700;color:#e8174d;text-decoration:none">Traccia BRT ↗</a>'+
+      '</div>':'')+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+
+        '<div><div style="font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px">Prodotti resi</div>'+itemsHtml+'</div>'+
+        '<div style="background:#fffbeb;border-radius:10px;padding:12px"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:8px">Note Shopify</div><div style="font-size:13px;color:#78350f;white-space:pre-wrap">'+(reso.shopifyNote||'Nessuna')+'</div></div>'+
+      '</div>'+
+    '</div>';
+  container.querySelector('#det-back').addEventListener('click',function(){if(onBack)onBack();});
 }
+
 
 
 function apriCreditoResoModal(orderId,btn){
