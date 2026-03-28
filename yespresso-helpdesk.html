@@ -1292,6 +1292,9 @@ function goPage(p){
 
 async function selectTicket(tid){
   window._lastShopifyCustomerId=null;
+  window._imapAttachmentsHtml=""; // Reset allegati IMAP ad ogni cambio ticket
+  window._ticketAttachments=[]; // Reset allegati ticket precedente
+  window._podData={}; // Reset POD data ticket precedente
   var _onb=document.getElementById('order-note-box');if(_onb)_onb.remove();
   var _mpBox=document.getElementById('mp-orders-box');if(_mpBox)_mpBox.parentNode.removeChild(_mpBox);
   // Find all open tickets for same customer and redirect to newest
@@ -1446,7 +1449,7 @@ async function selectTicket(tid){
         const evText=evMsg.richTextHtml||evMsg.html||evMsg.text||"";
         const _evAttFiles=Array.isArray(ev.attachments)?ev.attachments:(ev.attachments&&ev.attachments.files?ev.attachments.files:[]);
         const _evMsgAtts=Array.isArray(evMsg.attachments)?evMsg.attachments:[];
-        const evAttachments=[..._evMsgAtts,..._evAttFiles.map(f=>({url:f.url||f.href||"",contentType:f.type||f.contentType||"",name:f.name||f.filename||""}))].filter(a=>a.url);
+        const evAttachments=[..._evMsgAtts,..._evAttFiles.map(f=>({url:f.url||f.href||"",contentType:f.type||f.contentType||f.mimeType||"",name:f.name||f.filename||f.originalName||""}))].filter(a=>a.url);
         const evDate=ev.createdAt?new Date(ev.createdAt).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
         const isAgent=ev.author&&ev.author.type==="agent";
         const isClient=ev.author&&ev.author.type==="client";
@@ -1682,7 +1685,7 @@ async function selectTicket(tid){
         }
       },100);
     },0);
-    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else if(isTemuPostVendita) {
@@ -1744,14 +1747,14 @@ async function selectTicket(tid){
       const qrs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU"));
       if(aiBox){aiBox.outerHTML='<div style="background:#fff8f0;border:2px solid #ff6600;border-radius:10px;padding:20px;text-align:center"><div style="color:#cc4400;font-weight:700">⚠️ Post-vendita Temu</div>'+(sn?'<div>'+sn+'</div>':'')+'<a href="'+url+'" target="_blank" style="background:#ff6600;color:#fff;padding:8px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin:8px">🟠 Gestisci su Temu</a><div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px"></div><div style="margin-top:8px;text-align:right"><select id="temu-status-select" style="padding:6px;border-radius:6px"><option value="">Non cambiare</option><option value="solved" selected>Solved</option><option value="pending">Pending</option><option value="open">Open</option></select> <button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer">🚀 Submit</button></div></div>';setTimeout(()=>{const b=document.getElementById("temu-qr-btns");if(b&&qrs.length)b.innerHTML=qrs.map((q,i)=>{window._temuQR=window._temuQR||{};window._temuQR["tqr"+i]=q.body;return'<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+q.name.replace(/TEMU\s*-\s*/i,"")+'</button>';}).join("");},100);}
     },0);
-    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else if(isNoAiEmail(email)) {
     // Per BRT: lascia fare solo a isBrtTicketSelect sotto. Per altri: generateReply senza AI
     const _isBrt=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
     if(!_isBrt){
-      loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+      loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
         generateReply(allMsgs, email, fullThread, true);
       });
     } else {
@@ -1766,7 +1769,7 @@ async function selectTicket(tid){
       if(aiLabel)aiLabel.textContent="🚫 AI disabilitata - ticket BRT";
     }
   } else {
-    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread);
     });
   }
@@ -2024,15 +2027,15 @@ function renderMessageHtml(text, attachments){
         }).join("");
       }
     },100);
-    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else if(isNoAiEmail(email)) {
-    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread, true);
     });
   } else {
-    loadImapAttachments(email, t.subject||"", tid2).catch(()=>{}).then(()=>{
+    loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReply(allMsgs, email, fullThread);
     });
   }
@@ -2251,17 +2254,24 @@ function renderMessageHtml(text, attachments){
   // Render attachments (images + files)
   let attachHtml="";
   if(attachments&&attachments.length){
-    const imgs=attachments.filter(a=>a.contentType&&a.contentType.startsWith("image/"));
-    const files=attachments.filter(a=>!a.contentType||!a.contentType.startsWith("image/"));
     let parts="";
-    imgs.forEach(a=>{
-      const url=a.url||a.href||"";
-      if(url)parts+='<img class="attach-img" src="'+url+'" onclick="openLightbox(this.src)" title="'+( a.name||"")+'"/>';
-    });
-    files.forEach(a=>{
+    attachments.forEach(a=>{
       const url=a.url||a.href||"";
       const name=a.name||a.filename||"File";
-      if(url)parts+='<a class="attach-file" href="'+url+'" target="_blank">📎 '+name+'</a>';
+      const ct=(a.contentType||a.type||"").toLowerCase();
+      const isImg=ct.startsWith("image/")||(name&&/\.(png|jpg|jpeg|gif|webp)$/i.test(name));
+      const isPdf=ct.includes("pdf")||(name&&/\.pdf$/i.test(name));
+      if(isImg&&url){
+        parts+='<div style="margin-bottom:6px">';
+        parts+='<img class="attach-img" src="'+url+'" onclick="openLightbox(this.src)" title="'+name+'" style="max-width:100%;max-height:220px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0"/>';
+        parts+='<div style="font-size:10px;color:#888;margin-top:2px">'+name+'</div></div>';
+      } else if(isPdf&&url){
+        parts+='<div style="margin-bottom:6px">';
+        parts+='<embed src="'+url+'" type="application/pdf" style="width:100%;height:220px;border-radius:6px;border:1px solid #e8eaf0"/>';
+        parts+='<div style="margin-top:4px"><a href="'+url+'" target="_blank" class="attach-file">📄 '+name+' ↗</a></div></div>';
+      } else if(url){
+        parts+='<a class="attach-file" href="'+url+'" target="_blank">📎 '+name+'</a>';
+      }
     });
     if(parts)attachHtml='<div class="attachments-row">'+parts+'</div>';
   }
@@ -2336,7 +2346,7 @@ async function openTicketPreview(tid){
       const bg=isAgent?"#f0f7ff":"#fff";
       const border=isAgent?"#c5d8fa":"#e8eaf0";
       const label=isAgent?"👤 Agente":"🙋 Cliente";
-      let attsHtml2='';allAtts.forEach(a=>{const isImg2=a.type&&a.type.startsWith('image/');if(isImg2)attsHtml2+='<img src="'+a.url+'" style="max-width:100%;max-height:150px;border-radius:6px;margin-top:6px;cursor:pointer" onclick="openLightbox(this.src)">';else attsHtml2+='<a href="'+a.url+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:12px;color:#555;text-decoration:none;margin-top:4px">📎 '+a.name+'</a>';});
+      let attsHtml2='';allAtts.forEach(a=>{const ct2=(a.contentType||a.type||"").toLowerCase();const nm2=a.name||a.filename||"";const isImg2=ct2.startsWith('image/')||/\.(png|jpg|jpeg|gif|webp)$/i.test(nm2);const isPdf2=ct2.includes('pdf')||/\.pdf$/i.test(nm2);if(isImg2)attsHtml2+='<div style="margin-bottom:4px"><img src="'+a.url+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+nm2+'"><div style="font-size:10px;color:#888;margin-top:2px">'+nm2+'</div></div>';else if(isPdf2)attsHtml2+='<div style="margin-bottom:4px"><embed src="'+a.url+'" type="application/pdf" style="width:100%;height:180px;border-radius:6px"/><div style="margin-top:2px"><a href="'+a.url+'" target="_blank" style="font-size:11px;color:#1a73e8">📄 '+nm2+' ↗</a></div></div>';else attsHtml2+='<a href="'+a.url+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:12px;color:#555;text-decoration:none;margin-top:4px;margin-bottom:4px">📎 '+nm2+'</a>';});
       msgsHtml+='<div style="background:'+bg+';border:1px solid '+border+';border-radius:8px;padding:12px 14px">';
         msgsHtml+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:14px;font-weight:700;color:#666">'+label+'</span><span style="font-size:13px;color:#aaa">'+evDate+'</span></div>';
         msgsHtml+=(txt?'<div style="font-size:16px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap">'+txt+(rawText.length>500?'…':'')+'</div>':'')+attsHtml2+'</div>';
@@ -2384,12 +2394,18 @@ async function openTicketPreview(tid){
         let attHtml='<div style="margin-top:10px;padding:10px 14px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px">';
         attHtml+='<div style="font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px">📎 ALLEGATI ('+atts.length+')</div>';
         atts.forEach(att=>{
-          const isImage=att.contentType&&att.contentType.startsWith("image/");
-          const dataUrl="data:"+att.contentType+";base64,"+att.data;
+          const ctImap=(att.contentType||"").toLowerCase();
+          const fnImap=att.filename||att.name||"";
+          const isImage=ctImap.startsWith("image/")||/\.(png|jpg|jpeg|gif|webp)$/i.test(fnImap);
+          const isPdfImap=ctImap.includes("pdf")||/\.pdf$/i.test(fnImap);
+          const mimeImap=ctImap||"application/octet-stream";
+          const dataUrl="data:"+mimeImap+";base64,"+att.data;
           if(isImage){
-            attHtml+='<img src="'+dataUrl+'" style="max-width:100%;max-height:180px;border-radius:6px;cursor:pointer;margin-bottom:6px" onclick="openLightbox(this.src)" title="'+att.filename+'">';
+            attHtml+='<div style="margin-bottom:6px"><img src="'+dataUrl+'" style="max-width:100%;max-height:180px;border-radius:6px;cursor:pointer" onclick="openLightbox(this.src)" title="'+fnImap+'"><div style="font-size:10px;color:#888;margin-top:2px">'+fnImap+'</div></div>';
+          } else if(isPdfImap){
+            attHtml+='<div style="margin-bottom:6px"><embed src="'+dataUrl+'" type="application/pdf" style="width:100%;height:200px;border-radius:6px"/><div style="margin-top:2px"><a href="'+dataUrl+'" download="'+fnImap+'" style="font-size:11px;color:#1a73e8">📄 '+fnImap+'</a></div></div>';
           } else {
-            attHtml+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+att.filename+'</a>';
+            attHtml+='<a href="'+dataUrl+'" download="'+fnImap+'" style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+fnImap+'</a>';
           }
         });
         attHtml+='</div>';
@@ -3486,23 +3502,27 @@ function showHelpDeskAttachments(files){
   oArea.innerHTML=existing+html;
 }
 
-async function loadImapAttachments(email, subject, tid){
-  if(!email)return;
+async function loadImapAttachments(email, subject, tid, firstMsgText){
+  // IMAP viene usato per TUTTI i ticket — è l'unico sistema per allegati immagine
+  if(!email||!email.includes('@'))return;
+  // Ticket ChatBot (Chicco): il primo messaggio contiene "Conversation transcript"
+  // In questi casi non ci sono allegati IMAP — le immagini sono inline nel testo
+  if(firstMsgText&&firstMsgText.includes('Conversation transcript'))return;
+  if(firstMsgText&&firstMsgText.includes('cca_platform'))return;
   try{
-    // Se gli eventi del ticket hanno già allegati con URL, non serve IMAP
-    // Controlla se le immagini IMAP sono già visibili nei messaggi (via src nel testo HTML)
-    const imapRes0=await fetch(PROXY+"/imap/attachments?email="+encodeURIComponent(email)+"&subject="+encodeURIComponent(subject));
+    // Cerca per EMAIL ESATTA — il subject non viene passato per evitare falsi positivi
+    const imapRes0=await fetch(PROXY+"/imap/attachments?email="+encodeURIComponent(email));
     const imapData0=await imapRes0.json();
     const imapAtts0=imapData0.attachments||[];
     if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
-    // Controlla se i filename IMAP compaiono già nel testo dei messaggi renderizzati
-    const msgArea=document.getElementById("messages-area");
-    const msgHtml=(msgArea&&msgArea.innerHTML)||"";
-    const alreadyShown=imapAtts0.every(a=>{
-      const fn=(a.filename||"").toLowerCase();
-      return msgHtml.toLowerCase().includes(fn)||msgHtml.includes("data:"+a.contentType);
+    // Controlla se i data URL IMAP sono già presenti nell'area IMAP allegati
+    // (evita doppio caricamento ma non blocca su filename generici)
+    const imapArea=document.getElementById("imap-attachments-area");
+    const imapAreaHtml=(imapArea&&imapArea.innerHTML)||"";
+    const alreadyShown=imapAtts0.length>0&&imapAtts0.every(a=>{
+      return imapAreaHtml.includes("data:"+a.contentType+";base64,"+a.data.substring(0,30));
     });
-    if(alreadyShown){window._imapAttachmentsHtml="";return;}
+    if(alreadyShown){return;}
     const attachments=imapAtts0;
     if(false){// placeholder per evitare duplicazione fetch sotto
     } // fine if(false)
@@ -3513,20 +3533,27 @@ async function loadImapAttachments(email, subject, tid){
       a.contentType&&a.contentType.startsWith("image/")&&
       !existing.has(a.filename+a.data.length)
     ).slice(0,3);
-    window._ticketAttachments=(window._ticketAttachments||[]).concat(newImgs);
+    window._ticketAttachments=newImgs; // Solo allegati del ticket corrente
     // Mostra allegati nella sidebar
     const oArea=document.getElementById("imap-attachments-area")||document.getElementById("order-info-area");
     let html='<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
     html+='<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">📎 ALLEGATI EMAIL ('+attachments.length+')</div>';
     attachments.forEach(att=>{
-      const isImage=att.contentType&&att.contentType.startsWith("image/");
-      const dataUrl="data:"+att.contentType+";base64,"+att.data;
+      const fn=(att.filename||att.name||"").toLowerCase();
+      const ct=(att.contentType||"").toLowerCase();
+      const isImage=ct.startsWith("image/")||/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/.test(fn);
+      const isPdf=ct.includes("pdf")||fn.endsWith(".pdf");
+      // Determina il mime corretto per il dataUrl
+      let mime=ct||"application/octet-stream";
+      if(!ct&&isImage){if(fn.endsWith(".png"))mime="image/png";else if(fn.endsWith(".jpg")||fn.endsWith(".jpeg"))mime="image/jpeg";else if(fn.endsWith(".gif"))mime="image/gif";else if(fn.endsWith(".webp"))mime="image/webp";else mime="image/png";}
+      if(!ct&&isPdf)mime="application/pdf";
+      const dataUrl="data:"+mime+";base64,"+att.data;
       if(isImage){
         html+='<div style="margin-bottom:6px">';
         html+='<img src="'+dataUrl+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+att.filename+'">';
         html+='<div style="font-size:10px;color:#888;margin-top:2px">'+att.filename+'</div>';
         html+='</div>';
-      } else if(att.contentType&&att.contentType.includes("pdf")){
+      } else if(isPdf){
         html+='<div style="margin-bottom:6px">';
         html+='<a href="'+dataUrl+'" download="'+att.filename+'" style="display:flex;align-items:center;gap:8px;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:8px 12px;font-size:12px;color:#c04040;text-decoration:none;font-weight:600">📄 '+att.filename+' <span style="font-size:10px;color:#aaa;margin-left:auto">⬇ Scarica</span></a>';
         html+='</div>';
@@ -5057,8 +5084,9 @@ function apriCreditoResoModal(orderId,btn){
   else{showToast('Apri il ticket del cliente per emettere il credito','info');}
 }
 
-// ── RESI SYNC API ──
+// ── RESI SYNC — tramite proxy Render (token solo lato server) ──
 var _resiCache=null;
+
 async function getResiList(){
   try{
     var r=await fetch(PROXY+'/resi');
@@ -5066,7 +5094,7 @@ async function getResiList(){
     _resiCache=Array.isArray(data)?data:[];
     return _resiCache;
   }catch(e){
-    // fallback localStorage
+    console.error('getResiList:',e);
     try{return JSON.parse(localStorage.getItem('yespresso_resi')||'[]');}catch(e2){return [];}
   }
 }
@@ -5075,50 +5103,10 @@ async function saveResiList(list){
   try{
     await fetch(PROXY+'/resi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(list)});
   }catch(e){
+    console.error('saveResiList:',e);
     try{localStorage.setItem('yespresso_resi',JSON.stringify(list));}catch(e2){}
   }
 }
-
-// Cache locale resi (si aggiorna dal server)
-var _resiCache = [];
-var _resiCacheTime = 0;
-
-async function getResiFromServer(forceRefresh) {
-  if (!forceRefresh && Date.now() - _resiCacheTime < 30000 && _resiCache.length > 0) {
-    return _resiCache;
-  }
-  try {
-    const res = await fetch(PROXY + '/resi');
-    const data = await res.json();
-    _resiCache = Array.isArray(data) ? data : [];
-    _resiCacheTime = Date.now();
-    // Sync con localStorage come backup
-    try { localStorage.setItem('yespresso_resi', JSON.stringify(_resiCache.slice(0,200))); } catch(e) {}
-    return _resiCache;
-  } catch(e) {
-    console.warn('[RESI] Fallback localStorage:', e.message);
-    try { return JSON.parse(localStorage.getItem('yespresso_resi') || '[]'); } catch(e2) { return []; }
-  }
-}
-
-async function updateResoOnServer(id, data) {
-  try {
-    await fetch(PROXY + '/resi', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update', id, data })
-    });
-    _resiCacheTime = 0; // forza refresh
-  } catch(e) {
-    // Fallback localStorage
-    try {
-      const list = JSON.parse(localStorage.getItem('yespresso_resi') || '[]');
-      const idx = list.findIndex(r => r.id === id);
-      if (idx >= 0) { Object.assign(list[idx], data); localStorage.setItem('yespresso_resi', JSON.stringify(list)); }
-    } catch(e2) {}
-  }
-}
-
 function aggiornaResoBadge(){
   getResiList().then(function(list){
     var pendenti=list.filter(function(r){return !r.risolto&&!r.sospeso;}).length;

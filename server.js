@@ -6,7 +6,7 @@ let SftpClient;
 try { SftpClient = require("ssh2-sftp-client"); } catch(e) { console.log("[SFTP] ssh2-sftp-client non installato:", e.message); }
 
 const PORT = process.env.PORT || 3001;
-const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
+const HD_TOKEN = process.env.HD_TOKEN || "";
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || "";
 const SHOPIFY_SHOP = "40f758-3.myshopify.com";
 const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || "";
@@ -222,11 +222,11 @@ const server = http.createServer(async function(req, res) {
 // BRT REST API Integration
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
-const BRT_PASS = "Dus0549dsb";
+const BRT_PASS = process.env.BRT_PASS || "";
 const BRT_SFTP_HOST = "sftp.brt.it";
 const BRT_SFTP_PORT = 22;
 const BRT_SFTP_USER = "1791201";
-const BRT_SFTP_PASS = "qyo^G16^H3";
+const BRT_SFTP_PASS = process.env.BRT_SFTP_PASS || "";
 const BRT_SFTP_PATH = "/OUT";
 const BRT_REST_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_VAS = "https://vas.brt.it";
