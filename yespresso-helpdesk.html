@@ -499,6 +499,15 @@ textarea.field{min-height:80px;resize:vertical}
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const PROXY = "https://yespresso-proxy.onrender.com";
+const APP_TOKEN = ""; // Configurare con il valore di APP_TOKEN su Render
+
+// Helper: fetch al proxy con X-App-Token automatico
+function proxyFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  if(APP_TOKEN) opts.headers["X-App-Token"] = APP_TOKEN;
+  return fetch(url, opts);
+}
 
 const STATUS_LABELS = {open:"Open",pending:"Pending",solved:"Solved",closed:"Closed",on_hold:"On hold"};
 const STATUS_CLASS = {open:"s-open",pending:"s-pending",solved:"s-solved",closed:"s-closed",on_hold:"s-on_hold"};
@@ -2385,7 +2394,7 @@ async function openTicketPreview(tid){
   const previewEmail=(t.requester&&t.requester.email)||"";
   const previewSubj=t.subject||"";
   if(previewEmail){
-    fetch(PROXY+"/imap/attachments?email="+encodeURIComponent(previewEmail)+"&subject="+encodeURIComponent(previewSubj))
+    proxyFetch(PROXY+"/imap/attachments?email="+encodeURIComponent(previewEmail)+"&subject="+encodeURIComponent(previewSubj))
       .then(r=>r.json()).then(data=>{
         const atts=data.attachments||[];
         if(!atts.length)return;
@@ -2486,7 +2495,7 @@ function closeDetail(){
 }
 
 async function shopifyGet(path){
-  const res=await fetch(PROXY+"/shopify/"+path);
+  const res=await proxyFetch(PROXY+"/shopify/"+path, APP_TOKEN?{headers:{"X-App-Token":APP_TOKEN}}:{});
   if(!res.ok)return null;
   const d=await res.json();
   // Estrai next page_info dall'header Link (paginazione Shopify cursor-based)
@@ -2903,7 +2912,7 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Genero nota interna...';
   try{
-    const res=await fetch(PROXY+"/anthropic/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+    const res=await proxyFetch(PROXY+"/anthropic/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,system:"Sei l'assistente clienti di Yespresso. Scrivi una nota interna breve che riassume l'azione da fare per questo ticket Temu. Rispondi in italiano."+buildSolvedContext(selectedTicket),
         messages:[{role:"user",content:(window._lastTemuOrder?"\n\nDati ordine:\n"+formatOrderInfo(window._lastTemuOrder):"")+"\n\nUltimo messaggio:\n"+(lastMsg||"")+(fullThread?"\n\nThread:\n"+fullThread:"")}]})});
     if(!res.ok)throw new Error(res.status);
@@ -2956,7 +2965,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       try{
         const tnPodCheck=tnCheck.startsWith('26')?tnCheck:'26'+tnCheck;
         const brtPageUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnCheck;
-        const brtR=await fetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck));
+        const brtR=await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck));
         if(brtR.ok){
           const brtD=await brtR.json();
           if(brtD.at_fermopoint){
@@ -2974,7 +2983,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     const tnCk=fCk&&(fCk.tracking_number||(fCk.tracking_numbers&&fCk.tracking_numbers[0]))||'';
     if(fCk&&fCk.shipment_status==='delivered'&&tnCk){
       try{
-        const brtR=await fetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCk));
+        const brtR=await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCk));
         if(brtR.ok){
           const brtD=await brtR.json();
           if(brtD.at_fermopoint){
@@ -3177,7 +3186,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   }
   const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+(orderInfo?"\n\nDati ordine: "+orderInfo:"")+"\n\nSTORICO CONVERSAZIONE (dal più vecchio al più recente):\n"+fullThread+otherOpenStr+recentStr+"\n\nRispondi all'ultimo messaggio del cliente tenendo conto dell'INTERA conversazione sopra. Se il cliente ha gia fornito informazioni nei messaggi precedenti (es. numero ordine, descrizione problema, quantita prodotti), NON chiederle di nuovo ma usa quelle informazioni per rispondere.";
   try{
-    const res=await fetch(PROXY+"/anthropic/v1/messages",{
+    const res=await proxyFetch(PROXY+"/anthropic/v1/messages",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,
         system:"Sei l\'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell\'ordine, usali per dare una risposta precisa con i dettagli reali. Se c\'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale. Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace (reso, rimborso, richiesta post-vendita), NON rispondere come se fosse un cliente: scrivi invece una nota interna breve che riassume l\'azione da fare. REGOLE PRODOTTI DANNEGGIATI: 1) Se il cliente si lamenta di capsule o buste danneggiate e NON ha ancora fornito foto e quantita: chiedi foto delle capsule/buste danneggiate, foto del pacco e quantita esatta danneggiata. 1b) Se il cliente ha GIA fornito foto (presenti nel ticket come allegati) E ha indicato la quantita di capsule/buste danneggiate: procedi direttamente alla compensazione senza chiedere altri dati. 1c) COMPENSAZIONE PRODOTTI DANNEGGIATI - quando hai foto E quantita: calcola il valore in euro moltiplicando la quantita danneggiata per il prezzo unitario del prodotto (ricavalo dai dati ordine: prezzo totale diviso quantita totale). Poi comunica: SE il cliente ha acquistato sul sito Yespresso (non Amazon/Temu/TikTok): \"Le verra accreditato un buono sconto di €X.XX utilizzabile sul nostro sito\". SE il cliente ha acquistato su Amazon, Temu o TikTok: \"Procedera a emettere un rimborso di €X.XX\". Includi sempre il calcolo trasparente (es: \"10 capsule x €0.49 = €4.90\"). 2) Se il cliente segnala solo pacco esterno ammaccato ma prodotto integro, rispondi con scuse, spiega che il cartone e solo protezione esterna, comunica che segnalerai al corriere e alla logistica. REGOLE EROGAZIONE CAPSULE: 5) Problemi con capsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo. 6a) Problemi con capsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore). 6b) Problemi con capsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula. 6c) Problemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video. NON offrire rimborso prima di avere queste informazioni. REGOLE PACCO NON RICEVUTO: 3a) Se il pacco e AL PUNTO DI RITIRO BRT-FERMOPOINT (stato contiene IN ATTESA DI RITIRO AL BRT-FERMOPOINT): il pacco non e stato consegnato a casa, e in attesa di ritiro. Comunica che il pacco e pronto per il ritiro presso il BRT-fermopoint, includi il link BRT per i dettagli. Se hai il nome/indirizzo del punto di ritiro includilo nella risposta. 3b) Se il pacco e al fermopoint ma le informazioni sull'ubicazione del punto di ritiro non sono disponibili o sono in aggiornamento: comunica che il pacco e arrivato al punto di ritiro BRT ma le informazioni sull'ubicazione sono ancora in aggiornamento; invita il cliente a verificare il link BRT della spedizione tra qualche ora per i dettagli sul punto di ritiro. 3c) Se il cliente dice di non aver ricevuto il pacco ma il tracking risulta consegnato A DOMICILIO (stato Consegnato senza fermopoint): comunica che il pacco risulta consegnato, includi numero tracking e link BRT, non offrire rimborso. 4) Se il cliente insiste dopo la risposta su consegna a domicilio: ribadisci che risulta consegnato e non possiamo procedere con rimborso. REGOLA CRITICA STATO SPEDIZIONE: Lo stato spedizione nei dati ordine (Shopify) potrebbe non essere aggiornato in tempo reale. Se il messaggio del cliente descrive un problema di spedizione (pacco non arrivato, danneggiato, in ritardo, problema BRT), fidati del messaggio del cliente e NON rispondere basandoti solo sullo stato Shopify. In caso di dubbio sullo stato reale della spedizione, non affermare mai che il pacco e stato consegnato se il cliente sta segnalando un problema. REGOLE TICKET AMAZON: Quando il ticket proviene da Amazon (donotreply@amazon, marketplace.amazon, atoz-guarantee), NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. NON includere email esterne. IMPORTANTE: gli ordini Amazon sono gestiti e spediti direttamente da Yespresso (non da Amazon), quindi NON dire mai al cliente di contattare il servizio clienti Amazon ne di aspettarsi spedizioni o rimborsi da Amazon. Siamo noi Yespresso a gestire spedizioni, rimborsi e sostituzioni. Per il tracking: il pacco e spedito con BRT ma invita il cliente a verificare lo stato dal suo account Amazon senza includere link BRT. REGOLA NUMERO ORDINE AMAZON: Quando il messaggio proviene da un cliente Amazon (email contiene @marketplace.amazon.it) e in NESSUN messaggio del thread e presente un numero ordine Amazon (formato es. 402-1234567-1234567 oppure xxx-xxxxxxx-xxxxxxx con trattini), DEVI come PRIMA risposta chiedere al cliente il suo numero ordine Amazon. Non procedere con rimborsi, sostituzioni, soluzioni tecniche o qualsiasi altra azione senza aver verificato la presenza del numero ordine in tutto il thread. Questa regola NON si applica alle notifiche automatiche Amazon (donotreply@amazon, atoz-guarantee). REGOLE ACQUISTO ERRATO: Se il cliente dichiara di aver acquistato capsule sbagliate o non compatibili con la sua macchina, usa la risposta rapida Acquisto errato - reso cliente (o TEMU - Acquisto errato reso se il cliente proviene da Temu). NON offrire rimborso diretto ma spiega la procedura di reso entro 14 giorni. REGOLA RITIRO BRT - ISTRUZIONI PACCO: Ogni volta che proponi o menzioni un ritiro BRT al domicilio del cliente, includi SEMPRE queste istruzioni per la preparazione del pacco: utilizzare la scatola ricevuta o una scatola equivalente, sigillare bene con nastro adesivo, inserire se possibile una copia dell'ordine all'interno del pacco. REGOLA ERRORE SPEDIZIONE - PRODOTTO SBAGLIATO: Se il cliente ha ricevuto un prodotto diverso da quello ordinato (es. ha ordinato cialde ma ha ricevuto capsule, o viceversa) e il prodotto errato ricevuto e di almeno 100 unita, bisogna: 1) spedire il prodotto corretto ordinato, 2) organizzare il ritiro del prodotto errato tramite corriere BRT all'indirizzo di consegna originale (non a spese del cliente). Se il prodotto errato e meno di 100 unita, valutare caso per caso. Il cliente NON deve rispedire il prodotto a sue spese. REGOLA PRODOTTO ERRATO RICEVUTO: Se il cliente segnala di aver ricevuto un prodotto diverso da quello ordinato (articolo errato, prodotto sbagliato, non corrisponde all'ordine), DEVI come PRIMA risposta richiedere le seguenti informazioni senza procedere con rimborsi o sostituzioni: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco dove sia chiaramente visibile l'etichetta del corriere BRT con il numero ordine, 3) foto della busta che contiene le capsule ricevute. NON procedere con rimborsi o sostituzioni prima di aver ricevuto queste informazioni e foto. REGOLA PRODOTTI DANNEGGIATI - QUANTITA (CRITICA - NON DEROGARE MAI): Conta SEMPRE le capsule danneggiate prima di rispondere. SE MENO DI 100 capsule danneggiate: VIETATO offrire rispedizione, sostituzione o invio di prodotti. Per ordini sito yespresso.it -> offri SOLO credito parziale sul sito. Per ordini Amazon -> offri SOLO rimborso parziale tramite Amazon. Per ordini Temu o TikTok -> offri SOLO rimborso parziale. SE 100 O PIU capsule danneggiate: puoi offrire rispedizione o sostituzione. Questa regola ha PRIORITA ASSOLUTA su qualsiasi altra considerazione, anche se le capsule rimanenti sono utilizzabili o il cliente sembra soddisfatto di una sostituzione. REGOLA CRITICA - ACQUISTO ERRATO: Ogni volta che il cliente menziona di aver acquistato capsule sbagliate, non compatibili con la sua macchina, o di aver commesso un errore di acquisto, DEVI rispondere ESCLUSIVAMENTE con la procedura di reso: reso entro 14 giorni, spese di spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, tutti i prodotti devono essere integri e non aperti. Se proviene da Temu usa la procedura reso Temu. NON suggerire soluzioni tecniche. NON offrire rimborso. NON chiedere informazioni aggiuntive. REGOLA PROBLEMA TECNICO: Solo se il cliente descrive un problema tecnico con capsule compatibili SENZA menzionare errore di acquisto, usa la risposta tecnica specifica: Bialetti usa risposta Bialetti Gioia, Nespresso usa risposta Nespresso acqua prima caffe, Caffitaly usa risposta CAFFITALY Volta, altri usa PROBLEMA PRODOTTO RICHIESTA INFO SUL DIFETTO. REGOLA CALCOLO CREDITO/RIMBORSO PARZIALE: Per meno di 100 capsule danneggiate calcola il valore proporzionale. Identifica il prodotto specifico citato dal cliente nell\'ordine (se ordine con piu prodotti usa quello menzionato dal cliente). Calcola prezzo per capsula (prezzo riga diviso quantita capsule), moltiplica per capsule danneggiate. IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%. Per sito yespresso.it, Temu, TikTok: indica SOLO valore IVA inclusa (es. credito di EUR X,XX IVA inclusa). Per Amazon: indica ENTRAMBI i valori (es. rimborso di EUR X,XX IVA esclusa piu IVA 22% uguale EUR Y,YY IVA inclusa). Se non riesci a identificare il prodotto usa il prezzo medio dell\'ordine. IMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata il tag speciale (non visibile al cliente): per sito/Temu/TikTok scrivi [COPIA_IMPORTO:X,XX] con solo valore IVA inclusa; per Amazon scrivi [COPIA_IMPORTO:X,XX|Y,YY] dove X,XX e IVA esclusa e Y,YY e IVA inclusa. Esempio sito: [COPIA_IMPORTO:1,58] Esempio Amazon: [COPIA_IMPORTO:1,44|1,58]. FORMATI BUSTE PER CALCOLO CREDITO: I prodotti sono venduti in scatole con buste interne. Formato buste: capsule A Modo Mio in buste da 20 capsule, capsule Dolce Gusto in buste da 16 capsule, capsule Nespresso/Caffitaly/Bialetti in buste da 10 capsule, cialde carta ESE 44mm e capsule Fior Fiore Coop/Lui Espresso sono imbustate singolarmente (ogni cialda/capsula e in una bustina individuale, NON ci sono confezioni interne multiple - un ordine da 150 cialde ESE = 150 bustine singole). Quando il cliente segnala capsule difettose per busta, moltiplica per il numero di buste danneggiate. Esempio: 12 pacchi da 20 capsule A Modo Mio = 240 capsule totali, ogni busta ha 12 capsule. ISTRUZIONI CREDITO NEGOZIO: Quando proponi un credito sul sito yespresso.it, includi SEMPRE queste istruzioni: Il credito e valido per 90 giorni dalla creazione. Per utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparira un banner con scritto utilizzalo. Se il totale e superiore al credito, saldare la differenza con la modalita di pagamento desiderata. Se il totale e inferiore al credito, e possibile utilizzarlo anche parzialmente. REGOLA RICHIESTA SCONTO: Se il cliente chiede uno sconto o un codice promozionale: 1) Se ha un ordine recente non ancora spedito (fulfillment_status = unfulfilled): rispondi che i prezzi sono gia scontati e non e possibile applicare ulteriori sconti. 2) Se non ha ordini in corso o deve ancora fare un ordine: usa la risposta rapida PROMOZIONE DELLA SETTIMANA."+buildSolvedContext(selectedTicket),
@@ -3372,7 +3381,7 @@ async function sendReply(){
       var _attachInput=document.getElementById("reply-attachment");
       if(_attachInput&&_attachInput.files&&_attachInput.files.length>0){
         try{
-          var _txRes=await fetch(PROXY+"/api/v1/transactions",{
+          var _txRes=await proxyFetch(PROXY+"/api/v1/transactions",{
             method:"POST",
             headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
             body:JSON.stringify({type:"ticket",ticketID:tid})
@@ -3385,7 +3394,7 @@ async function sendReply(){
               for(var _fi=0;_fi<_attachInput.files.length;_fi++){
                 _fd.append("attachments",_attachInput.files[_fi]);
               }
-              await fetch(PROXY+"/api/v1/transactions/"+_txId+"/attachments",{
+              await proxyFetch(PROXY+"/api/v1/transactions/"+_txId+"/attachments",{
                 method:"POST",
                 headers:{"Authorization":"Basic "+HD_TOKEN,"User-Agent":"Yespresso/1.0"},
                 body:_fd
@@ -3396,7 +3405,7 @@ async function sendReply(){
       }
       var _isPriv=document.getElementById("private-toggle")&&document.getElementById("private-toggle").dataset.private==="1";
       var _msgBody=Object.assign({message:{text:message}},_isPriv?{isPrivate:true}:{},_txId?{transactionID:_txId}:{});
-      const msgRes=await fetch(PROXY+"/api/v1/tickets/"+tid,{
+      const msgRes=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
         method:"PATCH",
         headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
         body:JSON.stringify(_msgBody)
@@ -3511,7 +3520,7 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
   if(firstMsgText&&firstMsgText.includes('cca_platform'))return;
   try{
     // Cerca per EMAIL ESATTA — il subject non viene passato per evitare falsi positivi
-    const imapRes0=await fetch(PROXY+"/imap/attachments?email="+encodeURIComponent(email));
+    const imapRes0=await proxyFetch(PROXY+"/imap/attachments?email="+encodeURIComponent(email));
     const imapData0=await imapRes0.json();
     const imapAtts0=imapData0.attachments||[];
     if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
@@ -4043,7 +4052,7 @@ async function doReformulate(){
   const sg=document.getElementById('suggest-input').value.trim();if(!sg)return;
   const rt=document.getElementById('reply-text');if(!rt||!rt.value.trim())return;
   const orig=rt.value;document.getElementById('suggest-modal').remove();rt.value='Riformulo...';
-  try{const res=await fetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1000,messages:[{role:'user',content:'Riformula questa risposta email seguendo questi suggerimenti: '+sg+'\n\nRisposta originale:\n'+orig+'\n\nRispondi SOLO con la risposta riformulata.'}]})});const data=await res.json();rt.value=data.content[0].text||orig;}catch(e){rt.value=orig;}
+  try{const res=await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1000,messages:[{role:'user',content:'Riformula questa risposta email seguendo questi suggerimenti: '+sg+'\n\nRisposta originale:\n'+orig+'\n\nRispondi SOLO con la risposta riformulata.'}]})});const data=await res.json();rt.value=data.content[0].text||orig;}catch(e){rt.value=orig;}
 }
 
 function clearReply(){const rt=document.getElementById("reply-text");if(rt){rt.value="";rt.style.height="80px";}}
@@ -4872,7 +4881,7 @@ function openAutorizzaResoModal(){
       var orig=await shopifyGet('orders/'+currentOrder.id+'.json?fields=note');
       var existingNote=(orig&&orig.order&&orig.order.note)||'';
       var newNote=(existingNote?existingNote+'\n\n':'')+nota;
-      var res=await fetch(PROXY+'/shopify/orders/'+currentOrder.id+'.json',{
+      var res=await proxyFetch(PROXY+'/shopify/orders/'+currentOrder.id+'.json',{
         method:'PUT',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({order:{id:currentOrder.id,note:newNote}})
       });
@@ -5164,7 +5173,7 @@ function openRichiesteResoPanel(){
         ov.querySelector('#sto-close').addEventListener('click',function(){ov.remove();});
         // Carica ordini
         var stoBody=ov.querySelector('#sto-body');
-        fetch(PROXY+'/shopify/orders.json?email='+encodeURIComponent(email)+'&status=any&limit=20')
+        proxyFetch(PROXY+'/shopify/orders.json?email='+encodeURIComponent(email)+'&status=any&limit=20')
           .then(function(r){return r.json();})
           .then(function(d){
             var orders=(d&&d.orders)||[];
@@ -5283,7 +5292,7 @@ var _resiCache=null;
 
 async function getResiList(){
   try{
-    var r=await fetch(PROXY+'/resi');
+    var r=await proxyFetch(PROXY+'/resi', APP_TOKEN?{headers:{"X-App-Token":APP_TOKEN}}:{});
     var serverData=await r.json();
     // Unisci con localStorage per non perdere resi salvati localmente
     var localData=[];
@@ -5294,7 +5303,7 @@ async function getResiList(){
     localData.forEach(function(r){if(!serverIds.has(r.id))merged.push(r);});
     // Se ci sono resi locali non sul server, salvali
     if(localData.length>0&&merged.length>serverData.length){
-      fetch(PROXY+'/resi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){});
+      proxyFetch(PROXY+'/resi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){});
       localStorage.removeItem('yespresso_resi'); // svuota locale dopo sync
     }
     _resiCache=merged;
@@ -5307,7 +5316,9 @@ async function getResiList(){
 async function saveResiList(list){
   _resiCache=list;
   try{
-    await fetch(PROXY+'/resi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(list)});
+    var resiHeaders={'Content-Type':'application/json'};
+    if(APP_TOKEN)resiHeaders['X-App-Token']=APP_TOKEN;
+    await proxyFetch(PROXY+'/resi',{method:'POST',headers:resiHeaders,body:JSON.stringify(list)});
   }catch(e){
     console.error('saveResiList:',e);
     try{localStorage.setItem('yespresso_resi',JSON.stringify(list));}catch(e2){}
@@ -5369,7 +5380,7 @@ async function openCreditLink(el, btnId){
   el.textContent="🎁 Cerco cliente...";
   try{
     // Cerca customer ID Creditsyard tramite proxy
-    const res=await fetch(PROXY+"/creditsyard/customer?email="+encodeURIComponent(customerEmail));
+    const res=await proxyFetch(PROXY+"/creditsyard/customer?email="+encodeURIComponent(customerEmail));
     const data=await res.json();
     const csyardId=data&&data.id;
     if(csyardId){
@@ -5393,7 +5404,7 @@ async function fetchBrtPodAuto(btnId){
   const btn=document.getElementById(btnId);
   if(btn){btn.textContent="⏳ Scarico POD...";btn.style.pointerEvents="none";}
   try{
-    const res=await fetch(PROXY+"/brt/pod-auto?nspediz="+encodeURIComponent(tn));
+    const res=await proxyFetch(PROXY+"/brt/pod-auto?nspediz="+encodeURIComponent(tn));
     const data=await res.json();
     if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
     if(!data.ok){
@@ -5476,7 +5487,7 @@ async function loadBrtPod(btnId){
   const btn=document.getElementById(btnId);
   if(btn){btn.textContent="⏳ Caricamento...";btn.style.pointerEvents="none";}
   try{
-    const res=await fetch(PROXY+"/brt/pod?nspediz="+encodeURIComponent(tn));
+    const res=await proxyFetch(PROXY+"/brt/pod?nspediz="+encodeURIComponent(tn));
     const data=await res.json();
     if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
     if(!data.ok){
@@ -5575,7 +5586,7 @@ async function downloadAndShowPod(btnId){
         var imgSrc=img.src;
         podWin.close();
         // Manda l'URL al proxy che scarica l'immagine (no CORS sul proxy)
-        fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(imgSrc))
+        proxyFetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(imgSrc))
           .then(function(r){return r.json();})
           .then(function(j){
             if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
@@ -5650,7 +5661,7 @@ async function createCredit(inputId){
   inp.disabled=true;
   inp.nextElementSibling.textContent='⏳';
   try{
-    const res=await fetch(PROXY+'/creditsyard/adjust',{
+    const res=await proxyFetch(PROXY+'/creditsyard/adjust',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({customer_email:data.email,customer_id:data.customerId,amount:amount,reason:'Credito da helpdesk',send_email_notification:0})
@@ -5828,7 +5839,7 @@ function openBrtPickup(orderId){
           alerts:[{type:"CONFIRM",mail:alertEmail}]
         }
       }];
-      var res=await fetch(PROXY+"/brt-orm/api/geodata/v410/colreqs",{
+      var res=await proxyFetch(PROXY+"/brt-orm/api/geodata/v410/colreqs",{
         method:"POST",
         headers:{"Content-Type":"application/json","X-Api-Key":"f393e3d3-8402-4614-a90e-8d111fa73ced"},
         body:JSON.stringify(payload)
@@ -5842,7 +5853,7 @@ function openBrtPickup(orderId){
         // Aggiungi nota sull'ordine Shopify
         var notaRitiro="Effettuato ritiro il "+collDate+" per "+motivo;
         try{
-          await fetch(PROXY+"/shopify/orders/"+orderId+".json",{
+          await proxyFetch(PROXY+"/shopify/orders/"+orderId+".json",{
             method:"PUT",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({order:{id:orderId,note:notaRitiro}})
@@ -5898,7 +5909,7 @@ function cancelShopifyOrder(orderId){
     try{
       const body={reason:"customer",email:true};
       if(withRefund)body.refund=true;
-      const res=await fetch(PROXY+"/shopify/orders/"+orderId+"/cancel.json",{
+      const res=await proxyFetch(PROXY+"/shopify/orders/"+orderId+"/cancel.json",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(body)
@@ -6018,7 +6029,7 @@ function openResoModal(){
       var orig=await shopifyGet('orders/'+orderId+'.json?fields=note');
       var existingNote=(orig&&orig.order&&orig.order.note)||'';
       var newNote=(existingNote?existingNote+'\n\n':'')+nota;
-      var res=await fetch(PROXY+'/shopify/orders/'+orderId+'.json',{
+      var res=await proxyFetch(PROXY+'/shopify/orders/'+orderId+'.json',{
         method:'PUT',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({order:{id:orderId,note:newNote}})
       });
@@ -6124,7 +6135,7 @@ async function confirmDuplicateOrder(){
     if(_dupOrderData.shipping_address)payload.draft_order.shipping_address=_dupOrderData.shipping_address;
     if(_dupOrderData.email)payload.draft_order.email=_dupOrderData.email;
     document.getElementById("dup-order-status").textContent="Creazione draft order...";
-    const res=await fetch(PROXY+"/shopify/draft_orders.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const res=await proxyFetch(PROXY+"/shopify/draft_orders.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     const data=await res.json();
     if(!data||!data.draft_order||!data.draft_order.id){
       console.error("Draft error:",JSON.stringify(data));
@@ -6134,16 +6145,16 @@ async function confirmDuplicateOrder(){
     const draftId=data.draft_order.id;
     document.getElementById("dup-order-status").textContent="Completamento ordine...";
     // Completa il draft order (segna come pagato)
-    const complRes=await fetch(PROXY+"/shopify/draft_orders/"+draftId+"/complete.json?payment_pending=false",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+    const complRes=await proxyFetch(PROXY+"/shopify/draft_orders/"+draftId+"/complete.json?payment_pending=false",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
     const complData=await complRes.json();
     const newOrderId=complData&&complData.draft_order&&complData.draft_order.order_id;
     if(newOrderId){
       document.getElementById("dup-order-status").textContent="Aggiunta nota su entrambi gli ordini...";
       // Nota su ordine NUOVO
-      await fetch(PROXY+"/shopify/orders/"+newOrderId+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:newOrderId,note:nota}})});
+      await proxyFetch(PROXY+"/shopify/orders/"+newOrderId+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:newOrderId,note:nota}})});
       // Nota su ordine ORIGINALE
       const origNoteExisting=_dupOrderData.note?_dupOrderData.note+"\n":"";
-      await fetch(PROXY+"/shopify/orders/"+_dupOrderData.id+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:_dupOrderData.id,note:origNoteExisting+nota}})});
+      await proxyFetch(PROXY+"/shopify/orders/"+_dupOrderData.id+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:{id:_dupOrderData.id,note:origNoteExisting+nota}})});
       showToast("✅ Ordine "+origName+" duplicato con successo!","success");
       closeDupModal();
     } else {
@@ -6306,7 +6317,7 @@ async function submitNewTicket(){
     const attachInput=document.getElementById("nt-attachment");
     if(attachInput&&attachInput.files&&attachInput.files.length>0){
       try{
-        const txRes=await fetch(PROXY+"/api/v1/transactions",{
+        const txRes=await proxyFetch(PROXY+"/api/v1/transactions",{
           method:"POST",
           headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
           body:JSON.stringify({type:"ticket"})
@@ -6317,7 +6328,7 @@ async function submitNewTicket(){
           if(txId){
             const fd=new FormData();
             for(let i=0;i<attachInput.files.length;i++) fd.append("attachments",attachInput.files[i]);
-            await fetch(PROXY+"/api/v1/transactions/"+txId+"/attachments",{
+            await proxyFetch(PROXY+"/api/v1/transactions/"+txId+"/attachments",{
               method:"POST",
               headers:{"Authorization":"Basic "+HD_TOKEN,"User-Agent":"Yespresso/1.0"},
               body:fd
@@ -6330,7 +6341,7 @@ async function submitNewTicket(){
     // 2. Crea ticket
     const payload={subject:subject,requester:{email:email,name:name||email},message:{text:message},status:status};
     if(txId) payload.transactionID=txId;
-    const res=await fetch(PROXY+"/api/v1/tickets",{method:"POST",headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},body:JSON.stringify(payload)});
+    const res=await proxyFetch(PROXY+"/api/v1/tickets",{method:"POST",headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},body:JSON.stringify(payload)});
     if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,200));}
     const newTicket=await res.json();
     closeNewTicketModal();
@@ -6438,7 +6449,7 @@ function loadPodFromUrl(btnId,btn){
     return;
   }
   if(btn){btn.textContent='⏳ Carico...';btn.disabled=true;}
-  fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(url))
+  proxyFetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(url))
     .then(function(r){return r.json();})
     .then(function(j){
       var dlg2=document.getElementById('pod-url-dialog');

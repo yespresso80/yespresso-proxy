@@ -158,13 +158,70 @@ async function getShopifyToken() {
   return SHOPIFY_TOKEN;
 }
 
+// ── Rate limiting ──
+const rateLimitMap = new Map();
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minuto
+  const max = 120; // max 120 req/min per IP
+  if (!rateLimitMap.has(ip)) rateLimitMap.set(ip, []);
+  const times = rateLimitMap.get(ip).filter(t => now - t < windowMs);
+  times.push(now);
+  rateLimitMap.set(ip, times);
+  return times.length <= max;
+}
+// Pulizia periodica rate limit map
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, times] of rateLimitMap) {
+    const fresh = times.filter(t => now - t < 60000);
+    if (fresh.length === 0) rateLimitMap.delete(ip); else rateLimitMap.set(ip, fresh);
+  }
+}, 5 * 60 * 1000);
+
+// ── App token per autenticazione ──
+const APP_TOKEN = process.env.APP_TOKEN || "";
+
+// ── Domini autorizzati CORS ──
+const ALLOWED_ORIGINS = [
+  "https://yespresso-proxy.onrender.com",
+  "http://localhost",
+  "http://127.0.0.1"
+];
+
 const server = http.createServer(async function(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin || "";
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent, X-App-Token");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+
+  // Health check pubblico
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
+
+  // Rate limiting
+  const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(clientIp)) {
+    res.writeHead(429, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Too many requests" }));
+    return;
+  }
+
+  // Autenticazione con APP_TOKEN (se configurato)
+  if (APP_TOKEN) {
+    const reqToken = req.headers["x-app-token"] || "";
+    // Escludi endpoint pubblici (file statici, health)
+    const isPublic = req.url === "/reso-magazzino.html" || req.url === "/yespresso-helpdesk.html" || req.url === "/" || req.url === "/index.html";
+    if (!isPublic && reqToken !== APP_TOKEN) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+  }
 
   // Endpoint allegati IMAP
   if (req.url.startsWith("/imap/attachments")) {
@@ -222,11 +279,11 @@ const server = http.createServer(async function(req, res) {
 // BRT REST API Integration
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
-const BRT_PASS = process.env.BRT_PASS || "";
+const BRT_PASS = "Dus0549dsb";
 const BRT_SFTP_HOST = "sftp.brt.it";
 const BRT_SFTP_PORT = 22;
 const BRT_SFTP_USER = "1791201";
-const BRT_SFTP_PASS = process.env.BRT_SFTP_PASS || "";
+const BRT_SFTP_PASS = "qyo^G16^H3";
 const BRT_SFTP_PATH = "/OUT";
 const BRT_REST_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_VAS = "https://vas.brt.it";
