@@ -15,7 +15,6 @@ const IMAP_PASSWORD = process.env.IMAP_PASSWORD || "";
 const IMAP_HOST = "imap.ionos.it";
 const IMAP_PORT = 993;
 
-let resiStore = [];
 console.log("[INIT] ANTHROPIC_KEY presente:", !!ANTHROPIC_KEY);
 console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
 console.log("[INIT] IMAP_USER:", IMAP_USER);
@@ -158,70 +157,13 @@ async function getShopifyToken() {
   return SHOPIFY_TOKEN;
 }
 
-// ── Rate limiting ──
-const rateLimitMap = new Map();
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const windowMs = 60 * 1000; // 1 minuto
-  const max = 120; // max 120 req/min per IP
-  if (!rateLimitMap.has(ip)) rateLimitMap.set(ip, []);
-  const times = rateLimitMap.get(ip).filter(t => now - t < windowMs);
-  times.push(now);
-  rateLimitMap.set(ip, times);
-  return times.length <= max;
-}
-// Pulizia periodica rate limit map
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, times] of rateLimitMap) {
-    const fresh = times.filter(t => now - t < 60000);
-    if (fresh.length === 0) rateLimitMap.delete(ip); else rateLimitMap.set(ip, fresh);
-  }
-}, 5 * 60 * 1000);
-
-// ── App token per autenticazione ──
-const APP_TOKEN = process.env.APP_TOKEN || "";
-
-// ── Domini autorizzati CORS ──
-const ALLOWED_ORIGINS = [
-  "https://yespresso-proxy.onrender.com",
-  "http://localhost",
-  "http://127.0.0.1"
-];
-
 const server = http.createServer(async function(req, res) {
-  const origin = req.headers.origin || "";
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent, X-App-Token");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
-
-  // Health check pubblico
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
-
-  // Rate limiting
-  const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
-  if (!checkRateLimit(clientIp)) {
-    res.writeHead(429, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Too many requests" }));
-    return;
-  }
-
-  // Autenticazione con APP_TOKEN (se configurato)
-  if (APP_TOKEN) {
-    const reqToken = req.headers["x-app-token"] || "";
-    // Escludi endpoint pubblici (file statici, health)
-    const isPublic = req.url === "/reso-magazzino.html" || req.url === "/yespresso-helpdesk.html" || req.url === "/" || req.url === "/index.html";
-    if (!isPublic && reqToken !== APP_TOKEN) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
-      return;
-    }
-  }
 
   // Endpoint allegati IMAP
   if (req.url.startsWith("/imap/attachments")) {
@@ -279,11 +221,11 @@ const server = http.createServer(async function(req, res) {
 // BRT REST API Integration
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
-const BRT_PASS = "Dus0549dsb";
+const BRT_PASS = process.env.BRT_PASS || "";
 const BRT_SFTP_HOST = "sftp.brt.it";
 const BRT_SFTP_PORT = 22;
 const BRT_SFTP_USER = "1791201";
-const BRT_SFTP_PASS = "qyo^G16^H3";
+const BRT_SFTP_PASS = process.env.BRT_SFTP_PASS || "";
 const BRT_SFTP_PATH = "/OUT";
 const BRT_REST_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_VAS = "https://vas.brt.it";
@@ -503,36 +445,57 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // ── RESI MAGAZZINO (storage server-side) ──
+  // ── RESI — GitHub come database persistente ──
+  const GH_RESI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/resi.json';
+
+  async function ghResiGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: [], sha: null };
+    const r = await fetch(GH_RESI_URL, {
+      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (r.status === 404) return { data: [], sha: null };
+    const j = await r.json();
+    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
+    return { data, sha: j.sha };
+  }
+
+  async function ghResiSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update resi', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_RESI_URL, {
+      method: 'PUT',
+      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
   if (req.url === '/resi' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(resiStore));
+    try {
+      const { data } = await ghResiGet();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch(e) {
+      console.error('[RESI GET]', e.message);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('[]');
+    }
     return;
   }
+
   if (req.url === '/resi' && req.method === 'POST') {
     const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
     try {
-      const body = JSON.parse(Buffer.concat(chunks).toString());
-      if (Array.isArray(body)) {
-        // Sostituzione lista completa
-        resiStore = body;
-        console.log('[RESI] Lista aggiornata:', resiStore.length, 'resi');
-      } else if (body.action === 'add') {
-        body.data.id = Date.now();
-        body.data.timestamp = new Date().toISOString();
-        resiStore.unshift(body.data);
-        if (resiStore.length > 500) resiStore = resiStore.slice(0, 500);
-        console.log('[RESI] Aggiunto reso:', body.data.orderName);
-      } else if (body.action === 'update') {
-        const idx = resiStore.findIndex(r => r.id === body.id);
-        if (idx >= 0) { resiStore[idx] = Object.assign(resiStore[idx], body.data); }
-      } else if (body.action === 'delete') {
-        resiStore = resiStore.filter(r => r.id !== body.id);
-      }
+      const newData = JSON.parse(Buffer.concat(chunks).toString());
+      const { sha } = await ghResiGet();
+      await ghResiSave(Array.isArray(newData) ? newData : [], sha);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, count: resiStore.length }));
+      res.end(JSON.stringify({ ok: true }));
     } catch(e) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
+      console.error('[RESI POST]', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
