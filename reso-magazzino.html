@@ -353,7 +353,7 @@ async function submitReso() {
     // Trova ordine TikTok ID se presente
     let tikTokOrderId = currentOrder._tikTokOrderId || '';
     if (!tikTokOrderId) {
-      const ttAttr = (order.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
+      const ttAttr = (currentOrder.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
     }
     const resoData = {
@@ -369,7 +369,7 @@ async function submitReso() {
     };
 
     // Salva in localStorage (condiviso con helpdesk)
-    saveReso(resoData);
+    await saveReso(resoData);
 
     // Aggiungi nota su Shopify
     const today = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -415,7 +415,7 @@ function detectChannel(order) {
   // TikTok: tag "TIK TOK" o "tiktok" o email tiktok
   if (email.includes('tiktok') || email.includes('scs3.') || tags.includes('tiktok') || tags.includes('tik tok')) {
     // Estrai numero ordine TikTok dal tag o note_attributes
-    const ttMatch = (order.tags || '').match(/(576\d{15,})/);
+    const ttMatch = (order.tags || '').match(/(576[0-9]{15,})/);
     if (ttMatch) order._tikTokOrderId = ttMatch[1];
     return 'tiktok';
   }
