@@ -5172,16 +5172,15 @@ function openRichiesteResoPanel(){
           '<div style="font-size:12px;color:#78350f;white-space:pre-wrap;max-height:120px;overflow-y:auto">'+(reso.shopifyNote||'<em style="color:#aaa">Nessuna nota</em>')+'</div>'+
         '</div>'+
       '</div>'+
-      // Tracking BRT
-      (tn||spedStatus?
-        '<div style="padding:8px 16px;border-bottom:1px solid #e8eaf0;background:#f0f7ff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
-          (tn?'<span style="font-size:12px;font-weight:600;color:#1a1a2e">&#128666; '+tn+'</span>':'')+
-          (spedStatus?'<span style="font-size:12px;color:#555">'+spedStatus+'</span>':'')+
-          (spedDate?'<span style="font-size:12px;color:#888">'+spedDate+'</span>':'')+
-          (brtTrackUrl?'<a href="'+brtTrackUrl+'" target="_blank" style="font-size:12px;font-weight:700;color:#e8174d;text-decoration:none">Traccia BRT ↗</a>':'')+
-          (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-storico" style="background:#f0f2f5;border:none;color:#555;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128196; Ordini storici</button>':'')+
-          (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-vediticket" style="background:#e8f0fe;border:none;color:#1a73e8;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127902; Vedi Ticket</button>':'')+
-        '</div>':'')+
+      // Tracking BRT + bottoni sempre visibili
+      '<div style="padding:8px 16px;border-bottom:1px solid #e8eaf0;background:#f0f7ff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+        (tn?'<span style="font-size:12px;font-weight:600;color:#1a1a2e">&#128666; '+tn+'</span>':'')+
+        (spedStatus?'<span style="font-size:12px;color:#555">'+spedStatus+'</span>':'')+
+        (spedDate?'<span style="font-size:12px;color:#888">'+spedDate+'</span>':'')+
+        (brtTrackUrl?'<a href="'+brtTrackUrl+'" target="_blank" style="font-size:12px;font-weight:700;color:#e8174d;text-decoration:none">Traccia BRT ↗</a>':'')+
+        (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-storico" style="background:#f0f2f5;border:none;color:#555;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128196; Ordini storici</button>':'')+
+        (reso.email?'<button data-email="'+reso.email+'" data-name="'+reso.customerName+'" class="_rc-vediticket" style="background:#e8f0fe;border:none;color:#1a73e8;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127902; Vedi Ticket</button>':'')+
+      '</div>'+
       // Azioni
       '<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
         actionBtn+
