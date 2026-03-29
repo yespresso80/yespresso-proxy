@@ -2787,7 +2787,19 @@ async function fetchShopifyOrder(message,email,requesterName){
     // Escludi numeri che sembrano tracking BRT (12+ cifre che iniziano con 179 o 26)
     const brtTrackingNums=allNumsRaw.filter(n=>n.length>=12&&(n.startsWith('179')||n.startsWith('26')));
     const brtStripped=brtTrackingNums.filter(n=>n.startsWith('26')).map(n=>n.slice(2));
-    const allNums=[...new Set([...allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26')))),...brtStripped])];
+    // Escludi numeri di telefono italiani (10 cifre che iniziano con 3 o 0)
+    const isPhoneNumber=n=>n.length===10&&(n.startsWith('3')||n.startsWith('0'));
+    // Escludi numeri che non sembrano ordini Shopify (non iniziano con 202x e non sono preceduti da #)
+    const isLikelyOrderNum=n=>{
+      if(isPhoneNumber(n))return false; // telefono italiano
+      if(n.length>=18)return false; // troppo lungo per ordine shopify
+      if(uniqueNums.includes(n))return true; // aveva # davanti
+      if(subjectOrderMatches.includes(n))return true; // nel subject come 202x...
+      if(n.match(/^202[0-9]/))return true; // inizia con 202x
+      if(n.length>=7&&n.length<=10&&!n.startsWith('3')&&!n.startsWith('0'))return true; // numero breve non telefonico
+      return false;
+    };
+    const allNums=[...new Set([...allNumsRaw.filter(n=>!(n.length>=12&&(n.startsWith('179')||n.startsWith('26')))&&isLikelyOrderNum(n)),...brtStripped])];
     console.log("🔢 Numeri ordine trovati:", allNums.slice(0,5));
     console.log("🔢 allNumsRaw:", allNumsRaw.slice(0,10));
     console.log("🔢 shopifyMatches:", uniqueNums.slice(0,5));
