@@ -537,7 +537,18 @@ async function brtRestPost(path, body) {
         if (proxyRes.headers["link"]) respHeaders["Link"] = proxyRes.headers["link"];
         if (proxyRes.headers["x-shopify-shop-api-call-limit"]) respHeaders["x-shopify-shop-api-call-limit"] = proxyRes.headers["x-shopify-shop-api-call-limit"];
         res.writeHead(proxyRes.statusCode, respHeaders);
-        res.end(responseBody);
+        // Inietta _nextPageInfo nel JSON Shopify per supportare paginazione lato client
+        const linkHeader = proxyRes.headers["link"] || "";
+        const nextMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>; rel="next"/);
+        if (nextMatch && proxyRes.statusCode === 200) {
+          try {
+            const json = JSON.parse(responseBody.toString());
+            json._nextPageInfo = nextMatch[1];
+            res.end(JSON.stringify(json));
+          } catch(e) { res.end(responseBody); }
+        } else {
+          res.end(responseBody);
+        }
       });
     });
     proxyReq.on("error", function(err) { console.error("[ERRORE]", err.message); res.writeHead(500); res.end(JSON.stringify({ error: err.message })); });
