@@ -504,7 +504,15 @@ async function brtRestPost(path, body) {
   let targetUrl, requestHeaders;
 
   if (req.url.startsWith("/shopify")) {
-    const p = req.url.replace(/^\/shopify/, "");
+    let p = req.url.replace(/^\/shopify/, "");
+    // Se la URL contiene page_info, rimuovi tutti gli altri parametri query
+    // Shopify non accetta nessun altro parametro insieme a page_info
+    if (p.includes('page_info=')) {
+      const [path, qs] = p.split('?');
+      const params = new URLSearchParams(qs);
+      const pageInfo = params.get('page_info');
+      p = path + '?page_info=' + pageInfo;
+    }
     const token = await getShopifyToken();
     targetUrl = "https://" + SHOPIFY_SHOP + "/admin/api/2024-01" + p;
     requestHeaders = { "X-Shopify-Access-Token": token, "Content-Type": "application/json" };
