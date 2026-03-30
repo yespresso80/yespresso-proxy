@@ -247,8 +247,7 @@ textarea.field{min-height:80px;resize:vertical}
 .qrcat-btn{padding:5px 12px;border-radius:20px;border:1.5px solid #e0e4ea;background:#fff;color:#555;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500}
 .qrcat-active{background:#e8f0fe!important;color:#1a73e8!important;border-color:#1a73e8!important}
 </style>
-<!-- deploy:1773904677770 --><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-</head>
+<!-- deploy:1773904677770 --></head>
 <body>
 <div class="toast" id="toast"></div>
 
@@ -6657,3 +6656,584 @@ document.addEventListener('click',function(e){
       </div>
     </div>
    
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+var _fabioListino=[],_fabioProducts=[],_fabioOrderLines=[];
+var FABIO_SK='ordini_fabio_listino_v2',FABIO_CID='8985060213001';
+
+function _fabioDL(){return[
+  {n:'100 Nespresso Cremoso/Napoli',vid:'',pid:'',st:'',pf:10,ps:0,qm:1,qx:1},
+  {n:'10 Nespresso Deca',vid:'',pid:'',st:'',pf:1.2,ps:0,qm:1,qx:1},
+  {n:'100 Nespresso Supremo Alluminio',vid:'',pid:'',st:'',pf:13,ps:0,qm:1,qx:1},
+  {n:'10 Nespresso Ginseng',vid:'',pid:'',st:'',pf:1,ps:0,qm:1,qx:1},
+  {n:'10 Nespresso Orzo',vid:'',pid:'',st:'',pf:1,ps:0,qm:1,qx:1},
+  {n:'100 Nespresso Gs GranBar',vid:'',pid:'',st:'',pf:9,ps:0,qm:1,qx:1},
+  {n:'100 Lavazza A Modo Mio Cremoso Napoli',vid:'',pid:'',st:'',pf:9.5,ps:0,qm:1,qx:1},
+  {n:'40 Lavazza A Modo Mio Deca',vid:'',pid:'',st:'',pf:5,ps:0,qm:1,qx:1},
+  {n:'10 Lavazza A Modo Mio Orzo',vid:'',pid:'',st:'',pf:1,ps:0,qm:1,qx:1},
+  {n:'160 Dolce Gusto Cremoso/Napoli',vid:'',pid:'',st:'',pf:19.5,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Deca',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Cappuccino',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Cioccolata',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Cortado',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Ginseng',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Nocciolino',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Orzo',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'16 Dolce Gusto Te Limone',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+  {n:'80 Caffitaly Cremoso',vid:'',pid:'',st:'',pf:11.5,ps:0,qm:1,qx:1},
+  {n:'10 Caffitaly Deca',vid:'',pid:'',st:'',pf:1.5,ps:0,qm:1,qx:1},
+  {n:'100 Bialetti Cremoso',vid:'',pid:'',st:'',pf:13,ps:0,qm:1,qx:1},
+  {n:'20 Bialetti Deca',vid:'',pid:'',st:'',pf:2.8,ps:0,qm:1,qx:1},
+  {n:'100 Fior Fiore Coop Espresso Intenso',vid:'',pid:'',st:'',pf:10,ps:0,qm:1,qx:1},
+  {n:'150 CIALDE ESE 44',vid:'',pid:'',st:'',pf:11,ps:0,qm:1,qx:1},
+  {n:'Crema caffe',vid:'',pid:'',st:'',pf:2.75,ps:0,qm:1,qx:1}
+];}
+
+function openOrdiniFabio(){
+  document.getElementById('tools-menu-dropdown').style.display='none';
+  try{_fabioListino=JSON.parse(localStorage.getItem(FABIO_SK)||'[]');}catch(e){_fabioListino=[];}
+  if(!_fabioListino.length)_fabioListino=_fabioDL();
+  var old=document.getElementById('fabio-pg');if(old)old.remove();
+  var pg=document.createElement('div');
+  pg.id='fabio-pg';
+  pg.style.cssText='position:fixed;inset:0;background:#f5f7fa;z-index:9500;display:flex;flex-direction:column;overflow:hidden;font-family:inherit';
+  pg.innerHTML=
+    '<div style="background:#fff;border-bottom:1px solid #e8eaf0;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.06)">'+
+    '<button onclick="document.getElementById('fabio-pg').remove()" style="background:#f0f2f5;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit">&larr; Lista Ticket</button>'+
+    '<span style="font-size:17px;font-weight:700">&#128230; Ordini Fabio</span>'+
+    '<div style="display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px">'+
+    '<button id="ftb-ordine" onclick="_fabioTab('ordine')" style="padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)">&#128203; Nuovo Ordine</button>'+
+    '<button id="ftb-listino" onclick="_fabioTab('listino')" style="padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">&#128176; Listino Prezzi</button>'+
+    '</div>'+
+    '<span id="f-prod-st" style="font-size:12px;color:#aaa;margin-left:8px">Caricamento prodotti...</span>'+
+    '</div>'+
+    '<div id="fabio-body" style="flex:1;overflow-y:auto;padding:20px 24px">'+
+    '<div id="ftab-ordine">'+
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px">'+
+    '<div style="font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">1. Carica file Excel</div>'+
+    '<label style="border:2px dashed #c5d8fa;border-radius:10px;padding:30px;text-align:center;cursor:pointer;background:#f8fbff;display:block">'+
+    '<input type="file" id="fabio-file" accept=".xlsx,.xls" style="display:none" onchange="_fabioLoadExcel(this)">'+
+    '<div style="font-size:32px;margin-bottom:8px">&#128202;</div>'+
+    '<div style="font-weight:600;color:#1a73e8" id="fabio-file-lbl">Clicca per caricare il file Excel di Fabio</div>'+
+    '<div style="font-size:12px;color:#aaa;margin-top:4px">Modulo_Gs_caffe_*.xlsx</div>'+
+    '</label>'+
+    '<div id="fabio-xl-st" style="margin-top:10px;font-size:13px;color:#888"></div>'+
+    '</div>'+
+    '<div id="fabio-preview"></div>'+
+    '</div>'+
+    '<div id="ftab-listino" style="display:none"></div>'+
+    '</div>';
+  document.body.appendChild(pg);
+  _fabioLoadProducts();
+}
+
+function _fabioTab(t){
+  document.getElementById('ftab-ordine').style.display=t==='ordine'?'block':'none';
+  document.getElementById('ftab-listino').style.display=t==='listino'?'block':'none';
+  ['ordine','listino'].forEach(function(x){
+    var b=document.getElementById('ftb-'+x);if(!b)return;
+    b.style.background=x===t?'#fff':'transparent';
+    b.style.color=x===t?'#1a1a2e':'#888';
+    b.style.boxShadow=x===t?'0 1px 3px rgba(0,0,0,.1)':'none';
+  });
+  if(t==='listino')_fabioRenderListino();
+}
+
+async function _fabioLoadProducts(){
+  _fabioProducts=[];var pi=null,st=document.getElementById('f-prod-st');
+  try{
+    while(true){
+      var qs=pi?'products.json?page_info='+pi:'products.json?limit=250&status=active';
+      var r=await proxyFetch(PROXY+'/shopify/'+qs);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      var d=await r.json();
+      _fabioProducts=_fabioProducts.concat(d.products||[]);
+      if(!d._nextPageInfo||(d.products||[]).length<250)break;
+      pi=d._nextPageInfo;
+    }
+    if(st)st.textContent=_fabioProducts.length+' prodotti Shopify OK &#10003;';
+  }catch(e){if(st)st.textContent='&#10060; '+e.message;}
+}
+
+function _fabioLoadExcel(input){
+  if(!window.XLSX){alert('XLSX non disponibile');return;}
+  var file=input.files[0];if(!file)return;
+  var lbl=document.getElementById('fabio-file-lbl');
+  if(lbl)lbl.textContent='&#128202; '+file.name;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var wb=XLSX.read(e.target.result,{type:'binary'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+      _fabioProcessRows(rows);
+    }catch(ex){
+      var s=document.getElementById('fabio-xl-st');
+      if(s)s.textContent='&#10060; '+ex.message;
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function _fabioProcessRows(rows){
+  _fabioOrderLines=[];var warns=[];
+  rows.forEach(function(row){
+    var name=((row[1]||'')+'').trim();
+    var qty=row[3];
+    if(!name||qty===null||qty===undefined||qty==='')return;
+    var qn=parseFloat(qty);if(isNaN(qn)||qn<=0)return;
+    var lr=_fabioListino.find(function(l){return l.n.toLowerCase()===name.toLowerCase();});
+    if(!lr)lr=_fabioListino.find(function(l){
+      var a=name.toLowerCase(),b=l.n.toLowerCase();
+      return a.includes(b.substring(0,12))||b.includes(a.substring(0,12));
+    });
+    if(!lr){warns.push('&#9888; Non nel listino: "'+name+'"');return;}
+    if(!lr.vid){warns.push('&#9888; Non collegato: "'+name+'" &rarr; Listino Prezzi');return;}
+    var qf=qn,qm=lr.qm||1,qx=lr.qx||1;
+    if(qf<qm){warns.push('&#128230; "'+name+'": '+qn+' &rarr; min '+qm);qf=qm;}
+    if(qx>1&&qf%qx!==0){var r2=Math.ceil(qf/qx)*qx;warns.push('&#128230; "'+name+'": '+qf+' &rarr; multiplo '+r2);qf=r2;}
+    var stock=null;
+    _fabioProducts.forEach(function(p){
+      var v=p.variants.find(function(v){return String(v.id)===lr.vid;});
+      if(v&&stock===null)stock=v.inventory_quantity;
+    });
+    _fabioOrderLines.push({name:name,lr:lr,qo:qn,qf:qf,stock:stock,pf:lr.pf,ps:lr.ps,vid:lr.vid,st:lr.st});
+  });
+  var s=document.getElementById('fabio-xl-st');
+  if(!_fabioOrderLines.length){if(s)s.textContent='&#10060; Nessun prodotto. Configura il Listino.';return;}
+  if(s)s.textContent=_fabioOrderLines.length+' prodotti caricati';
+  _fabioRenderPreview(warns);
+}
+
+function _fabioRenderPreview(warns){
+  var totF=0,totS=0;
+  var wH=warns.length?'<div style="margin-bottom:12px">'+warns.map(function(w){
+    return '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:7px 12px;font-size:12px;color:#795548;margin-bottom:4px">'+w+'</div>';
+  }).join('')+'</div>':'';
+  var trs=_fabioOrderLines.map(function(l){
+    var tf=l.qf*l.pf,ts=l.qf*l.ps;totF+=tf;totS+=ts;
+    var sb=l.stock===null?'<span style="background:#f0f2f5;color:#888;padding:2px 6px;border-radius:8px;font-size:11px">N/D</span>':
+      l.stock<=0?'<span style="background:#ffeaea;color:#e53e3e;padding:2px 6px;border-radius:8px;font-size:11px">0</span>':
+      l.stock<l.qf?'<span style="background:#fff3e0;color:#e67e22;padding:2px 6px;border-radius:8px;font-size:11px">'+l.stock+'</span>':
+      '<span style="background:#e8f5e9;color:#2a9d60;padding:2px 6px;border-radius:8px;font-size:11px">'+l.stock+'</span>';
+    var ch=l.qf!==l.qo;
+    return '<tr style="border-bottom:1px solid #f0f2f5">'+
+      '<td style="padding:8px 10px;font-size:12px">'+l.name+'</td>'+
+      '<td style="padding:8px 10px;font-size:11px;color:#555">'+l.st+'</td>'+
+      '<td style="padding:8px 10px;text-align:center">'+l.qo+'</td>'+
+      '<td style="padding:8px 10px;text-align:center;font-weight:'+(ch?700:400)+';color:'+(ch?'#e67e22':'inherit')+'">'+l.qf+(ch?' &#9888;':'')+'</td>'+
+      '<td style="padding:8px 10px;text-align:right">&#8364;'+tf.toFixed(2)+'</td>'+
+      '<td style="padding:8px 10px;text-align:right;color:#888">&#8364;'+ts.toFixed(2)+'</td>'+
+      '<td style="padding:8px 10px;text-align:center">'+sb+'</td>'+
+    '</tr>';
+  }).join('');
+  var sc=Math.round((totS-totF)*100)/100;
+  document.getElementById('fabio-preview').innerHTML=
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px">'+
+    '<div style="font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">2. Anteprima ordine</div>'+
+    wH+'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'+
+    '<thead><tr style="background:#fafbfc;border-bottom:2px solid #f0f2f5">'+
+    '<th style="padding:8px 10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prodotto Excel</th>'+
+    '<th style="padding:8px 10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prodotto Shopify</th>'+
+    '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Ord.</th>'+
+    '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Finale</th>'+
+    '<th style="padding:8px 10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Tot.Fabio</th>'+
+    '<th style="padding:8px 10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Tot.Shopify</th>'+
+    '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Stock</th>'+
+    '</tr></thead><tbody>'+trs+'</tbody></table></div></div>'+
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)">'+
+    '<div style="font-size:14px;font-weight:700;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">3. Riepilogo</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">'+
+    '<div style="background:#f8f9fc;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#1a73e8">&#8364;'+totF.toFixed(2)+'</div><div style="font-size:11px;color:#888;margin-top:2px">Totale Fabio</div></div>'+
+    '<div style="background:#f8f9fc;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#555">&#8364;'+totS.toFixed(2)+'</div><div style="font-size:11px;color:#888;margin-top:2px">Totale Shopify</div></div>'+
+    '<div style="background:#fff8e1;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#e67e22">&#8364;'+sc.toFixed(2)+'</div><div style="font-size:11px;color:#888;margin-top:2px">Sconto</div></div>'+
+    '</div>'+
+    '<div style="display:flex;justify-content:flex-end;gap:10px">'+
+    '<button onclick="document.getElementById('fabio-preview').innerHTML=''" style="background:#f0f2f5;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;color:#555">&#10005; Annulla</button>'+
+    '<button onclick="_fabioConfirm('+totS.toFixed(2)+','+sc.toFixed(2)+')" id="fabio-confirm-btn" style="background:#2a9d60;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;color:#fff">&#9989; Crea bozza Shopify</button>'+
+    '</div><div id="fabio-result"></div></div>';
+}
+
+async function _fabioConfirm(totS,sc){
+  var btn=document.getElementById('fabio-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Creazione...';}
+  try{
+    var li=_fabioOrderLines.map(function(l){return{variant_id:parseInt(l.vid),quantity:l.qf};});
+    var body={draft_order:{
+      customer:{id:parseInt(FABIO_CID)},line_items:li,
+      note:'Ordine Fabio GS Caffe - Shopify:&#8364;'+totS.toFixed(2)+' Sconto:&#8364;'+sc.toFixed(2),
+      tags:'fabio-gs-caffe,pagamento-posticipato-90gg',
+      use_customer_default_address:true,
+      payment_terms:{payment_terms_name:'Net 90',payment_terms_type:'NET',due_in_days:90}
+    }};
+    if(sc>0)body.draft_order.applied_discount={description:'Sconto Fabio',value_type:'fixed_amount',value:sc.toFixed(2),amount:sc.toFixed(2),title:'Sconto Fabio'};
+    var r=await proxyFetch(PROXY+'/shopify/draft_orders.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){var t=await r.text();throw new Error('HTTP '+r.status+' '+t.substring(0,120));}
+    var d=await r.json(),draft=d.draft_order;
+    var url='https://admin.shopify.com/store/40f758-3/draft_orders/'+draft.id;
+    var res=document.getElementById('fabio-result');
+    if(res)res.innerHTML='<div style="margin-top:12px;padding:14px;background:#e8f5e9;border-radius:8px;font-size:13px">'+
+      '&#9989; Bozza creata! <a href="'+url+'" target="_blank" style="color:#1a73e8;font-weight:700">Apri '+draft.name+' &#8599;</a><br>'+
+      '<span style="color:#666;font-size:12px">Totale:&#8364;'+parseFloat(draft.total_price||0).toFixed(2)+' Sconto:&#8364;'+sc.toFixed(2)+'</span></div>';
+    if(btn)btn.textContent='&#9989; Creato!';
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='&#9989; Crea bozza Shopify';}
+    alert('Errore: '+e.message);
+  }
+}
+
+function _fabioRenderListino(){
+  var opts=_fabioProducts.map(function(p){
+    return p.variants.map(function(v){
+      return '<option value="'+v.id+'">'+p.title+(p.variants.length>1?' - '+v.title:'')+' (&#8364;'+parseFloat(v.price||0).toFixed(2)+')</option>';
+    }).join('');
+  }).join('');
+  var trs=_fabioListino.map(function(row,i){
+    var so='<option value="">-- Seleziona prodotto Shopify --</option>';
+    if(row.vid)so='<option value="'+row.vid+'" selected>'+row.st+'</option>';
+    so+=opts;
+    var lnk=row.pid?'<a href="https://admin.shopify.com/store/40f758-3/products/'+row.pid+'" target="_blank" style="font-size:11px;color:#1a73e8;margin-left:4px">&#8599;</a>':'';
+    return '<tr style="border-bottom:1px solid #f0f2f5">'+
+      '<td style="padding:6px 8px"><input value="'+row.n.replace(/"/g,'&quot;')+'" onchange="_fabioListino['+i+'].n=this.value" style="width:100%;font-size:12px;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;box-sizing:border-box"></td>'+
+      '<td style="padding:6px 8px;min-width:260px"><div style="display:flex;align-items:center;gap:4px">'+
+      '<select onchange="_fabioOnSel(this,'+i+')" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit">'+so+'</select>'+lnk+'</div></td>'+
+      '<td style="padding:6px 8px"><input type="number" step="0.01" value="'+row.pf+'" onchange="_fabioListino['+i+'].pf=parseFloat(this.value)||0" style="width:70px;text-align:right;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;font-size:12px"></td>'+
+      '<td style="padding:6px 8px;text-align:right;color:#888;font-size:12px">'+(row.ps>0?'&#8364;'+row.ps.toFixed(2):'--')+'</td>'+
+      '<td style="padding:6px 8px"><input type="number" min="1" value="'+row.qm+'" onchange="_fabioListino['+i+'].qm=parseInt(this.value)||1" style="width:50px;text-align:center;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;font-size:12px"></td>'+
+      '<td style="padding:6px 8px"><input type="number" min="1" value="'+row.qx+'" onchange="_fabioListino['+i+'].qx=parseInt(this.value)||1" style="width:50px;text-align:center;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;font-size:12px"></td>'+
+      '<td style="padding:6px 8px;text-align:center"><button onclick="_fabioListino.splice('+i+',1);_fabioRenderListino()" style="background:#e53e3e;border:none;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">&#10005;</button></td>'+
+    '</tr>';
+  }).join('');
+  document.getElementById('ftab-listino').innerHTML=
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">'+
+    '<span style="font-size:14px;font-weight:700">Listino prezzi Fabio</span>'+
+    '<div style="display:flex;gap:8px">'+
+    '<button onclick="_fabioListino.push({n:'',vid:'',pid:'',st:'',pf:0,ps:0,qm:1,qx:1});_fabioRenderListino()" style="background:#f0f2f5;border:1px solid #e0e4ea;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:#555">+ Aggiungi</button>'+
+    '<button onclick="_fabioSaveListino()" style="background:#1a73e8;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:#fff">&#128190; Salva</button>'+
+    '</div></div>'+
+    '<div style="background:#e8f0fe;border-radius:8px;padding:10px 14px;font-size:12px;color:#1557b0;margin-bottom:12px">'+
+    '&#128161; Collega ogni voce al prodotto Shopify e salva prima di caricare l'Excel.</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px">'+
+    '<thead><tr style="background:#fafbfc;border-bottom:2px solid #f0f2f5">'+
+    '<th style="padding:8px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;min-width:150px">Nome Excel</th>'+
+    '<th style="padding:8px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;min-width:260px">Prodotto Shopify</th>'+
+    '<th style="padding:8px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prezzo Fabio</th>'+
+    '<th style="padding:8px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prezzo Shopify</th>'+
+    '<th style="padding:8px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Min</th>'+
+    '<th style="padding:8px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Mult.</th>'+
+    '<th style="padding:8px;width:40px"></th>'+
+    '</tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+}
+
+function _fabioOnSel(sel,i){
+  var vid=sel.value;if(!vid)return;
+  for(var j=0;j<_fabioProducts.length;j++){
+    var p=_fabioProducts[j];
+    var v=p.variants.find(function(v){return String(v.id)===vid;});
+    if(v){
+      _fabioListino[i].vid=vid;_fabioListino[i].pid=String(p.id);
+      _fabioListino[i].st=p.title+(p.variants.length>1?' - '+v.title:'');
+      _fabioListino[i].ps=parseFloat(v.price||0);
+      _fabioRenderListino();break;
+    }
+  }
+}
+
+function _fabioSaveListino(){
+  localStorage.setItem(FABIO_SK,JSON.stringify(_fabioListino));
+  showToast('&#128190; Listino salvato!');
+}
+
+// Intercetta fabio in openToolModal se non già fatto
+if(typeof openToolModal==='function'){
+  var _origOpenToolModal=openToolModal;
+  openToolModal=function(tool){
+    if(tool==='fabio'){openOrdiniFabio();return;}
+    _origOpenToolModal(tool);
+  };
+}
+</script>
+</body>
+</html>
+<script>
+var _fabioListino=[];
+var _fabioProducts=[];
+var _fabioOrderLines=[];
+var FABIO_SK='ordini_fabio_listino_v2';
+var FABIO_CID='8985060213001';
+
+function _fabioDefaultListino(){
+  return [
+    {n:'100 Nespresso Cremoso/Napoli',vid:'',pid:'',st:'',pf:10,ps:0,qm:1,qx:1},
+    {n:'10 Nespresso Deca',vid:'',pid:'',st:'',pf:1.2,ps:0,qm:1,qx:1},
+    {n:'100 Nespresso Supremo Alluminio',vid:'',pid:'',st:'',pf:13,ps:0,qm:1,qx:1},
+    {n:'10 Nespresso Ginseng',vid:'',pid:'',st:'',pf:1,ps:0,qm:1,qx:1},
+    {n:'10 Nespresso Orzo',vid:'',pid:'',st:'',pf:1,ps:0,qm:1,qx:1},
+    {n:'100 Nespresso Gs GranBar',vid:'',pid:'',st:'',pf:9,ps:0,qm:1,qx:1},
+    {n:'100 Lavazza A Modo Mio Cremoso Napoli',vid:'',pid:'',st:'',pf:9.5,ps:0,qm:1,qx:1},
+    {n:'40 Lavazza A Modo Mio Deca',vid:'',pid:'',st:'',pf:5,ps:0,qm:1,qx:1},
+    {n:'10 Lavazza A Modo Mio Orzo',vid:'',pid:'',st:'',pf:1,ps:0,qm:1,qx:1},
+    {n:'160 Dolce Gusto Cremoso/Napoli',vid:'',pid:'',st:'',pf:19.5,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Deca',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Cappuccino',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Cioccolata',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Cortado',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Ginseng',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Nocciolino',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Orzo',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'16 Dolce Gusto Te Limone',vid:'',pid:'',st:'',pf:2.4,ps:0,qm:1,qx:1},
+    {n:'80 Caffitaly Cremoso',vid:'',pid:'',st:'',pf:11.5,ps:0,qm:1,qx:1},
+    {n:'10 Caffitaly Deca',vid:'',pid:'',st:'',pf:1.5,ps:0,qm:1,qx:1},
+    {n:'100 Bialetti Cremoso',vid:'',pid:'',st:'',pf:13,ps:0,qm:1,qx:1},
+    {n:'20 Bialetti Deca',vid:'',pid:'',st:'',pf:2.8,ps:0,qm:1,qx:1},
+    {n:'100 Fior Fiore Coop Espresso Intenso',vid:'',pid:'',st:'',pf:10,ps:0,qm:1,qx:1},
+    {n:'150 CIALDE ESE 44',vid:'',pid:'',st:'',pf:11,ps:0,qm:1,qx:1},
+    {n:'Crema caffe',vid:'',pid:'',st:'',pf:2.75,ps:0,qm:1,qx:1}
+  ];
+}
+
+function openOrdiniFabio(){
+  document.getElementById('tools-menu-dropdown').style.display='none';
+  try{_fabioListino=JSON.parse(localStorage.getItem(FABIO_SK)||'[]');}catch(e){_fabioListino=[];}
+  if(!_fabioListino.length)_fabioListino=_fabioDefaultListino();
+  var old=document.getElementById('fabio-pg');if(old)old.remove();
+  var pg=document.createElement('div');
+  pg.id='fabio-pg';
+  pg.style.cssText='position:fixed;inset:0;background:#f5f7fa;z-index:9500;display:flex;flex-direction:column;overflow:hidden;font-size:14px';
+  pg.innerHTML=
+    '<div style="background:#fff;border-bottom:1px solid #e8eaf0;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.06)">'+
+      '<button onclick="document.getElementById('fabio-pg').remove()" style="background:#f0f2f5;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit">&#8592; Lista Ticket</button>'+
+      '<span style="font-size:17px;font-weight:700">&#128230; Ordini Fabio</span>'+
+      '<div style="display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px">'+
+        '<button id="ftb-ordine" onclick="_fabioTab('ordine')" style="padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)">&#128203; Nuovo Ordine</button>'+
+        '<button id="ftb-listino" onclick="_fabioTab('listino')" style="padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">&#128176; Listino Prezzi</button>'+
+      '</div>'+
+      '<span id="f-prod-st" style="font-size:12px;color:#aaa;margin-left:8px">Caricamento prodotti...</span>'+
+    '</div>'+
+    '<div id="fabio-body" style="flex:1;overflow-y:auto;padding:20px 24px">'+
+      '<div id="ftab-ordine">'+
+        '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px">'+
+          '<div style="font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">1. Carica file Excel ordine</div>'+
+          '<label style="border:2px dashed #c5d8fa;border-radius:10px;padding:30px;text-align:center;cursor:pointer;background:#f8fbff;display:block">'+
+            '<input type="file" id="fabio-file" accept=".xlsx,.xls" style="display:none" onchange="_fabioLoadExcel(this)">'+
+            '<div style="font-size:32px;margin-bottom:8px">&#128202;</div>'+
+            '<div style="font-weight:600;color:#1a73e8" id="fabio-file-lbl">Clicca per caricare il file Excel di Fabio</div>'+
+            '<div style="font-size:12px;color:#aaa;margin-top:4px">Modulo_Gs_caffe_*.xlsx</div>'+
+          '</label>'+
+          '<div id="fabio-xl-st" style="margin-top:10px;font-size:13px;color:#888"></div>'+
+        '</div>'+
+        '<div id="fabio-preview"></div>'+
+      '</div>'+
+      '<div id="ftab-listino" style="display:none"></div>'+
+    '</div>';
+  document.body.appendChild(pg);
+  _fabioLoadProducts();
+}
+
+function _fabioTab(t){
+  document.getElementById('ftab-ordine').style.display=t==='ordine'?'block':'none';
+  document.getElementById('ftab-listino').style.display=t==='listino'?'block':'none';
+  ['ordine','listino'].forEach(function(x){
+    var b=document.getElementById('ftb-'+x);
+    if(b){b.style.background=x===t?'#fff':'transparent';b.style.color=x===t?'#1a1a2e':'#888';b.style.boxShadow=x===t?'0 1px 3px rgba(0,0,0,.1)':'none';}
+  });
+  if(t==='listino')_fabioRenderListino();
+}
+
+async function _fabioLoadProducts(){
+  _fabioProducts=[];
+  var pageInfo=null;
+  var st=document.getElementById('f-prod-st');
+  try{
+    while(true){
+      var qs=pageInfo?'products.json?page_info='+pageInfo:'products.json?limit=250&status=active';
+      var r=await proxyFetch(PROXY+'/shopify/'+qs);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      var d=await r.json();
+      _fabioProducts=_fabioProducts.concat(d.products||[]);
+      if(!d._nextPageInfo||(d.products||[]).length<250)break;
+      pageInfo=d._nextPageInfo;
+    }
+    if(st)st.textContent=_fabioProducts.length+' prodotti Shopify caricati';
+  }catch(e){
+    if(st)st.textContent='Errore prodotti: '+e.message;
+  }
+}
+
+function _fabioLoadExcel(input){
+  var file=input.files[0];if(!file)return;
+  var lbl=document.getElementById('fabio-file-lbl');
+  if(lbl)lbl.textContent='&#128202; '+file.name;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var wb=XLSX.read(e.target.result,{type:'binary'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+      _fabioProcessRows(rows);
+    }catch(ex){
+      var s=document.getElementById('fabio-xl-st');
+      if(s)s.textContent='Errore lettura Excel: '+ex.message;
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function _fabioProcessRows(rows){
+  _fabioOrderLines=[];
+  var warns=[];
+  rows.forEach(function(row){
+    var name=((row[1]||'')+'').trim();
+    var qty=row[3];
+    if(!name||qty===null||qty===undefined||qty==='')return;
+    var qn=parseFloat(qty);if(isNaN(qn)||qn<=0)return;
+    var lr=_fabioListino.find(function(l){return l.n.toLowerCase()===name.toLowerCase();});
+    if(!lr)lr=_fabioListino.find(function(l){
+      var a=name.toLowerCase(),b=l.n.toLowerCase();
+      return a.includes(b.substring(0,12))||b.includes(a.substring(0,12));
+    });
+    if(!lr){warns.push('Non nel listino: "'+name+'"');return;}
+    if(!lr.vid){warns.push('Non collegato Shopify: "'+name+'" - configura il Listino');return;}
+    var qf=qn,qm=lr.qm||1,qx=lr.qx||1;
+    if(qf<qm){warns.push('"'+name+'": '+qn+' -> min '+qm);qf=qm;}
+    if(qx>1&&qf%qx!==0){var r2=Math.ceil(qf/qx)*qx;warns.push('"'+name+'": '+qf+' -> multiplo '+r2);qf=r2;}
+    var stock=null;
+    _fabioProducts.forEach(function(p){
+      var v=p.variants.find(function(v){return String(v.id)===lr.vid;});
+      if(v&&stock===null)stock=v.inventory_quantity;
+    });
+    _fabioOrderLines.push({name:name,lr:lr,qo:qn,qf:qf,stock:stock,pf:lr.pf,ps:lr.ps,vid:lr.vid,st:lr.st});
+  });
+  var s=document.getElementById('fabio-xl-st');
+  if(!_fabioOrderLines.length){if(s)s.textContent='Nessun prodotto trovato. Configura il Listino Prezzi.';return;}
+  if(s)s.textContent=_fabioOrderLines.length+' prodotti caricati';
+  _fabioRenderPreview(warns);
+}
+
+function _fabioRenderPreview(warns){
+  var totF=0,totS=0;
+  var wHtml=warns.length?'<div style="margin-bottom:12px">'+warns.map(function(w){return '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:7px 12px;font-size:12px;color:#795548;margin-bottom:4px">'+w+'</div>';}).join('')+'</div>':'';
+  var trs=_fabioOrderLines.map(function(l){
+    var tf=l.qf*l.pf,ts=l.qf*l.ps;totF+=tf;totS+=ts;
+    var sb=l.stock===null?'<span style="background:#f0f2f5;color:#888;padding:2px 6px;border-radius:8px;font-size:11px">N/D</span>':l.stock<=0?'<span style="background:#ffeaea;color:#e53e3e;padding:2px 6px;border-radius:8px;font-size:11px">0</span>':l.stock<l.qf?'<span style="background:#fff3e0;color:#e67e22;padding:2px 6px;border-radius:8px;font-size:11px">'+l.stock+'</span>':'<span style="background:#e8f5e9;color:#2a9d60;padding:2px 6px;border-radius:8px;font-size:11px">'+l.stock+'</span>';
+    var ch=l.qf!==l.qo;
+    return '<tr style="border-bottom:1px solid #f0f2f5">'+
+      '<td style="padding:8px 10px;font-size:12px">'+l.name+'</td>'+
+      '<td style="padding:8px 10px;font-size:11px;color:#555">'+l.st+'</td>'+
+      '<td style="padding:8px 10px;text-align:center">'+l.qo+'</td>'+
+      '<td style="padding:8px 10px;text-align:center;font-weight:'+(ch?700:400)+';color:'+(ch?'#e67e22':'inherit')+'">'+l.qf+(ch?' !':'')+'</td>'+
+      '<td style="padding:8px 10px;text-align:right">&#8364;'+tf.toFixed(2)+'</td>'+
+      '<td style="padding:8px 10px;text-align:right;color:#888">&#8364;'+ts.toFixed(2)+'</td>'+
+      '<td style="padding:8px 10px;text-align:center">'+sb+'</td>'+
+    '</tr>';
+  }).join('');
+  var sc=Math.round((totS-totF)*100)/100;
+  document.getElementById('fabio-preview').innerHTML=
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px">'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">2. Anteprima ordine</div>'+wHtml+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'+
+        '<thead><tr style="background:#fafbfc;border-bottom:2px solid #f0f2f5">'+
+          '<th style="padding:8px 10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prodotto Excel</th>'+
+          '<th style="padding:8px 10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prodotto Shopify</th>'+
+          '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Qta ord.</th>'+
+          '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Qta finale</th>'+
+          '<th style="padding:8px 10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Tot. Fabio</th>'+
+          '<th style="padding:8px 10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Tot. Shopify</th>'+
+          '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Stock</th>'+
+        '</tr></thead><tbody>'+trs+'</tbody></table></div></div>'+
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)">'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">3. Riepilogo</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">'+
+        '<div style="background:#f8f9fc;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#1a73e8">&#8364;'+totF.toFixed(2)+'</div><div style="font-size:11px;color:#888;margin-top:2px">Totale Fabio</div></div>'+
+        '<div style="background:#f8f9fc;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#555">&#8364;'+totS.toFixed(2)+'</div><div style="font-size:11px;color:#888;margin-top:2px">Totale Shopify</div></div>'+
+        '<div style="background:#fff8e1;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#e67e22">&#8364;'+sc.toFixed(2)+'</div><div style="font-size:11px;color:#888;margin-top:2px">Sconto</div></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:10px">'+
+        '<button onclick="document.getElementById('fabio-preview').innerHTML=''" style="background:#f0f2f5;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;color:#555">Annulla</button>'+
+        '<button onclick="_fabioConfirm('+totS.toFixed(2)+','+sc.toFixed(2)+')" id="fabio-confirm-btn" style="background:#2a9d60;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;color:#fff">Crea bozza su Shopify</button>'+
+      '</div>'+
+      '<div id="fabio-result"></div>'+
+    '</div>';
+}
+
+async function _fabioConfirm(totS,sc){
+  var btn=document.getElementById('fabio-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Creazione...';}
+  try{
+    var lineItems=_fabioOrderLines.map(function(l){return{variant_id:parseInt(l.vid),quantity:l.qf};});
+    var body={draft_order:{customer:{id:parseInt(FABIO_CID)},line_items:lineItems,note:'Ordine Excel Fabio GS Caffe - Tot.Shopify: EUR '+totS.toFixed(2)+' - Sconto: EUR '+sc.toFixed(2),tags:'fabio-gs-caffe,pagamento-posticipato-90gg',use_customer_default_address:true}};
+    if(sc>0)body.draft_order.applied_discount={description:'Sconto Fabio GS Caffe',value_type:'fixed_amount',value:sc.toFixed(2),amount:sc.toFixed(2),title:'Sconto Fabio'};
+    body.draft_order.payment_terms={payment_terms_name:'Net 90',payment_terms_type:'NET',due_in_days:90};
+    var r=await proxyFetch(PROXY+'/shopify/draft_orders.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){var txt=await r.text();throw new Error('HTTP '+r.status+': '+txt.substring(0,200));}
+    var data=await r.json();
+    var draft=data.draft_order;
+    var url='https://admin.shopify.com/store/40f758-3/draft_orders/'+draft.id;
+    var res=document.getElementById('fabio-result');
+    if(res)res.innerHTML='<div style="margin-top:12px;padding:14px;background:#e8f5e9;border-radius:8px;font-size:13px">Bozza creata! <a href="'+url+'" target="_blank" style="color:#1a73e8;font-weight:700">Apri '+draft.name+' su Shopify &#8599;</a><br><span style="color:#666;font-size:12px">Totale: &#8364;'+parseFloat(draft.total_price||0).toFixed(2)+' - Sconto: &#8364;'+sc.toFixed(2)+'</span></div>';
+    if(btn){btn.textContent='Creato!';btn.style.background='#2a9d60';}
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Crea bozza su Shopify';}
+    alert('Errore: '+e.message);
+  }
+}
+
+function _fabioRenderListino(){
+  var opts=_fabioProducts.map(function(p){return p.variants.map(function(v){return '<option value="'+v.id+'">'+p.title+(p.variants.length>1?' - '+v.title:'')+' (&#8364;'+parseFloat(v.price||0).toFixed(2)+')</option>';}).join('');}).join('');
+  var trs=_fabioListino.map(function(row,i){
+    var selOpts='<option value="">-- Seleziona prodotto Shopify --</option>';
+    if(row.vid)selOpts='<option value="'+row.vid+'" selected>'+row.st+' (&#8364;'+row.ps.toFixed(2)+')</option>';
+    selOpts+=opts;
+    var link=row.pid?'<a href="https://admin.shopify.com/store/40f758-3/products/'+row.pid+'" target="_blank" style="font-size:11px;color:#1a73e8;margin-left:4px">&#8599;</a>':'';
+    return '<tr style="border-bottom:1px solid #f0f2f5">'+
+      '<td style="padding:6px 8px"><input value="'+row.n.replace(/"/g,'&quot;')+'" onchange="_fabioListino['+i+'].n=this.value" style="width:100%;font-size:12px;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;box-sizing:border-box"></td>'+
+      '<td style="padding:6px 8px;min-width:280px"><div style="display:flex;align-items:center;gap:4px"><select onchange="_fabioOnSel(this,'+i+')" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;max-width:300px">'+selOpts+'</select>'+link+'</div></td>'+
+      '<td style="padding:6px 8px"><input type="number" step="0.01" value="'+row.pf+'" onchange="_fabioListino['+i+'].pf=parseFloat(this.value)||0" style="width:75px;text-align:right;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;font-size:12px"></td>'+
+      '<td style="padding:6px 8px;text-align:right;color:#888;font-size:12px;white-space:nowrap">'+(row.ps>0?'&#8364;'+row.ps.toFixed(2):'--')+'</td>'+
+      '<td style="padding:6px 8px"><input type="number" min="1" value="'+row.qm+'" onchange="_fabioListino['+i+'].qm=parseInt(this.value)||1" style="width:55px;text-align:center;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;font-size:12px"></td>'+
+      '<td style="padding:6px 8px"><input type="number" min="1" value="'+row.qx+'" onchange="_fabioListino['+i+'].qx=parseInt(this.value)||1" style="width:55px;text-align:center;padding:5px 8px;border:1px solid #e0e4ea;border-radius:6px;font-family:inherit;font-size:12px"></td>'+
+      '<td style="padding:6px 8px;text-align:center"><button onclick="_fabioListino.splice('+i+',1);_fabioRenderListino()" style="background:#e53e3e;border:none;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">X</button></td>'+
+    '</tr>';
+  }).join('');
+  document.getElementById('ftab-listino').innerHTML=
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5">'+
+        '<span style="font-size:14px;font-weight:700">Listino prezzi Fabio</span>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button onclick="_fabioListino.push({n:'',vid:'',pid:'',st:'',pf:0,ps:0,qm:1,qx:1});_fabioRenderListino()" style="background:#f0f2f5;border:1px solid #e0e4ea;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:#555">+ Aggiungi</button>'+
+          '<button onclick="_fabioSaveListino()" style="background:#1a73e8;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:#fff">Salva listino</button>'+
+        '</div>'+
+      '</div>'+
+      '<div style="background:#e8f0fe;border-radius:8px;padding:10px 14px;font-size:12px;color:#1557b0;margin-bottom:12px">Seleziona prodotto Shopify per ogni voce. Salva prima di caricare ordine Excel.</div>'+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:800px">'+
+        '<thead><tr style="background:#fafbfc;border-bottom:2px solid #f0f2f5">'+
+          '<th style="padding:8px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;min-width:160px">Nome Excel</th>'+
+          '<th style="padding:8px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;min-width:280px">Prodotto Shopify</th>'+
+          '<th style="padding:8px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prezzo Fabio</th>'+
+          '<th style="padding:8px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Prezzo Shopify</th>'+
+          '<th style="padding:8px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Qta min</th>'+
+          '<th style="padding:8px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Multiplo</th>'+
+          '<th style="padding:8px;width:40px"></th>'+
+        '</tr></thead>'+
+        '<tbody>'+trs+'</tbody>'+
+      '</table></div>'+
+    '</div>';
+}
+
+function _fabioOnSel(sel,i){
+  var vid=sel.value;if(!vid)return;
+  for(var pi=0;pi<_fabioProducts.length;pi++){
+    var p=_fabioProducts[pi];
+    var v=p.variants.find(function(v){return String(v.id)===vid;});
+    if(v){_fabioListino[i].vid=vid;_fabioListino[i].pid=String(p.id);_fabioListino[i].st=p.title+(p.variants.length>1?' - '+v.title:'');_fabioListino[i].ps=parseFloat(v.price||0);_fabioRenderListino();break;}
+  }
+}
+
+function _fabioSaveListino(){
+  localStorage.setItem(FABIO_SK,JSON.stringify(_fabioListino));
+  alert('Listino salvato!');
+}
+</script>
+</body>
+</html>
