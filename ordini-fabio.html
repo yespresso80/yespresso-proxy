@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Ordini Fabio</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:0;background:#f5f7fa;color:#1a1a2e}
+  .topbar{background:#fff;border-bottom:1px solid #e8eaf0;padding:12px 24px;display:flex;align-items:center;gap:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .topbar h1{font-size:18px;font-weight:700;margin:0;color:#1a1a2e}
+  .tabs{display:flex;gap:2px;background:#f0f2f5;border-radius:8px;padding:3px}
+  .tab{padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888;transition:.15s}
+  .tab.active{background:#fff;color:#1a1a2e;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .content{padding:20px 24px;max-width:1200px;margin:0 auto}
+  .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+  .btn{padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+  .btn-primary{background:#1a73e8;color:#fff}.btn-primary:hover{background:#1557b0}.btn-primary:disabled{background:#aaa;cursor:not-allowed}
+  .btn-green{background:#2a9d60;color:#fff}.btn-green:hover{background:#1e7a4a}.btn-green:disabled{background:#aaa;cursor:not-allowed}
+  .btn-red{background:#e53e3e;color:#fff}.btn-red:hover{background:#c0392b}
+  .btn-grey{background:#f0f2f5;color:#555;border:1px solid #e0e4ea}.btn-grey:hover{background:#e0e4ea}
+  .btn-sm{padding:4px 10px;font-size:12px}
+  input,select{padding:7px 10px;border:1px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;outline:none;background:#fff}
+  input:focus,select:focus{border-color:#1a73e8}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:8px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:2px solid #f0f2f5;background:#fafbfc;white-space:nowrap}
+  td{padding:8px 12px;border-bottom:1px solid #f0f2f5;vertical-align:middle}
+  tr:hover td{background:#f8f9fc}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .badge-green{background:#e8f5e9;color:#2a9d60}
+  .badge-red{background:#ffeaea;color:#e53e3e}
+  .badge-orange{background:#fff3e0;color:#e67e22}
+  .badge-grey{background:#f0f2f5;color:#888}
+  .upload-area{border:2px dashed #c5d8fa;border-radius:10px;padding:30px;text-align:center;cursor:pointer;transition:.2s;background:#f8fbff}
+  .upload-area:hover{border-color:#1a73e8;background:#e8f0fe}
+  .spinner{width:14px;height:14px;border:2px solid #e0e4ea;border-top-color:#1a73e8;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .order-preview{background:#f8f9fc;border:1px solid #e0e4ea;border-radius:10px;padding:16px;margin-top:12px}
+  .warn{background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:10px 14px;font-size:12px;color:#795548;margin-bottom:8px}
+  .info-box{background:#e8f0fe;border-radius:8px;padding:12px 16px;font-size:13px;color:#1557b0;margin-bottom:12px}
+  .section-title{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5}
+  .qty-input{width:70px;text-align:center}
+  .price-input{width:90px;text-align:right}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>📦 Ordini Fabio</h1>
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('ordine')">📋 Nuovo Ordine</button>
+    <button class="tab" onclick="showTab('listino')">💰 Listino Prezzi</button>
+  </div>
+</div>
+
+<!-- TAB ORDINE -->
+<div id="tab-ordine" class="content">
+  <div class="card">
+    <div class="section-title">1. Carica file Excel ordine</div>
+    <div class="upload-area" onclick="document.getElementById('excel-input').click()">
+      <input type="file" id="excel-input" accept=".xlsx,.xls" style="display:none" onchange="loadExcel(this)">
+      <div style="font-size:32px;margin-bottom:8px">📊</div>
+      <div style="font-weight:600;color:#1a73e8" id="excel-label">Clicca per caricare il file Excel di Fabio</div>
+      <div style="font-size:12px;color:#aaa;margin-top:4px">Modulo_Gs_caffè_*.xlsx</div>
+    </div>
+    <div id="excel-status" style="margin-top:10px;font-size:13px;color:#888"></div>
+  </div>
+
+  <div id="preview-area" style="display:none">
+    <div class="card">
+      <div class="section-title">2. Anteprima ordine</div>
+      <div id="order-warnings"></div>
+      <table>
+        <thead><tr>
+          <th>Prodotto (Excel)</th>
+          <th>Prodotto Shopify</th>
+          <th>Qtà ord.</th>
+          <th>Qtà min</th>
+          <th>Qtà finale</th>
+          <th>Prezzo Fabio</th>
+          <th>Prezzo Shopify</th>
+          <th>Stock</th>
+          <th>Stato</th>
+        </tr></thead>
+        <tbody id="order-table-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="section-title">3. Riepilogo ordine</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+        <div style="background:#f8f9fc;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#1a73e8" id="sum-fabio">€0,00</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Totale Fabio</div>
+        </div>
+        <div style="background:#f8f9fc;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#555" id="sum-shopify">€0,00</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Totale Shopify (listino)</div>
+        </div>
+        <div style="background:#fff8e1;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#e67e22" id="sum-sconto">€0,00</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Sconto da applicare</div>
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-grey" onclick="resetOrder()">✕ Annulla</button>
+        <button class="btn btn-green" id="confirm-btn" onclick="confirmOrder()">✅ Crea ordine bozza su Shopify</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB LISTINO -->
+<div id="tab-listino" class="content" style="display:none">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="section-title" style="margin:0;border:none">Listino prezzi Fabio</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-grey btn-sm" onclick="addListinoRow()">+ Aggiungi riga</button>
+        <button class="btn btn-primary btn-sm" onclick="saveListino()">💾 Salva listino</button>
+      </div>
+    </div>
+    <div class="info-box">💡 Collega ogni voce Excel al prodotto Shopify corrispondente. Il nome Fabio può non corrispondere esattamente.</div>
+    <div style="overflow-x:auto">
+    <table style="min-width:900px">
+      <thead><tr>
+        <th style="min-width:160px">Nome Excel (Fabio)</th>
+        <th style="min-width:320px">Prodotto Shopify</th>
+        <th style="width:80px;text-align:right">Prezzo Fabio</th>
+        <th style="width:90px;text-align:right">Prezzo Shopify</th>
+        <th style="width:70px;text-align:center">Qtà min</th>
+        <th style="width:70px;text-align:center">Multiplo</th>
+        <th style="width:40px"></th>
+      </tr></thead>
+      <tbody id="listino-body"></tbody>
+    </table></div>
+    <div style="margin-top:12px">
+      <button class="btn btn-grey btn-sm" onclick="loadShopifyProducts()">🔄 Aggiorna prodotti Shopify</button>
+      <span id="products-status" style="font-size:12px;color:#888;margin-left:8px"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const PROXY = "https://yespresso-proxy.onrender.com";
+const FABIO_CUSTOMER_ID = "8985060213001";
+const STORAGE_KEY = "ordini_fabio_listino_v2";
+
+// Struttura listino: [{excelName, shopifyTitle, variantId, productId, priceFabio, priceShopify, qtyMin, qtyMultiplo}]
+let listino = [];
+let shopifyProducts = []; // [{id, title, variants:[{id,price,inventory_quantity,title}]}]
+let currentOrderLines = []; // righe elaborate dall'excel
+
+// ══ INIT ══
+loadListinoFromStorage();
+loadShopifyProducts();
+
+function showTab(t) {
+  document.getElementById('tab-ordine').style.display = t==='ordine' ? 'block' : 'none';
+  document.getElementById('tab-listino').style.display = t==='listino' ? 'block' : 'none';
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  if (t === 'listino') renderListino();
+}
+
+// ══ SHOPIFY ══
+async function shopifyGet(path) {
+  const r = await fetch(PROXY + '/shopify/' + path);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+async function shopifyPost(path, body) {
+  const r = await fetch(PROXY + '/shopify/' + path, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + await r.text());
+  return r.json();
+}
+
+async function loadShopifyProducts() {
+  document.getElementById('products-status').textContent = 'Caricamento...';
+  shopifyProducts = [];
+  let pageInfo = null;
+  try {
+    while (true) {
+      const qs = pageInfo ? 'products.json?page_info=' + pageInfo : 'products.json?limit=250&status=active';
+      const d = await shopifyGet(qs);
+      shopifyProducts = shopifyProducts.concat(d.products || []);
+      if (!d._nextPageInfo || (d.products||[]).length < 250) break;
+      pageInfo = d._nextPageInfo;
+    }
+    document.getElementById('products-status').textContent = shopifyProducts.length + ' prodotti caricati';
+  } catch(e) {
+    document.getElementById('products-status').textContent = '❌ ' + e.message;
+  }
+}
+
+// ══ LISTINO ══
+function loadListinoFromStorage() {
+  try { listino = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { listino = []; }
+  // Se vuoto, pre-popola con i prodotti del file Excel
+  if (!listino.length) listino = getDefaultListino();
+}
+
+function getDefaultListino() {
+  return [
+    {excelName:'100 Nespresso Cremoso/Napoli', variantId:'', productId:'', shopifyTitle:'', priceFabio:10, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'10 Nespresso Deca', variantId:'', productId:'', shopifyTitle:'', priceFabio:1.2, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'100 Nespresso Supremo Alluminio', variantId:'', productId:'', shopifyTitle:'', priceFabio:13, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'10 Nespresso Ginseng', variantId:'', productId:'', shopifyTitle:'', priceFabio:1, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'10 Nespresso Orzo', variantId:'', productId:'', shopifyTitle:'', priceFabio:1, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'100 Nespresso Gs GranBar', variantId:'', productId:'', shopifyTitle:'', priceFabio:9, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'100 Lavazza A Modo Mio Cremoso Napoli', variantId:'', productId:'', shopifyTitle:'', priceFabio:9.5, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'40 Lavazza A Modo Mio Deca', variantId:'', productId:'', shopifyTitle:'', priceFabio:5, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'10 Lavazza A Modo Mio Orzo', variantId:'', productId:'', shopifyTitle:'', priceFabio:1, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'160 Dolce Gusto Cremoso/Napoli', variantId:'', productId:'', shopifyTitle:'', priceFabio:19.5, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Deca', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Cappuccino', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Cioccolata', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Cortado', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Ginseng', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Nocciolino', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Orzo', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'16 Dolce Gusto Tè Limone', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.4, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'80 Caffitaly Cremoso', variantId:'', productId:'', shopifyTitle:'', priceFabio:11.5, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'10 Caffitaly Deca', variantId:'', productId:'', shopifyTitle:'', priceFabio:1.5, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'100 Bialetti Cremoso', variantId:'', productId:'', shopifyTitle:'', priceFabio:13, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'20 Bialetti Deca', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.8, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'100 Fior Fiore Coop Espresso Intenso', variantId:'', productId:'', shopifyTitle:'', priceFabio:10, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'150 CIALDE ESE 44', variantId:'', productId:'', shopifyTitle:'', priceFabio:11, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+    {excelName:'Crema caffè', variantId:'', productId:'', shopifyTitle:'', priceFabio:2.75, priceShopify:0, qtyMin:1, qtyMultiplo:1},
+  ];
+}
+
+function saveListino() {
+  // Leggi tutti i valori dalla tabella
+  const rows = document.querySelectorAll('#listino-body tr');
+  listino = [];
+  rows.forEach((tr, idx) => {
+    const cells = tr.querySelectorAll('td');
+    const sel = tr.querySelector('select.prod-select');
+    const variantId = sel ? sel.value : '';
+    let productId = '', shopifyTitle = '', priceShopify = 0;
+    if (variantId) {
+      for (const p of shopifyProducts) {
+        const v = p.variants.find(v => String(v.id) === variantId);
+        if (v) { productId = String(p.id); shopifyTitle = p.title + (p.variants.length>1?' - '+v.title:''); priceShopify = parseFloat(v.price||0); break; }
+      }
+    }
+    listino.push({
+      excelName: tr.querySelector('.excel-name')?.value || '',
+      variantId, productId, shopifyTitle, priceShopify,
+      priceFabio: parseFloat(tr.querySelector('.price-fabio')?.value || 0),
+      priceShopify,
+      qtyMin: parseInt(tr.querySelector('.qty-min')?.value || 1),
+      qtyMultiplo: parseInt(tr.querySelector('.qty-mult')?.value || 1)
+    });
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(listino));
+  showToast('Listino salvato!');
+}
+
+function addListinoRow() {
+  listino.push({excelName:'', variantId:'', productId:'', shopifyTitle:'', priceFabio:0, priceShopify:0, qtyMin:1, qtyMultiplo:1});
+  renderListino();
+  // Scrolla in fondo
+  setTimeout(() => {
+    const rows = document.querySelectorAll('#listino-body tr');
+    if (rows.length) rows[rows.length-1].scrollIntoView({behavior:'smooth'});
+  }, 100);
+}
+
+function removeListinoRow(idx) {
+  listino.splice(idx, 1);
+  renderListino();
+}
+
+function renderListino() {
+  const tbody = document.getElementById('listino-body');
+  // Costruisci opzioni prodotti
+  const prodOptions = shopifyProducts.map(p =>
+    p.variants.map(v =>
+      `<option value="${v.id}">${p.title}${p.variants.length>1?' – '+v.title:''} (€${parseFloat(v.price).toFixed(2)})</option>`
+    ).join('')
+  ).join('');
+
+  tbody.innerHTML = listino.map((row, i) => {
+    const selectedVariant = row.variantId ? `<option value="${row.variantId}" selected>${row.shopifyTitle} (€${row.priceShopify.toFixed(2)})</option>` : '<option value="">— Seleziona prodotto Shopify —</option>';
+    const shopifyUrl = row.productId ? `<a href="https://admin.shopify.com/store/40f758-3/products/${row.productId}" target="_blank" style="font-size:11px;color:#1a73e8">↗</a>` : '';
+    return `<tr>
+      <td><input class="excel-name" value="${row.excelName}" style="width:100%;font-size:12px" placeholder="Nome nel file Excel"></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <select class="prod-select" onchange="onProductSelect(this,${i})" style="flex:1;font-size:12px;max-width:300px">
+            ${selectedVariant}
+            <optgroup label="— Seleziona —">
+            ${prodOptions}
+            </optgroup>
+          </select>
+          ${shopifyUrl}
+        </div>
+      </td>
+      <td style="text-align:right"><input class="price-fabio price-input" type="number" step="0.01" value="${row.priceFabio}" style="width:75px;text-align:right"></td>
+      <td style="text-align:right;color:#888;font-size:12px">${row.priceShopify > 0 ? '€'+row.priceShopify.toFixed(2) : '—'}</td>
+      <td style="text-align:center"><input class="qty-min qty-input" type="number" min="1" value="${row.qtyMin}" style="width:55px;text-align:center"></td>
+      <td style="text-align:center"><input class="qty-mult qty-input" type="number" min="1" value="${row.qtyMultiplo}" style="width:55px;text-align:center"></td>
+      <td><button class="btn btn-red btn-sm" onclick="removeListinoRow(${i})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function onProductSelect(sel, idx) {
+  const variantId = sel.value;
+  if (!variantId) return;
+  for (const p of shopifyProducts) {
+    const v = p.variants.find(v => String(v.id) === variantId);
+    if (v) {
+      listino[idx].variantId = variantId;
+      listino[idx].productId = String(p.id);
+      listino[idx].shopifyTitle = p.title + (p.variants.length>1?' – '+v.title:'');
+      listino[idx].priceShopify = parseFloat(v.price||0);
+      // Aggiorna cella prezzo Shopify
+      const row = document.querySelectorAll('#listino-body tr')[idx];
+      if (row) {
+        const cells = row.querySelectorAll('td');
+        cells[3].textContent = '€' + parseFloat(v.price||0).toFixed(2);
+        // Aggiorna link
+        cells[1].querySelector('a') && cells[1].querySelector('a').remove();
+        const a = document.createElement('a');
+        a.href = 'https://admin.shopify.com/store/40f758-3/products/' + p.id;
+        a.target = '_blank';
+        a.style.cssText = 'font-size:11px;color:#1a73e8;margin-left:4px';
+        a.textContent = '↗';
+        cells[1].querySelector('div').appendChild(a);
+      }
+      break;
+    }
+  }
+}
+
+// ══ EXCEL ══
+function loadExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('excel-label').textContent = '📊 ' + file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, {type:'binary'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    processExcelRows(rows);
+  };
+  reader.readAsBinaryString(file);
+}
+
+function processExcelRows(rows) {
+  currentOrderLines = [];
+  const warnings = [];
+
+  rows.forEach(row => {
+    const name = (row[1] || '').toString().trim();
+    const qty = row[3];
+    if (!name || qty === null || qty === undefined || qty === '' || isNaN(parseFloat(qty))) return;
+    const qtyNum = parseFloat(qty);
+    if (qtyNum <= 0) return;
+
+    // Cerca nel listino (match esatto o parziale case-insensitive)
+    let listinoRow = listino.find(l => l.excelName.toLowerCase() === name.toLowerCase());
+    if (!listinoRow) {
+      listinoRow = listino.find(l =>
+        name.toLowerCase().includes(l.excelName.toLowerCase().substring(0,15)) ||
+        l.excelName.toLowerCase().includes(name.toLowerCase().substring(0,15))
+      );
+    }
+
+    if (!listinoRow) {
+      warnings.push(`⚠️ Prodotto non trovato nel listino: "${name}" — ignorato`);
+      return;
+    }
+    if (!listinoRow.variantId) {
+      warnings.push(`⚠️ Prodotto "${name}" non collegato a Shopify — ignorato`);
+      return;
+    }
+
+    // Calcola qtà finale con minimo e multiplo
+    let qtyFinal = qtyNum;
+    const qtyMin = listinoRow.qtyMin || 1;
+    const qtyMult = listinoRow.qtyMultiplo || 1;
+    if (qtyFinal < qtyMin) {
+      warnings.push(`📦 "${name}": qtà ${qtyNum} → aumentata al minimo ${qtyMin}`);
+      qtyFinal = qtyMin;
+    }
+    // Arrotonda al multiplo superiore
+    if (qtyMult > 1 && qtyFinal % qtyMult !== 0) {
+      const rounded = Math.ceil(qtyFinal / qtyMult) * qtyMult;
+      warnings.push(`📦 "${name}": qtà ${qtyFinal} → arrotondata al multiplo ${rounded} (x${qtyMult})`);
+      qtyFinal = rounded;
+    }
+
+    // Cerca variante Shopify per stock
+    let stock = null;
+    for (const p of shopifyProducts) {
+      const v = p.variants.find(v => String(v.id) === listinoRow.variantId);
+      if (v) { stock = v.inventory_quantity; break; }
+    }
+
+    currentOrderLines.push({
+      excelName: name,
+      listinoRow,
+      qtyOrdered: qtyNum,
+      qtyFinal,
+      stock,
+      priceFabio: listinoRow.priceFabio,
+      priceShopify: listinoRow.priceShopify,
+      variantId: listinoRow.variantId,
+      shopifyTitle: listinoRow.shopifyTitle
+    });
+  });
+
+  if (!currentOrderLines.length) {
+    document.getElementById('excel-status').textContent = '❌ Nessun prodotto trovato. Controlla che il listino sia configurato.';
+    return;
+  }
+
+  renderOrderPreview(warnings);
+}
+
+function renderOrderPreview(warnings) {
+  const tbody = document.getElementById('order-table-body');
+  let totalFabio = 0, totalShopify = 0;
+
+  const warnHtml = warnings.map(w => `<div class="warn">${w}</div>`).join('');
+  document.getElementById('order-warnings').innerHTML = warnHtml;
+
+  tbody.innerHTML = currentOrderLines.map(line => {
+    const stockBadge = line.stock === null ? '<span class="badge badge-grey">N/D</span>'
+      : line.stock <= 0 ? '<span class="badge badge-red">0</span>'
+      : line.stock < line.qtyFinal ? `<span class="badge badge-orange">${line.stock}</span>`
+      : `<span class="badge badge-green">${line.stock}</span>`;
+
+    const stato = line.stock === null ? '<span class="badge badge-grey">Sconosciuto</span>'
+      : line.stock <= 0 ? '<span class="badge badge-orange">Esaurito (inserito uguale)</span>'
+      : line.stock < line.qtyFinal ? '<span class="badge badge-orange">Stock parziale</span>'
+      : '<span class="badge badge-green">Disponibile</span>';
+
+    const totFabio = line.qtyFinal * line.priceFabio;
+    const totShopify = line.qtyFinal * line.priceShopify;
+    totalFabio += totFabio;
+    totalShopify += totShopify;
+
+    const qtyChanged = line.qtyFinal !== line.qtyOrdered;
+
+    return `<tr>
+      <td style="font-size:12px">${line.excelName}</td>
+      <td style="font-size:12px;color:#555">${line.shopifyTitle}</td>
+      <td style="text-align:center">${line.qtyOrdered}</td>
+      <td style="text-align:center;color:#888">${line.listinoRow.qtyMin}</td>
+      <td style="text-align:center;font-weight:${qtyChanged?'700':'400'};color:${qtyChanged?'#e67e22':'inherit'}">${line.qtyFinal}${qtyChanged?' ⚠️':''}</td>
+      <td style="text-align:right">€${totFabio.toFixed(2)}</td>
+      <td style="text-align:right;color:#888">€${totShopify.toFixed(2)}</td>
+      <td style="text-align:center">${stockBadge}</td>
+      <td>${stato}</td>
+    </tr>`;
+  }).join('');
+
+  const sconto = totalShopify - totalFabio;
+  document.getElementById('sum-fabio').textContent = '€' + totalFabio.toFixed(2);
+  document.getElementById('sum-shopify').textContent = '€' + totalShopify.toFixed(2);
+  document.getElementById('sum-sconto').textContent = '€' + sconto.toFixed(2);
+  document.getElementById('preview-area').style.display = 'block';
+  document.getElementById('excel-status').textContent = currentOrderLines.length + ' prodotti caricati';
+}
+
+function resetOrder() {
+  currentOrderLines = [];
+  document.getElementById('preview-area').style.display = 'none';
+  document.getElementById('excel-input').value = '';
+  document.getElementById('excel-label').textContent = 'Clicca per caricare il file Excel di Fabio';
+  document.getElementById('excel-status').textContent = '';
+}
+
+// ══ CREA ORDINE SHOPIFY ══
+async function confirmOrder() {
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creazione ordine...';
+
+  try {
+    // Calcola totali
+    let totalFabio = currentOrderLines.reduce((s,l) => s + l.qtyFinal * l.priceFabio, 0);
+    let totalShopify = currentOrderLines.reduce((s,l) => s + l.qtyFinal * l.priceShopify, 0);
+    const sconto = Math.round((totalShopify - totalFabio) * 100) / 100;
+
+    // Line items con prezzo Shopify (lo sconto si applica come discount)
+    const lineItems = currentOrderLines.map(l => ({
+      variant_id: parseInt(l.variantId),
+      quantity: l.qtyFinal
+    }));
+
+    // Calcola percentuale sconto (sul totale)
+    // Usiamo discount_codes o applied_discount
+    const discountPct = totalShopify > 0 ? Math.round((sconto / totalShopify) * 10000) / 100 : 0;
+
+    // Crea ordine in bozza con pagamento posticipato
+    const draftOrder = {
+      draft_order: {
+        customer: { id: parseInt(FABIO_CUSTOMER_ID) },
+        line_items: lineItems,
+        applied_discount: sconto > 0 ? {
+          description: 'Sconto personalizzato Fabio GS Caffè',
+          value_type: 'fixed_amount',
+          value: sconto.toFixed(2),
+          amount: sconto.toFixed(2),
+          title: 'Sconto Fabio'
+        } : undefined,
+        payment_terms: {
+          payment_terms_name: 'Net 90',
+          payment_terms_type: 'NET',
+          due_in_days: 90
+        },
+        note: 'Ordine da file Excel Fabio GS Caffè — Totale listino: €' + totalShopify.toFixed(2) + ' — Totale Fabio: €' + totalFabio.toFixed(2) + ' — Sconto: €' + sconto.toFixed(2),
+        tags: 'fabio-gs-caffe,pagamento-posticipato-90gg',
+        use_customer_default_address: true
+      }
+    };
+
+    const result = await shopifyPost('draft_orders.json', draftOrder);
+    const draft = result.draft_order;
+
+    if (draft && draft.id) {
+      const draftUrl = 'https://admin.shopify.com/store/40f758-3/draft_orders/' + draft.id;
+      btn.innerHTML = '✅ Ordine creato!';
+      btn.style.background = '#2a9d60';
+
+      // Mostra link
+      const footer = document.querySelector('.order-preview') || document.querySelector('.card:last-child');
+      const msgDiv = document.createElement('div');
+      msgDiv.style.cssText = 'margin-top:12px;padding:14px;background:#e8f5e9;border-radius:8px;font-size:13px';
+      msgDiv.innerHTML = `✅ Bozza ordine creata! <a href="${draftUrl}" target="_blank" style="color:#1a73e8;font-weight:700">Apri bozza su Shopify ↗</a><br>
+        <span style="color:#666;font-size:12px">Numero bozza: ${draft.name} · Totale: €${parseFloat(draft.total_price||0).toFixed(2)} · Sconto: €${sconto.toFixed(2)}</span>`;
+      document.querySelector('#preview-area .card:last-child div:last-child').appendChild(msgDiv);
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = '✅ Crea ordine bozza su Shopify';
+    alert('Errore: ' + e.message);
+  }
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1a1a2e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+</script>
+</body>
+</html>
