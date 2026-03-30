@@ -359,9 +359,13 @@ function processExcelRows(rows) {
   rows.forEach(row => {
     const name = (row[1] || '').toString().trim();
     const qty = row[3];
+    const priceCheck = row[2]; // col C = prezzo Fabio
+    // Salta righe senza quantità
     if (!name || qty === null || qty === undefined || qty === '' || isNaN(parseFloat(qty))) return;
     const qtyNum = parseFloat(qty);
     if (qtyNum <= 0) return;
+    // Salta righe categoria (col C non è numero = es. NESPRESSO, LAVAZZA...)
+    if (priceCheck === null || priceCheck === undefined || isNaN(parseFloat(priceCheck))) return;
 
     // Cerca nel listino (match esatto o parziale case-insensitive)
     let listinoRow = listino.find(l => l.excelName.toLowerCase() === name.toLowerCase());
