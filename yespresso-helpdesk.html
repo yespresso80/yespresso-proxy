@@ -247,7 +247,8 @@ textarea.field{min-height:80px;resize:vertical}
 .qrcat-btn{padding:5px 12px;border-radius:20px;border:1.5px solid #e0e4ea;background:#fff;color:#555;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500}
 .qrcat-active{background:#e8f0fe!important;color:#1a73e8!important;border-color:#1a73e8!important}
 </style>
-<!-- deploy:1773904677770 --></head>
+<!-- deploy:1773904677770 --><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
 <body>
 <div class="toast" id="toast"></div>
 
@@ -4867,6 +4868,7 @@ function openToolModal(tool){
   document.getElementById('tools-menu-dropdown').style.display='none';
   if(tool==='brttrack'){openBrtTrackModal();return;}
   if(tool==='resi'){openResiModal();return;}
+  if(tool==='fabio'){openOrdiniFabio();return;}
   var b64=_toolB64[tool];
   if(!b64)return;
   var html=decodeURIComponent(escape(atob(b64)));
