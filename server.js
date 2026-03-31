@@ -363,7 +363,7 @@ async function brtRestPost(path, body) {
       const brtRes = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
       const html = await brtRes.text();
       const at_fermopoint = /fermopoint|fermo\s*point|punto\s*di\s*ritiro/i.test(html);
-      const fermopoint_name = "";
+      const fermopoint_name = at_fermopoint ? html.substring(html.toLowerCase().indexOf("fermopoint"), html.toLowerCase().indexOf("fermopoint") + 80).replace(/<[^>]+>/g, "").trim() : "";
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, at_fermopoint, fermopoint_name, nspediz }));
     } catch(e) {
@@ -514,7 +514,7 @@ async function brtRestPost(path, body) {
     await new Promise(resolve => req.on("end", resolve));
     const body_cs = Buffer.concat(chunks_cs).toString();
     try {
-      const csRes = await fetch("https://creditsyard.com/api/common/customers/adjust", {
+      const csRes = await fetch("https://creditsyard.com/api/common/credits/adjust", {
         method: "POST",
         headers: {
           "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114",
@@ -592,60 +592,10 @@ async function brtRestPost(path, body) {
   }
 
   // BRT ORM - prenotazione ritiri
-  if (req.url.startsWith("/brt-orm/")) {
-    const brtOrmPath = req.url.replace("/brt-orm", "");
-    const brtOrmUrl = "https://api.brt.it/orm" + brtOrmPath;
-    const chunks_orm = [];
-    req.on("data", chunk => chunks_orm.push(chunk));
-    await new Promise(resolve => req.on("end", resolve));
-    const body_orm = Buffer.concat(chunks_orm);
-    try {
-      const brtOrmRes = await fetch(brtOrmUrl, {
-        method: req.method,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Api-Key": req.headers["x-api-key"] || "",
-          "Authorization": BRT_AUTH
-        },
-        body: body_orm.length > 0 ? body_orm : undefined
-      });
-      const brtOrmText = await brtOrmRes.text();
-      console.log("[BRT ORM]", req.method, brtOrmUrl, "->", brtOrmRes.status, brtOrmText.substring(0, 200));
-      res.writeHead(brtOrmRes.status, { "Content-Type": "application/json" });
-      res.end(brtOrmText);
-    } catch(e) {
-      console.error("[BRT ORM] Errore:", e.message);
-      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
-    }
-    return;
-  }
+
 
   // BRT check fermopoint
-  if (req.url.startsWith("/brt/check-fermopoint")) {
-    const qs = req.url.split("?")[1] || "";
-    const params = new URLSearchParams(qs);
-    const nspediz = params.get("nspediz") || "";
-    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
-    try {
-      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
-      const result = data.ttParcelIdResponse || data;
-      const spedizione = result.spedizione || {};
-      const datiConsegna = spedizione.dati_consegna || {};
-      // Fermopoint: stato "ready_for_pickup" o "FERMO POINT" nel ultimo evento
-      const eventi = (spedizione.eventi && spedizione.eventi.evento) || [];
-      const eventiArr = Array.isArray(eventi) ? eventi : [eventi];
-      const ultimoEvento = eventiArr[eventiArr.length - 1] || {};
-      const descEvento = (ultimoEvento.descrizione_evento || "").toUpperCase();
-      const at_fermopoint = descEvento.includes("FERMO") || descEvento.includes("PUNTO DI RITIRO") || descEvento.includes("FERMOPOINT");
-      const scadenza_ritiro = ultimoEvento.data_evento || "";
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, raw: data }));
-    } catch(e) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
-    return;
-  }
+
 
   let targetUrl, requestHeaders;
 
