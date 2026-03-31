@@ -6,7 +6,7 @@ let SftpClient;
 try { SftpClient = require("ssh2-sftp-client"); } catch(e) { console.log("[SFTP] ssh2-sftp-client non installato:", e.message); }
 
 const PORT = process.env.PORT || 3001;
-const HD_TOKEN = process.env.HD_TOKEN || "";
+const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || "";
 const SHOPIFY_SHOP = "40f758-3.myshopify.com";
 const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || "";
@@ -187,23 +187,6 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  if (req.url === "/reso-magazzino.html") {
-    const rpFile = path.join(__dirname, "reso-magazzino.html");
-    fs.readFile(rpFile, function(err, data) {
-      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
-    });
-    return;
-  }
-  if (req.url === "/reso-magazzino.html") {
-    const resoFile = path.join(__dirname, "reso-magazzino.html");
-    fs.readFile(resoFile, function(err, data) {
-      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
-    });
-    return;
-  }
-
   if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
     fs.readFile(filePath, function(err, data) {
@@ -221,11 +204,11 @@ const server = http.createServer(async function(req, res) {
 // BRT REST API Integration
 // ═══════════════════════════════════════════════
 const BRT_USER = "1791201";
-const BRT_PASS = process.env.BRT_PASS || "";
+const BRT_PASS = "Dus0549dsb";
 const BRT_SFTP_HOST = "sftp.brt.it";
 const BRT_SFTP_PORT = 22;
 const BRT_SFTP_USER = "1791201";
-const BRT_SFTP_PASS = process.env.BRT_SFTP_PASS || "";
+const BRT_SFTP_PASS = "qyo^G16^H3";
 const BRT_SFTP_PATH = "/OUT";
 const BRT_REST_BASE = "https://api.brt.it/rest/v1/tracking";
 const BRT_VAS = "https://vas.brt.it";
@@ -445,74 +428,10 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // ── RESI — GitHub come database persistente ──
-  const GH_RESI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/resi.json';
-
-  async function ghResiGet() {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) return { data: [], sha: null };
-    const r = await fetch(GH_RESI_URL, {
-      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (r.status === 404) return { data: [], sha: null };
-    const j = await r.json();
-    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
-    return { data, sha: j.sha };
-  }
-
-  async function ghResiSave(data, sha) {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) throw new Error('GH_TOKEN non configurato');
-    const body = { message: 'update resi', content: Buffer.from(JSON.stringify(data)).toString('base64') };
-    if (sha) body.sha = sha;
-    await fetch(GH_RESI_URL, {
-      method: 'PUT',
-      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  }
-
-  if (req.url === '/resi' && req.method === 'GET') {
-    try {
-      const { data } = await ghResiGet();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(data));
-    } catch(e) {
-      console.error('[RESI GET]', e.message);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end('[]');
-    }
-    return;
-  }
-
-  if (req.url === '/resi' && req.method === 'POST') {
-    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
-    try {
-      const newData = JSON.parse(Buffer.concat(chunks).toString());
-      const { sha } = await ghResiGet();
-      await ghResiSave(Array.isArray(newData) ? newData : [], sha);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-    } catch(e) {
-      console.error('[RESI POST]', e.message);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
-    return;
-  }
-
   let targetUrl, requestHeaders;
 
   if (req.url.startsWith("/shopify")) {
-    let p = req.url.replace(/^\/shopify/, "");
-    // Se la URL contiene page_info, rimuovi tutti gli altri parametri query
-    // Shopify non accetta nessun altro parametro insieme a page_info
-    if (p.includes('page_info=')) {
-      const [path, qs] = p.split('?');
-      const params = new URLSearchParams(qs);
-      const pageInfo = params.get('page_info');
-      p = path + '?page_info=' + pageInfo;
-    }
+    const p = req.url.replace(/^\/shopify/, "");
     const token = await getShopifyToken();
     targetUrl = "https://" + SHOPIFY_SHOP + "/admin/api/2024-01" + p;
     requestHeaders = { "X-Shopify-Access-Token": token, "Content-Type": "application/json" };
@@ -545,18 +464,7 @@ async function brtRestPost(path, body) {
         if (proxyRes.headers["link"]) respHeaders["Link"] = proxyRes.headers["link"];
         if (proxyRes.headers["x-shopify-shop-api-call-limit"]) respHeaders["x-shopify-shop-api-call-limit"] = proxyRes.headers["x-shopify-shop-api-call-limit"];
         res.writeHead(proxyRes.statusCode, respHeaders);
-        // Inietta _nextPageInfo nel JSON Shopify per supportare paginazione lato client
-        const linkHeader = proxyRes.headers["link"] || "";
-        const nextMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>; rel="next"/);
-        if (nextMatch && proxyRes.statusCode === 200) {
-          try {
-            const json = JSON.parse(responseBody.toString());
-            json._nextPageInfo = nextMatch[1];
-            res.end(JSON.stringify(json));
-          } catch(e) { res.end(responseBody); }
-        } else {
-          res.end(responseBody);
-        }
+        res.end(responseBody);
       });
     });
     proxyReq.on("error", function(err) { console.error("[ERRORE]", err.message); res.writeHead(500); res.end(JSON.stringify({ error: err.message })); });
