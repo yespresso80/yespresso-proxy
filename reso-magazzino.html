@@ -148,114 +148,6 @@
 
 <script>
 const PROXY = "https://yespresso-proxy.onrender.com";
-const APP_TOKEN = "";
-
-function proxyFetch(url, opts) {
-  opts = opts || {};
-  opts.headers = opts.headers || {};
-  if(APP_TOKEN) opts.headers["X-App-Token"] = APP_TOKEN;
-  return fetch(url, opts);
-}
-
-// ── Nomi prodotti short ──
-const PRODUCT_SHORT_NAMES = {
-  "yespresso 240 capsule compatibili con caffitaly miscela cremoso": "240 CAFFITALY - CREMOSO",
-  "yespresso 240 capsule compatibili con lavazza a modo mio cremoso (12 confezioni da 20 capsule)": "240 A MODO MIO - CREMOSO",
-  "yespresso 240 capsule compatibili lavazza a modo mio cremoso (12 confezioni da 20 capsule)": "240 A MODO MIO - CREMOSO",
-  "yespresso 80 capsule compatibili caffitaly miscela cremoso": "80 CAFFITALY - CREMOSO",
-  "yespresso, cremoso napoli - 100 capsule compatibili con bialetti mokona e mokespresso": "100 BIALETTI - CREMOSO",
-  "yespresso, cremoso napoli \u2013 100 capsule compatibili con bialetti mokona e mokespresso": "100 BIALETTI - CREMOSO",
-  "offerta! 150 cialde in carta ese 44mm (espresso intenso)": "150 CIALDE ESE44 - INTENSO",
-  "offerta! 150 cialde in carta ese 44mm (espresso)": "150 CIALDE ESE44 - INTENSO",
-  "yespresso 100 capsule compatibili con bialetti miscela cremoso": "100 BIALETTI - CREMOSO",
-  "yespresso 100 capsule compatibili con nespresso miscela cremoso": "100 NESPRESSO - CREMOSO",
-  "yespresso 240 capsule compatibili caffitaly miscela cremoso": "240 CAFFITALY - CREMOSO",
-  "yespresso 240 capsule compatibili con bialetti miscela cremoso": "240 BIALETTI - CREMOSO",
-  "64 capsule dolce gusto cappuccino compatibili": "64 DOLCE GUSTO - CAPPUCCINO",
-  "80 capsule caffitaly compatibili - cremoso": "80 CAFFITALY - CREMOSO",
-  "80 capsule caffitaly cremoso caff\u00e8 compatibili": "80 CAFFITALY - CREMOSO",
-  "80 capsule compatibili caffitaly - cremoso": "80 CAFFITALY - CREMOSO",
-  "80 capsule compatibili con caffitaly miscela cremoso": "80 CAFFITALY - CREMOSO",
-  "80 capsule compatibili con caffitaly miscela cremoso (non funzionano sulle macchine modello maia s33, luna s32, iris s27, volta, quadra e arka)": "80 CAFFITALY - CREMOSO",
-  "300 capsule linea s - espresso intenso": "300 LINEA S - INTENSO",
-  "300 cialde carta ese 44 - espresso intenso": "300 Cialde ESE 44 - INTENSO",
-  "300 capsule compatibili con nespresso cremoso": "300 NESPRESSO - CREMOSO",
-  "300 capsule compatibili fior lui - intenso": "300 FIOR LUI - INTENSO",
-  "300 capsule compatibili nespresso - cremoso": "300 NESPRESSO - CREMOSO",
-  "240 capsule compatibili con bialetti miscela cremoso": "240 BIALETTI - CREMOSO",
-  "240 capsule compatibili con nespresso granbar": "240 NESPRESSO - GRANBAR",
-  "240 capsule compatibili lavazza a modo mio - cremoso": "240 A MODO MIO - CREMOSO",
-  "240 capsule compatibili nespresso - granbar": "240 NESPRESSO - GRANBAR",
-  "240 capsule lavazza a modo mio cremoso caff\u00e8 compatibili": "240 A MODO MIO - CREMOSO",
-  "240 capsule lavazza a modo mio cremoso caff\u00e8 compatibili, cialde caff\u00e8lavazza a modo mio": "240 A MODO MIO - CREMOSO",
-  "240 capsule nespresso caff\u00e8 compatibili granbar, cialde compatibili caff\u00e8 per nespresso": "240 NESPRESSO - GRANBAR",
-  "240 capsule nespresso granbar caff\u00e8 compatibili": "240 NESPRESSO - GRANBAR",
-  "240 capsule bialetti compatibili caff\u00e8 cremoso, ccapsule compatibili bialetti, cialde compatibili bialetti": "240 BIALETTI - CREMOSO",
-  "240 capsule caffitaly cremoso caff\u00e8 compatibili": "240 CAFFITALY - CREMOSO",
-  "240 capsule compatibili bialetti - cremoso": "240 BIALETTI - CREMOSO",
-  "240 capsule compatibili bialetti miscela cremoso": "240 BIALETTI - CREMOSO",
-  "240 capsule compatibili caffitaly - cremoso": "240 CAFFITALY - CREMOSO",
-  "240 capsule compatibili caffitaly miscela cremoso": "240 CAFFITALY - CREMOSO",
-  "240 capsule compatibili caffitaly miscela cremoso (non funzionano sulle macchine modello maia s33, luna s32, iris s27, volta, quadra e arka)": "240 CAFFITALY - CREMOSO",
-  "160 capsule dolce gusto cremoso caff\u00e8 compatibili": "160 DOLCE GUSTO - CREMOSO",
-  "20 capsule compatibili bialetti - cremoso": "20 BIALETTI - CREMOSO",
-  "200 capsule compatibili con nespresso cremoso napoli - 2 confezioni da 100 capsule": "200 NESPRESSO - CREMOSO",
-  "200 capsule compatibili nespresso - cremoso": "200 NESPRESSO - CREMOSO",
-  "200 capsule compatibili nespresso cremoso napoli - 2 confezioni da 100 capsule": "200 NESPRESSO - CREMOSO",
-  "16 capsule dolce gusto ginseng compatibili": "16 DOLCE GUSTO - GINSENG",
-  "16 capsule dolce gusto orzo compatibili, capsule caff\u00e8 dolce e gusto": "16 DOLCE GUSTO - ORZO",
-  "160 capsule compatibili con dolce gusto nescaf\u00e8 miscela cremoso - 10 confezioni da 16 capsule": "160 DOLCE GUSTO - CREMOSO",
-  "160 capsule compatibili condolce gusto nescaf\u00e8 cremoso - 10 confezioni da 16 capsule": "160 DOLCE GUSTO - CREMOSO",
-  "160 capsule compatibili dolce gusto - cremoso": "160 DOLCE GUSTO - CREMOSO",
-  "160 capsule compatibili dolce gusto nescaf\u00e8 cremoso - 10 confezioni da 16 capsule": "160 DOLCE GUSTO - CREMOSO",
-  "160 capsule dolce gusto caff\u00e8 compatibili cremoso , capsule caffe dolce e gusto, capsule caffe per dolce gusto": "160 DOLCE GUSTO - CREMOSO",
-  "16 capsule compatibili dolce gusto - ginseng": "16 DOLCE GUSTO - GINSENG",
-  "16 capsule compatibili dolce gusto - nocciolino": "16 DOLCE GUSTO - NOCCIOLINO",
-  "16 capsule compatibili dolce gusto - orzo": "16 DOLCE GUSTO - ORZO",
-  "16 capsule compatibili dolce gusto - t\u00e8 al limone": "16 DOLCE GUSTO - LIMONE",
-  "16 capsule compatibili dolce gusto - te' al limone": "16 DOLCE GUSTO - TE' AL LIMONE",
-  "16 capsule dolce gusto cappuccino compatibili": "16 DOLCE GUSTO - CAPPUCCINO",
-  "16 capsule dolce gusto cioccolata compatibili": "16 DOLCE GUSTO - CIOCCOLATA",
-  "150 cialde caff\u00e8 carta ese44 - espresso intenso": "150 CIALDE ESE44 - INTENSO",
-  "150 cialde carta ese44 - espresso intenso": "150 CIALDE ESE44 - INTENSO",
-  "16 capsule compatibili dolce gusto - cappuccino": "16 DOLCE GUSTO - CAPPUCCINO",
-  "16 capsule compatibili dolce gusto - cioccolata": "16 DOLCE GUSTO - CIOCCOLATA",
-  "16 capsule compatibili dolce gusto - cortado": "16 DOLCE GUSTO - CORTADO",
-  "16 capsule compatibili dolce gusto - cremoso": "16 DOLCE GUSTO - CREMOSO",
-  "16 capsule compatibili dolce gusto - decaffeinato": "16 DOLCE GUSTO - DECA",
-  "100 capsule fior lui - espresso intenso": "100 FIOR LUI - NTENSO",
-  "100 capsule fior lui caff\u00e8 espresso intenso compatibili": "100 FIOR LUI - INTENSO",
-  "100 capsule lavazza a modo mio cremoso": "100 A MODO MIO - CREMOSO",
-  "100 capsule lavazza a modo mio cremoso compatibili": "100 A MODO MIO - CREMOSO",
-  "100 capsule linea s - espresso intenso": "100 LINEA S - INTENSO",
-  "100 capsule nespresso alluminio caff\u00e8 compatibili - miscela supremo": "100 NESPRESSO - ALLUMINIO",
-  "100 capsule nespresso alluminio compatibili - miscela supremo": "100 NESPRESSO - ALLUMINIO",
-  "100 capsule nespresso caff\u00e8 compatibili - miscela supremo": "100 CAPSULE NESPRESSO - ALLUMINIO",
-  "100 capsule nespresso cremoso caff\u00e8 compatibili": "100 NESPRESSO - CREMOSO",
-  "100 capsule fior fiore coop e lui caff\u00e8 compatibili - intenso": "100 FIOR LUI - NTENSO",
-  "100 capsule compatibili con lavazza a modo mio miscela cremoso": "100 A MODO MIO - CREMOSO",
-  "100 capsule compatibili lavazza a modo mio - cremoso": "100 A MODO MIO - CREMOSO",
-  "100 capsule compatibili nespresso - cremoso": "100 NESPRESSO - CREMOSO",
-  "10 capsule compatibili nespresso - orzo": "10 NESPRESSO - ORZO",
-  "100 capsule alluminio compatibili con nespresso supremo": "100 NESPRESSO - ALLUMINIO",
-  "100 capsule alluminio compatibili nespresso - supremo": "100 NESPRESSO - ALLUMINIO",
-  "100 capsule bialetti compatibili cremoso, cialde caff\u00e8 compaibili bialetti": "100 BIALETTI - CREMOSO",
-  "100 capsule compatibili bialetti - cremoso": "100 BIALETTI - CREMOSO",
-  "10 capsule compatibili nespresso - ginseng": "10 NESPRESSO - GINSENG",
-  "240 capsule compatibili caffitaly miscela cremoso (non funzionano sulle macchine caffitaly modello maia s33, luna s32, iris s27, volta, quadra e arka)": "240 CAFFITALY - CREMOSO"
-};
-
-function shortName(name) {
-  if (!name) return name;
-  var key = name.toLowerCase().trim();
-  if (PRODUCT_SHORT_NAMES[key]) return PRODUCT_SHORT_NAMES[key];
-  var keys = Object.keys(PRODUCT_SHORT_NAMES);
-  for (var i = 0; i < keys.length; i++) {
-    var k = keys[i];
-    if (key.includes(k) || k.includes(key)) return PRODUCT_SHORT_NAMES[k];
-  }
-  return name.length > 35 ? name.substring(0, 33) + '\u2026' : name;
-}
 
 // ── Storage per resi — sincronizzato via server ──
 const RESI_PROXY = "https://yespresso-proxy.onrender.com";
@@ -292,7 +184,7 @@ function showToast(msg, type = 'ok') {
 }
 
 async function shopifyGet(path) {
-  const r = await proxyFetch(PROXY + '/shopify/' + path);
+  const r = await fetch(PROXY + '/shopify/' + path);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
@@ -316,11 +208,7 @@ async function searchOrder(q) {
     if (d3?.orders?.length) results.push(...d3.orders);
   }
   const seen = new Set();
-  const dedup = results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
-  if (!dedup.length) return [];
-  const full = await shopifyGet('orders/' + dedup[0].id + '.json').catch(() => null);
-  if (full?.order) return [full.order];
-  return dedup;
+  return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
 }
 
 // ── OCR con Anthropic ──
@@ -331,7 +219,7 @@ async function ocrImage(file) {
       const b64 = e.target.result.split(',')[1];
       const mime = file.type || 'image/jpeg';
       try {
-        const res = await proxyFetch(PROXY + '/anthropic/v1/messages', {
+        const res = await fetch(PROXY + '/anthropic/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -341,7 +229,7 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario (ignora YESPRESSO, BRT, corrieri). Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente le parole: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL, corriere, spedizione e simili nomi di piattaforme/corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
               ]
             }]
           })
@@ -391,7 +279,7 @@ function renderOrder(order) {
           <div class="item-toggle-knob"></div>
         </div>
         <div class="item-info">
-          <div class="item-name">${shortName(li.name)}</div>
+          <div class="item-name">${li.name}</div>
           <div class="item-qty">Qtà ordinata: ${li.quantity}</div>
         </div>
       </div>
@@ -456,7 +344,7 @@ async function submitReso() {
     const resoItems = selected.map((li, _) => {
       const origIdx = lineItems.indexOf(li);
       const note = document.getElementById('note-' + origIdx)?.value.trim() || '';
-      return { name: shortName(li.name), qty: li.quantity, price: li.price, note };
+      return { name: li.name, qty: li.quantity, price: li.price, note };
     });
 
     const sa = currentOrder.shipping_address || currentOrder.billing_address || {};
@@ -465,22 +353,9 @@ async function submitReso() {
     // Trova ordine TikTok ID se presente
     let tikTokOrderId = currentOrder._tikTokOrderId || '';
     if (!tikTokOrderId) {
-      const ttAttr = (currentOrder.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
+      const ttAttr = (order.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
     }
-    // Estrai tracking BRT dal fulfillment
-    let trackingNumber = '';
-    let spedStatus = '';
-    let spedDate = '';
-    const fulfillments = currentOrder.fulfillments || [];
-    if (fulfillments.length > 0) {
-      const lastF = fulfillments[fulfillments.length - 1];
-      trackingNumber = lastF.tracking_number || (lastF.tracking_numbers && lastF.tracking_numbers[0]) || '';
-      const statusMap = {delivered:'Consegnato',in_transit:'In transito',out_for_delivery:'In consegna',attempted_delivery:'Tentativo consegna',ready_for_pickup:'Al punto di ritiro',confirmed:'Confermato'};
-      spedStatus = statusMap[lastF.shipment_status] || lastF.shipment_status || '';
-      spedDate = lastF.created_at ? new Date(lastF.created_at).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
-    }
-
     const resoData = {
       orderId: currentOrder.id,
       orderName: currentOrder.name || ('#' + currentOrder.id),
@@ -490,10 +365,7 @@ async function submitReso() {
       tiktokOrderId: tikTokOrderId,
       items: resoItems,
       extraProduct: extraProduct || '',
-      shopifyNote: currentOrder.note || '',
-      trackingNumber,
-      spedStatus,
-      spedDate
+      shopifyNote: currentOrder.note || ''
     };
 
     // Salva in localStorage (condiviso con helpdesk)
@@ -515,7 +387,7 @@ async function submitReso() {
     const existingNote = origData?.order?.note || '';
     const newNote = (existingNote ? existingNote + '\n\n' : '') + nota;
 
-    await proxyFetch(PROXY + '/shopify/orders/' + currentOrder.id + '.json', {
+    await fetch(PROXY + '/shopify/orders/' + currentOrder.id + '.json', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: { id: currentOrder.id, note: newNote } })
