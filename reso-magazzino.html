@@ -211,6 +211,17 @@ async function searchOrder(q) {
   return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
 }
 
+// Seleziona l'ordine migliore: se il primo ha valore 0 cerca il primo con valore > 0.01
+// Usato solo per ricerche per nome (non per numero ordine specifico)
+function pickBestOrder(orders, byName) {
+  if (!byName || orders.length <= 1) return orders[0];
+  const first = orders[0];
+  if (parseFloat(first.total_price || 0) > 0.01) return first;
+  // Cerca il primo con valore > 0.01
+  const valid = orders.find(o => parseFloat(o.total_price || 0) > 0.01);
+  return valid || first;
+}
+
 // ── OCR con Anthropic ──
 async function ocrImage(file) {
   return new Promise((resolve) => {
@@ -229,7 +240,7 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente le parole: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL, corriere, spedizione e simili nomi di piattaforme/corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario (ignora YESPRESSO, BRT, corrieri). Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
               ]
             }]
           })
@@ -444,7 +455,8 @@ async function doSearch() {
     if (!orders.length) {
       showToast('Nessun ordine trovato', 'err');
     } else {
-      renderOrder(orders[0]);
+      const byName = q.replace(/[^0-9]/g,'').length < 6;
+      renderOrder(pickBestOrder(orders, byName));
     }
   } catch(e) {
     showToast('Errore ricerca: ' + e.message, 'err');
@@ -477,7 +489,8 @@ document.getElementById('camera-input').addEventListener('change', async functio
     if (!orders.length) {
       showToast('Immagine letta ma ordine non trovato. Cerca manualmente.', 'err');
     } else {
-      renderOrder(orders[0]);
+      const byName = !ocr.ordine && ocr.nome;
+      renderOrder(pickBestOrder(orders, byName));
     }
   } catch(e) {
     status.className = 'ocr-status';
