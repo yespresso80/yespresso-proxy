@@ -190,6 +190,14 @@ async function shopifyGet(path) {
 }
 
 // ── Ricerca ordine ──
+function pickBestOrder(orders, byName) {
+  if (!byName || orders.length <= 1) return orders[0];
+  const first = orders[0];
+  if (parseFloat(first.total_price || 0) > 0.01) return first;
+  const valid = orders.find(o => parseFloat(o.total_price || 0) > 0.01);
+  return valid || first;
+}
+
 async function searchOrder(q) {
   const results = [];
   const num = q.replace(/[^0-9]/g, '');
@@ -211,17 +219,6 @@ async function searchOrder(q) {
   return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
 }
 
-// Seleziona l'ordine migliore: se il primo ha valore 0 cerca il primo con valore > 0.01
-// Usato solo per ricerche per nome (non per numero ordine specifico)
-function pickBestOrder(orders, byName) {
-  if (!byName || orders.length <= 1) return orders[0];
-  const first = orders[0];
-  if (parseFloat(first.total_price || 0) > 0.01) return first;
-  // Cerca il primo con valore > 0.01
-  const valid = orders.find(o => parseFloat(o.total_price || 0) > 0.01);
-  return valid || first;
-}
-
 // ── OCR con Anthropic ──
 async function ocrImage(file) {
   return new Promise((resolve) => {
@@ -240,7 +237,7 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario (ignora YESPRESSO, BRT, corrieri). Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e simili nomi di piattaforme/corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
               ]
             }]
           })
@@ -364,9 +361,22 @@ async function submitReso() {
     // Trova ordine TikTok ID se presente
     let tikTokOrderId = currentOrder._tikTokOrderId || '';
     if (!tikTokOrderId) {
-      const ttAttr = (order.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
+      const ttAttr = (currentOrder.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
     }
+    // Estrai tracking BRT dai fulfillment
+    let trackingNumber = '';
+    let spedStatus = '';
+    let spedDate = '';
+    const fulfillments = currentOrder.fulfillments || [];
+    if (fulfillments.length) {
+      const lastF = fulfillments[fulfillments.length - 1];
+      trackingNumber = (lastF.tracking_numbers && lastF.tracking_numbers[0]) || lastF.tracking_number || '';
+      spedStatus = lastF.shipment_status || '';
+      const updAt = lastF.updated_at || lastF.created_at || '';
+      if (updAt) spedDate = new Date(updAt).toLocaleDateString('it-IT', {day:'2-digit',month:'2-digit',year:'numeric'});
+    }
+
     const resoData = {
       orderId: currentOrder.id,
       orderName: currentOrder.name || ('#' + currentOrder.id),
@@ -376,7 +386,10 @@ async function submitReso() {
       tiktokOrderId: tikTokOrderId,
       items: resoItems,
       extraProduct: extraProduct || '',
-      shopifyNote: currentOrder.note || ''
+      shopifyNote: currentOrder.note || '',
+      trackingNumber,
+      spedStatus,
+      spedDate
     };
 
     // Salva in localStorage (condiviso con helpdesk)
