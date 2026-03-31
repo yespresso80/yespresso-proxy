@@ -352,6 +352,56 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // BRT check fermopoint - scraping pagina BRT VAS
+  if (req.url.startsWith("/brt/check-fermopoint")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
+    try {
+      const url = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
+      const brtRes = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const html = await brtRes.text();
+      const at_fermopoint = /fermopoint|fermo\s*point|punto\s*di\s*ritiro/i.test(html);
+      const fermopoint_name = at_fermopoint ? (html.match(/fermopoint[^
+<]{0,80}/i)||[""])[0].substring(0,80) : "";
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, at_fermopoint, fermopoint_name, nspediz }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, at_fermopoint: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT ORM - prenotazione ritiro via API geodata
+  if (req.url.startsWith("/brt-orm/")) {
+    const p = req.url.replace("/brt-orm", "");
+    const chunks5 = [];
+    req.on("data", chunk => chunks5.push(chunk));
+    await new Promise(resolve => req.on("end", resolve));
+    const body5 = Buffer.concat(chunks5).toString();
+    try {
+      const ormRes = await fetch("https://api.brt.it/orm" + p, {
+        method: req.method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-Key": "f393e3d3-8402-4614-a90e-8d111fa73ced",
+          ...(req.headers["x-api-key"] ? { "X-Api-Key": req.headers["x-api-key"] } : {})
+        },
+        body: body5 || undefined
+      });
+      const ormData = await ormRes.text();
+      console.log("[BRT ORM] " + req.method + " " + p + " status:" + ormRes.status);
+      res.writeHead(ormRes.status, { "Content-Type": "application/json" });
+      res.end(ormData);
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
   // BRT crea ritiro
   if (req.url.startsWith("/brt/ritiro")) {
     const chunks4 = [];
@@ -458,6 +508,34 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // Creditsyard adjust - crea/modifica credito cliente
+  if (req.url.startsWith("/creditsyard/adjust")) {
+    const chunks_cs = [];
+    req.on("data", chunk => chunks_cs.push(chunk));
+    await new Promise(resolve => req.on("end", resolve));
+    const body_cs = Buffer.concat(chunks_cs).toString();
+    try {
+      const csRes = await fetch("https://creditsyard.com/api/common/customers/adjust", {
+        method: "POST",
+        headers: {
+          "X-Shop-Api-Key": "412b510ba19f72e6eaab40fdf63aa114",
+          "Content-Type": "application/json"
+        },
+        body: body_cs
+      });
+      const text = await csRes.text();
+      console.log("[CREDITSYARD adjust] status:" + csRes.status + " body:", text.substring(0, 200));
+      let result = {};
+      try { result = JSON.parse(text); } catch(pe) {}
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   // ── RESI — GitHub come database persistente ──
   const GH_RESI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/resi.json';
 
@@ -509,6 +587,62 @@ async function brtRestPost(path, body) {
     } catch(e) {
       console.error('[RESI POST]', e.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // BRT ORM - prenotazione ritiri
+  if (req.url.startsWith("/brt-orm/")) {
+    const brtOrmPath = req.url.replace("/brt-orm", "");
+    const brtOrmUrl = "https://api.brt.it/orm" + brtOrmPath;
+    const chunks_orm = [];
+    req.on("data", chunk => chunks_orm.push(chunk));
+    await new Promise(resolve => req.on("end", resolve));
+    const body_orm = Buffer.concat(chunks_orm);
+    try {
+      const brtOrmRes = await fetch(brtOrmUrl, {
+        method: req.method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-Key": req.headers["x-api-key"] || "",
+          "Authorization": BRT_AUTH
+        },
+        body: body_orm.length > 0 ? body_orm : undefined
+      });
+      const brtOrmText = await brtOrmRes.text();
+      console.log("[BRT ORM]", req.method, brtOrmUrl, "->", brtOrmRes.status, brtOrmText.substring(0, 200));
+      res.writeHead(brtOrmRes.status, { "Content-Type": "application/json" });
+      res.end(brtOrmText);
+    } catch(e) {
+      console.error("[BRT ORM] Errore:", e.message);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // BRT check fermopoint
+  if (req.url.startsWith("/brt/check-fermopoint")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
+    try {
+      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
+      const result = data.ttParcelIdResponse || data;
+      const spedizione = result.spedizione || {};
+      const datiConsegna = spedizione.dati_consegna || {};
+      // Fermopoint: stato "ready_for_pickup" o "FERMO POINT" nel ultimo evento
+      const eventi = (spedizione.eventi && spedizione.eventi.evento) || [];
+      const eventiArr = Array.isArray(eventi) ? eventi : [eventi];
+      const ultimoEvento = eventiArr[eventiArr.length - 1] || {};
+      const descEvento = (ultimoEvento.descrizione_evento || "").toUpperCase();
+      const at_fermopoint = descEvento.includes("FERMO") || descEvento.includes("PUNTO DI RITIRO") || descEvento.includes("FERMOPOINT");
+      const scadenza_ritiro = ultimoEvento.data_evento || "";
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, raw: data }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
     return;
