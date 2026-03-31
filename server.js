@@ -10,6 +10,8 @@ const HD_TOKEN = process.env.HD_TOKEN || "";
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || "";
 const SHOPIFY_SHOP = "40f758-3.myshopify.com";
 const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || "";
+const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID || "";
+const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
 const IMAP_USER = process.env.IMAP_USER || "allegati@yespresso.it";
 const IMAP_PASSWORD = process.env.IMAP_PASSWORD || "";
 const IMAP_HOST = "imap.ionos.it";
@@ -152,7 +154,27 @@ function findAttachmentsForTicket(requesterEmail, subject) {
 
 setTimeout(syncImapAttachments, 8000);
 
+let _shopifyToken = null;
+let _shopifyTokenExpiresAt = 0;
+
 async function getShopifyToken() {
+  if (SHOPIFY_CLIENT_ID && SHOPIFY_CLIENT_SECRET) {
+    if (_shopifyToken && Date.now() < _shopifyTokenExpiresAt - 60000) return _shopifyToken;
+    try {
+      const params = new URLSearchParams({ grant_type: "client_credentials", client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET });
+      const resp = await fetch("https://" + SHOPIFY_SHOP + "/admin/oauth/access_token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params.toString() });
+      if (!resp.ok) throw new Error("Token " + resp.status + ": " + await resp.text());
+      const data = await resp.json();
+      _shopifyToken = data.access_token;
+      _shopifyTokenExpiresAt = Date.now() + (data.expires_in || 86399) * 1000;
+      console.log("[SHOPIFY] Token rinnovato, scade in", data.expires_in, "sec");
+      return _shopifyToken;
+    } catch(e) {
+      console.error("[SHOPIFY] Errore rinnovo:", e.message);
+      if (SHOPIFY_TOKEN) return SHOPIFY_TOKEN;
+      throw e;
+    }
+  }
   if (!SHOPIFY_TOKEN) console.error("[SHOPIFY] SHOPIFY_TOKEN non configurato!");
   return SHOPIFY_TOKEN;
 }
@@ -195,15 +217,6 @@ const server = http.createServer(async function(req, res) {
     });
     return;
   }
-  if (req.url === "/reso-magazzino.html") {
-    const resoFile = path.join(__dirname, "reso-magazzino.html");
-    fs.readFile(resoFile, function(err, data) {
-      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
-    });
-    return;
-  }
-
   if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
     fs.readFile(filePath, function(err, data) {
