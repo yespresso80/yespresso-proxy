@@ -58,12 +58,16 @@ async function syncImapAttachments() {
       const subject = msg.envelope?.subject || "";
       const date = msg.envelope?.date || new Date();
 
-      // Verifica se ha allegati
+      // Verifica se ha allegati (ricerca ricorsiva in tutta la struttura)
       const struct = msg.bodyStructure;
-      const hasAtt = struct && (
-        (struct.childNodes||[]).some(n => n.disposition === "attachment" || (n.type && !["text","multipart"].includes(n.type))) ||
-        (struct.disposition === "attachment")
-      );
+      function hasAttachment(node) {
+        if (!node) return false;
+        if (node.disposition === "attachment") return true;
+        if (node.encoding === "base64" && node.type && !node.type.startsWith("text/")) return true;
+        if (node.childNodes) return node.childNodes.some(hasAttachment);
+        return false;
+      }
+      const hasAtt = hasAttachment(struct);
       if (!hasAtt) continue;
 
       // Scarica messaggio completo
