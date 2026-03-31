@@ -221,6 +221,37 @@ const server = http.createServer(async function(req, res) {
   }
 
   // Forza sync IMAP
+  // ── Route /resi (GET legge resi.json, POST salva resi.json) ──
+  if (req.url === "/resi") {
+    const resiPath = path.join(__dirname, "resi.json");
+    if (req.method === "GET") {
+      try {
+        const data = fs.existsSync(resiPath) ? fs.readFileSync(resiPath, "utf-8") : "[]";
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(data);
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+    if (req.method === "POST" || req.method === "PUT") {
+      let body = "";
+      req.on("data", c => body += c);
+      req.on("end", () => {
+        try {
+          // Valida JSON
+          JSON.parse(body);
+          fs.writeFileSync(resiPath, body, "utf-8");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch(e) {
+          res.writeHead(400); res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+  }
+
   if (req.url === "/imap/sync") {
     lastImapSync = 0;
     syncImapAttachments().catch(e => console.error(e));
