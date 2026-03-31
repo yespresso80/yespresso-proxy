@@ -190,6 +190,14 @@ async function shopifyGet(path) {
 }
 
 // ── Ricerca ordine ──
+function pickBestOrder(orders, byName) {
+  if (!byName || orders.length <= 1) return orders[0];
+  const first = orders[0];
+  if (parseFloat(first.total_price || 0) > 0.01) return first;
+  const valid = orders.find(o => parseFloat(o.total_price || 0) > 0.01);
+  return valid || first;
+}
+
 async function searchOrder(q) {
   const results = [];
   const num = q.replace(/[^0-9]/g, '');
@@ -229,7 +237,7 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario (ignora YESPRESSO, BRT, corrieri). Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente le parole: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e simili nomi di piattaforme o corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
               ]
             }]
           })
@@ -255,98 +263,6 @@ async function ocrImage(file) {
 let currentOrder = null;
 let selectedItems = {};
 
-const SHORT_NAMES = {
-  'Yespresso 240 Capsule Compatibili con Caffitaly Miscela Cremoso': '240 CAFFITALY - CREMOSO',
-  'Yespresso 240 Capsule Compatibili con Lavazza A Modo Mio Cremoso (12 confezioni da 20 capsule)': '240 A MODO MIO - CREMOSO',
-  'Yespresso 240 capsule compatibili LAVAZZA A MODO MIO Cremoso (12 confezioni da 20 capsule)': '240 A MODO MIO - CREMOSO',
-  'Yespresso 80 Capsule Compatibili CAFFITALY Miscela Cremoso': '80 CAFFITALY - CREMOSO',
-  'Yespresso, Cremoso Napoli - 100 Capsule compatibili con Bialetti Mokona e Mokespresso': '100 BIALETTI - CREMOSO',
-  'Yespresso, Cremoso Napoli – 100 Capsule compatibili con Bialetti Mokona e Mokespresso': '100 BIALETTI - CREMOSO',
-  'OFFERTA! 150 CIALDE IN CARTA ESE 44MM (ESPRESSO INTENSO)': '150 CIALDE ESE44 - INTENSO',
-  'OFFERTA! 150 CIALDE IN CARTA ESE 44MM (ESPRESSO)': '150 CIALDE ESE44 - INTENSO',
-  'Yespresso 100 capsule compatibili con Bialetti miscela Cremoso': '100 BIALETTI - CREMOSO',
-  'Yespresso 100 Capsule Compatibili Con Nespresso Miscela Cremoso': '100 NESPRESSO - CREMOSO',
-  'Yespresso 240 Capsule Compatibili CAFFITALY Miscela Cremoso': '240 CAFFITALY - CREMOSO',
-  'Yespresso 240 Capsule Compatibili con Bialetti miscela Cremoso': '240 BIALETTI - CREMOSO',
-  '64 Capsule DOLCE GUSTO CAPPUCCINO compatibili': '64 DOLCE GUSTO - CAPPUCCINO',
-  '80 Capsule CAFFITALY compatibili - CREMOSO': '80 CAFFITALY - CREMOSO',
-  '80 Capsule CAFFITALY CREMOSO caffè compatibili': '80 CAFFITALY - CREMOSO',
-  '80 Capsule compatibili CAFFITALY - CREMOSO': '80 CAFFITALY - CREMOSO',
-  '80 Capsule Compatibili con Caffitaly Miscela Cremoso': '80 CAFFITALY - CREMOSO',
-  '80 Capsule Compatibili con Caffitaly Miscela Cremoso (Non funzionano sulle macchine modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)': '80 CAFFITALY - CREMOSO',
-  '300 Capsule LINEA S - Espresso INTENSO': '300 LINEA S - INTENSO',
-  '300 Cialde Carta ESE 44 - ESPRESSO INTENSO': '300 Cialde ESE 44 - INTENSO',
-  '300 Capsule compatibili con Nespresso CREMOSO': '300 NESPRESSO - CREMOSO',
-  '300 Capsule compatibili FIOR LUI - INTENSO': '300 FIOR LUI - INTENSO',
-  '300 Capsule compatibili NESPRESSO - CREMOSO': '300 NESPRESSO - CREMOSO',
-  '240 Capsule Compatibili con Bialetti Miscela Cremoso': '240 BIALETTI - CREMOSO',
-  '240 Capsule compatibili con Nespresso GRANBAR': '240 NESPRESSO - GRANBAR',
-  '240 Capsule compatibili Lavazza A MODO MIO - CREMOSO': '240 A MODO MIO - CREMOSO',
-  '240 Capsule compatibili NESPRESSO - GRANBAR': '240 NESPRESSO - GRANBAR',
-  '240 Capsule LAVAZZA A MODO MIO CREMOSO caffè compatibili': '240 A MODO MIO - CREMOSO',
-  '240 Capsule LAVAZZA A MODO MIO CREMOSO caffè compatibili, Cialde caffèLavazza a Modo Mio': '240 A MODO MIO - CREMOSO',
-  '240 Capsule NESPRESSO caffè compatibili GRANBAR, cialde compatibili caffè per Nespresso': '240 NESPRESSO - GRANBAR',
-  '240 Capsule NESPRESSO GRANBAR caffè compatibili': '240 NESPRESSO - GRANBAR',
-  '240 Capsule BIALETTI compatibili caffè CREMOSO, ccapsule compatibili Bialetti, cialde compatibili bialetti': '240 BIALETTI - CREMOSO',
-  '240 Capsule CAFFITALY CREMOSO caffè compatibili': '240 CAFFITALY - CREMOSO',
-  '240 Capsule compatibili BIALETTI - CREMOSO': '240 BIALETTI - CREMOSO',
-  '240 capsule compatibili BIALETTI miscela CREMOSO': '240 BIALETTI - CREMOSO',
-  '240 Capsule compatibili CAFFITALY - CREMOSO': '240 CAFFITALY - CREMOSO',
-  '240 capsule compatibili CAFFITALY miscela Cremoso': '240 CAFFITALY - CREMOSO',
-  '240 capsule compatibili CAFFITALY miscela Cremoso (Non funzionano sulle macchine modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)': '240 CAFFITALY - CREMOSO',
-  '160 Capsule DOLCE GUSTO CREMOSO caffè compatibili': '160 DOLCE GUSTO - CREMOSO',
-  '20 Capsule compatibili BIALETTI - CREMOSO': '20 BIALETTI - CREMOSO',
-  '200 Capsule Compatibili con Nespresso Cremoso Napoli - 2 Confezioni da 100 capsule': '200 NESPRESSO - CREMOSO',
-  '200 Capsule compatibili NESPRESSO - CREMOSO': '200 NESPRESSO - CREMOSO',
-  '200 Capsule Compatibili Nespresso Cremoso Napoli - 2 Confezioni da 100 capsule': '200 NESPRESSO - CREMOSO',
-  '16 Capsule DOLCE GUSTO GINSENG compatibili': '16 DOLCE GUSTO - GINSENG',
-  '16 Capsule DOLCE GUSTO ORZO compatibili, capsule caffè dolce e gusto': '16 DOLCE GUSTO - ORZO',
-  '160 Capsule Compatibili con Dolce Gusto Nescafè Miscela Cremoso - 10 confezioni da 16 capsule': '160 DOLCE GUSTO - CREMOSO',
-  '160 Capsule Compatibili conDolce Gusto Nescafè Cremoso - 10 confezioni da 16 capsule': '160 DOLCE GUSTO - CREMOSO',
-  '160 Capsule compatibili DOLCE GUSTO - CREMOSO': '160 DOLCE GUSTO - CREMOSO',
-  '160 Capsule compatibili Dolce Gusto Nescafè Cremoso - 10 confezioni da 16 capsule': '160 DOLCE GUSTO - CREMOSO',
-  '160 Capsule DOLCE GUSTO caffè compatibili CREMOSO , capsule caffe dolce e gusto, capsule caffe per dolce gusto': '160 DOLCE GUSTO - CREMOSO',
-  '16 Capsule compatibili DOLCE GUSTO - GINSENG': '16 DOLCE GUSTO - GINSENG',
-  '16 Capsule compatibili DOLCE GUSTO - NOCCIOLINO': '16 DOLCE GUSTO - NOCCIOLINO',
-  '16 Capsule compatibili DOLCE GUSTO - ORZO': '16 DOLCE GUSTO - ORZO',
-  '16 Capsule compatibili DOLCE GUSTO - Tè AL LIMONE': '16 DOLCE GUSTO - LIMONE',
-  "16 Capsule compatibili DOLCE GUSTO - TE' AL LIMONE": "16 DOLCE GUSTO - TE' AL LIMONE",
-  '16 Capsule DOLCE GUSTO CAPPUCCINO compatibili': '16 DOLCE GUSTO - CAPPUCCINO',
-  '16 Capsule DOLCE GUSTO CIOCCOLATA compatibili': '16 DOLCE GUSTO - CIOCCOLATA',
-  '150 Cialde caffè CARTA ESE44 - Espresso INTENSO': '150 CIALDE ESE44 - INTENSO',
-  '150 Cialde CARTA ESE44 - Espresso INTENSO': '150 CIALDE ESE44 - INTENSO',
-  '16 Capsule compatibili DOLCE GUSTO - CAPPUCCINO': '16 DOLCE GUSTO - CAPPUCCINO',
-  '16 Capsule compatibili DOLCE GUSTO - CIOCCOLATA': '16 DOLCE GUSTO - CIOCCOLATA',
-  '16 Capsule compatibili DOLCE GUSTO - CORTADO': '16 DOLCE GUSTO - CORTADO',
-  '16 Capsule compatibili DOLCE GUSTO - CREMOSO': '16 DOLCE GUSTO - CREMOSO',
-  '16 Capsule compatibili DOLCE GUSTO - DECAFFEINATO': '16 DOLCE GUSTO - DECA',
-  '100 Capsule FIOR LUI - Espresso INTENSO': '100 FIOR LUI - NTENSO',
-  '100 Capsule FIOR LUI caffè Espresso INTENSO compatibili': '100 FIOR LUI - INTENSO',
-  '100 Capsule LAVAZZA A MODO MIO CREMOSO': '100 A MODO MIO - CREMOSO',
-  '100 Capsule LAVAZZA A MODO MIO CREMOSO compatibili': '100 A MODO MIO - CREMOSO',
-  '100 Capsule LINEA S - Espresso INTENSO': '100 LINEA S - INTENSO',
-  '100 Capsule NESPRESSO ALLUMINIO caffè compatibili - Miscela SUPREMO': '100 NESPRESSO - ALLUMINIO',
-  '100 Capsule NESPRESSO ALLUMINIO compatibili - Miscela SUPREMO': '100 NESPRESSO - ALLUMINIO',
-  '100 Capsule NESPRESSO caffè compatibili - Miscela SUPREMO': '100 CAPSULE NESPRESSO - ALLUMINIO',
-  '100 Capsule NESPRESSO CREMOSO caffè compatibili': '100 NESPRESSO - CREMOSO',
-  '100 Capsule FIOR FIORE Coop e LUI caffè compatibili - INTENSO': '100 FIOR LUI - NTENSO',
-  '100 Capsule FIOR LUI - Espresso INTENSO': '100 FIOR LUI - NTENSO',
-  '100 Capsule Compatibili con Lavazza A Modo Mio miscela Cremoso': '100 A MODO MIO - CREMOSO',
-  '100 Capsule compatibili Lavazza A MODO MIO - CREMOSO': '100 A MODO MIO - CREMOSO',
-  '100 Capsule compatibili NESPRESSO - CREMOSO': '100 NESPRESSO - CREMOSO',
-  '10 Capsule compatibili NESPRESSO - ORZO': '10 NESPRESSO - ORZO',
-  '100 Capsule ALLUMINIO compatibili con Nespresso SUPREMO': '100 NESPRESSO - ALLUMINIO',
-  '100 Capsule ALLUMINIO compatibili NESPRESSO - SUPREMO': '100 NESPRESSO - ALLUMINIO',
-  '100 Capsule BIALETTI compatibili CREMOSO, cialde caffè compaibili bialetti': '100 BIALETTI - CREMOSO',
-  '100 Capsule compatibili BIALETTI - CREMOSO': '100 BIALETTI - CREMOSO',
-  '100 Capsule Compatibili con Lavazza A Modo Mio miscela Cremoso': '100 A MODO MIO - CREMOSO',
-  '10 Capsule compatibili NESPRESSO - GINSENG': '10 NESPRESSO - GINSENG',
-  '10 Capsule compatibili NESPRESSO - ORZO': '10 NESPRESSO - ORZO',
-  '100 Capsule NESPRESSO caffè compatibili - Miscela SUPREMO': '100 NESPRESSO - ALLUMINIO',
-  '240 capsule compatibili CAFFITALY miscela Cremoso (Non funzionano sulle macchine Caffitaly modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)': '240 CAFFITALY - CREMOSO',
-};
-function shortName(t) { return SHORT_NAMES[t] || t; }
-
 function renderOrder(order) {
   currentOrder = order;
   selectedItems = {};
@@ -371,7 +287,7 @@ function renderOrder(order) {
           <div class="item-toggle-knob"></div>
         </div>
         <div class="item-info">
-          <div class="item-name">${shortName(li.name)}</div>
+          <div class="item-name">${li.name}</div>
           <div class="item-qty">Qtà ordinata: ${li.quantity}</div>
         </div>
       </div>
@@ -445,9 +361,22 @@ async function submitReso() {
     // Trova ordine TikTok ID se presente
     let tikTokOrderId = currentOrder._tikTokOrderId || '';
     if (!tikTokOrderId) {
-      const ttAttr = (order.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
+      const ttAttr = (currentOrder.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
     }
+    // Estrai tracking BRT dai fulfillment
+    let trackingNumber = '';
+    let spedStatus = '';
+    let spedDate = '';
+    const fulfillments = currentOrder.fulfillments || [];
+    if (fulfillments.length) {
+      const lastF = fulfillments[fulfillments.length - 1];
+      trackingNumber = (lastF.tracking_numbers && lastF.tracking_numbers[0]) || lastF.tracking_number || '';
+      spedStatus = lastF.shipment_status || '';
+      const updAt = lastF.updated_at || lastF.created_at || '';
+      if (updAt) spedDate = new Date(updAt).toLocaleDateString('it-IT', {day:'2-digit',month:'2-digit',year:'numeric'});
+    }
+
     const resoData = {
       orderId: currentOrder.id,
       orderName: currentOrder.name || ('#' + currentOrder.id),
@@ -457,7 +386,10 @@ async function submitReso() {
       tiktokOrderId: tikTokOrderId,
       items: resoItems,
       extraProduct: extraProduct || '',
-      shopifyNote: currentOrder.note || ''
+      shopifyNote: currentOrder.note || '',
+      trackingNumber,
+      spedStatus,
+      spedDate
     };
 
     // Salva in localStorage (condiviso con helpdesk)
@@ -514,7 +446,7 @@ function detectChannel(order) {
   if (email.includes('marketplace.amazon') || email.includes('donotreply@amazon') || tags.includes('amazon')) return 'amazon';
   if (email.includes('orders.temu') || tags.includes('temu')) return 'temu';
   // Cerca nei note_attributes
-  const attrs = order.note_attributes || [];
+  const attrs = currentOrder.note_attributes || [];
   const attrStr = attrs.map(a => (a.name||'')+(a.value||'')).join(' ').toLowerCase();
   if (attrStr.includes('tiktok') || attrStr.includes('tik tok')) return 'tiktok';
   if (attrStr.includes('amazon')) return 'amazon';
@@ -536,7 +468,8 @@ async function doSearch() {
     if (!orders.length) {
       showToast('Nessun ordine trovato', 'err');
     } else {
-      renderOrder(orders[0]);
+      const byName = q.replace(/[^0-9]/g,'').length < 6;
+      renderOrder(pickBestOrder(orders, byName));
     }
   } catch(e) {
     showToast('Errore ricerca: ' + e.message, 'err');
@@ -569,7 +502,8 @@ document.getElementById('camera-input').addEventListener('change', async functio
     if (!orders.length) {
       showToast('Immagine letta ma ordine non trovato. Cerca manualmente.', 'err');
     } else {
-      renderOrder(orders[0]);
+      const byName = !ocr.ordine && ocr.nome;
+      renderOrder(pickBestOrder(orders, byName));
     }
   } catch(e) {
     status.className = 'ocr-status';
