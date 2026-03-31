@@ -364,7 +364,6 @@ async function brtRestPost(path, body) {
       const html = await brtRes.text();
       const at_fermopoint = /fermopoint|fermo\s*point|punto\s*di\s*ritiro/i.test(html);
       const fermopoint_name = "";
-<]{0,80}/i)||[""])[0].substring(0,80) : "";
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, at_fermopoint, fermopoint_name, nspediz }));
     } catch(e) {
