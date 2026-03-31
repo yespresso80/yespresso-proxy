@@ -9,7 +9,9 @@ const PORT = process.env.PORT || 3001;
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || "";
 const SHOPIFY_SHOP = "40f758-3.myshopify.com";
-const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || "";
+const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || ""; // fallback token fisso (opzionale)
+const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID || "";
+const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
 const IMAP_USER = process.env.IMAP_USER || "allegati@yespresso.it";
 const IMAP_PASSWORD = process.env.IMAP_PASSWORD || "";
 const IMAP_HOST = "imap.ionos.it";
@@ -152,8 +154,48 @@ function findAttachmentsForTicket(requesterEmail, subject) {
 
 setTimeout(syncImapAttachments, 8000);
 
+// Token cache per auto-rinnovo ogni 24h
+let _shopifyToken = null;
+let _shopifyTokenExpiresAt = 0;
+
 async function getShopifyToken() {
-  if (!SHOPIFY_TOKEN) console.error("[SHOPIFY] SHOPIFY_TOKEN non configurato!");
+  // Se abbiamo client credentials, rinnova automaticamente
+  if (SHOPIFY_CLIENT_ID && SHOPIFY_CLIENT_SECRET) {
+    if (_shopifyToken && Date.now() < _shopifyTokenExpiresAt - 60000) {
+      return _shopifyToken;
+    }
+    try {
+      console.log("[SHOPIFY] Richiedo nuovo token con client credentials...");
+      const params = new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: SHOPIFY_CLIENT_ID,
+        client_secret: SHOPIFY_CLIENT_SECRET,
+      });
+      const resp = await fetch(
+        "https://" + SHOPIFY_SHOP + "/admin/oauth/access_token",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString(),
+        }
+      );
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error("Token request failed " + resp.status + ": " + txt);
+      }
+      const data = await resp.json();
+      _shopifyToken = data.access_token;
+      _shopifyTokenExpiresAt = Date.now() + (data.expires_in || 86399) * 1000;
+      console.log("[SHOPIFY] Nuovo token ottenuto, scade in", data.expires_in, "secondi");
+      return _shopifyToken;
+    } catch (e) {
+      console.error("[SHOPIFY] Errore rinnovo token:", e.message);
+      if (SHOPIFY_TOKEN) return SHOPIFY_TOKEN;
+      throw e;
+    }
+  }
+  // Fallback: token fisso da env var
+  if (!SHOPIFY_TOKEN) console.error("[SHOPIFY] SHOPIFY_TOKEN non configurato e CLIENT_ID/SECRET mancanti!");
   return SHOPIFY_TOKEN;
 }
 
