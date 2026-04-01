@@ -5199,7 +5199,7 @@ function openRichiesteResoPanel(){
       actionBtn='<button onclick="window.open(\''+temuUrl+'\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu'+(temuId?' '+temuId:'')+'</button>';
       actionBtn+=' <button onclick="navigator.clipboard.writeText(\''+temuId+'\');window.open(\'https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei\',\'_blank\')" style="background:#cc4400;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128172; Vedi Msg Temu</button>';
     } else if(reso.channel==='tiktok'){
-      var ttId=reso.tiktokOrderId||'';
+      var ttId=reso.tiktokOrderId||(reso.orderName||'').replace(/^#/,'').trim()||'';
       var ttUrl=ttId?('https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT'):'https://seller-it.tiktok.com';
       actionBtn='<button onclick="window.open(\''+ttUrl+'\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok'+(ttId?' '+ttId:'')+'</button>';
       actionBtn+=' <button onclick="navigator.clipboard.writeText(\''+ttId+'\');window.open(\'https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT\',\'_blank\')" style="background:#333;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128172; Vedi Msg Tik</button>';

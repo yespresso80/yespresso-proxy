@@ -458,6 +458,10 @@ async function submitReso() {
       const ttAttr = (currentOrder.note_attributes || []).find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
       if (ttAttr) tikTokOrderId = ttAttr.value;
     }
+    // Fallback: usa order.name senza # (per TikTok il nome ordine Shopify è il numero ordine TikTok)
+    if (!tikTokOrderId && detectChannel(currentOrder) === 'tiktok') {
+      tikTokOrderId = (currentOrder.name || '').replace(/^#/, '').trim();
+    }
     // Estrai Amazon Order Id dai note_attributes
     const attrs = currentOrder.note_attributes || [];
     const amazonOrderId = (attrs.find(a => a.name === 'Amazon Order Id') || {}).value || '';
