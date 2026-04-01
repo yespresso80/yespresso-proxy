@@ -366,12 +366,12 @@ function renderOrder(order) {
     <div class="order-header">
       <div>
         <div class="order-name">${order.name || '#' + order.id}</div>
-        <div class="order-meta">${customerName} · ${order.email || ''}</div>
-        <button onclick="createCreditFromReso(currentOrder.email||'', currentOrder.name||'')" style="margin-top:6px;padding:4px 10px;background:#2a9d60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">💳 Crea credito</button>
+        <div class="order-meta">${customerName}</div>
+
       </div>
       <button class="order-clear" onclick="clearOrder()">×</button>
     </div>
-    ${buildChannelButtons(order)}`;
+`;
 
   lineItems.forEach((li, i) => {
     selectedItems[i] = false;
@@ -385,10 +385,7 @@ function renderOrder(order) {
           <div class="item-qty">Qtà ordinata: ${li.quantity}</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:6px">
-        <textarea class="item-note" id="note-${i}" placeholder="Note conformità prodotto..." style="flex:1"></textarea>
-        <textarea class="item-note" id="staff-note-${i}" placeholder="Note staff (interne)..." style="flex:1;background:#fffbe6;border-color:#f0c040"></textarea>
-      </div>
+      <textarea class="item-note" id="note-${i}" placeholder="Note conformità prodotto (opzionale)..."></textarea>
     </div>`;
   });
 
@@ -449,8 +446,7 @@ async function submitReso() {
     const resoItems = selected.map((li, _) => {
       const origIdx = lineItems.indexOf(li);
       const note = document.getElementById('note-' + origIdx)?.value.trim() || '';
-      const staffNote = document.getElementById('staff-note-' + origIdx)?.value.trim() || '';
-      return { name: li.name, qty: li.quantity, price: li.price, note, staffNote };
+      return { name: li.name, qty: li.quantity, price: li.price, note };
     });
 
     const sa = currentOrder.shipping_address || currentOrder.billing_address || {};

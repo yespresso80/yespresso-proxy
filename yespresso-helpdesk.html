@@ -5165,7 +5165,9 @@ function openRichiesteResoPanel(){
     var stato=getResoStato(reso);
     // Tracking e spedizione dal reso (se salvati)
     var tn=reso.trackingNumber||'';
-    var spedStatus=reso.spedStatus||'';
+    var spedStatusRaw=reso.spedStatus||'';
+    var spedStatusMap={'delivered':'Consegnato','in_transit':'In transito','out_for_delivery':'In consegna','attempted_delivery':'Tentativo fallito','failure':'Problema spedizione','ready_for_pickup':'Pronto al ritiro','confirmed':'Confermato','label_printed':'Etichetta stampata'};
+    var spedStatus=spedStatusMap[spedStatusRaw]||spedStatusRaw;
     var spedDate=reso.spedDate||'';
     var brtTrackUrl=tn?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn):'';
     var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
@@ -5188,17 +5190,22 @@ function openRichiesteResoPanel(){
     if(reso.channel==='amazon'){
       var amzId=reso.amazonOrderId||'';
       var amzUrl=amzId?('https://sellercentral.amazon.it/orders-v3/order/'+amzId):'https://sellercentral.amazon.it/orders-v3';
+      var amzMsgUrl=amzId?('https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+amzId):'https://sellercentral.amazon.it/messaging/inbox';
       actionBtn='<button onclick="window.open(\''+amzUrl+'\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa'+(amzId?' '+amzId:'')+'</button>';
+      actionBtn+=' <button onclick="window.open(\''+amzMsgUrl+'\',\'_blank\')" style="background:#c07800;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128140; Messaggi AMZ</button>';
     } else if(reso.channel==='temu'){
       var temuId=reso.temuOrderId||'';
       var temuUrl=temuId?('https://seller-eu.temu.com/order-detail.html?parent_order_sn='+temuId):'https://seller-eu.temu.com/ticket-list.html';
       actionBtn='<button onclick="window.open(\''+temuUrl+'\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu'+(temuId?' '+temuId:'')+'</button>';
+      actionBtn+=' <button onclick="navigator.clipboard.writeText(\''+temuId+'\');window.open(\'https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei\',\'_blank\')" style="background:#cc4400;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128172; Vedi Msg Temu</button>';
     } else if(reso.channel==='tiktok'){
       var ttId=reso.tiktokOrderId||'';
       var ttUrl=ttId?('https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT'):'https://seller-it.tiktok.com';
       actionBtn='<button onclick="window.open(\''+ttUrl+'\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok'+(ttId?' '+ttId:'')+'</button>';
+      actionBtn+=' <button onclick="navigator.clipboard.writeText(\''+ttId+'\');window.open(\'https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT\',\'_blank\')" style="background:#333;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128172; Vedi Msg Tik</button>';
+    } else {
+      actionBtn='<button onclick="createCreditReso(\''+reso.email+'\',\''+reso.orderName+'\')" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
     }
-    actionBtn+='<button onclick="createCreditReso(\''+reso.email+'\',\''+reso.orderName+'\')" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
 
     return '<div data-reso-id="'+reso.id+'" style="background:#fff;border:1px solid #e8eaf0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05);margin-bottom:14px">'+
       // Header card
