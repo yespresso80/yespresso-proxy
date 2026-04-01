@@ -156,7 +156,27 @@ function findAttachmentsForTicket(requesterEmail, subject) {
 
 setTimeout(syncImapAttachments, 8000);
 
+let _shopifyToken = null;
+let _shopifyTokenExpiresAt = 0;
+
 async function getShopifyToken() {
+  if (SHOPIFY_CLIENT_ID && SHOPIFY_CLIENT_SECRET) {
+    if (_shopifyToken && Date.now() < _shopifyTokenExpiresAt - 60000) return _shopifyToken;
+    try {
+      const params = new URLSearchParams({ grant_type: "client_credentials", client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET });
+      const resp = await fetch("https://" + SHOPIFY_SHOP + "/admin/oauth/access_token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params.toString() });
+      if (!resp.ok) throw new Error("Token " + resp.status + ": " + await resp.text());
+      const data = await resp.json();
+      _shopifyToken = data.access_token;
+      _shopifyTokenExpiresAt = Date.now() + (data.expires_in || 86399) * 1000;
+      console.log("[SHOPIFY] Token rinnovato, scade in", data.expires_in, "sec");
+      return _shopifyToken;
+    } catch(e) {
+      console.error("[SHOPIFY] Errore rinnovo:", e.message);
+      if (SHOPIFY_TOKEN) return SHOPIFY_TOKEN;
+      throw e;
+    }
+  }
   if (!SHOPIFY_TOKEN) console.error("[SHOPIFY] SHOPIFY_TOKEN non configurato!");
   return SHOPIFY_TOKEN;
 }
