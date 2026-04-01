@@ -5186,11 +5186,11 @@ function openRichiesteResoPanel(){
 
     var actionBtn='';
     if(reso.channel==='amazon'){
-      var amzId='';var amzM=(reso.shopifyNote||'').match(/([0-9]{3}-[0-9]{7}-[0-9]{7})/);if(amzM)amzId=amzM[1];
+      var amzId=reso.amazonOrderId||'';
       var amzUrl=amzId?('https://sellercentral.amazon.it/orders-v3/order/'+amzId):'https://sellercentral.amazon.it/orders-v3';
       actionBtn='<button onclick="window.open(\''+amzUrl+'\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa'+(amzId?' '+amzId:'')+'</button>';
     } else if(reso.channel==='temu'){
-      var temuId='';var temuM=(reso.shopifyNote||'').match(/PO-[0-9-]+/);if(temuM)temuId=temuM[0];
+      var temuId=reso.temuOrderId||'';
       var temuUrl=temuId?('https://seller-eu.temu.com/order-detail.html?parent_order_sn='+temuId):'https://seller-eu.temu.com/ticket-list.html';
       actionBtn='<button onclick="window.open(\''+temuUrl+'\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu'+(temuId?' '+temuId:'')+'</button>';
     } else if(reso.channel==='tiktok'){
