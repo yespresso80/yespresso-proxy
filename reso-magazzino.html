@@ -263,6 +263,98 @@ async function ocrImage(file) {
 let currentOrder = null;
 let selectedItems = {};
 
+
+const SHORT_NAMES = {
+  "10 capsule compatibili bialetti - ginseng": "10 BIALETTI GINSENG",
+  "10 capsule compatibili nespresso - ginseng": "10 NESPRESSO GINSENG",
+  "10 capsule compatibili nespresso - orzo": "10 NESPRESSO ORZO",
+  "10 capsule compatibili a modo mio - ginseng": "10 AMM GINSENG",
+  "100 capsule compatibili a modo mio - cremoso": "100 AMM CREMOSO",
+  "100 capsule compatibili a modo mio - intenso": "100 AMM INTENSO",
+  "100 capsule compatibili a modo mio - decaffeinato": "100 AMM DECA",
+  "100 capsule compatibili nespresso - cremoso": "100 NESPRESSO CREMOSO",
+  "100 capsule compatibili nespresso - intenso": "100 NESPRESSO INTENSO",
+  "100 capsule compatibili nespresso - decaffeinato": "100 NESPRESSO DECA",
+  "160 capsule compatibili dolce gusto - cremoso": "160 DG CREMOSO",
+  "160 capsule compatibili dolce gusto - intenso": "160 DG INTENSO",
+  "240 capsule compatibili nespresso - granbar": "240 NESPRESSO GRANBAR",
+  "240 capsule compatibili nespresso - cremoso": "240 NESPRESSO CREMOSO",
+};
+function shortName(t) {
+  if (!t) return t;
+  const k = t.toLowerCase().trim();
+  for (const [pat, short] of Object.entries(SHORT_NAMES)) {
+    if (k.includes(pat.split(' ').slice(0,4).join(' '))) return short;
+  }
+  // fallback: tronca a 30 chars
+  return t.length > 35 ? t.substring(0, 33) + '…' : t;
+}
+
+
+function getOrderExternalId(order, channel) {
+  const attrs = (order.note_attributes || []);
+  if (channel === 'amazon') {
+    const a = attrs.find(a => a.name && a.name.toLowerCase().includes('amazon') && a.value && a.value.includes('-'));
+    if (a) return a.value.trim();
+    // cerca nel source_name o note
+    const note = order.note || '';
+    const m = note.match(/([0-9]{3}-[0-9]{7}-[0-9]{7})/);
+    if (m) return m[1];
+  }
+  if (channel === 'temu') {
+    const a = attrs.find(a => a.value && a.value.includes('PO-'));
+    if (a) { const m = a.value.match(/PO-[\d-]+/); if (m) return m[0]; }
+    const note = order.note || '';
+    const m = note.match(/PO-[\d-]+/);
+    if (m) return m[0];
+  }
+  if (channel === 'tiktok') {
+    const a = attrs.find(a => a.name && a.name.toLowerCase().includes('tiktok') && /\d{10,}/.test(a.value||''));
+    if (a) return a.value.trim();
+  }
+  return '';
+}
+
+function buildChannelButtons(order) {
+  const ch = detectChannel(order);
+  if (!ch || ch === 'shopify') return '';
+  const extId = getOrderExternalId(order, ch);
+  let btns = '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">';
+  if (ch === 'amazon' && extId) {
+    btns += `<a href="https://sellercentral.amazon.it/orders-v3/order/${extId}" target="_blank" class="btn-channel">🛒 Amazon ${extId}</a>`;
+  }
+  if (ch === 'temu' && extId) {
+    btns += `<a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn=${extId}" target="_blank" class="btn-channel">🟠 Temu ${extId}</a>`;
+  }
+  if (ch === 'tiktok' && extId) {
+    btns += `<a href="https://seller-it.tiktok.com/order/detail?order_no=${extId}&shop_region=IT" target="_blank" class="btn-channel">🎵 TikTok ${extId}</a>`;
+  }
+  btns += '</div>';
+  return btns === '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap"></div>' ? '' : btns;
+}
+
+
+async function createCreditFromReso(email, orderName) {
+  const amount = parseFloat(prompt('Importo credito per ' + email + ':'));
+  if (!amount || amount <= 0) return;
+  if (!confirm('Creare credito €' + amount.toFixed(2) + ' per ' + email + '?')) return;
+  try {
+    const r = await fetch(PROXY + '/creditsyard/adjust', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({customer_email: email, amount, reason: 'Credito reso ' + orderName, send_email_notification: 0})
+    });
+    const j = await r.json();
+    if (j.message === 'success') {
+      showToast('✅ Credito €' + amount.toFixed(2) + ' aggiunto a ' + email);
+    } else {
+      showToast('Errore: ' + (j.error || j.message || JSON.stringify(j)), 'err');
+    }
+  } catch(e) {
+    showToast('Errore: ' + e.message, 'err');
+  }
+}
+
 function renderOrder(order) {
   currentOrder = order;
   selectedItems = {};
@@ -275,9 +367,11 @@ function renderOrder(order) {
       <div>
         <div class="order-name">${order.name || '#' + order.id}</div>
         <div class="order-meta">${customerName} · ${order.email || ''}</div>
+        <button onclick="createCreditFromReso(currentOrder.email||'', currentOrder.name||'')" style="margin-top:6px;padding:4px 10px;background:#2a9d60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">💳 Crea credito</button>
       </div>
       <button class="order-clear" onclick="clearOrder()">×</button>
-    </div>`;
+    </div>
+    ${buildChannelButtons(order)}`;
 
   lineItems.forEach((li, i) => {
     selectedItems[i] = false;
@@ -287,11 +381,14 @@ function renderOrder(order) {
           <div class="item-toggle-knob"></div>
         </div>
         <div class="item-info">
-          <div class="item-name">${li.name}</div>
+          <div class="item-name">${shortName(li.name)}</div>
           <div class="item-qty">Qtà ordinata: ${li.quantity}</div>
         </div>
       </div>
-      <textarea class="item-note" id="note-${i}" placeholder="Note conformità prodotto (opzionale)..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <textarea class="item-note" id="note-${i}" placeholder="Note conformità prodotto..." style="flex:1"></textarea>
+        <textarea class="item-note" id="staff-note-${i}" placeholder="Note staff (interne)..." style="flex:1;background:#fffbe6;border-color:#f0c040"></textarea>
+      </div>
     </div>`;
   });
 
@@ -352,7 +449,8 @@ async function submitReso() {
     const resoItems = selected.map((li, _) => {
       const origIdx = lineItems.indexOf(li);
       const note = document.getElementById('note-' + origIdx)?.value.trim() || '';
-      return { name: li.name, qty: li.quantity, price: li.price, note };
+      const staffNote = document.getElementById('staff-note-' + origIdx)?.value.trim() || '';
+      return { name: li.name, qty: li.quantity, price: li.price, note, staffNote };
     });
 
     const sa = currentOrder.shipping_address || currentOrder.billing_address || {};

@@ -5044,6 +5044,23 @@ function detectChannelFromOrder(order){
   return 'shopify';
 }
 
+async function saveStaffNote(id,value){
+  var all=await getResiList();
+  var i=all.findIndex(function(r){return r.id===id;});
+  if(i>=0){all[i].staffNote=value;_resiCache=all;await saveResiList(all);showToast('Nota staff salvata');}
+}
+async function createCreditReso(email,orderName){
+  if(!email){showToast('Email non disponibile','error');return;}
+  var amount=parseFloat(prompt('Importo credito per '+email+':'));
+  if(!amount||amount<=0)return;
+  if(!confirm('Creare credito '+amount.toFixed(2)+' EUR per '+email+'?'))return;
+  try{
+    var r=await fetch(PROXY+'/creditsyard/adjust',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:email,amount:amount,reason:'Credito reso '+orderName,send_email_notification:0})});
+    var j=await r.json();
+    if(j.message==='success'){showToast('Credito '+amount.toFixed(2)+' aggiunto a '+email);}
+    else{showToast('Errore: '+(j.error||j.message||JSON.stringify(j)),'error');}
+  }catch(e){showToast('Errore: '+e.message,'error');}
+}
 function openRichiesteResoPanel(){
   document.getElementById('tools-menu-dropdown').style.display='none';
 
@@ -5168,10 +5185,20 @@ function openRichiesteResoPanel(){
     if(reso.extraProduct)itemsHtml+='<div style="padding:5px 0;font-size:13px;color:#e67e22">&#9888; <strong>Non ordinato:</strong> '+reso.extraProduct+'</div>';
 
     var actionBtn='';
-    if(reso.channel==='amazon')actionBtn='<button onclick="window.open(\'https://sellercentral.amazon.it/orders-v3\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa Amazon</button>';
-    else if(reso.channel==='temu')actionBtn='<button onclick="window.open(\'https://seller-eu.temu.com/ticket-list.html\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu</button>';
-    else if(reso.channel==='tiktok'){var ttId=reso.tiktokOrderId||'';actionBtn='<button onclick="window.open(\'https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok</button>';}
-    else actionBtn='<button data-oid="'+reso.orderId+'" class="_rc-credito" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
+    if(reso.channel==='amazon'){
+      var amzId='';var amzM=(reso.shopifyNote||'').match(/([0-9]{3}-[0-9]{7}-[0-9]{7})/);if(amzM)amzId=amzM[1];
+      var amzUrl=amzId?('https://sellercentral.amazon.it/orders-v3/order/'+amzId):'https://sellercentral.amazon.it/orders-v3';
+      actionBtn='<button onclick="window.open(\''+amzUrl+'\',\'_blank\')" style="background:#e8a000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#128230; Rimborsa'+(amzId?' '+amzId:'')+'</button>';
+    } else if(reso.channel==='temu'){
+      var temuId='';var temuM=(reso.shopifyNote||'').match(/PO-[0-9-]+/);if(temuM)temuId=temuM[0];
+      var temuUrl=temuId?('https://seller-eu.temu.com/order-detail.html?parent_order_sn='+temuId):'https://seller-eu.temu.com/ticket-list.html';
+      actionBtn='<button onclick="window.open(\''+temuUrl+'\',\'_blank\')" style="background:#ff6600;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#129042; Vedi Temu'+(temuId?' '+temuId:'')+'</button>';
+    } else if(reso.channel==='tiktok'){
+      var ttId=reso.tiktokOrderId||'';
+      var ttUrl=ttId?('https://seller-it.tiktok.com/order/detail?order_no='+ttId+'&shop_region=IT'):'https://seller-it.tiktok.com';
+      actionBtn='<button onclick="window.open(\''+ttUrl+'\',\'_blank\')" style="background:#000;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127925; Vedi TikTok'+(ttId?' '+ttId:'')+'</button>';
+    }
+    actionBtn+='<button onclick="createCreditReso(\''+reso.email+'\',\''+reso.orderName+'\')" style="background:#1a73e8;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">&#127873; Crea Credito</button>';
 
     return '<div data-reso-id="'+reso.id+'" style="background:#fff;border:1px solid #e8eaf0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05);margin-bottom:14px">'+
       // Header card
@@ -5183,14 +5210,18 @@ function openRichiesteResoPanel(){
         '<span style="margin-left:auto;font-size:11px;color:#aaa">'+ds+'</span>'+
       '</div>'+
       // Grid prodotti + note shopify
-      '<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e8eaf0">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #e8eaf0">'+
         '<div style="padding:10px 16px;border-right:1px solid #e8eaf0">'+
           '<div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px">Prodotti resi</div>'+
           itemsHtml+
         '</div>'+
-        '<div style="padding:10px 16px;background:#fffbeb">'+
+        '<div style="padding:10px 16px;background:#fffbeb;border-right:1px solid #e8eaf0">'+
           '<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px">Note Shopify</div>'+
           '<div style="font-size:12px;color:#78350f;white-space:pre-wrap;max-height:120px;overflow-y:auto">'+(reso.shopifyNote||'<em style="color:#aaa">Nessuna nota</em>')+'</div>'+
+        '</div>'+
+        '<div style="padding:10px 16px;background:#f0f9ff">'+
+          '<div style="font-size:10px;font-weight:700;color:#0369a1;text-transform:uppercase;margin-bottom:6px">Note Staff</div>'+
+          '<textarea id="sn-'+reso.id+'" style="width:100%;font-size:12px;border:1px solid #bae6fd;border-radius:6px;padding:6px;resize:vertical;min-height:70px;background:#fff;font-family:inherit;box-sizing:border-box" placeholder="Note interne..." onchange="saveStaffNote('+reso.id+',this.value)">'+(reso.staffNote||'')+'</textarea>'+
         '</div>'+
       '</div>'+
       // Tracking BRT + bottoni sempre visibili
