@@ -7672,7 +7672,7 @@ let fabProducts = JSON.parse(localStorage.getItem('fab_products')||'null') || FA
 let fabOrdini = JSON.parse(localStorage.getItem('fab_ordini')||'[]');   // ordini fornitore
 
 // Versione cache — incrementa per forzare invalidazione dati vecchi
-const FAB_CACHE_VERSION = '2';
+const FAB_CACHE_VERSION = '3';
 if(localStorage.getItem('fab_cache_version')!==FAB_CACHE_VERSION){
   localStorage.removeItem('fab_sales_cache');
   localStorage.removeItem('fab_sales_cache_date');
@@ -7713,7 +7713,7 @@ function openFabbisognoPanel(){
       '<button class="fab-tab" data-tab="ordini" onclick="renderFabTab(\'ordini\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🛒 Ordini Fornitori</button>'+
       '<button class="fab-tab" data-tab="fabbisogno" onclick="renderFabTab(\'fabbisogno\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🔮 Piano Fabbisogno</button>'+
     '</div>'+
-    '<button onclick="refreshFabData()" style="margin-left:auto;background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna dati Shopify</button>'+
+    '<button onclick="refreshFabInventory()" style="margin-left:auto;background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna inventario</button>'+
     '<button onclick="fabClearCache()" style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:8px 12px;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Svuota cache localStorage e ricarica">🗑 Svuota cache</button>';
   page.appendChild(hdr);
 
@@ -7935,17 +7935,16 @@ function parseShopifyQLResult(reportConnection, skuMap){
   return result;
 }
 
-async function refreshFabData(){
-  showToast('⏳ Caricamento inventario...','info');
+async function refreshFabInventory(){
+  showToast('⏳ Aggiornamento inventario...','info');
   try{
-    // ── INVENTARIO via REST ─────────────────────────────────────
     var inv={};
     var skuSet=new Set(fabProducts.map(function(p){return p.sku_shopify.toLowerCase();}));
-    var nextProdUrl='products.json?limit=250&fields=id,variants';
-    var prodSafety=0;
-    while(nextProdUrl&&prodSafety<20){
-      prodSafety++;
-      var pd=await shopifyGet(nextProdUrl);
+    var nextUrl='products.json?limit=250&fields=id,variants';
+    var safety=0;
+    while(nextUrl&&safety<20){
+      safety++;
+      var pd=await shopifyGet(nextUrl);
       if(pd&&pd.products&&pd.products.length){
         pd.products.forEach(function(prod){
           (prod.variants||[]).forEach(function(v){
@@ -7956,213 +7955,260 @@ async function refreshFabData(){
             }
           });
         });
-        nextProdUrl=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
-      } else { nextProdUrl=null; }
+        nextUrl=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
+      } else { nextUrl=null; }
     }
     fabProducts.forEach(function(p){if(inv[p.sku_shopify]==null)inv[p.sku_shopify]=0;});
     fabInventoryCache=inv;
     localStorage.setItem('fab_inventory',JSON.stringify(inv));
-    showToast('✅ Inventario ok. Carico venduto via ShopifyQL...','info');
-
-    // ── VENDUTO via ShopifyQL ───────────────────────────────────
-    // ShopifyQL è il linguaggio nativo dei report Shopify Analytics.
-    // Una sola query per periodo restituisce i totali aggregati per SKU —
-    // non serve scorrere migliaia di ordini.
-    var skuMap={};
-    fabProducts.forEach(function(p){ skuMap[p.sku_shopify.toLowerCase()]=p.sku_shopify; });
-
-    // Periodi da caricare: 7, 30, 90, 180, 360 giorni
-    // Strategia: carica 360gg e poi filtra per periodo nel frontend
-    // Ma ShopifyQL aggrega tutto in un totale — non per data.
-    // Quindi carichiamo più periodi separati per avere i dati storici.
-    var periods=[7,30,90,180,360];
-    // salesAcc[sku] = [{date: "PERIODO-Xd", qty: N}]
-    // Usiamo date simboliche per distinguere i periodi
-    var salesAcc={};
-    var shopifyQLWorking=false;
-
-    // Test: prova ShopifyQL con 7 giorni
-    showToast('⏳ Test ShopifyQL (7gg)...','info');
-    var test7=await fabFetchViaSalesReport(7, skuMap);
-    if(test7&&Object.keys(test7).length>0){
-      shopifyQLWorking=true;
-      // ShopifyQL funziona — carica tutti i periodi
-      // Strategia: salviamo i totali per periodo come array di entry con date sintetiche
-      // Per ogni periodo P, simuliamo P entries con qty=totalP/P per permettere
-      // il filtraggio per data nel fabSoldInDays
-      // MEGLIO: cambiamo fabSalesCache in formato aggregato {sku: {7:N, 30:N, 90:N, ...}}
-      var salesByPeriod={};
-      var today=new Date().toISOString().substring(0,10);
-
-      for(var pi=0;pi<periods.length;pi++){
-        var pdays=periods[pi];
-        showToast('⏳ ShopifyQL: carico venduto ultimi '+pdays+' giorni...','info');
-        var pResult=await fabFetchViaSalesReport(pdays, skuMap);
-        if(pResult){
-          Object.keys(pResult).forEach(function(sku){
-            if(!salesByPeriod[sku]) salesByPeriod[sku]={};
-            salesByPeriod[sku][pdays]=pResult[sku];
-          });
-        }
-      }
-
-      // Converti salesByPeriod in formato compatibile con fabSoldInDays
-      // Salviamo in formato speciale: {sku: [{date:"AGGREGATED", periods:{7:N,30:N,...}}]}
-      fabSalesCache={_aggregated:true, _data:salesByPeriod, _date:today};
-
-    } else {
-      showToast('⚠️ ShopifyQL non disponibile — uso REST ordini (90gg)','info');
-      // Fallback REST: ultimi 90gg con since_id
-      var since90=new Date();since90.setDate(since90.getDate()-90);
-      var since90Str=since90.toISOString();
-      var lastId=0;var safety2=0;
-      while(safety2<300){
-        safety2++;
-        var url='orders.json?status=any&created_at_min='+since90Str+'&limit=250&order=id+asc'+(lastId?'&since_id='+lastId:'');
-        var od=await shopifyGet(url);
-        var batch=od&&od.orders?od.orders:[];
-        if(!batch.length) break;
-        batch.forEach(function(order){
-          if(order.cancelled_at) return;
-          var dateStr=order.created_at?order.created_at.substring(0,10):'';
-          var refundedQty={};
-          (order.refunds||[]).forEach(function(refund){
-            (refund.refund_line_items||[]).forEach(function(rli){
-              refundedQty[rli.line_item_id]=(refundedQty[rli.line_item_id]||0)+(rli.quantity||0);
-            });
-          });
-          (order.line_items||[]).forEach(function(li){
-            var rawSku=(li.sku||'').trim();
-            if(!rawSku) return;
-            var matchedSku=skuMap[rawSku.toLowerCase()]||null;
-            if(!matchedSku) return;
-            var netQty=Math.max(0,(li.quantity||0)-(refundedQty[li.id]||0));
-            if(netQty===0) return;
-            if(!salesAcc[matchedSku]) salesAcc[matchedSku]=[];
-            salesAcc[matchedSku].push({date:dateStr,qty:netQty});
-          });
-        });
-        lastId=batch[batch.length-1].id;
-        if(batch.length<250) break;
-        if(safety2%10===0) showToast('⏳ REST: '+safety2*250+' ordini...','info');
-      }
-      fabSalesCache=salesAcc;
-    }
-
-    fabSalesCacheDate=new Date().toISOString().substring(0,16);
-    localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
-    localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
-
-    var mode=shopifyQLWorking?'ShopifyQL':'REST';
-    var matched=fabProducts.filter(function(p){
-      if(fabSalesCache._aggregated) return fabSalesCache._data&&fabSalesCache._data[p.sku_shopify];
-      return fabSalesCache[p.sku_shopify]&&fabSalesCache[p.sku_shopify].length>0;
-    }).length;
-    showToast('✅ Venduto ok ('+mode+'): '+matched+'/'+fabProducts.length+' prodotti');
+    showToast('✅ Inventario aggiornato: '+Object.keys(inv).filter(function(k){return inv[k]>0;}).length+' SKU con stock');
     renderFabTab(_fabCurrentTab);
-  }catch(e){showToast('❌ Errore: '+e.message,'error');console.error('[FAB]',e);}
+  }catch(e){showToast('❌ Errore: '+e.message,'error');}
 }
+
+async function refreshFabData(){ return refreshFabInventory(); }
 
 // Helper: venduto per SKU in ultimi N giorni
 // Gestisce sia formato ShopifyQL aggregato che formato REST (array di {date,qty})
+// fabSalesCache = { sku: qty7gg } — venduto reale 7 giorni importato da Shopify
+// Tutti gli altri periodi si calcolano per proporzione lineare dalla media giornaliera
+
 function fabSoldInDays(sku, days){
-  if(!fabSalesCache) return 0;
-  // Formato ShopifyQL aggregato: {_aggregated:true, _data:{sku:{7:N,30:N,...}}}
-  if(fabSalesCache._aggregated){
-    var data=fabSalesCache._data;
-    if(!data||!data[sku]) return 0;
-    var periods=Object.keys(data[sku]).map(Number).sort(function(a,b){return a-b;});
-    // Trova il periodo più piccolo >= days
-    var exact=data[sku][days];
-    if(exact!=null) return exact;
-    // Interpolazione: usa il periodo immediatamente superiore e scala proporzionalmente
-    var upper=periods.find(function(p){return p>=days;});
-    var lower=periods.slice().reverse().find(function(p){return p<days;});
-    if(upper!=null) return Math.round(data[sku][upper]*(days/upper));
-    if(lower!=null) return Math.round(data[sku][lower]*(days/lower));
-    return 0;
-  }
-  // Formato REST: array di {date, qty}
-  if(!fabSalesCache[sku]) return 0;
-  var cutoffDate=new Date();cutoffDate.setDate(cutoffDate.getDate()-days);
-  var cutoffStr=cutoffDate.toISOString().substring(0,10);
-  return fabSalesCache[sku].reduce(function(sum,s){
-    return sum+(s.date>=cutoffStr?s.qty:0);
-  },0);
+  if(!fabSalesCache||!fabSalesCache[sku]) return 0;
+  // Proiezione lineare: (qty7gg / 7) * days
+  var daily = fabSalesCache[sku] / 7;
+  return Math.round(daily * days);
 }
 
-// Helper: media giornaliera pesata su ultimi N giorni
 function fabDailyAvg(sku, days){
-  var sold=fabSoldInDays(sku,days);
-  return sold/days;
+  if(!fabSalesCache||!fabSalesCache[sku]) return 0;
+  return fabSalesCache[sku] / 7; // media giornaliera sempre da base 7gg
 }
 
 // ════════════════════════════════════════════════════════════════
 // TAB 2 — ANALISI VENDUTO
 // ════════════════════════════════════════════════════════════════
 function renderFabVenduto(body){
-  var cached=fabSalesCacheDate?'Dati al '+fabSalesCacheDate:'Nessun dato — clicca Aggiorna dati Shopify';
-  var periods=[7,30,90,180,360];
+  var importDate=fabSalesCacheDate?'Dati 7gg importati il '+fabSalesCacheDate:'Nessun dato importato';
+  var periods=[7,14,21,28,35,45,60,90,120];
 
-  var html='<div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">'+
-    '<div>'+
-      '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">📈 Analisi Venduto per Prodotto</h2>'+
-      '<div style="font-size:12px;color:#aaa">'+cached+'</div>'+
-    '</div>'+
-    '<div style="display:flex;gap:8px">'+
-      '<button onclick="fabExportVenduto()" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📥 Esporta CSV</button>'+
-      '<button onclick="fabDiagnosticSKU()" style="background:#fef9c3;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Verifica SKU</button>'+
-    '</div>'+
-  '</div>';
+  var html=
+    '<div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
+      '<div>'+
+        '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">📈 Analisi Venduto per Prodotto</h2>'+
+        '<div style="font-size:12px;color:#aaa">'+importDate+' &nbsp;|&nbsp; Tutti i periodi proiettati dalla media giornaliera dei 7 giorni</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button onclick="fabShowImportModal()" style="background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📂 Importa CSV Shopify</button>'+
+        '<button onclick="fabExportVenduto()" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📥 Esporta CSV</button>'+
+        '<button onclick="fabDiagnosticSKU()" style="background:#fef9c3;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Verifica SKU</button>'+
+      '</div>'+
+    '</div>';
 
-  if(!fabSalesCache){
-    body.innerHTML=html+'<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">📊 Clicca <strong>Aggiorna dati Shopify</strong> per caricare il venduto</div>';
+  if(!fabSalesCache||!Object.keys(fabSalesCache).length){
+    body.innerHTML=html+
+      '<div style="text-align:center;padding:60px 20px;background:#f5f3ff;border-radius:12px;border:2px dashed #c4b5fd">'+
+        '<div style="font-size:40px;margin-bottom:12px">📂</div>'+
+        '<div style="font-size:16px;font-weight:700;color:#6d28d9;margin-bottom:8px">Importa il venduto da Shopify</div>'+
+        '<div style="font-size:13px;color:#888;margin-bottom:16px">'+
+          'In Shopify → Analytics → Reports → "Sales by product" → Esporta CSV<br>'+
+          'Il file deve avere almeno le colonne: <strong>SKU</strong> e <strong>Net quantity</strong>'+
+        '</div>'+
+        '<button onclick="fabShowImportModal()" style="background:#6d28d9;border:none;border-radius:8px;padding:10px 24px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📂 Importa CSV</button>'+
+      '</div>';
     return;
   }
 
-  // Raggruppa per fornitore
-  var fornitori=[...new Set(fabProducts.map(function(p){return p.fornitore;}))];
-
-  html+='<div style="overflow-x:auto">'+
-    '<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden">'+
-    '<thead>'+
-    '<tr style="background:#f5f3ff">'+
+  // Tabella venduto
+  html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden">'+
+    '<thead><tr style="background:#f5f3ff">'+
       '<th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;position:sticky;left:0;background:#f5f3ff;min-width:180px">PRODOTTO</th>'+
-      '<th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">INV. ATTUALE</th>'+
-      periods.map(function(d){return '<th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">'+d+' gg</th><th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#aaa;border-bottom:2px solid #e8eaf0;white-space:nowrap">/ gg</th>';}).join('')+
-      '<th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#e67e22;border-bottom:2px solid #e8eaf0;white-space:nowrap">COPERTURA</th>'+
+      '<th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">INV.</th>'+
+      '<th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#e67e22;border-bottom:2px solid #e8eaf0;white-space:nowrap">BASE 7gg</th>'+
+      '<th style="padding:10px 8px;text-align:right;font-size:11px;font-weight:700;color:#888;border-bottom:2px solid #e8eaf0;white-space:nowrap">/ gg</th>'+
+      periods.slice(1).map(function(d){
+        return '<th style="padding:10px 8px;text-align:right;font-size:11px;font-weight:700;color:#1a73e8;border-bottom:2px solid #e8eaf0;white-space:nowrap">'+d+'gg</th>';
+      }).join('')+
+      '<th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#16a34a;border-bottom:2px solid #e8eaf0;white-space:nowrap">COPERTURA</th>'+
     '</tr></thead><tbody>';
 
   fabProducts.forEach(function(p,idx){
-    var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:'—';
-    // Media giornaliera pesata: usa 90gg come base principale
-    var avg90=fabDailyAvg(p.sku_shopify,90);
-    var coperturaGg=avg90>0&&typeof inv==='number'?Math.round(inv/avg90):null;
-    var copColor=coperturaGg==null?'#aaa':coperturaGg<14?'#dc2626':coperturaGg<30?'#e67e22':'#16a34a';
+    var qty7=fabSalesCache[p.sku_shopify]||0;
+    var daily=qty7/7;
+    var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:null;
+    var invShow=inv!=null?inv:'—';
+    var invColor=inv!=null&&inv<daily*14?'#dc2626':'#1a1a2e';
+    var copertura=daily>0&&inv!=null?Math.round(inv/daily):null;
+    var copColor=copertura==null?'#aaa':copertura<14?'#dc2626':copertura<30?'#e67e22':'#16a34a';
+    var rowBg=idx%2===1?'#faf8ff':'#fff';
 
-    html+='<tr style="border-bottom:1px solid #f4f5f7;'+(idx%2===1?'background:#faf8ff;':'')+'">'+
-      '<td style="padding:9px 14px;font-size:13px;font-weight:600;color:#1a1a2e;position:sticky;left:0;background:'+(idx%2===1?'#faf8ff':'#fff')+'">'+p.sku+'</td>'+
-      '<td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:700;color:'+(typeof inv==='number'&&inv<50?'#dc2626':'#1a1a2e')+'">'+inv+'</td>'+
-      periods.map(function(d){
-        var sold=fabSoldInDays(p.sku_shopify,d);
-        var avg=(sold/d).toFixed(1);
-        return '<td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:600;color:#1a1a2e">'+sold+'</td>'+
-               '<td style="padding:9px 14px;text-align:right;font-size:12px;color:#888">'+avg+'</td>';
+    html+='<tr style="border-bottom:1px solid #f4f5f7;background:'+rowBg+'">'+
+      '<td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1a1a2e;position:sticky;left:0;background:'+rowBg+'">'+p.sku+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;font-size:13px;font-weight:700;color:'+invColor+'">'+invShow+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;font-size:13px;font-weight:700;color:#e67e22">'+qty7+'</td>'+
+      '<td style="padding:8px 8px;text-align:right;font-size:12px;color:#888">'+daily.toFixed(1)+'</td>'+
+      periods.slice(1).map(function(d){
+        var proj=Math.round(daily*d);
+        return '<td style="padding:8px 8px;text-align:right;font-size:13px;color:#555">'+proj+'</td>';
       }).join('')+
-      '<td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:700;color:'+copColor+'">'+(coperturaGg!=null?coperturaGg+' gg':'—')+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;font-size:13px;font-weight:700;color:'+copColor+'">'+(copertura!=null?copertura+' gg':'—')+'</td>'+
     '</tr>';
   });
-
   html+='</tbody></table></div>'+
-    '<div style="margin-top:12px;font-size:11px;color:#aaa">'+
-      '📌 <strong>Copertura</strong> = Inventario attuale ÷ media giornaliera 90gg &nbsp;|&nbsp; '+
+    '<div style="margin-top:10px;font-size:11px;color:#aaa">'+
+      '📌 <strong>BASE 7gg</strong> = dato reale importato da Shopify &nbsp;|&nbsp; '+
+      'Periodi 14→120gg = proiezione lineare (BASE 7gg ÷ 7 × giorni) &nbsp;|&nbsp; '+
       '<span style="color:#dc2626">■</span> &lt;14gg critico &nbsp;'+
-      '<span style="color:#e67e22">■</span> &lt;30gg attenzione &nbsp;'+
-      '<span style="color:#16a34a">■</span> ok'+
+      '<span style="color:#e67e22">■</span> &lt;30gg attenzione'+
     '</div>';
 
   body.innerHTML=html;
 }
+
+// ── MODAL IMPORT CSV ───────────────────────────────────────────
+function fabShowImportModal(){
+  var existing=document.getElementById('fab-import-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='fab-import-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10600;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:14px;width:600px;max-width:97vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
+      '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;background:#6d28d9;color:#fff">'+
+        '<div style="font-size:16px;font-weight:700">📂 Importa venduto 7 giorni da Shopify</div>'+
+        '<div style="font-size:12px;opacity:.8;margin-top:2px">Shopify → Analytics → Prodotti più venduti → Esporta CSV</div>'+
+      '</div>'+
+      '<div style="padding:16px 20px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px">'+
+        // Istruzioni
+        '<div style="background:#f5f3ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#6d28d9;line-height:1.6">'+
+          '<strong>Come esportare da Shopify:</strong><br>'+
+          '1. Vai su <strong>Analytics → Report</strong><br>'+
+          '2. Cerca "Articoli venduti per prodotto" oppure "Sales by product"<br>'+
+          '3. Imposta il periodo a <strong>ultimi 7 giorni</strong><br>'+
+          '4. Clicca <strong>Esporta → CSV</strong><br>'+
+          '5. Carica il file qui sotto<br><br>'+
+          'Il CSV deve avere almeno le colonne <strong>SKU</strong> e <strong>Net quantity</strong> (o Quantità netta)'+
+        '</div>'+
+        // Drop zone
+        '<div id="fab-drop-zone" style="border:2px dashed #c4b5fd;border-radius:10px;padding:30px;text-align:center;cursor:pointer;background:#faf8ff;transition:background .15s" onclick="document.getElementById(\'fab-file-input\').click()">'+
+          '<div style="font-size:32px;margin-bottom:8px">📄</div>'+
+          '<div style="font-size:14px;font-weight:600;color:#6d28d9">Clicca o trascina il CSV qui</div>'+
+          '<div style="font-size:12px;color:#aaa;margin-top:4px">Oppure incolla il testo CSV sotto</div>'+
+          '<input type="file" id="fab-file-input" accept=".csv,.txt" style="display:none">'+
+        '</div>'+
+        // Paste area
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Oppure incolla il contenuto CSV:</label>'+
+          '<textarea id="fab-csv-paste" rows="6" placeholder="SKU,Net quantity&#10;CNALLAX10CAF014,32&#10;CNFAX10CAF187,185&#10;..." style="width:100%;padding:8px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:monospace;box-sizing:border-box;resize:vertical"></textarea>'+
+        '</div>'+
+        '<div id="fab-import-preview" style="display:none"></div>'+
+        '<div id="fab-import-error" style="display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:10px;font-size:12px;color:#dc2626"></div>'+
+      '</div>'+
+      '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;gap:8px;justify-content:flex-end">'+
+        '<button onclick="document.getElementById(\'fab-import-modal\').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
+        '<button id="fab-import-btn" onclick="fabConfirmImport()" style="padding:8px 16px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" disabled>💾 Importa</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+
+  // Drag & drop
+  var dz=modal.querySelector('#fab-drop-zone');
+  dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.background='#ede9fe';});
+  dz.addEventListener('dragleave',function(){dz.style.background='#faf8ff';});
+  dz.addEventListener('drop',function(e){e.preventDefault();dz.style.background='#faf8ff';var f=e.dataTransfer.files[0];if(f)fabReadCSVFile(f);});
+
+  // File input
+  modal.querySelector('#fab-file-input').addEventListener('change',function(e){
+    if(e.target.files[0])fabReadCSVFile(e.target.files[0]);
+  });
+
+  // Paste area
+  modal.querySelector('#fab-csv-paste').addEventListener('input',function(){
+    var txt=this.value.trim();
+    if(txt) fabParseAndPreviewCSV(txt);
+  });
+}
+
+function fabReadCSVFile(file){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    document.getElementById('fab-csv-paste').value=e.target.result;
+    fabParseAndPreviewCSV(e.target.result);
+  };
+  reader.readAsText(file,'utf-8');
+}
+
+var _fabParsedImport=null;
+
+function fabParseAndPreviewCSV(text){
+  var errEl=document.getElementById('fab-import-error');
+  var prevEl=document.getElementById('fab-import-preview');
+  var btn=document.getElementById('fab-import-btn');
+  errEl.style.display='none'; prevEl.style.display='none';
+  _fabParsedImport=null; if(btn) btn.disabled=true;
+
+  // Rileva separatore (virgola o punto e virgola)
+  var sep=text.indexOf(';')>text.indexOf(',')?';':',';
+  var rows=text.trim().split(/\r?\n/).filter(function(r){return r.trim();});
+  if(rows.length<2){errEl.textContent='File troppo corto';errEl.style.display='block';return;}
+
+  var headers=rows[0].split(sep).map(function(h){return h.trim().replace(/^["']|["']$/g,'').toLowerCase();});
+
+  // Trova colonne SKU e qty con nomi flessibili
+  var skuIdx=headers.findIndex(function(h){return h==='sku'||h==='variant sku'||h==='product variant sku';});
+  var qtyIdx=headers.findIndex(function(h){
+    return h.includes('net quantity')||h.includes('net_quantity')||h.includes('quantità netta')||
+           h.includes('quantita netta')||h.includes('net_items_sold')||h==='quantity'||h==='qty';
+  });
+
+  if(skuIdx<0){errEl.textContent='Colonna SKU non trovata. Intestazioni trovate: '+headers.join(', ');errEl.style.display='block';return;}
+  if(qtyIdx<0){errEl.textContent='Colonna quantità non trovata (cerco: Net quantity, Quantità netta). Intestazioni: '+headers.join(', ');errEl.style.display='block';return;}
+
+  var ourSkus=new Set(fabProducts.map(function(p){return p.sku_shopify.toLowerCase();}));
+  var parsed={}; var matched=0; var notFound=[];
+
+  for(var i=1;i<rows.length;i++){
+    var cols=rows[i].split(sep).map(function(c){return c.trim().replace(/^["']|["']$/g,'');});
+    var sku=(cols[skuIdx]||'').trim();
+    var qty=parseInt((cols[qtyIdx]||'0').replace(/[^0-9\-]/g,''))||0;
+    if(!sku||qty<=0) continue;
+    var skuLow=sku.toLowerCase();
+    var fabP=fabProducts.find(function(p){return p.sku_shopify.toLowerCase()===skuLow;});
+    if(fabP){parsed[fabP.sku_shopify]=qty;matched++;}
+    else notFound.push(sku);
+  }
+
+  if(!matched){errEl.textContent='Nessun SKU corrisponde ai prodotti in anagrafica. Verifica che gli SKU nel CSV coincidano con quelli nella Struttura Prodotti.';errEl.style.display='block';return;}
+
+  _fabParsedImport=parsed;
+  if(btn) btn.disabled=false;
+
+  // Preview
+  prevEl.style.display='block';
+  prevEl.innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#166534">'+
+    '✅ <strong>'+matched+' SKU importati</strong>'+
+    (notFound.length?' &nbsp;|&nbsp; ⚠️ '+notFound.length+' SKU non in anagrafica: '+notFound.slice(0,5).join(', ')+(notFound.length>5?'...':''):'')+'<br>'+
+    '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
+    Object.entries(parsed).slice(0,8).map(function(e){
+      var p=fabProducts.find(function(x){return x.sku_shopify===e[0];});
+      return '<span style="background:#dcfce7;padding:2px 8px;border-radius:4px">'+( p?p.sku:e[0])+': <strong>'+e[1]+'</strong></span>';
+    }).join('')+(Object.keys(parsed).length>8?'<span style="color:#aaa">...</span>':'')+
+    '</div>'+
+  '</div>';
+}
+
+function fabConfirmImport(){
+  if(!_fabParsedImport) return;
+  fabSalesCache=_fabParsedImport;
+  fabSalesCacheDate=new Date().toISOString().substring(0,16);
+  localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
+  localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
+  document.getElementById('fab-import-modal').remove();
+  showToast('✅ Venduto importato: '+Object.keys(fabSalesCache).length+' prodotti');
+  renderFabTab('venduto');
+}
+
 
 function fabExportVenduto(){
   var periods=[7,30,90,180,360];
