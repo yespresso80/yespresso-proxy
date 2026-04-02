@@ -5223,17 +5223,26 @@ function openTikTokResiModal(){
         var histEl=document.getElementById('ttr-hist-'+order.id);
         if(!histEl||!custId)return;
         try{
-          var d=await shopifyGet('orders.json?customer_id='+custId+'&status=any&limit=5');
-          var prev=(d&&d.orders||[]).filter(function(o){return o.id!==order.id;}).slice(0,4);
-          if(!prev.length){histEl.innerHTML='<div style="font-size:12px;color:#aaa">\uD83D\uDCCB Nessun ordine precedente</div>';return;}
-          histEl.innerHTML='<div style="font-size:11px;font-weight:700;color:#555;margin-top:6px;margin-bottom:4px">\uD83D\uDCCB Ordini storici</div>'+
-            prev.map(function(o){
+          var d=await shopifyGet('orders.json?customer_id='+custId+'&status=any&limit=6');
+          var allOrders=(d&&d.orders||[]).slice(0,5); // include anche l'ordine corrente
+          if(!allOrders.length){histEl.innerHTML='<div style="font-size:12px;color:#aaa">\uD83D\uDCCB Nessun ordine storico</div>';return;}
+          var sS={delivered:'\u2705 Cons.',in_transit:'\uD83D\uDE9A Transit.',out_for_delivery:'\uD83D\uDEF5 In consegna',attempted_delivery:'\u26A0\uFE0F Tentativo',ready_for_pickup:'\uD83D\uDCEB Ritiro',confirmed:'\uD83D\uDCCB Conf.',failure:'\u274C Problema'};
+          var fS={fulfilled:'\uD83D\uDCE6 Spedito',unfulfilled:'\u23F3 Non sped.',partial:'\uD83D\uDD04 Parz.',pending:'\u23F3 Attesa'};
+          histEl.innerHTML='<div style="font-size:11px;font-weight:700;color:#555;margin-top:8px;margin-bottom:6px;padding-top:8px;border-top:1px solid #e8eaf0">\uD83D\uDCCB Ordini storici cliente</div>'+
+            allOrders.map(function(o){
+              var isCurrent=o.id===order.id;
               var oUrl='https://40f758-3.myshopify.com/admin/orders/'+o.id;
               var oDate=o.created_at?new Date(o.created_at).toLocaleDateString('it-IT'):'';
-              var oFs={fulfilled:'\u2705',unfulfilled:'\u23F3',partial:'\uD83D\uDD04',pending:'\u23F3'};
-              return '<div style="font-size:12px;color:#555;padding:3px 0;border-bottom:1px solid #f0f2f5">'+
-                '<a href="'+oUrl+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">'+(o.name||'#'+o.id)+'</a> '+
-                '<span style="color:#aaa">'+oDate+'</span> '+(oFs[o.fulfillment_status]||'')+'</div>';
+              var f=o.fulfillments&&o.fulfillments[0];
+              var delivStatus=f&&f.shipment_status?(sS[f.shipment_status]||f.shipment_status):(fS[o.fulfillment_status]||'\u2014');
+              var total=o.total_price?('\u20AC'+parseFloat(o.total_price).toFixed(2)):'';
+              return '<div style="font-size:12px;padding:5px 8px;border-radius:6px;margin-bottom:3px;display:flex;align-items:center;gap:6px;'+(isCurrent?'background:#fff3cd;border:1.5px solid #f59e0b;':'background:#f8f9fc;border:1px solid #e8eaf0;')+'">'+
+                '<a href="'+oUrl+'" target="_blank" style="color:#1a73e8;font-weight:700;text-decoration:none;flex-shrink:0">'+(o.name||'#'+o.id)+'</a>'+
+                (isCurrent?'<span style="font-size:10px;background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-weight:700;flex-shrink:0">ATTUALE</span>':'')+
+                '<span style="color:#aaa;flex-shrink:0">'+oDate+'</span>'+
+                '<span style="color:#555;flex-shrink:0">'+delivStatus+'</span>'+
+                (total?'<span style="font-weight:700;color:#1a1a2e;margin-left:auto;flex-shrink:0">'+total+'</span>':'')+
+              '</div>';
             }).join('');
         }catch(e2){histEl.innerHTML='<div style="font-size:12px;color:#aaa">Storico non disponibile</div>';}
       });
