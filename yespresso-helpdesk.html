@@ -7837,62 +7837,97 @@ function fabDeleteProduct(id){
 // SHOPIFY DATA FETCH
 // ════════════════════════════════════════════════════════════════
 async function refreshFabData(){
-  showToast('⏳ Caricamento dati Shopify...','info');
+  showToast('⏳ Caricamento inventario...','info');
   try{
-    // Inventario: leggi varianti per ogni SKU
+    // ── INVENTARIO ──────────────────────────────────────────────
+    // Shopify non supporta variants.json?sku= come filtro diretto.
+    // Carichiamo tutti i products e cerchiamo per SKU nelle varianti.
     var inv={};
-    for(var i=0;i<fabProducts.length;i++){
-      var p=fabProducts[i];
-      try{
-        var d=await shopifyGet('variants.json?sku='+encodeURIComponent(p.sku_shopify)+'&limit=1');
-        if(d&&d.variants&&d.variants[0]){inv[p.sku_shopify]=d.variants[0].inventory_quantity||0;}
-        else{inv[p.sku_shopify]=0;}
-      }catch(e){inv[p.sku_shopify]=0;}
+    var skuToFind=new Set(fabProducts.map(function(p){return p.sku_shopify.toLowerCase();}));
+    var nextProdUrl='products.json?limit=250&fields=id,variants';
+    var prodSafety=0;
+    while(nextProdUrl&&prodSafety<20){
+      prodSafety++;
+      var pd=await shopifyGet(nextProdUrl);
+      if(pd&&pd.products&&pd.products.length){
+        pd.products.forEach(function(prod){
+          (prod.variants||[]).forEach(function(v){
+            var vsku=(v.sku||'').trim().toLowerCase();
+            if(skuToFind.has(vsku)){
+              var origSku=fabProducts.find(function(p){return p.sku_shopify.toLowerCase()===vsku;});
+              if(origSku) inv[origSku.sku_shopify]=v.inventory_quantity||0;
+            }
+          });
+        });
+        nextProdUrl=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
+      } else { nextProdUrl=null; }
     }
+    // Prodotti non trovati → 0
+    fabProducts.forEach(function(p){if(inv[p.sku_shopify]==null)inv[p.sku_shopify]=0;});
     fabInventoryCache=inv;
     localStorage.setItem('fab_inventory',JSON.stringify(inv));
+    showToast('✅ Inventario ok ('+Object.keys(inv).filter(function(k){return inv[k]>0;}).length+' SKU con stock). Carico ordini...','info');
 
-    // Venduto: ordini ultimi 365 gg — tutti gli stati, paginazione cursor
+    // ── ORDINI + NET QUANTITY ───────────────────────────────────
+    // Carica ordini ultimi 365gg con line_items e refunds
     var since=new Date();since.setDate(since.getDate()-365);
     var sinceStr=since.toISOString();
     var allOrders=[];
-    var nextUrl='orders.json?status=any&created_at_min='+sinceStr+'&limit=250&fields=id,created_at,line_items';
+    // Prima pagina con tutti i campi necessari
+    var nextUrl='orders.json?status=any&created_at_min='+sinceStr+'&limit=250';
     var safety=0;
     while(nextUrl&&safety<30){
       safety++;
       var od=await shopifyGet(nextUrl);
       if(od&&od.orders&&od.orders.length){
         allOrders=allOrders.concat(od.orders);
-        // Cursor pagination: leggi _nextPageInfo iniettato dal proxy
-        if(od._nextPageInfo) nextUrl='orders.json?limit=250&fields=id,created_at,line_items&page_info='+od._nextPageInfo;
-        else nextUrl=null;
+        nextUrl=od._nextPageInfo?'orders.json?limit=250&page_info='+od._nextPageInfo:null;
       } else { nextUrl=null; }
     }
-    // Costruisci mappa SKU shopify -> sku lowercase per match robusto
+
+    // Costruisci mappa SKU lowercase → SKU originale
     var skuMap={};
     fabProducts.forEach(function(p){ skuMap[p.sku_shopify.toLowerCase()]=p.sku_shopify; });
-    // Aggrega venduto per SKU
-    var sales={};
+
+    // Aggrega venduto NETTO per SKU: qty ordinate - qty rimborsate
+    var sales={}; // sku -> [{date, qty (netta)}]
     allOrders.forEach(function(order){
+      // Salta ordini annullati completamente
+      if(order.cancelled_at) return;
       var dateStr=order.created_at?order.created_at.substring(0,10):'';
+
+      // Costruisci mappa variante → qty rimborsata per questo ordine
+      var refundedQty={};
+      (order.refunds||[]).forEach(function(refund){
+        (refund.refund_line_items||[]).forEach(function(rli){
+          var liId=rli.line_item_id;
+          refundedQty[liId]=(refundedQty[liId]||0)+(rli.quantity||0);
+        });
+      });
+
       (order.line_items||[]).forEach(function(li){
         var rawSku=(li.sku||'').trim();
-        if(!rawSku)return;
-        // Match esatto o case-insensitive
-        var matchedSku=skuMap[rawSku.toLowerCase()]||rawSku;
-        if(!sales[matchedSku])sales[matchedSku]=[];
-        sales[matchedSku].push({date:dateStr,qty:li.quantity||0});
+        if(!rawSku) return;
+        var matchedSku=skuMap[rawSku.toLowerCase()]||null;
+        if(!matchedSku) return; // ignora SKU non in anagrafica
+        var orderedQty=li.quantity||0;
+        var refunded=refundedQty[li.id]||0;
+        var netQty=Math.max(0, orderedQty-refunded);
+        if(netQty===0) return;
+        if(!sales[matchedSku]) sales[matchedSku]=[];
+        sales[matchedSku].push({date:dateStr, qty:netQty});
       });
     });
+
     fabSalesCache=sales;
     fabSalesCacheDate=new Date().toISOString().substring(0,16);
     localStorage.setItem('fab_sales_cache',JSON.stringify(sales));
     localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
-    var skuFound=Object.keys(sales).length;
+
     var matchedOurSkus=fabProducts.filter(function(p){return sales[p.sku_shopify]&&sales[p.sku_shopify].length>0;}).length;
-    showToast('✅ '+allOrders.length+' ordini caricati — '+skuFound+' SKU trovati, '+matchedOurSkus+'/'+fabProducts.length+' prodotti con venduto');
+    showToast('✅ '+allOrders.length+' ordini • '+matchedOurSkus+'/'+fabProducts.length+' prodotti con venduto netto');
     renderFabTab(_fabCurrentTab);
-  }catch(e){showToast('❌ Errore: '+e.message,'error');}
+  }catch(e){showToast('❌ Errore: '+e.message,'error');console.error('[FAB]',e);}
 }
 
 // Helper: venduto per SKU in ultimi N giorni
