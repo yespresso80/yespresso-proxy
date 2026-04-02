@@ -8148,18 +8148,38 @@ function fabParseAndPreviewCSV(text){
   errEl.style.display='none'; prevEl.style.display='none';
   _fabParsedImport=null; if(btn) btn.disabled=true;
 
-  // Rileva separatore (virgola o punto e virgola)
-  var sep=text.indexOf(';')>text.indexOf(',')?';':',';
   var rows=text.trim().split(/\r?\n/).filter(function(r){return r.trim();});
   if(rows.length<2){errEl.textContent='File troppo corto';errEl.style.display='block';return;}
 
-  var headers=rows[0].split(sep).map(function(h){return h.trim().replace(/^["']|["']$/g,'').toLowerCase();});
+  // Parser CSV che rispetta le virgolette (es: "testo,con,virgole",valore)
+  function parseCSVRow(line, separator){
+    var cols=[]; var cur=''; var inQ=false;
+    for(var ci=0;ci<line.length;ci++){
+      var ch=line[ci];
+      if(ch==='"'){ inQ=!inQ; }
+      else if(ch===separator&&!inQ){ cols.push(cur.trim()); cur=''; }
+      else { cur+=ch; }
+    }
+    cols.push(cur.trim());
+    return cols;
+  }
 
-  // Trova colonne SKU e qty con nomi flessibili
-  var skuIdx=headers.findIndex(function(h){return h==='sku'||h==='variant sku'||h==='product variant sku';});
+  // Rileva separatore
+  var firstLine=rows[0];
+  var sep=firstLine.split(';').length>firstLine.split(',').length?';':',';
+
+  var headers=parseCSVRow(rows[0],sep).map(function(h){return h.replace(/^["']|["']$/g,'').toLowerCase().trim();});
+
+  // Trova colonne SKU e qty con nomi flessibili — include intestazioni italiane Shopify
+  var skuIdx=headers.findIndex(function(h){
+    return h==='sku'||h.includes('sku della variante')||h.includes('variant sku')||
+           h.includes('product variant sku')||h.includes('sku variante');
+  });
   var qtyIdx=headers.findIndex(function(h){
-    return h.includes('net quantity')||h.includes('net_quantity')||h.includes('quantità netta')||
-           h.includes('quantita netta')||h.includes('net_items_sold')||h==='quantity'||h==='qty';
+    return h.includes('netti')||h.includes('net quantity')||h.includes('net_quantity')||
+           h.includes('quantità netta')||h.includes('quantita netta')||
+           h.includes('net_items_sold')||h.includes('articoli venduti')||
+           h==='quantity'||h==='qty';
   });
 
   if(skuIdx<0){errEl.textContent='Colonna SKU non trovata. Intestazioni trovate: '+headers.join(', ');errEl.style.display='block';return;}
@@ -8169,7 +8189,7 @@ function fabParseAndPreviewCSV(text){
   var parsed={}; var matched=0; var notFound=[];
 
   for(var i=1;i<rows.length;i++){
-    var cols=rows[i].split(sep).map(function(c){return c.trim().replace(/^["']|["']$/g,'');});
+    var cols=parseCSVRow(rows[i],sep).map(function(c){return c.replace(/^["']|["']$/g,'').trim();});
     var sku=(cols[skuIdx]||'').trim();
     var qty=parseInt((cols[qtyIdx]||'0').replace(/[^0-9\-]/g,''))||0;
     if(!sku||qty<=0) continue;
