@@ -387,6 +387,7 @@ textarea.field{min-height:80px;resize:vertical}
       <span class="ticket-panel-title" id="panel-title">Tickets to handle</span>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="filter-btn" onclick="openQRModal()" style="display:flex;align-items:center;gap:4px;background:#FFD700;border-color:#e6c000;font-weight:700" title="Risposte rapide">⚡</button>
+        <button class="filter-btn" onclick="openTikTokResiModal()" style="background:#000;border-color:#000;color:#fff;font-weight:700" title="TikTok Resi">🎵 TIK TOK RESI</button>
         <button class="filter-btn" onclick="openAutorizzaResoModal()" style="background:#e53e3e;border-color:#c53030;color:#fff;font-weight:700" title="Autorizza Reso">↩️ Autorizza Reso</button>
         <button class="filter-btn" onclick="openRitiroOrdineModal()" style="background:#c0392b;border-color:#a93226;color:#fff;font-weight:700" title="Ritiro Ordine">📦 Ritiro</button>
         <button class="filter-btn" onclick="openRispedisciOrdineModal()" style="background:#1a73e8;border-color:#1557b0;color:#fff;font-weight:700" title="Rispedisci Ordine">🔄 Rispedisci</button>
@@ -5113,6 +5114,133 @@ function renderOrderSearchResult(order,btnHtml){
     '<div style="font-size:13px;color:#555">'+addr+'</div>'+
     '<div style="font-size:13px;color:#555">'+phone+' | '+email+'</div>'+
     '<div style="margin-top:8px">'+btnHtml+'</div></div>';
+}
+
+function openTikTokResiModal(){
+  var existing=document.getElementById('tiktok-resi-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='tiktok-resi-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9200;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:14px;width:860px;max-width:97vw;max-height:95vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden">'+
+      '<div style="padding:16px 22px;border-bottom:1px solid #000;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#000">'+
+        '<a href="https://seller-it.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&sub_tab_pending=sub_tab_pending_all&tab=800" target="_blank" style="font-size:17px;font-weight:700;color:#fff;text-decoration:none;display:flex;align-items:center;gap:8px">'+
+          '\uD83C\uDFB5 GESTISCI RESI TIK TOK <span style="font-size:12px;opacity:.7;font-weight:400">\u2197 Apri su TikTok</span>'+
+        '</a>'+
+        '<button id="ttr-close" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:22px;width:32px;height:32px;border-radius:8px;cursor:pointer;line-height:1">&#215;</button>'+
+      '</div>'+
+      '<div style="flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:20px">'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:700;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">\uD83D\uDCCB Risposte rapide \u2014 clicca per copiare</div>'+
+          '<div id="ttr-qr-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px"></div>'+
+        '</div>'+
+        '<div style="border-top:1px solid #e8eaf0;padding-top:16px">'+
+          '<div style="font-size:11px;font-weight:700;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">\uD83D\uDD0D Cerca ordine Shopify</div>'+
+          '<div style="display:flex;gap:8px;margin-bottom:12px">'+
+            '<input id="ttr-q" placeholder="Es. #2024123456 o numero TikTok" style="flex:1;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none">'+
+            '<button id="ttr-search-btn" style="padding:9px 20px;background:#000;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Cerca</button>'+
+          '</div>'+
+          '<div id="ttr-results"></div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#ttr-close').addEventListener('click',function(){modal.remove();});
+  function _populateTTRQR(){
+    var grid=document.getElementById('ttr-qr-grid');if(!grid)return;
+    var tikResi=quickReplies.filter(function(q){
+      var qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||''];
+      return qc.some(function(c){return c.toUpperCase().includes('TIK RESI');});
+    });
+    if(!tikResi.length){setTimeout(_populateTTRQR,1500);return;}
+    window._ttrQR={};
+    grid.innerHTML=tikResi.map(function(qr,i){
+      var key='ttr'+i;window._ttrQR[key]=qr.body;
+      var label=qr.name.replace(/TIK\s*RESI\s*[-\u2013]?\s*/i,'').trim();
+      return '<button data-key="'+key+'" style="background:#fff;border:1.5px solid #000;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;text-align:center;width:100%;transition:background .15s">'+label+'</button>';
+    }).join('');
+    grid.querySelectorAll('button').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var text=window._ttrQR&&window._ttrQR[btn.dataset.key];if(!text)return;
+        navigator.clipboard.writeText(text).then(function(){
+          var orig=btn.textContent;
+          btn.textContent='\u2705 Copiato';btn.style.background='#e8f5e9';btn.style.borderColor='#2a9d60';btn.style.color='#2a9d60';
+          setTimeout(function(){btn.textContent=orig;btn.style.background='';btn.style.borderColor='#000';btn.style.color='#1a1a2e';},2000);
+        });
+      });
+    });
+  }
+  setTimeout(_populateTTRQR,50);
+  var inp=modal.querySelector('#ttr-q');
+  var searchBtn=modal.querySelector('#ttr-search-btn');
+  var resultsEl=modal.querySelector('#ttr-results');
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')searchBtn.click();});
+  searchBtn.addEventListener('click',async function(){
+    var q=inp.value.trim();if(!q)return;
+    searchBtn.disabled=true;searchBtn.textContent='Ricerca...';
+    resultsEl.innerHTML='<div style="color:#aaa;font-size:13px;padding:8px 0">Ricerca in corso...</div>';
+    try{
+      var orders=await searchOrderForAction(q);
+      if(!orders.length){resultsEl.innerHTML='<div style="color:#c04040;font-size:13px;padding:8px 0">Nessun ordine trovato</div>';searchBtn.disabled=false;searchBtn.textContent='Cerca';return;}
+      var resiAll=_resiCache||[];
+      var sS={delivered:'\u2705 Consegnato',in_transit:'\uD83D\uDE9A In transito',out_for_delivery:'\uD83D\uDEF5 In consegna oggi',attempted_delivery:'\u26A0\uFE0F Tentativo fallito',ready_for_pickup:'\uD83D\uDCEB Pronto al ritiro',confirmed:'\uD83D\uDCCB Confermato',failure:'\u274C Problema'};
+      var fS={fulfilled:'\uD83D\uDCE6 Spedito',unfulfilled:'\u23F3 Non spedito',partial:'\uD83D\uDD04 Parzialmente spedito',pending:'\u23F3 In attesa'};
+      var html=orders.slice(0,3).map(function(order){
+        var f=order.fulfillments&&order.fulfillments[0];
+        var tn=(f&&(f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])))||'';
+        var brtUrl=tn?'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn:'';
+        var shipDate=f&&f.created_at?new Date(f.created_at).toLocaleDateString('it-IT'):'\u2014';
+        var shipStatus=f&&f.shipment_status?(sS[f.shipment_status]||f.shipment_status):(fS[order.fulfillment_status]||'\u2014');
+        var shopUrl='https://40f758-3.myshopify.com/admin/orders/'+order.id;
+        var matchReso=resiAll.find(function(r){return(r.orderName&&order.name&&r.orderName.replace(/^#/,'')===order.name.replace(/^#/,''))||(r.shopifyOrderId&&String(r.shopifyOrderId)===String(order.id));});
+        var resoHtml='';
+        if(matchReso){
+          var rs=matchReso.risolto?'\u2705 Rientrato/Risolto':matchReso.sospeso?'\u23F8 Sospeso':'\u23F3 In attesa';
+          var rc=matchReso.risolto?'#2a9d60':matchReso.sospeso?'#e67e22':'#e53e3e';
+          resoHtml='<div style="margin-top:6px;padding:6px 10px;background:#f8f9fc;border-left:3px solid '+rc+';border-radius:4px;font-size:12px">\u21A9\uFE0F Reso: <strong style="color:'+rc+'">'+rs+'</strong>'+(matchReso.staffNote?'<br><span style="color:#888">Nota: '+matchReso.staffNote+'</span>':'')+'</div>';
+        } else {
+          resoHtml='<div style="margin-top:6px;font-size:12px;color:#aaa">\u21A9\uFE0F Nessun reso registrato</div>';
+        }
+        var noteHtml=order.note?'<div style="margin-top:6px;padding:6px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:#92400e">\uD83D\uDCDD '+order.note+'</div>':'';
+        return '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:10px;padding:14px 16px;margin-bottom:10px">'+
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+            '<a href="'+shopUrl+'" target="_blank" style="font-size:15px;font-weight:700;color:#000;text-decoration:none">'+(order.name||'#'+order.id)+' \u2197</a>'+
+            '<span style="font-size:12px;color:#888">'+(order.customer&&order.customer.first_name?(order.customer.first_name+' '+(order.customer.last_name||'')):'')+'</span>'+
+          '</div>'+
+          '<div style="font-size:13px;color:#444;display:flex;flex-direction:column;gap:3px">'+
+            '<div>\uD83D\uDCC5 Spedito: <strong>'+shipDate+'</strong></div>'+
+            '<div>'+shipStatus+(tn?' &nbsp;<a href="'+brtUrl+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">\uD83D\uDCE6 Traccia BRT ('+tn+')</a>':' \u2014 nessun tracking')+'</div>'+
+          '</div>'+
+          resoHtml+noteHtml+
+          '<div id="ttr-hist-'+order.id+'" style="margin-top:6px;font-size:12px;color:#aaa">\u23F3 Caricamento storico...</div>'+
+        '</div>';
+      }).join('');
+      resultsEl.innerHTML=html;
+      orders.slice(0,3).forEach(async function(order){
+        var custId=order.customer&&order.customer.id;
+        var histEl=document.getElementById('ttr-hist-'+order.id);
+        if(!histEl||!custId)return;
+        try{
+          var d=await shopifyGet('orders.json?customer_id='+custId+'&status=any&limit=5');
+          var prev=(d&&d.orders||[]).filter(function(o){return o.id!==order.id;}).slice(0,4);
+          if(!prev.length){histEl.innerHTML='<div style="font-size:12px;color:#aaa">\uD83D\uDCCB Nessun ordine precedente</div>';return;}
+          histEl.innerHTML='<div style="font-size:11px;font-weight:700;color:#555;margin-top:6px;margin-bottom:4px">\uD83D\uDCCB Ordini storici</div>'+
+            prev.map(function(o){
+              var oUrl='https://40f758-3.myshopify.com/admin/orders/'+o.id;
+              var oDate=o.created_at?new Date(o.created_at).toLocaleDateString('it-IT'):'';
+              var oFs={fulfilled:'\u2705',unfulfilled:'\u23F3',partial:'\uD83D\uDD04',pending:'\u23F3'};
+              return '<div style="font-size:12px;color:#555;padding:3px 0;border-bottom:1px solid #f0f2f5">'+
+                '<a href="'+oUrl+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">'+(o.name||'#'+o.id)+'</a> '+
+                '<span style="color:#aaa">'+oDate+'</span> '+(oFs[o.fulfillment_status]||'')+'</div>';
+            }).join('');
+        }catch(e2){histEl.innerHTML='<div style="font-size:12px;color:#aaa">Storico non disponibile</div>';}
+      });
+    }catch(e){resultsEl.innerHTML='<div style="color:#c04040;font-size:13px">Errore: '+e.message+'</div>';}
+    searchBtn.disabled=false;searchBtn.textContent='Cerca';
+  });
+  setTimeout(function(){var i=document.getElementById('ttr-q');if(i)i.focus();},100);
 }
 
 function openAutorizzaResoModal(){
