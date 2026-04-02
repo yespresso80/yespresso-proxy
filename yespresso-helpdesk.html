@@ -1753,7 +1753,7 @@ async function selectTicket(tid){
     // Box arancione in setTimeout(0) — dopo loadCustomerHistory
     setTimeout(()=>{
       // Risposte rapide Temu
-      const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
+      const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c==="🟠 Temu"||c==="🟠Temu"||c.startsWith("🟠")); });
       // Estrai parent_order_sn e parent_after_sales_sn dal testo
       const tkText=allMsgs+" "+t.subject;
       const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
@@ -1797,7 +1797,7 @@ async function selectTicket(tid){
       function _populateTemuBtns(){
         const btnsDiv=document.getElementById("temu-qr-btns");
         if(!btnsDiv) return;
-        const tQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
+        const tQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c==="🟠 Temu"||c==="🟠Temu"||c.startsWith("🟠")); });
         if(tQRs.length){
           window._temuQR=window._temuQR||{};
           btnsDiv.innerHTML=tQRs.map((qr,i)=>{
@@ -1871,7 +1871,7 @@ async function selectTicket(tid){
       const resoId=resoMatch?resoMatch[1]:"";
       const url=resoId?"https://seller-eu.temu.com/return-refund-list.html?groupSearchType=100000&searchText="+encodeURIComponent(resoId)+"&_cmsg_locale=107~it&_cmsg_channel=mail&_cmsg_biz=5001&searchTextType=2&pageNumber=1&pageSize=10&reasonCodeList=0&orderByType=2&timeSearchType=100103&completedSearchType=100401&protectedByPlatformSearchType=100701":(sn?"https://seller-eu.temu.com/return-details.html?parent_order_sn="+encodeURIComponent(sn):"https://seller-eu.temu.com");
       const aiBox=document.querySelector(".ai-reply-box");
-      const qrs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
+      const qrs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c==="🟠 Temu"||c==="🟠Temu"||c.startsWith("🟠")); });
       if(aiBox){aiBox.outerHTML='<div style="background:#fff8f0;border:2px solid #ff6600;border-radius:10px;padding:20px;text-align:center"><div style="color:#cc4400;font-weight:700">⚠️ Post-vendita Temu</div>'+(sn?'<div>'+sn+'</div>':'')+'<a href="'+url+'" target="_blank" style="background:#ff6600;color:#fff;padding:8px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin:8px">🟠 Gestisci su Temu</a><div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px"></div><div style="margin-top:8px;text-align:right"><select id="temu-status-select" style="padding:6px;border-radius:6px"><option value="">Non cambiare</option><option value="solved" selected>Solved</option><option value="pending">Pending</option><option value="open">Open</option></select> <button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer">🚀 Submit</button></div></div>';setTimeout(()=>{const b=document.getElementById("temu-qr-btns");if(b&&qrs.length)b.innerHTML=qrs.map((q,i)=>{window._temuQR=window._temuQR||{};window._temuQR["tqr"+i]=q.body;return'<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+q.name.replace(/TEMU\s*-\s*/i,"")+'</button>';}).join("");},100);}
     },0);
     loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
@@ -2110,7 +2110,7 @@ function renderMessageHtml(text, attachments){
       }
     })();
     // Risposte rapide Temu
-    const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
+    const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c==="🟠 Temu"||c==="🟠Temu"||c.startsWith("🟠")); });
     // Estrai parent_order_sn e parent_after_sales_sn dal testo
     const tkText=allMsgs+" "+t.subject;
     const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
@@ -2146,7 +2146,7 @@ function renderMessageHtml(text, attachments){
     function _populateTemuBtns2(){
       const btnsDiv=document.getElementById("temu-qr-btns");
       if(!btnsDiv) return;
-      const tQRs2=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
+      const tQRs2=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c==="🟠 Temu"||c==="🟠Temu"||c.startsWith("🟠")); });
       if(tQRs2.length){
         window._temuQR=window._temuQR||{};
         btnsDiv.innerHTML=tQRs2.map((qr,i)=>{
@@ -3738,18 +3738,9 @@ async function loadCustomerHistory(email, name, currentTid){
     });
   }
 
-  // Per Amazon: stesso cliente scrive da email diverse (una per ordine)
-  // Cerca SEMPRE per nome su marketplace.amazon per trovare tutti i ticket del cliente
-  if(email&&email.includes("marketplace.amazon")&&name&&name.length>3&&name!=="Cliente"){
-    const byName=tickets.filter(t=>{
-      const tn=(t.requester&&t.requester.name)||"";
-      const te=(t.requester&&t.requester.email)||"";
-      return tn.toLowerCase()===name.toLowerCase()&&te.includes("marketplace.amazon")&&(t.ID||t.id)!==currentTid;
-    });
-    // Aggiungi quelli trovati per nome che non sono già in related
-    const seen=new Set(related.map(t=>t.ID||t.id));
-    byName.forEach(t=>{if(!seen.has(t.ID||t.id)){seen.add(t.ID||t.id);related.push(t);}});
-  }
+  // Per Amazon: ogni cliente ha email univoca (hash unico nel dominio marketplace.amazon)
+  // NON cercare per nome — "Pietro" potrebbe corrispondere a più clienti diversi
+  // La ricerca per email esatta sopra è sufficiente e corretta
 
   // Cerca via API HelpDesk per email — recupera TUTTI gli stati degli ultimi 30gg e oltre
   // Nota: marketplace.amazon.it = email unica per cliente, VA cercata
@@ -3757,20 +3748,8 @@ async function loadCustomerHistory(email, name, currentTid){
   if(email&&email.length>3&&!email.includes("donotreply@amazon")&&!email.includes("orders.temu")&&!email.includes("seller@orders")&&!email.includes("tiktok")){
     try{
       const enc=encodeURIComponent(email);
-      // Per email marketplace.amazon.it: cerca per nome cliente tra tutti i ticket in memoria
-      if(email.includes("marketplace.amazon")&&name&&name.length>2&&name!=="Cliente"){
-        const amazonMatches=tickets.filter(t=>{
-          const tn=(t.requester&&t.requester.name)||"";
-          const te=(t.requester&&t.requester.email)||"";
-          return tn.toLowerCase()===name.toLowerCase()&&te.includes("marketplace.amazon")&&(t.ID||t.id)!==currentTid;
-        });
-        const seen=new Set(related.map(t=>t.ID||t.id)); seen.add(currentTid);
-        amazonMatches.forEach(t2=>{
-          const tid2=t2.ID||t2.id;
-          if(!seen.has(tid2)){seen.add(tid2);related.push(t2);}
-        });
-        console.log("[CH] Amazon matches per nome",name,":",amazonMatches.length);
-      }
+      // Per Amazon: non cercare per nome (troppo generico, può matchare clienti diversi)
+      // L'email marketplace.amazon.it è univoca per cliente — basta la ricerca per email
     }catch(e){console.log("[CH] API email search:",e.message);}
   }
 
