@@ -4484,7 +4484,7 @@ function renderCatListEdit(){
   const el = document.getElementById("cat-list-edit");
   if(!el) return;
   el.innerHTML = qrCategories.map((cat,i)=>{
-    const count = quickReplies.filter(q=>q.cat===cat).length;
+    const count = quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.includes(cat); }).length;
     const catEsc = cat.replace(/"/g,"&quot;");
     return '<div style="display:flex;align-items:center;gap:8px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:8px 12px">'+
       '<span style="flex:1;font-size:13px;font-weight:600;color:#1a1a2e">'+cat+'</span>'+
@@ -4506,8 +4506,11 @@ function addQRCat(){
 }
 
 function deleteQRCat(cat){
-  const count = quickReplies.filter(q=>q.cat===cat).length;
-  if(count>0){ showToast("Non puoi eliminare una categoria con risposte assegnate","error"); return; }
+  const count = quickReplies.filter(q=>{
+    const qCats=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""];
+    return qCats.includes(cat);
+  }).length;
+  if(count>0){ showToast("Non puoi eliminare \""+cat+"\" — ha "+count+" risposte assegnate","error"); return; }
   if(!confirm("Eliminare la categoria \""+cat+"\"?")) return;
   qrCategories = qrCategories.filter(c=>c!==cat);
   renderCatListEdit();
@@ -4535,11 +4538,40 @@ function renderQRCatButtons(){
 }
 
 function refreshQREditCatSelect(){
-  const sel = document.getElementById("qr-edit-cat");
-  if(!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = qrCategories.map(c=>'<option value="'+c+'">'+c+'</option>').join("");
-  if(qrCategories.includes(cur)) sel.value = cur;
+  // Alias per compatibilità — ora usa checkboxes
+  refreshQREditCatCheckboxes([]);
+}
+function refreshQREditCatCheckboxes(selectedCats){
+  const container = document.getElementById("qr-edit-cats-checkboxes");
+  if(!container) return;
+  const sel = Array.isArray(selectedCats) ? selectedCats : (selectedCats ? [selectedCats] : []);
+  container.innerHTML = qrCategories.map((cat,idx)=>{
+    const isChecked = sel.includes(cat);
+    const bc = isChecked ? '#1a73e8' : '#e0e4ea';
+    const bg = isChecked ? '#e8f0fe' : '#fff';
+    const tc = isChecked ? '#1a73e8' : '#555';
+    return '<label data-idx="'+idx+'" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1.5px solid '+bc+';border-radius:20px;background:'+bg+';cursor:pointer;font-size:12px;font-weight:600;color:'+tc+';user-select:none;transition:all .15s">'
+      +'<input type="checkbox" class="qrcat-chk" data-idx="'+idx+'" '+(isChecked?'checked':'')+' style="display:none">'+cat+'</label>';
+  }).join("");
+  container.onclick = function(e){
+    const lbl = e.target.closest('label[data-idx]');
+    if(!lbl) return;
+    const inp = lbl.querySelector('input');
+    if(!inp) return;
+    inp.checked = !inp.checked;
+    lbl.style.borderColor = inp.checked ? '#1a73e8' : '#e0e4ea';
+    lbl.style.background  = inp.checked ? '#e8f0fe' : '#fff';
+    lbl.style.color       = inp.checked ? '#1a73e8' : '#555';
+  };
+}
+function toggleQRCatChk(){} // legacy stub
+function getSelectedQRCats(){
+  const container = document.getElementById("qr-edit-cats-checkboxes");
+  if(!container) return [];
+  return Array.from(container.querySelectorAll('input.qrcat-chk:checked')).map(inp=>{
+    const lbl = inp.closest('label');
+    return lbl ? lbl.textContent.trim() : "";
+  }).filter(Boolean);
 }
 
 
@@ -4642,12 +4674,14 @@ function renderQRList(){
     sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
   }
   
-  // Raggruppa per categoria
+  // Raggruppa per categoria — supporta multi-cat (qr.cats array)
   const cats={};
   sorted.forEach(qr=>{
-    const cat=qr.cat||"💬 Generale";
-    if(!cats[cat])cats[cat]=[];
-    cats[cat].push(qr);
+    const qrCats=Array.isArray(qr.cats)&&qr.cats.length?qr.cats:[qr.cat||"💬 Generale"];
+    qrCats.forEach(cat=>{
+      if(!cats[cat])cats[cat]=[];
+      cats[cat].push(qr);
+    });
   });
   
   let html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:4px 0;border-bottom:1px solid #f0f2f5">'+
@@ -4660,10 +4694,11 @@ function renderQRList(){
     html+=`<div style="margin-bottom:4px"><div style="font-size:12px;font-weight:700;color:#888;padding:8px 0 4px;letter-spacing:0.5px">${cat}</div>`;
     items.forEach(qr=>{
       const usage=qrUsageCount[qr.id]||0;
-      const bodyPreview=qr.body.replace(/\n/g," ");
+      const qrAllCats=Array.isArray(qr.cats)&&qr.cats.length?qr.cats:[qr.cat||"💬 Generale"];
+      const catBadges=qrAllCats.length>1?'<span style="font-size:10px;color:#1a73e8;background:#e8f0fe;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:500">'+qrAllCats.length+' cat</span>':"";
       html+='<div class="qr-list-item" style="margin-bottom:6px">'+
         '<div style="flex:1;min-width:0">'+
-          '<div class="qr-list-title" onclick="insertQRFromModal('+qr.id+')" style="cursor:pointer">⚡ '+qr.name+(usage>0?'<span style="font-size:9px;color:#aaa;font-weight:400;margin-left:6px">usata '+usage+'x</span>':"")+' <span style="font-size:10px;color:#aaa;font-weight:400">↵ inserisci</span></div>'+
+          '<div class="qr-list-title" onclick="insertQRFromModal('+qr.id+')" style="cursor:pointer">⚡ '+qr.name+catBadges+(usage>0?'<span style="font-size:9px;color:#aaa;font-weight:400;margin-left:6px">usata '+usage+'x</span>':"")+' <span style="font-size:10px;color:#aaa;font-weight:400">↵ inserisci</span></div>'+
           '<div id="qr-preview-'+qr.id+'" style="font-size:14px;color:#666;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:pre-wrap">'+qr.body+'</div>'+
         '</div>'+
         '<div class="qr-list-actions" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+
@@ -4708,17 +4743,20 @@ function setQRSort(mode){
   renderQRList();
 }
 
-function showAddQR(){ qrEditingId=null; refreshQREditCatSelect(); document.getElementById("qr-edit-title").textContent="Nuova risposta rapida"; document.getElementById("qr-edit-cat").value=qrCategories.includes("💬 Generale")?"💬 Generale":qrCategories[0]||""; document.getElementById("qr-edit-name").value=""; document.getElementById("qr-edit-body").value=""; document.getElementById("qr-edit-modal").style.display="flex"; }
-function editQR(id){ const qr=quickReplies.find(q=>q.id===id); if(!qr)return; qrEditingId=id; refreshQREditCatSelect(); document.getElementById("qr-edit-title").textContent="Modifica risposta"; document.getElementById("qr-edit-cat").value=qr.cat||"💬 Generale"; document.getElementById("qr-edit-name").value=qr.name; document.getElementById("qr-edit-body").value=qr.body; document.getElementById("qr-edit-modal").style.display="flex"; }
+function showAddQR(){ qrEditingId=null; document.getElementById("qr-edit-title").textContent="Nuova risposta rapida"; document.getElementById("qr-edit-name").value=""; document.getElementById("qr-edit-body").value=""; document.getElementById("qr-edit-modal").style.display="flex"; refreshQREditCatCheckboxes(["💬 Generale"]); }
+function editQR(id){ const qr=quickReplies.find(q=>q.id===id); if(!qr)return; qrEditingId=id; document.getElementById("qr-edit-title").textContent="Modifica risposta"; document.getElementById("qr-edit-name").value=qr.name; document.getElementById("qr-edit-body").value=qr.body; document.getElementById("qr-edit-modal").style.display="flex"; const selCats=Array.isArray(qr.cats)?qr.cats:(qr.cat?[qr.cat]:["💬 Generale"]); refreshQREditCatCheckboxes(selCats); }
 function closeEditModal(){ document.getElementById("qr-edit-modal").style.display="none"; }
 function deleteQR(id){ if(!confirm("Eliminare questa risposta rapida?"))return; quickReplies=quickReplies.filter(q=>q.id!==id); saveQRToStorage(); renderQRList(); }
 function saveQR(){
   const name=document.getElementById("qr-edit-name").value.trim();
   const body=document.getElementById("qr-edit-body").value.trim();
-  const cat=document.getElementById("qr-edit-cat").value||"💬 Generale";
+  const cats=getSelectedQRCats();
   if(!name||!body){showToast("Compila titolo e testo","error");return;}
-  if(qrEditingId){ const qr=quickReplies.find(q=>q.id===qrEditingId); if(qr){qr.name=name;qr.body=body;qr.cat=cat;} }
-  else{ quickReplies.push({id:Date.now(),cat,name,body}); }
+  if(!cats.length){showToast("Seleziona almeno una categoria","error");return;}
+  // cat = prima categoria (retrocompatibilità), cats = array completo
+  const cat = cats[0];
+  if(qrEditingId){ const qr=quickReplies.find(q=>q.id===qrEditingId); if(qr){qr.name=name;qr.body=body;qr.cat=cat;qr.cats=cats;} }
+  else{ quickReplies.push({id:Date.now(),cat,cats,name,body}); }
   saveQRToStorage(); renderQRList(); closeEditModal(); showToast("✓ Risposta salvata");
 }
 
@@ -7284,15 +7322,15 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
 </div>
 <!-- ADD/EDIT QR MODAL -->
 <div class="modal-overlay" id="qr-edit-modal" style="display:none" onclick="if(event.target===this)closeEditModal()">
-  <div class="modal" style="max-width:500px">
+  <div class="modal" style="max-width:540px;width:95vw">
     <div class="modal-header">
       <span class="modal-title" id="qr-edit-title">Nuova risposta rapida</span>
       <button class="modal-close" onclick="closeEditModal()">×</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="gap:14px">
       <div>
-        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Categoria</label>
-        <select class="field" id="qr-edit-cat" style="padding:8px 12px"></select>
+        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:6px">Categorie <span style="font-weight:400;color:#aaa">(seleziona una o più)</span></label>
+        <div id="qr-edit-cats-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow-y:auto;padding:8px;border:1px solid #e0e4ea;border-radius:8px;background:#fafbfc"></div>
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Titolo (es. "Spedizione in corso")</label>
@@ -7300,11 +7338,15 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Testo risposta</label>
-        <textarea class="field" id="qr-edit-body" rows="5" placeholder="Testo della risposta..."></textarea>
+        <textarea class="field" id="qr-edit-body" rows="6" placeholder="Testo della risposta..."></textarea>
       </div>
     </div>
-   
-
+    <div class="modal-footer">
+      <button class="btn-sm" onclick="closeEditModal()">Annulla</button>
+      <button class="btn-sm btn-primary" onclick="saveQR()">💾 Salva risposta</button>
+    </div>
+  </div>
+</div>
 
 
 // Handler messaggi da iframe Molnar
