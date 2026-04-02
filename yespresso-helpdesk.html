@@ -7852,31 +7852,45 @@ async function refreshFabData(){
     fabInventoryCache=inv;
     localStorage.setItem('fab_inventory',JSON.stringify(inv));
 
-    // Venduto: ordini ultimi 365 gg
+    // Venduto: ordini ultimi 365 gg — tutti gli stati, paginazione cursor
     var since=new Date();since.setDate(since.getDate()-365);
     var sinceStr=since.toISOString();
-    var allOrders=[];var page=1;var done=false;
-    while(!done&&page<=20){
-      var od=await shopifyGet('orders.json?status=any&fulfillment_status=shipped&created_at_min='+sinceStr+'&limit=250&page='+page);
-      if(od&&od.orders&&od.orders.length){allOrders=allOrders.concat(od.orders);if(od.orders.length<250)done=true;else page++;}
-      else done=true;
+    var allOrders=[];
+    var nextUrl='orders.json?status=any&created_at_min='+sinceStr+'&limit=250&fields=id,created_at,line_items';
+    var safety=0;
+    while(nextUrl&&safety<30){
+      safety++;
+      var od=await shopifyGet(nextUrl);
+      if(od&&od.orders&&od.orders.length){
+        allOrders=allOrders.concat(od.orders);
+        // Cursor pagination: leggi _nextPageInfo iniettato dal proxy
+        if(od._nextPageInfo) nextUrl='orders.json?limit=250&fields=id,created_at,line_items&page_info='+od._nextPageInfo;
+        else nextUrl=null;
+      } else { nextUrl=null; }
     }
+    // Costruisci mappa SKU shopify -> sku lowercase per match robusto
+    var skuMap={};
+    fabProducts.forEach(function(p){ skuMap[p.sku_shopify.toLowerCase()]=p.sku_shopify; });
     // Aggrega venduto per SKU
-    var sales={};// sku_shopify -> array di {date, qty}
+    var sales={};
     allOrders.forEach(function(order){
       var dateStr=order.created_at?order.created_at.substring(0,10):'';
       (order.line_items||[]).forEach(function(li){
-        var sku=li.sku||'';
-        if(!sku)return;
-        if(!sales[sku])sales[sku]=[];
-        sales[sku].push({date:dateStr,qty:li.quantity||0});
+        var rawSku=(li.sku||'').trim();
+        if(!rawSku)return;
+        // Match esatto o case-insensitive
+        var matchedSku=skuMap[rawSku.toLowerCase()]||rawSku;
+        if(!sales[matchedSku])sales[matchedSku]=[];
+        sales[matchedSku].push({date:dateStr,qty:li.quantity||0});
       });
     });
     fabSalesCache=sales;
     fabSalesCacheDate=new Date().toISOString().substring(0,16);
     localStorage.setItem('fab_sales_cache',JSON.stringify(sales));
     localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
-    showToast('✅ Dati aggiornati — '+allOrders.length+' ordini caricati');
+    var skuFound=Object.keys(sales).length;
+    var matchedOurSkus=fabProducts.filter(function(p){return sales[p.sku_shopify]&&sales[p.sku_shopify].length>0;}).length;
+    showToast('✅ '+allOrders.length+' ordini caricati — '+skuFound+' SKU trovati, '+matchedOurSkus+'/'+fabProducts.length+' prodotti con venduto');
     renderFabTab(_fabCurrentTab);
   }catch(e){showToast('❌ Errore: '+e.message,'error');}
 }
@@ -7910,6 +7924,7 @@ function renderFabVenduto(body){
     '</div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="fabExportVenduto()" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📥 Esporta CSV</button>'+
+      '<button onclick="fabDiagnosticSKU()" style="background:#fef9c3;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Verifica SKU</button>'+
     '</div>'+
   '</div>';
 
@@ -8368,8 +8383,21 @@ function renderFabPiano(body){
   body.innerHTML=html;
 }
 
-function fabExportPiano(){
+function fabDiagnosticSKU(){
   if(!fabSalesCache){showToast('Prima aggiorna i dati Shopify','error');return;}
+  // Trova tutti gli SKU negli ordini che NON corrispondono ai nostri prodotti
+  var ourSkus=new Set(fabProducts.map(function(p){return p.sku_shopify;}));
+  var foundInOrders=Object.keys(fabSalesCache);
+  var matched=foundInOrders.filter(function(s){return ourSkus.has(s);});
+  var unmatched=foundInOrders.filter(function(s){return !ourSkus.has(s);}).slice(0,20);
+  var missing=fabProducts.filter(function(p){return !fabSalesCache[p.sku_shopify];});
+  var msg='✅ SKU trovati con venduto: '+matched.length+'/'+fabProducts.length+'\n\n';
+  if(missing.length) msg+='❌ Prodotti SENZA venduto (SKU non trovato negli ordini):\n'+missing.map(function(p){return '  • '+p.sku_shopify+' ('+p.sku+')';}).join('\n')+'\n\n';
+  if(unmatched.length) msg+='📦 Primi SKU negli ordini NON in anagrafica:\n'+unmatched.map(function(s){var tot=fabSalesCache[s].reduce(function(a,x){return a+x.qty;},0);return '  • '+s+' (tot: '+tot+')';}).join('\n');
+  alert(msg);
+}
+
+function fabExportPiano(){
   var horizons=[7,15,21,28,35,45,60,90,120];
   var rows=['Prodotto,SKU,Fornitore,Inv.Attuale,In Arrivo,Media/gg,Fine Scorta(gg),'
     +horizons.map(function(h){return 'Gap '+h+'gg';}).join(',')+',Ordine Suggerito 90gg'];
