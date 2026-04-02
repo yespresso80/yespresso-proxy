@@ -7872,52 +7872,67 @@ async function shopifyGQL(gqlQuery){
   return res.json();
 }
 
-async function fabLoadSalesWindow(sinceISO, untilISO, skuMap, salesAcc){
-  var cursor=null;
-  var pages=0;
-  while(pages<20){
-    pages++;
-    var afterClause=cursor?',after:"'+cursor+'"':'';
-    var gql=`{
-      orders(first:250${afterClause},
-             query:"created_at:>='${sinceISO}' created_at:<='${untilISO}'"){
-        pageInfo{hasNextPage endCursor}
-        edges{node{
-          cancelledAt createdAt
-          refunds{refundLineItems(first:50){edges{node{lineItemId quantity}}}}
-          lineItems(first:50){edges{node{id sku quantity}}}
-        }}
+// Carica venduto aggregato per SKU usando ShopifyQL Reports API
+// ShopifyQL è esattamente il linguaggio del report Shopify Analytics:
+// FROM sales SHOW net_items_sold GROUP BY sku SINCE -Xd UNTIL today
+async function fabFetchSalesShopifyQL(sinceDaysAgo){
+  var sinceStr='-'+sinceDaysAgo+'d';
+  var gql=`{
+    reportConnection(query: "FROM sales SHOW net_items_sold, gross_items_sold, returned_item_quantity GROUP BY variant_sku SINCE ${sinceStr} UNTIL today ORDER BY net_items_sold DESC") {
+      edges {
+        node {
+          data
+        }
       }
-    }`;
-    var r=await shopifyGQL(gql);
-    if(!r||!r.data||!r.data.orders) break;
-    var ordersData=r.data.orders;
-    ordersData.edges.forEach(function(edge){
-      var order=edge.node;
-      if(order.cancelledAt) return;
-      var dateStr=order.createdAt?order.createdAt.substring(0,10):'';
-      var refundMap={};
-      (order.refunds||[]).forEach(function(refund){
-        (refund.refundLineItems.edges||[]).forEach(function(re){
-          var n=re.node;
-          refundMap[n.lineItemId]=(refundMap[n.lineItemId]||0)+n.quantity;
-        });
-      });
-      (order.lineItems.edges||[]).forEach(function(le){
-        var li=le.node;
-        var rawSku=(li.sku||'').trim();
-        if(!rawSku) return;
-        var matchedSku=skuMap[rawSku.toLowerCase()]||null;
-        if(!matchedSku) return;
-        var netQty=Math.max(0,(li.quantity||0)-(refundMap[li.id]||0));
-        if(netQty===0) return;
-        if(!salesAcc[matchedSku]) salesAcc[matchedSku]=[];
-        salesAcc[matchedSku].push({date:dateStr,qty:netQty});
-      });
-    });
-    if(!ordersData.pageInfo.hasNextPage) break;
-    cursor=ordersData.pageInfo.endCursor;
+    }
+  }`;
+  var r=await shopifyGQL(gql);
+  if(!r||r.errors){
+    console.log('[FAB ShopifyQL] errore:',JSON.stringify(r&&r.errors||r));
+    return null;
   }
+  // r.data.reportConnection.edges[0].node.data è CSV o JSON con i dati
+  return r;
+}
+
+// Carica venduto aggregato usando Reports REST API (alternativa a ShopifyQL)
+// GET /reports.json con ShopifyQL embedded
+async function fabFetchViaSalesReport(days, skuMap){
+  // Usa ShopifyQL tramite GraphQL Admin API
+  var since='-'+days+'d';
+  var gql='{ reportConnection(query: "FROM sales SHOW net_items_sold GROUP BY variant_sku SINCE '+since+' UNTIL today") { edges { node { data } } } }';
+  var r=await shopifyGQL(gql);
+  if(r&&r.data&&r.data.reportConnection){
+    return parseShopifyQLResult(r.data.reportConnection, skuMap);
+  }
+  return null;
+}
+
+function parseShopifyQLResult(reportConnection, skuMap){
+  // ShopifyQL restituisce i dati come CSV testuale nel campo data
+  var result={};
+  var edges=reportConnection.edges||[];
+  edges.forEach(function(edge){
+    var raw=edge.node&&edge.node.data;
+    if(!raw) return;
+    // Parsa CSV: prima riga header, poi righe dati
+    var lines=raw.trim().split('\n');
+    if(lines.length<2) return;
+    var headers=lines[0].split(',').map(function(h){return h.trim().replace(/"/g,'');});
+    var skuIdx=headers.findIndex(function(h){return h.toLowerCase().includes('sku');});
+    var qtyIdx=headers.findIndex(function(h){return h.toLowerCase().includes('net_items_sold');});
+    if(skuIdx<0||qtyIdx<0) return;
+    for(var i=1;i<lines.length;i++){
+      var cols=lines[i].split(',').map(function(c){return c.trim().replace(/"/g,'');});
+      var rawSku=(cols[skuIdx]||'').trim();
+      var qty=parseInt(cols[qtyIdx])||0;
+      if(!rawSku||qty<=0) return;
+      var matchedSku=skuMap[rawSku.toLowerCase()]||null;
+      if(!matchedSku) return;
+      result[matchedSku]=(result[matchedSku]||0)+qty;
+    }
+  });
+  return result;
 }
 
 async function refreshFabData(){
@@ -7947,49 +7962,130 @@ async function refreshFabData(){
     fabProducts.forEach(function(p){if(inv[p.sku_shopify]==null)inv[p.sku_shopify]=0;});
     fabInventoryCache=inv;
     localStorage.setItem('fab_inventory',JSON.stringify(inv));
+    showToast('✅ Inventario ok. Carico venduto via ShopifyQL...','info');
 
-    // ── VENDUTO via GraphQL — 12 finestre mensili ───────────────
-    // Con 10-12k ordini/mese la REST è troppo lenta (60k+ ordini).
-    // GraphQL con cursor è ottimizzato e mantiene created_at filter per finestra.
+    // ── VENDUTO via ShopifyQL ───────────────────────────────────
+    // ShopifyQL è il linguaggio nativo dei report Shopify Analytics.
+    // Una sola query per periodo restituisce i totali aggregati per SKU —
+    // non serve scorrere migliaia di ordini.
     var skuMap={};
     fabProducts.forEach(function(p){ skuMap[p.sku_shopify.toLowerCase()]=p.sku_shopify; });
+
+    // Periodi da caricare: 7, 30, 90, 180, 360 giorni
+    // Strategia: carica 360gg e poi filtra per periodo nel frontend
+    // Ma ShopifyQL aggrega tutto in un totale — non per data.
+    // Quindi carichiamo più periodi separati per avere i dati storici.
+    var periods=[7,30,90,180,360];
+    // salesAcc[sku] = [{date: "PERIODO-Xd", qty: N}]
+    // Usiamo date simboliche per distinguere i periodi
     var salesAcc={};
-    var now=new Date();
-    for(var m=0;m<12;m++){
-      var wEnd=new Date(now);wEnd.setDate(wEnd.getDate()-m*30);
-      var wStart=new Date(now);wStart.setDate(wStart.getDate()-(m+1)*30);
-      var sinceISO=wStart.toISOString().substring(0,10)+'T00:00:00';
-      var untilISO=wEnd.toISOString().substring(0,10)+'T23:59:59';
-      showToast('⏳ Mese '+(m+1)+'/12: '+wStart.toLocaleDateString('it-IT')+' → '+wEnd.toLocaleDateString('it-IT'),'info');
-      await fabLoadSalesWindow(sinceISO,untilISO,skuMap,salesAcc);
+    var shopifyQLWorking=false;
+
+    // Test: prova ShopifyQL con 7 giorni
+    showToast('⏳ Test ShopifyQL (7gg)...','info');
+    var test7=await fabFetchViaSalesReport(7, skuMap);
+    if(test7&&Object.keys(test7).length>0){
+      shopifyQLWorking=true;
+      // ShopifyQL funziona — carica tutti i periodi
+      // Strategia: salviamo i totali per periodo come array di entry con date sintetiche
+      // Per ogni periodo P, simuliamo P entries con qty=totalP/P per permettere
+      // il filtraggio per data nel fabSoldInDays
+      // MEGLIO: cambiamo fabSalesCache in formato aggregato {sku: {7:N, 30:N, 90:N, ...}}
+      var salesByPeriod={};
+      var today=new Date().toISOString().substring(0,10);
+
+      for(var pi=0;pi<periods.length;pi++){
+        var pdays=periods[pi];
+        showToast('⏳ ShopifyQL: carico venduto ultimi '+pdays+' giorni...','info');
+        var pResult=await fabFetchViaSalesReport(pdays, skuMap);
+        if(pResult){
+          Object.keys(pResult).forEach(function(sku){
+            if(!salesByPeriod[sku]) salesByPeriod[sku]={};
+            salesByPeriod[sku][pdays]=pResult[sku];
+          });
+        }
+      }
+
+      // Converti salesByPeriod in formato compatibile con fabSoldInDays
+      // Salviamo in formato speciale: {sku: [{date:"AGGREGATED", periods:{7:N,30:N,...}}]}
+      fabSalesCache={_aggregated:true, _data:salesByPeriod, _date:today};
+
+    } else {
+      showToast('⚠️ ShopifyQL non disponibile — uso REST ordini (90gg)','info');
+      // Fallback REST: ultimi 90gg con since_id
+      var since90=new Date();since90.setDate(since90.getDate()-90);
+      var since90Str=since90.toISOString();
+      var lastId=0;var safety2=0;
+      while(safety2<300){
+        safety2++;
+        var url='orders.json?status=any&created_at_min='+since90Str+'&limit=250&order=id+asc'+(lastId?'&since_id='+lastId:'');
+        var od=await shopifyGet(url);
+        var batch=od&&od.orders?od.orders:[];
+        if(!batch.length) break;
+        batch.forEach(function(order){
+          if(order.cancelled_at) return;
+          var dateStr=order.created_at?order.created_at.substring(0,10):'';
+          var refundedQty={};
+          (order.refunds||[]).forEach(function(refund){
+            (refund.refund_line_items||[]).forEach(function(rli){
+              refundedQty[rli.line_item_id]=(refundedQty[rli.line_item_id]||0)+(rli.quantity||0);
+            });
+          });
+          (order.line_items||[]).forEach(function(li){
+            var rawSku=(li.sku||'').trim();
+            if(!rawSku) return;
+            var matchedSku=skuMap[rawSku.toLowerCase()]||null;
+            if(!matchedSku) return;
+            var netQty=Math.max(0,(li.quantity||0)-(refundedQty[li.id]||0));
+            if(netQty===0) return;
+            if(!salesAcc[matchedSku]) salesAcc[matchedSku]=[];
+            salesAcc[matchedSku].push({date:dateStr,qty:netQty});
+          });
+        });
+        lastId=batch[batch.length-1].id;
+        if(batch.length<250) break;
+        if(safety2%10===0) showToast('⏳ REST: '+safety2*250+' ordini...','info');
+      }
+      fabSalesCache=salesAcc;
     }
 
-    fabSalesCache=salesAcc;
     fabSalesCacheDate=new Date().toISOString().substring(0,16);
-    localStorage.setItem('fab_sales_cache',JSON.stringify(salesAcc));
+    localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
     localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
 
-    var matched=fabProducts.filter(function(p){return salesAcc[p.sku_shopify]&&salesAcc[p.sku_shopify].length>0;}).length;
-    var first=fabProducts.find(function(p){return salesAcc[p.sku_shopify]&&salesAcc[p.sku_shopify].length>0;});
-    var diag='';
-    if(first){
-      var s=salesAcc[first.sku_shopify];
-      var tot=s.reduce(function(a,x){return a+x.qty;},0);
-      var dates=s.map(function(x){return x.date;}).sort();
-      diag=' | '+first.sku+': tot='+tot+' ('+dates[0]+' → '+dates[dates.length-1]+')';
-    }
-    showToast('✅ Venduto ok: '+matched+'/'+fabProducts.length+' prodotti'+diag);
+    var mode=shopifyQLWorking?'ShopifyQL':'REST';
+    var matched=fabProducts.filter(function(p){
+      if(fabSalesCache._aggregated) return fabSalesCache._data&&fabSalesCache._data[p.sku_shopify];
+      return fabSalesCache[p.sku_shopify]&&fabSalesCache[p.sku_shopify].length>0;
+    }).length;
+    showToast('✅ Venduto ok ('+mode+'): '+matched+'/'+fabProducts.length+' prodotti');
     renderFabTab(_fabCurrentTab);
   }catch(e){showToast('❌ Errore: '+e.message,'error');console.error('[FAB]',e);}
 }
 
-
 // Helper: venduto per SKU in ultimi N giorni
+// Gestisce sia formato ShopifyQL aggregato che formato REST (array di {date,qty})
 function fabSoldInDays(sku, days){
-  if(!fabSalesCache||!fabSalesCache[sku])return 0;
-  // Confronto su stringa YYYY-MM-DD — evita problemi UTC/locale
+  if(!fabSalesCache) return 0;
+  // Formato ShopifyQL aggregato: {_aggregated:true, _data:{sku:{7:N,30:N,...}}}
+  if(fabSalesCache._aggregated){
+    var data=fabSalesCache._data;
+    if(!data||!data[sku]) return 0;
+    var periods=Object.keys(data[sku]).map(Number).sort(function(a,b){return a-b;});
+    // Trova il periodo più piccolo >= days
+    var exact=data[sku][days];
+    if(exact!=null) return exact;
+    // Interpolazione: usa il periodo immediatamente superiore e scala proporzionalmente
+    var upper=periods.find(function(p){return p>=days;});
+    var lower=periods.slice().reverse().find(function(p){return p<days;});
+    if(upper!=null) return Math.round(data[sku][upper]*(days/upper));
+    if(lower!=null) return Math.round(data[sku][lower]*(days/lower));
+    return 0;
+  }
+  // Formato REST: array di {date, qty}
+  if(!fabSalesCache[sku]) return 0;
   var cutoffDate=new Date();cutoffDate.setDate(cutoffDate.getDate()-days);
-  var cutoffStr=cutoffDate.toISOString().substring(0,10); // "2025-03-27"
+  var cutoffStr=cutoffDate.toISOString().substring(0,10);
   return fabSalesCache[sku].reduce(function(sum,s){
     return sum+(s.date>=cutoffStr?s.qty:0);
   },0);
