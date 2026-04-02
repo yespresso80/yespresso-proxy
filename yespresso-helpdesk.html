@@ -7933,9 +7933,11 @@ async function refreshFabData(){
 // Helper: venduto per SKU in ultimi N giorni
 function fabSoldInDays(sku, days){
   if(!fabSalesCache||!fabSalesCache[sku])return 0;
-  var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
+  // Confronto su stringa YYYY-MM-DD — evita problemi UTC/locale
+  var cutoffDate=new Date();cutoffDate.setDate(cutoffDate.getDate()-days);
+  var cutoffStr=cutoffDate.toISOString().substring(0,10); // "2025-03-27"
   return fabSalesCache[sku].reduce(function(sum,s){
-    return sum+(new Date(s.date)>=cutoff?s.qty:0);
+    return sum+(s.date>=cutoffStr?s.qty:0);
   },0);
 }
 
