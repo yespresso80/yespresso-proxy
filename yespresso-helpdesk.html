@@ -1753,7 +1753,7 @@ async function selectTicket(tid){
     // Box arancione in setTimeout(0) — dopo loadCustomerHistory
     setTimeout(()=>{
       // Risposte rapide Temu
-      const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.toLowerCase().includes("temu")); });
+      const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
       // Estrai parent_order_sn e parent_after_sales_sn dal testo
       const tkText=allMsgs+" "+t.subject;
       const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
@@ -1797,7 +1797,7 @@ async function selectTicket(tid){
       function _populateTemuBtns(){
         const btnsDiv=document.getElementById("temu-qr-btns");
         if(!btnsDiv) return;
-        const tQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.toLowerCase().includes("temu")); });
+        const tQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
         if(tQRs.length){
           window._temuQR=window._temuQR||{};
           btnsDiv.innerHTML=tQRs.map((qr,i)=>{
@@ -1871,7 +1871,7 @@ async function selectTicket(tid){
       const resoId=resoMatch?resoMatch[1]:"";
       const url=resoId?"https://seller-eu.temu.com/return-refund-list.html?groupSearchType=100000&searchText="+encodeURIComponent(resoId)+"&_cmsg_locale=107~it&_cmsg_channel=mail&_cmsg_biz=5001&searchTextType=2&pageNumber=1&pageSize=10&reasonCodeList=0&orderByType=2&timeSearchType=100103&completedSearchType=100401&protectedByPlatformSearchType=100701":(sn?"https://seller-eu.temu.com/return-details.html?parent_order_sn="+encodeURIComponent(sn):"https://seller-eu.temu.com");
       const aiBox=document.querySelector(".ai-reply-box");
-      const qrs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.toLowerCase().includes("temu")); });
+      const qrs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
       if(aiBox){aiBox.outerHTML='<div style="background:#fff8f0;border:2px solid #ff6600;border-radius:10px;padding:20px;text-align:center"><div style="color:#cc4400;font-weight:700">⚠️ Post-vendita Temu</div>'+(sn?'<div>'+sn+'</div>':'')+'<a href="'+url+'" target="_blank" style="background:#ff6600;color:#fff;padding:8px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin:8px">🟠 Gestisci su Temu</a><div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px"></div><div style="margin-top:8px;text-align:right"><select id="temu-status-select" style="padding:6px;border-radius:6px"><option value="">Non cambiare</option><option value="solved" selected>Solved</option><option value="pending">Pending</option><option value="open">Open</option></select> <button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer">🚀 Submit</button></div></div>';setTimeout(()=>{const b=document.getElementById("temu-qr-btns");if(b&&qrs.length)b.innerHTML=qrs.map((q,i)=>{window._temuQR=window._temuQR||{};window._temuQR["tqr"+i]=q.body;return'<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+q.name.replace(/TEMU\s*-\s*/i,"")+'</button>';}).join("");},100);}
     },0);
     loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
@@ -2110,7 +2110,7 @@ function renderMessageHtml(text, attachments){
       }
     })();
     // Risposte rapide Temu
-    const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.toLowerCase().includes("temu")); });
+    const temuQRs=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
     // Estrai parent_order_sn e parent_after_sales_sn dal testo
     const tkText=allMsgs+" "+t.subject;
     const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
@@ -2146,7 +2146,7 @@ function renderMessageHtml(text, attachments){
     function _populateTemuBtns2(){
       const btnsDiv=document.getElementById("temu-qr-btns");
       if(!btnsDiv) return;
-      const tQRs2=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.toLowerCase().includes("temu")); });
+      const tQRs2=quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.some(c=>c.includes("Temu")); });
       if(tQRs2.length){
         window._temuQR=window._temuQR||{};
         btnsDiv.innerHTML=tQRs2.map((qr,i)=>{
@@ -4502,13 +4502,15 @@ function renderCatListEdit(){
     const xBg     = hasReplies ? '#fff8f0' : '#fee';
     const xBorder = hasReplies ? '#f5cba7' : '#fcc';
     const xTitle  = hasReplies ? 'Ha '+count+' risposte — clicca per forzare eliminazione' : 'Elimina categoria';
-    return '<div style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:6px 8px;min-width:0">'+
+    return '<div data-catidx="'+i+'" style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:6px 8px;min-width:0;cursor:default">'+
+      '<span style="color:#ccc;font-size:16px;cursor:grab;flex-shrink:0;padding:0 4px;user-select:none" title="Trascina per riordinare">⠿</span>'+
       '<span data-cat-idx="'+i+'" onclick="startRenameQRCat('+i+')" title="Clicca per rinominare" style="flex:1;font-size:12px;font-weight:600;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .15s" onmouseover="this.style.background=\'#e8f0fe\'" onmouseout="this.style.background=\'\'">'+cat+'</span>'+
       '<span style="font-size:10px;color:#aaa;background:#e8eaf0;padding:1px 6px;border-radius:8px;flex-shrink:0;white-space:nowrap">'+count+'</span>'+
       '<button onclick="startRenameQRCat('+i+')" title="Rinomina" style="background:#f0f4ff;border:1px solid #c7d7fc;color:#1a73e8;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;line-height:1.4">✏️</button>'+
       '<button onclick="deleteQRCat(&quot;'+catEsc+'&quot;)" title="'+xTitle+'" style="background:'+xBg+';border:1px solid '+xBorder+';color:'+xColor+';border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;font-weight:700;flex-shrink:0;line-height:1.4">✕</button>'+
     '</div>';
   }).join("");
+  _initCatDragDrop();
 }
 
 function startRenameQRCat(idx){
@@ -4736,54 +4738,142 @@ function renderQRList(){
     return (q.name||"").toLowerCase().includes(searchVal)||allCats.includes(searchVal)||(q.body||"").toLowerCase().includes(searchVal);
   }):quickReplies;
   if(!filteredQR.length){ body.innerHTML='<div style="color:#aaa;text-align:center;padding:20px">'+( searchVal?"Nessun risultato":"Nessuna risposta rapida. Aggiungine una!")+'</div>'; return; }
-  
-  // Ordina in base alla modalità — accetta sia q.cat che q.cats
+
+  // Ordina in base alla modalità
   let sorted=[...filteredQR].filter(q=>q&&q.name&&(q.cat||(Array.isArray(q.cats)&&q.cats.length)));
   if(qrSortMode==="usage"){
     sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
   }
-  
-  // Raggruppa per categoria — supporta multi-cat (qr.cats array)
-  const cats={};
+
+  // Raggruppa per categoria — supporta multi-cat
+  const catMap={};
   sorted.forEach(qr=>{
     const qrCats=Array.isArray(qr.cats)&&qr.cats.length?qr.cats:[qr.cat||"💬 Generale"];
     qrCats.forEach(cat=>{
-      if(!cats[cat])cats[cat]=[];
-      cats[cat].push(qr);
+      if(!catMap[cat])catMap[cat]=[];
+      catMap[cat].push(qr);
     });
   });
-  
+
+  // Rispetta l'ordine di qrCategories per le sezioni
+  const orderedCats=qrCategories.filter(c=>catMap[c]);
+  Object.keys(catMap).forEach(c=>{ if(!orderedCats.includes(c)) orderedCats.push(c); });
+
   let html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:4px 0;border-bottom:1px solid #f0f2f5">'+
     '<span style="font-size:11px;color:#888">Ordina per:</span>'+
-    '<button onclick="setQRSort(\'manual\')" style="padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid '+( qrSortMode==="manual"?"#1a73e8":"#e0e4ea")+';background:'+( qrSortMode==="manual"?"#e8f0fe":"#fff")+';color:'+( qrSortMode==="manual"?"#1a73e8":"#555")+'">Manuale</button>'+
-    '<button onclick="setQRSort(\'usage\')" style="padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid '+( qrSortMode==="usage"?"#1a73e8":"#e0e4ea")+';background:'+( qrSortMode==="usage"?"#e8f0fe":"#fff")+';color:'+( qrSortMode==="usage"?"#1a73e8":"#555")+'">Più usate</button>'+
+    '<button onclick="setQRSort(\'manual\')" style="padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid '+(qrSortMode==="manual"?"#1a73e8":"#e0e4ea")+';background:'+(qrSortMode==="manual"?"#e8f0fe":"#fff")+';color:'+(qrSortMode==="manual"?"#1a73e8":"#555")+'">Manuale</button>'+
+    '<button onclick="setQRSort(\'usage\')" style="padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid '+(qrSortMode==="usage"?"#1a73e8":"#e0e4ea")+';background:'+(qrSortMode==="usage"?"#e8f0fe":"#fff")+';color:'+(qrSortMode==="usage"?"#1a73e8":"#555")+'">Più usate</button>'+
+    (qrSortMode==="manual"&&!searchVal?'<span style="font-size:10px;color:#aaa;margin-left:4px">⠿ trascina per riordinare</span>':'')+
     '</div>';
-  
-  Object.entries(cats).forEach(([cat, items])=>{
-    html+=`<div style="margin-bottom:4px"><div style="font-size:12px;font-weight:700;color:#888;padding:8px 0 4px;letter-spacing:0.5px">${cat}</div>`;
+
+  orderedCats.forEach(cat=>{
+    const items=catMap[cat];
+    html+='<div style="margin-bottom:4px">'+
+      '<div style="font-size:12px;font-weight:700;color:#888;padding:8px 0 4px;letter-spacing:0.5px">'+cat+'</div>'+
+      '<div class="qr-sortable-list" data-cat="'+cat.replace(/"/g,'&quot;')+'" style="display:flex;flex-direction:column;gap:6px;min-height:10px">';
     items.forEach(qr=>{
       const usage=qrUsageCount[qr.id]||0;
       const qrAllCats=Array.isArray(qr.cats)&&qr.cats.length?qr.cats:[qr.cat||"💬 Generale"];
       const catBadges=qrAllCats.length>1?'<span style="font-size:10px;color:#1a73e8;background:#e8f0fe;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:500">'+qrAllCats.length+' cat</span>':"";
-      html+='<div class="qr-list-item" style="margin-bottom:6px">'+
+      const dragHandle=qrSortMode==="manual"&&!searchVal?'<span class="qr-drag-handle" data-qrid="'+qr.id+'" style="cursor:grab;color:#ccc;font-size:16px;padding:0 6px 0 2px;flex-shrink:0;user-select:none" title="Trascina per riordinare">⠿</span>':"";
+      html+='<div class="qr-list-item" data-qrid="'+qr.id+'" draggable="'+(qrSortMode==="manual"&&!searchVal?'true':'false')+'" style="margin-bottom:0;cursor:default">'+
+        dragHandle+
         '<div style="flex:1;min-width:0">'+
           '<div class="qr-list-title" onclick="insertQRFromModal('+qr.id+')" style="cursor:pointer">⚡ '+qr.name+catBadges+(usage>0?'<span style="font-size:9px;color:#aaa;font-weight:400;margin-left:6px">usata '+usage+'x</span>':"")+' <span style="font-size:10px;color:#aaa;font-weight:400">↵ inserisci</span></div>'+
           '<div id="qr-preview-'+qr.id+'" style="font-size:14px;color:#666;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:pre-wrap">'+qr.body+'</div>'+
         '</div>'+
         '<div class="qr-list-actions" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+
           '<div style="display:flex;gap:4px">'+
-            '<button class="btn-sm" id="qrcopy-'+qr.id+'" onclick="copyQR('+qr.id+')">📋</button><button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
+            '<button class="btn-sm" id="qrcopy-'+qr.id+'" onclick="copyQR('+qr.id+')">📋</button>'+
+            '<button class="btn-sm" onclick="editQR('+qr.id+')">✏️</button>'+
             '<button class="btn-sm btn-danger" onclick="deleteQR('+qr.id+')">🗑</button>'+
           '</div>'+
           '<button class="btn-sm" id="qr-expand-'+qr.id+'" onclick="toggleQRExpand('+qr.id+')" style="font-size:10px;padding:2px 8px">⋯</button>'+
         '</div>'+
       '</div>';
     });
-    html+='</div>';
+    html+='</div></div>';
   });
   body.innerHTML=html;
+
+  // Attiva drag&drop sulle liste se in modalità manuale e senza ricerca
+  if(qrSortMode==="manual"&&!searchVal) _initQRDragDrop();
 }
 
+
+
+// ── DRAG & DROP RISPOSTE RAPIDE ───────────────────────────
+function _initQRDragDrop(){
+  let dragSrcId=null;
+  document.querySelectorAll('.qr-sortable-list').forEach(list=>{
+    list.querySelectorAll('.qr-list-item[draggable="true"]').forEach(item=>{
+      item.addEventListener('dragstart',e=>{
+        dragSrcId=parseInt(item.dataset.qrid);
+        item.style.opacity='0.4';
+        e.dataTransfer.effectAllowed='move';
+      });
+      item.addEventListener('dragend',()=>{
+        item.style.opacity='';
+        document.querySelectorAll('.qr-list-item').forEach(i=>i.style.borderTop='');
+      });
+      item.addEventListener('dragover',e=>{
+        e.preventDefault();
+        document.querySelectorAll('.qr-list-item').forEach(i=>i.style.borderTop='');
+        item.style.borderTop='2px solid #1a73e8';
+      });
+      item.addEventListener('drop',e=>{
+        e.preventDefault();
+        if(dragSrcId===null) return;
+        const targetId=parseInt(item.dataset.qrid);
+        if(dragSrcId===targetId) return;
+        const srcIdx=quickReplies.findIndex(q=>q.id===dragSrcId);
+        const tgtIdx=quickReplies.findIndex(q=>q.id===targetId);
+        if(srcIdx<0||tgtIdx<0) return;
+        const [moved]=quickReplies.splice(srcIdx,1);
+        const newTgt=quickReplies.findIndex(q=>q.id===targetId);
+        quickReplies.splice(newTgt,0,moved);
+        dragSrcId=null;
+        saveQRToStorage();
+        renderQRList();
+      });
+    });
+  });
+}
+
+// ── DRAG & DROP CATEGORIE (nel manager) ──────────────────
+function _initCatDragDrop(){
+  const list=document.getElementById('cat-list-edit');
+  if(!list) return;
+  let dragIdx=null;
+  list.querySelectorAll('div[data-catidx]').forEach(item=>{
+    item.setAttribute('draggable','true');
+    item.addEventListener('dragstart',e=>{
+      dragIdx=parseInt(item.dataset.catidx);
+      item.style.opacity='0.4';
+      e.dataTransfer.effectAllowed='move';
+    });
+    item.addEventListener('dragend',()=>{
+      item.style.opacity='';
+      list.querySelectorAll('div[data-catidx]').forEach(i=>i.style.borderTop='');
+    });
+    item.addEventListener('dragover',e=>{
+      e.preventDefault();
+      list.querySelectorAll('div[data-catidx]').forEach(i=>i.style.borderTop='');
+      item.style.borderTop='2px solid #1a73e8';
+    });
+    item.addEventListener('drop',e=>{
+      e.preventDefault();
+      if(dragIdx===null) return;
+      const tgtIdx=parseInt(item.dataset.catidx);
+      if(dragIdx===tgtIdx){ dragIdx=null; return; }
+      const [moved]=qrCategories.splice(dragIdx,1);
+      const insertAt=tgtIdx>dragIdx?tgtIdx-1:tgtIdx;
+      qrCategories.splice(insertAt,0,moved);
+      dragIdx=null;
+      renderCatListEdit();
+    });
+  });
+}
 
 function toggleQRExpand(id){
   const preview=document.getElementById("qr-preview-"+id);
