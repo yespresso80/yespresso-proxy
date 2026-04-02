@@ -1731,7 +1731,7 @@ async function selectTicket(tid){
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
-        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span> <label style="font-size:11px;color:#555;cursor:pointer"><input type="checkbox" id="chk-notifica-'+credInpId+'" style="margin-right:2px">Notifica cliente</label>';}
+        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
         window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order; window._lastTemuOrder=order; window._lastTemuOrder=order;
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
@@ -1838,7 +1838,7 @@ async function selectTicket(tid){
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
-        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span> <label style="font-size:11px;color:#555;cursor:pointer"><input type="checkbox" id="chk-notifica-'+credInpId+'" style="margin-right:2px">Notifica cliente</label>';}
+        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
         window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order; window._lastTemuOrder=order; window._lastTemuOrder=order;
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
@@ -1931,7 +1931,7 @@ async function selectTicket(tid){
         if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         if(brtSource==="sito"){
           html+='<br>📍 <a href="'+'https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','')+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';
-        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span> <label style="font-size:11px;color:#555;cursor:pointer"><input type="checkbox" id="chk-notifica-'+credInpId2+'" style="margin-right:2px">Notifica cliente</label>';}
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
         if(brtOrder&&brtOrder.shipping_address){
           var _saBrt=brtOrder.shipping_address;
@@ -2084,7 +2084,7 @@ function renderMessageHtml(text, attachments){
         }
         if(temuAttr2){const temuUrl2='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr2.value);html2+='<br>🟠 <a href="'+temuUrl2+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon');
-        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span> <label style="font-size:11px;color:#555;cursor:pointer"><input type="checkbox" id="chk-notifica-'+credInpId+'" style="margin-right:2px">Notifica cliente</label>';}
+        const isTemuOrAmazon=true;if(order.customer&&order.customer.id&&!isTemuOrAmazon){const credInpId='cred-inp-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         const dupBtnId2='dup2_'+order.id;window._dupOrders=window._dupOrders||{};window._dupOrders[dupBtnId2]=order.id;
         window._temuOrderData=window._temuOrderData||{}; window._temuOrderData[order.id]=order; window._lastTemuOrder=order; window._lastTemuOrder=order;
         window._temuOrderSn=window._temuOrderSn||{}; window._temuOrderSn[order.id]=temuAttr2?temuAttr2.value:'';
@@ -2196,7 +2196,7 @@ function renderMessageHtml(text, attachments){
         if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
         if(brtSource==="sito"){
           html+='<br>📍 <a href="'+'https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','')+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';
-        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span> <label style="font-size:11px;color:#555;cursor:pointer"><input type="checkbox" id="chk-notifica-'+credInpId2+'" style="margin-right:2px">Notifica cliente</label>';}
+        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
         }
         if(brtOrder&&brtOrder.shipping_address){
           var _saBrt=brtOrder.shipping_address;
@@ -3234,7 +3234,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       const credInpIdGen='cred-inp-gen-'+order.id;
       window._credMap=window._credMap||{};
       window._credMap[credInpIdGen]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};
-      html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span> <label style="font-size:11px;color:#555;cursor:pointer"><input type="checkbox" id="chk-notifica-'+credInpIdGen+'" style="margin-right:2px">Notifica cliente</label>';
+      html+='<br>🎁 Credito: <input id="'+credInpIdGen+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpIdGen+'\');" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';
     }
     if(oArea){oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
         if(order){window._lastShopifyOrder=order;}
@@ -5049,31 +5049,72 @@ async function saveStaffNote(id,value){
   var i=all.findIndex(function(r){return r.id===id;});
   if(i>=0){all[i].staffNote=value;_resiCache=all;await saveResiList(all);showToast('Nota staff salvata');}
 }
-async function createCreditReso(email,orderName,customerName){
+function createCreditReso(email,orderName,customerName){
   if(!email){showToast('Email non disponibile','error');return;}
-  var amount=parseFloat(prompt('Importo credito per '+email+':'));
-  if(!amount||amount<=0)return;
-  var sendNotifica=confirm('Creare credito '+amount.toFixed(2)+' EUR per '+email+'?\n\nOK = Crea credito E invia email di notifica al cliente\nAnnulla = Solo crea credito senza email');
-  // Nota: se l'utente annulla non interrompiamo — separiamo la logica
-  // Usiamo un secondo confirm solo per creare senza notifica
-  var doProceed=true;
-  var doNotify=false;
-  if(sendNotifica===false){
-    doProceed=confirm('Confermi di creare il credito '+amount.toFixed(2)+' EUR per '+email+' SENZA notifica email?');
-    doNotify=false;
-  } else {
-    doNotify=true;
-  }
-  if(!doProceed)return;
-  try{
-    var r=await fetch(PROXY+'/creditsyard/adjust',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:email,amount:amount,reason:'Credito reso '+orderName,send_email_notification:0})});
-    var j=await r.json();
-    if(j.message==='success'){
-      showToast('Credito '+amount.toFixed(2)+' aggiunto a '+email);
-      if(doNotify) await sendCreditNotificationTicket(email, customerName||'', orderName, amount);
+  // Rimuovi eventuali modal già aperti
+  var existing=document.getElementById('credit-reso-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='credit-reso-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:14px;width:420px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
+      '<div style="padding:18px 22px 14px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between">'+
+        '<div style="font-size:16px;font-weight:700;color:#1a1a2e">🎁 Crea Credito</div>'+
+        '<button id="crd-close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#aaa;line-height:1">×</button>'+
+      '</div>'+
+      '<div style="padding:18px 22px;display:flex;flex-direction:column;gap:14px">'+
+        '<div style="font-size:13px;color:#555">Ordine <strong>'+orderName+'</strong> — <span style="color:#888">'+email+'</span></div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:5px">Importo credito (€) *</label>'+
+          '<input id="crd-amount" type="number" min="0.01" step="0.01" placeholder="0.00" style="width:100%;padding:10px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:15px;font-family:inherit;outline:none;box-sizing:border-box">'+
+        '</div>'+
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1px solid #e0e4ea;border-radius:8px;background:#f8f9fc;user-select:none">'+
+          '<input type="checkbox" id="crd-notifica" style="width:16px;height:16px;cursor:pointer;accent-color:#1a73e8">'+
+          '<div>'+
+            '<div style="font-size:13px;font-weight:600;color:#1a1a2e">📧 Invia notifica al cliente</div>'+
+            '<div style="font-size:11px;color:#888;margin-top:1px">Crea ticket email con istruzioni utilizzo credito</div>'+
+          '</div>'+
+        '</label>'+
+        '<div id="crd-error" style="display:none;background:#fff5f5;border:1px solid #f0c0c0;border-radius:6px;padding:8px 12px;font-size:12px;color:#c04040"></div>'+
+      '</div>'+
+      '<div style="padding:12px 22px 16px;border-top:1px solid #f0f2f5;display:flex;gap:8px;justify-content:flex-end">'+
+        '<button id="crd-cancel" style="padding:9px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
+        '<button id="crd-confirm" style="padding:9px 18px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✓ Crea Credito</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#crd-close').addEventListener('click',function(){modal.remove();});
+  modal.querySelector('#crd-cancel').addEventListener('click',function(){modal.remove();});
+  var amtInp=modal.querySelector('#crd-amount');
+  var errEl=modal.querySelector('#crd-error');
+  var confirmBtn=modal.querySelector('#crd-confirm');
+  setTimeout(function(){amtInp.focus();},80);
+  amtInp.addEventListener('keydown',function(e){if(e.key==='Enter')confirmBtn.click();});
+  confirmBtn.addEventListener('click',async function(){
+    var amount=parseFloat(amtInp.value);
+    if(!amount||amount<=0){errEl.textContent='Inserisci un importo valido';errEl.style.display='block';amtInp.focus();return;}
+    var doNotify=modal.querySelector('#crd-notifica').checked;
+    confirmBtn.disabled=true;confirmBtn.textContent='⏳ Invio...';errEl.style.display='none';
+    try{
+      var r=await fetch(PROXY+'/creditsyard/adjust',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:email,amount:amount,reason:'Credito reso '+orderName,send_email_notification:0})});
+      var j=await r.json();
+      if(j.message==='success'){
+        modal.remove();
+        showToast('✅ Credito €'+amount.toFixed(2)+' aggiunto a '+email);
+        if(doNotify) await sendCreditNotificationTicket(email, customerName||'', orderName, amount);
+      } else {
+        errEl.textContent='Errore: '+(j.error||j.message||JSON.stringify(j));
+        errEl.style.display='block';
+        confirmBtn.disabled=false;confirmBtn.textContent='✓ Crea Credito';
+      }
+    }catch(e){
+      errEl.textContent='Errore: '+e.message;
+      errEl.style.display='block';
+      confirmBtn.disabled=false;confirmBtn.textContent='✓ Crea Credito';
     }
-    else{showToast('Errore: '+(j.error||j.message||JSON.stringify(j)),'error');}
-  }catch(e){showToast('Errore: '+e.message,'error');}
+  });
 }
 function openRichiesteResoPanel(){
   document.getElementById('tools-menu-dropdown').style.display='none';
@@ -6283,15 +6324,22 @@ async function duplicateOrder(orderId){
     if(!items.length){showToast("Nessun articolo con variant_id","error");return;}
     // Popola lista articoli nel modal
     const list=document.getElementById("dup-items-list");
-    list.innerHTML=items.map((li,i)=>`
-      <div id="dup-item-${i}" style="display:flex;align-items:center;gap:10px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">
+    list.innerHTML=items.map((li,i)=>{
+      const sn=shortName(li.name);
+      const maxQty=li.quantity;
+      const opts=Array.from({length:maxQty},(_,k)=>`<option value="${k+1}"${k+1===maxQty?' selected':''}>${k+1}</option>`).join('');
+      return `<div id="dup-item-${i}" style="display:flex;align-items:center;gap:10px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">
         <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;color:#1a1a2e">${li.name}</div>
-          <div style="font-size:12px;color:#888">Qtà: ${li.quantity} | €${parseFloat(li.price).toFixed(2)} cad</div>
+          <div style="font-size:13px;font-weight:600;color:#1a1a2e" title="${li.name}">${sn}</div>
+          <div style="font-size:12px;color:#888">€${parseFloat(li.price).toFixed(2)} cad | Ord: ${maxQty}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:#666;font-weight:600">Qtà:</label>
+          <select data-dup-idx="${i}" data-max="${maxQty}" style="padding:4px 6px;border:1px solid #d4b8ff;border-radius:6px;font-size:13px;font-family:inherit;color:#1a1a2e;background:#fff;cursor:pointer">${opts}</select>
         </div>
         <button onclick="removeDupItem(${i})" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;font-weight:700">✕</button>
-      </div>
-    `).join("");
+      </div>`;
+    }).join("");
     document.getElementById("dup-order-status").textContent="Ordine: "+(_dupOrderData.name||("#"+_dupOrderData.id));
     document.getElementById("dup-confirm-btn").disabled=false;
     document.getElementById("dup-order-modal").style.display="flex";
@@ -6314,7 +6362,7 @@ async function confirmDuplicateOrder(){
   btn.disabled=true;
   btn.textContent="⏳ Creazione in corso...";
   try{
-    // Raccogli articoli rimanenti (non rimossi)
+    // Raccogli articoli rimanenti (non rimossi) con le quantità selezionate
     const allItems=(_dupOrderData.line_items||[]).filter(li=>li.variant_id);
     const remaining=allItems.filter((_,i)=>document.getElementById("dup-item-"+i));
     if(!remaining.length){showToast("Aggiungi almeno un articolo","error");btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";return;}
@@ -6322,7 +6370,13 @@ async function confirmDuplicateOrder(){
     if(!motiv){showToast("Seleziona una motivazione","error");btn.disabled=false;btn.textContent="✅ Conferma Duplicazione";return;}
     const origName=_dupOrderData.name||("#"+_dupOrderData.id);
     const nota="Rispedito ordine "+origName+" per "+motiv;
-    const lineItems=remaining.map(li=>({variant_id:li.variant_id,quantity:li.quantity,applied_discount:{value:"100",value_type:"percentage",title:nota}}));
+    const lineItems=remaining.map((li,_)=>{
+      // Trova l'indice originale dell'item
+      const origIdx=allItems.indexOf(li);
+      const sel=document.querySelector('select[data-dup-idx="'+origIdx+'"]');
+      const qty=sel?parseInt(sel.value)||1:li.quantity;
+      return {variant_id:li.variant_id,quantity:qty,applied_discount:{value:"100",value_type:"percentage",title:nota}};
+    });
     // Crea draft order con sconto 100%
     const payload={draft_order:{
       line_items:lineItems,
