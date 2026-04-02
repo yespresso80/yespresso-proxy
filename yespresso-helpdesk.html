@@ -1753,7 +1753,7 @@ async function selectTicket(tid){
     // Box arancione in setTimeout(0) — dopo loadCustomerHistory
     setTimeout(()=>{
       // Risposte rapide Temu
-      const temuQRs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU"));
+      const temuQRs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU")||(Array.isArray(q.cats)?q.cats.some(c=>c.includes("Temu")):( q.cat&&q.cat.includes("Temu") )));
       // Estrai parent_order_sn e parent_after_sales_sn dal testo
       const tkText=allMsgs+" "+t.subject;
       const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
@@ -1793,18 +1793,24 @@ async function selectTicket(tid){
             '<button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🚀 Submit</button>'+
           '</div>'+
         '</div>';
-      // Popola bottoni risposte rapide Temu
-      setTimeout(()=>{
+      // Popola bottoni risposte rapide Temu — con retry se QR non ancora caricate
+      function _populateTemuBtns(){
         const btnsDiv=document.getElementById("temu-qr-btns");
-        if(btnsDiv&&temuQRs.length){
-          btnsDiv.innerHTML=temuQRs.map((qr,i)=>{
-            window._temuQR=window._temuQR||{};
+        if(!btnsDiv) return;
+        const tQRs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU")||(Array.isArray(q.cats)?q.cats.some(c=>c.includes("Temu")):(q.cat&&q.cat.includes("Temu"))));
+        if(tQRs.length){
+          window._temuQR=window._temuQR||{};
+          btnsDiv.innerHTML=tQRs.map((qr,i)=>{
             window._temuQR["tqr"+i]=qr.body;
             const label=qr.name.replace(/TEMU\s*-\s*/i,"");
             return '<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+label+'</button>';
           }).join("");
+        } else {
+          // Riprova dopo 1.5s se le QR non sono ancora caricate dal cloud
+          setTimeout(_populateTemuBtns, 1500);
         }
-      },100);
+      }
+      setTimeout(_populateTemuBtns, 100);
     },0);
     loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
@@ -1865,7 +1871,7 @@ async function selectTicket(tid){
       const resoId=resoMatch?resoMatch[1]:"";
       const url=resoId?"https://seller-eu.temu.com/return-refund-list.html?groupSearchType=100000&searchText="+encodeURIComponent(resoId)+"&_cmsg_locale=107~it&_cmsg_channel=mail&_cmsg_biz=5001&searchTextType=2&pageNumber=1&pageSize=10&reasonCodeList=0&orderByType=2&timeSearchType=100103&completedSearchType=100401&protectedByPlatformSearchType=100701":(sn?"https://seller-eu.temu.com/return-details.html?parent_order_sn="+encodeURIComponent(sn):"https://seller-eu.temu.com");
       const aiBox=document.querySelector(".ai-reply-box");
-      const qrs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU"));
+      const qrs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU")||(Array.isArray(q.cats)?q.cats.some(c=>c.includes("Temu")):( q.cat&&q.cat.includes("Temu") )));
       if(aiBox){aiBox.outerHTML='<div style="background:#fff8f0;border:2px solid #ff6600;border-radius:10px;padding:20px;text-align:center"><div style="color:#cc4400;font-weight:700">⚠️ Post-vendita Temu</div>'+(sn?'<div>'+sn+'</div>':'')+'<a href="'+url+'" target="_blank" style="background:#ff6600;color:#fff;padding:8px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin:8px">🟠 Gestisci su Temu</a><div id="temu-qr-btns" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px"></div><div style="margin-top:8px;text-align:right"><select id="temu-status-select" style="padding:6px;border-radius:6px"><option value="">Non cambiare</option><option value="solved" selected>Solved</option><option value="pending">Pending</option><option value="open">Open</option></select> <button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer">🚀 Submit</button></div></div>';setTimeout(()=>{const b=document.getElementById("temu-qr-btns");if(b&&qrs.length)b.innerHTML=qrs.map((q,i)=>{window._temuQR=window._temuQR||{};window._temuQR["tqr"+i]=q.body;return'<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+q.name.replace(/TEMU\s*-\s*/i,"")+'</button>';}).join("");},100);}
     },0);
     loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
@@ -2104,7 +2110,7 @@ function renderMessageHtml(text, attachments){
       }
     })();
     // Risposte rapide Temu
-    const temuQRs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU"));
+    const temuQRs=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU")||(Array.isArray(q.cats)?q.cats.some(c=>c.includes("Temu")):( q.cat&&q.cat.includes("Temu") )));
     // Estrai parent_order_sn e parent_after_sales_sn dal testo
     const tkText=allMsgs+" "+t.subject;
     const orderSnMatch=tkText.match(/(PO-\d{3}-\d+)(?!-D)/i);
@@ -2136,18 +2142,23 @@ function renderMessageHtml(text, attachments){
           '<button onclick="submitTemuTicket()" style="background:#ff6600;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🚀 Submit</button>'+
         '</div>'+
       '</div>';
-    // Popola bottoni risposte rapide Temu
-    setTimeout(()=>{
+    // Popola bottoni risposte rapide Temu — con retry se QR non ancora caricate
+    function _populateTemuBtns2(){
       const btnsDiv=document.getElementById("temu-qr-btns");
-      if(btnsDiv&&temuQRs.length){
-        btnsDiv.innerHTML=temuQRs.map((qr,i)=>{
-          window._temuQR=window._temuQR||{};
+      if(!btnsDiv) return;
+      const tQRs2=quickReplies.filter(q=>q.name.toUpperCase().includes("TEMU")||(Array.isArray(q.cats)?q.cats.some(c=>c.includes("Temu")):(q.cat&&q.cat.includes("Temu"))));
+      if(tQRs2.length){
+        window._temuQR=window._temuQR||{};
+        btnsDiv.innerHTML=tQRs2.map((qr,i)=>{
           window._temuQR["tqr"+i]=qr.body;
           const label=qr.name.replace(/TEMU\s*-\s*/i,"");
           return '<button id="tqr'+i+'" onclick="copyTemuQR(\'tqr'+i+'\')" style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:14px 8px;border-radius:8px;cursor:pointer;font-size:17px;font-weight:600;font-family:inherit;text-align:center;width:100%">'+label+'</button>';
         }).join("");
+      } else {
+        setTimeout(_populateTemuBtns2, 1500);
       }
-    },100);
+    }
+    setTimeout(_populateTemuBtns2, 100);
     loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
