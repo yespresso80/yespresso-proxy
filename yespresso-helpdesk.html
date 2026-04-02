@@ -7859,14 +7859,73 @@ function fabClearCache(){
   renderFabTab(_fabCurrentTab);
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// SHOPIFY DATA FETCH — GraphQL per finestre mensili
+// ════════════════════════════════════════════════════════════════
+async function shopifyGQL(gqlQuery){
+  var res=await proxyFetch(PROXY+'/shopify-graphql',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:gqlQuery})
+  });
+  return res.json();
+}
+
+async function fabLoadSalesWindow(sinceISO, untilISO, skuMap, salesAcc){
+  var cursor=null;
+  var pages=0;
+  while(pages<20){
+    pages++;
+    var afterClause=cursor?',after:"'+cursor+'"':'';
+    var gql=`{
+      orders(first:250${afterClause},
+             query:"created_at:>='${sinceISO}' created_at:<='${untilISO}'"){
+        pageInfo{hasNextPage endCursor}
+        edges{node{
+          cancelledAt createdAt
+          refunds{refundLineItems(first:50){edges{node{lineItemId quantity}}}}
+          lineItems(first:50){edges{node{id sku quantity}}}
+        }}
+      }
+    }`;
+    var r=await shopifyGQL(gql);
+    if(!r||!r.data||!r.data.orders) break;
+    var ordersData=r.data.orders;
+    ordersData.edges.forEach(function(edge){
+      var order=edge.node;
+      if(order.cancelledAt) return;
+      var dateStr=order.createdAt?order.createdAt.substring(0,10):'';
+      var refundMap={};
+      (order.refunds||[]).forEach(function(refund){
+        (refund.refundLineItems.edges||[]).forEach(function(re){
+          var n=re.node;
+          refundMap[n.lineItemId]=(refundMap[n.lineItemId]||0)+n.quantity;
+        });
+      });
+      (order.lineItems.edges||[]).forEach(function(le){
+        var li=le.node;
+        var rawSku=(li.sku||'').trim();
+        if(!rawSku) return;
+        var matchedSku=skuMap[rawSku.toLowerCase()]||null;
+        if(!matchedSku) return;
+        var netQty=Math.max(0,(li.quantity||0)-(refundMap[li.id]||0));
+        if(netQty===0) return;
+        if(!salesAcc[matchedSku]) salesAcc[matchedSku]=[];
+        salesAcc[matchedSku].push({date:dateStr,qty:netQty});
+      });
+    });
+    if(!ordersData.pageInfo.hasNextPage) break;
+    cursor=ordersData.pageInfo.endCursor;
+  }
+}
+
 async function refreshFabData(){
   showToast('⏳ Caricamento inventario...','info');
   try{
-    // ── INVENTARIO ──────────────────────────────────────────────
-    // Shopify non supporta variants.json?sku= come filtro diretto.
-    // Carichiamo tutti i products e cerchiamo per SKU nelle varianti.
+    // ── INVENTARIO via REST ─────────────────────────────────────
     var inv={};
-    var skuToFind=new Set(fabProducts.map(function(p){return p.sku_shopify.toLowerCase();}));
+    var skuSet=new Set(fabProducts.map(function(p){return p.sku_shopify.toLowerCase();}));
     var nextProdUrl='products.json?limit=250&fields=id,variants';
     var prodSafety=0;
     while(nextProdUrl&&prodSafety<20){
@@ -7876,91 +7935,54 @@ async function refreshFabData(){
         pd.products.forEach(function(prod){
           (prod.variants||[]).forEach(function(v){
             var vsku=(v.sku||'').trim().toLowerCase();
-            if(skuToFind.has(vsku)){
-              var origSku=fabProducts.find(function(p){return p.sku_shopify.toLowerCase()===vsku;});
-              if(origSku) inv[origSku.sku_shopify]=v.inventory_quantity||0;
+            if(skuSet.has(vsku)){
+              var p=fabProducts.find(function(x){return x.sku_shopify.toLowerCase()===vsku;});
+              if(p) inv[p.sku_shopify]=v.inventory_quantity||0;
             }
           });
         });
         nextProdUrl=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
       } else { nextProdUrl=null; }
     }
-    // Prodotti non trovati → 0
     fabProducts.forEach(function(p){if(inv[p.sku_shopify]==null)inv[p.sku_shopify]=0;});
     fabInventoryCache=inv;
     localStorage.setItem('fab_inventory',JSON.stringify(inv));
-    showToast('✅ Inventario ok ('+Object.keys(inv).filter(function(k){return inv[k]>0;}).length+' SKU con stock). Carico ordini...','info');
 
-    // ── ORDINI + NET QUANTITY ───────────────────────────────────
-    // Carica ordini ultimi 365gg con line_items e refunds
-    var since=new Date();since.setDate(since.getDate()-365);
-    var sinceStr=since.toISOString();
-    var allOrders=[];
-    // Prima pagina con tutti i campi necessari
-    var nextUrl='orders.json?status=any&created_at_min='+sinceStr+'&limit=250';
-    var safety=0;
-    while(nextUrl&&safety<30){
-      safety++;
-      var od=await shopifyGet(nextUrl);
-      if(od&&od.orders&&od.orders.length){
-        allOrders=allOrders.concat(od.orders);
-        nextUrl=od._nextPageInfo?'orders.json?limit=250&page_info='+od._nextPageInfo:null;
-      } else { nextUrl=null; }
-    }
-
-    // Costruisci mappa SKU lowercase → SKU originale
+    // ── VENDUTO via GraphQL — 12 finestre mensili ───────────────
+    // Con 10-12k ordini/mese la REST è troppo lenta (60k+ ordini).
+    // GraphQL con cursor è ottimizzato e mantiene created_at filter per finestra.
     var skuMap={};
     fabProducts.forEach(function(p){ skuMap[p.sku_shopify.toLowerCase()]=p.sku_shopify; });
+    var salesAcc={};
+    var now=new Date();
+    for(var m=0;m<12;m++){
+      var wEnd=new Date(now);wEnd.setDate(wEnd.getDate()-m*30);
+      var wStart=new Date(now);wStart.setDate(wStart.getDate()-(m+1)*30);
+      var sinceISO=wStart.toISOString().substring(0,10)+'T00:00:00';
+      var untilISO=wEnd.toISOString().substring(0,10)+'T23:59:59';
+      showToast('⏳ Mese '+(m+1)+'/12: '+wStart.toLocaleDateString('it-IT')+' → '+wEnd.toLocaleDateString('it-IT'),'info');
+      await fabLoadSalesWindow(sinceISO,untilISO,skuMap,salesAcc);
+    }
 
-    // Aggrega venduto NETTO per SKU: qty ordinate - qty rimborsate
-    var sales={}; // sku -> [{date, qty (netta)}]
-    allOrders.forEach(function(order){
-      // Salta ordini annullati completamente
-      if(order.cancelled_at) return;
-      var dateStr=order.created_at?order.created_at.substring(0,10):'';
-
-      // Costruisci mappa variante → qty rimborsata per questo ordine
-      var refundedQty={};
-      (order.refunds||[]).forEach(function(refund){
-        (refund.refund_line_items||[]).forEach(function(rli){
-          var liId=rli.line_item_id;
-          refundedQty[liId]=(refundedQty[liId]||0)+(rli.quantity||0);
-        });
-      });
-
-      (order.line_items||[]).forEach(function(li){
-        var rawSku=(li.sku||'').trim();
-        if(!rawSku) return;
-        var matchedSku=skuMap[rawSku.toLowerCase()]||null;
-        if(!matchedSku) return; // ignora SKU non in anagrafica
-        var orderedQty=li.quantity||0;
-        var refunded=refundedQty[li.id]||0;
-        var netQty=Math.max(0, orderedQty-refunded);
-        if(netQty===0) return;
-        if(!sales[matchedSku]) sales[matchedSku]=[];
-        sales[matchedSku].push({date:dateStr, qty:netQty});
-      });
-    });
-
-    fabSalesCache=sales;
+    fabSalesCache=salesAcc;
     fabSalesCacheDate=new Date().toISOString().substring(0,16);
-    localStorage.setItem('fab_sales_cache',JSON.stringify(sales));
+    localStorage.setItem('fab_sales_cache',JSON.stringify(salesAcc));
     localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
 
-    var matchedOurSkus=fabProducts.filter(function(p){return sales[p.sku_shopify]&&sales[p.sku_shopify].length>0;}).length;
-    // Log diagnostico: mostra dati reali del primo prodotto trovato
-    var firstWithSales=fabProducts.find(function(p){return sales[p.sku_shopify]&&sales[p.sku_shopify].length>0;});
-    var diagMsg='';
-    if(firstWithSales){
-      var s=sales[firstWithSales.sku_shopify];
+    var matched=fabProducts.filter(function(p){return salesAcc[p.sku_shopify]&&salesAcc[p.sku_shopify].length>0;}).length;
+    var first=fabProducts.find(function(p){return salesAcc[p.sku_shopify]&&salesAcc[p.sku_shopify].length>0;});
+    var diag='';
+    if(first){
+      var s=salesAcc[first.sku_shopify];
       var tot=s.reduce(function(a,x){return a+x.qty;},0);
-      var dateRange=s.length>0?(s[s.length-1].date+' → '+s[0].date):'';
-      diagMsg=' | '+firstWithSales.sku+': tot='+tot+' ('+s.length+' ordini, '+dateRange+')';
+      var dates=s.map(function(x){return x.date;}).sort();
+      diag=' | '+first.sku+': tot='+tot+' ('+dates[0]+' → '+dates[dates.length-1]+')';
     }
-    showToast('✅ '+allOrders.length+' ordini • '+matchedOurSkus+'/'+fabProducts.length+' prodotti'+diagMsg);
+    showToast('✅ Venduto ok: '+matched+'/'+fabProducts.length+' prodotti'+diag);
     renderFabTab(_fabCurrentTab);
   }catch(e){showToast('❌ Errore: '+e.message,'error');console.error('[FAB]',e);}
 }
+
 
 // Helper: venduto per SKU in ultimi N giorni
 function fabSoldInDays(sku, days){
