@@ -4460,7 +4460,7 @@ function openCatManager(){
     '<div style="background:#fff;border-radius:14px;width:480px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
       '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between">'+
         '<div style="font-size:16px;font-weight:700;color:#1a1a2e">🗂️ Gestisci Categorie</div>'+
-        '<button onclick="document.getElementById('cat-manager-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#aaa">×</button>'+
+        '<button onclick="document.getElementById(&quot;cat-manager-modal&quot;).remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#aaa">×</button>'+
       '</div>'+
       '<div style="flex:1;overflow-y:auto;padding:16px 20px">'+
         '<div id="cat-list-edit" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px"></div>'+
@@ -4470,7 +4470,7 @@ function openCatManager(){
         '</div>'+
       '</div>'+
       '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px">'+
-        '<button onclick="document.getElementById('cat-manager-modal').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button>'+
+        '<button onclick="document.getElementById(&quot;cat-manager-modal&quot;).remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button>'+
         '<button onclick="saveCatManagerAndClose()" style="padding:8px 16px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✓ Salva & Chiudi</button>'+
       '</div>'+
     '</div>';
@@ -4485,10 +4485,11 @@ function renderCatListEdit(){
   if(!el) return;
   el.innerHTML = qrCategories.map((cat,i)=>{
     const count = quickReplies.filter(q=>q.cat===cat).length;
+    const catEsc = cat.replace(/"/g,"&quot;");
     return '<div style="display:flex;align-items:center;gap:8px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:8px 12px">'+
       '<span style="flex:1;font-size:13px;font-weight:600;color:#1a1a2e">'+cat+'</span>'+
       '<span style="font-size:11px;color:#aaa;background:#e8eaf0;padding:2px 8px;border-radius:10px">'+count+' risposte</span>'+
-      (count===0 ? '<button onclick="deleteQRCat(\'''+cat.replace(/'/g,"\\'")+'\')" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:700">✕</button>' : '<span style="width:32px"></span>')+
+      (count===0 ? '<button onclick="deleteQRCat(&quot;'+catEsc+'&quot;)" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:700">✕</button>' : '<span style="width:32px"></span>')+
     '</div>';
   }).join("");
 }
@@ -4525,10 +4526,11 @@ function renderQRCatButtons(){
   const el = document.getElementById("qr-cat-filter");
   if(!el) return;
   el.innerHTML =
-    '<button onclick="filterQRCat(this,'')" class="qrcat-btn qrcat-active">Tutte</button>'+
+    '<button onclick="filterQRCat(this,&quot;&quot;)" class="qrcat-btn qrcat-active">Tutte</button>'+
     qrCategories.map(cat=>{
       const short = cat.replace(/^[^\s]+\s/,"").substring(0,12);
-      return '<button onclick="filterQRCat(this,\''+ cat.replace(/'/g,"\\'")+'\')" class="qrcat-btn">'+ cat.split(" ")[0]+" "+short +'</button>';
+      const catEsc = cat.replace(/"/g,"&quot;");
+      return '<button onclick="filterQRCat(this,&quot;'+catEsc+'&quot;)" class="qrcat-btn">'+cat.split(" ")[0]+" "+short+'</button>';
     }).join("");
 }
 
