@@ -4181,8 +4181,364 @@ async function doReformulate(){
 
 function clearReply(){const rt=document.getElementById("reply-text");if(rt){rt.value="";rt.style.height="80px";}}
 function copyQR(id){const q=quickReplies.find(r=>r.id===id);if(!q)return;navigator.clipboard.writeText(q.body||"");const b=document.getElementById("qrcopy-"+id);if(b){const o=b.textContent;b.textContent="✅";b.style.background="#2a7a50";b.style.color="#fff";setTimeout(()=>{b.textContent=o;b.style.background="";b.style.color="";},1500);}}
-function saveQRToStorage(){ localStorage.setItem("yespresso_qr", JSON.stringify(quickReplies)); }
+
+// ── QR CATEGORIE (dinamiche) ───────────────────────────────
+const QR_DEFAULT_CATS = ["📦 Ordini","🚚 Spedizioni BRT","↩️ Resi e Rimborsi","⚠️ Prodotti Danneggiati","☕ Macchine","🟡 Amazon","🟠 Temu","🎵 TIK RESI","💬 TIK CHAT","💳 Pagamenti","🧾 Fatture","🛍️ Prodotti e Sito","💬 Generale"];
+let qrCategories = JSON.parse(localStorage.getItem("yespresso_qr_cats")||"null") || [...QR_DEFAULT_CATS];
+function saveQRCats(){ localStorage.setItem("yespresso_qr_cats", JSON.stringify(qrCategories)); }
+
+// ── QR REMOTE STORAGE ─────────────────────────────────────
+let _qrSaving = false;
+async function saveQRToStorage(){
+  localStorage.setItem("yespresso_qr", JSON.stringify(quickReplies));
+  if(_qrSaving) return;
+  _qrSaving = true;
+  const btn = document.getElementById("qr-save-status");
+  if(btn){ btn.textContent="💾 Salvataggio..."; btn.style.color="#f59e0b"; }
+  try{
+    await proxyFetch(PROXY+"/quick-replies",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({replies:quickReplies,cats:qrCategories})});
+    if(btn){ btn.textContent="✅ Salvato su cloud"; btn.style.color="#16a34a"; setTimeout(()=>{ if(btn)btn.textContent=""; },3000); }
+  }catch(e){
+    console.warn("QR cloud save failed, solo localStorage:",e.message);
+    if(btn){ btn.textContent="⚠️ Solo locale"; btn.style.color="#dc2626"; setTimeout(()=>{ if(btn)btn.textContent=""; },4000); }
+  } finally { _qrSaving=false; }
+}
+
+async function loadQRFromRemote(){
+  try{
+    const r = await proxyFetch(PROXY+"/quick-replies");
+    const data = await r.json();
+    if(data && Array.isArray(data.replies) && data.replies.length){
+      quickReplies = data.replies;
+      localStorage.setItem("yespresso_qr", JSON.stringify(quickReplies));
+    }
+    if(data && Array.isArray(data.cats) && data.cats.length){
+      qrCategories = data.cats;
+      saveQRCats();
+    }
+    return true;
+  }catch(e){
+    // fallback localStorage
+    try{
+      const saved = JSON.parse(localStorage.getItem("yespresso_qr")||"null");
+      if(saved && saved.length) quickReplies = saved;
+    }catch(e2){}
+    return false;
+  }
+}
+
 function trackQRUsage(id){ qrUsageCount[id]=(qrUsageCount[id]||0)+1; localStorage.setItem("yespresso_qr_usage",JSON.stringify(qrUsageCount)); }
+
+// ── DOWNLOAD QR ───────────────────────────────────────────
+function downloadQR(){
+  // Genera documento Word (.docx) usando Office Open XML via Blob
+  // Struttura: documento con titolo, poi per ogni categoria una sezione con tabella delle risposte
+  const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const nl2par = s => (s||"").split(/\r?\n/).map(line =>
+    `<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t xml:space="preserve">${esc(line)||" "}</w:t></w:r></w:p>`
+  ).join("");
+
+  // Raggruppa per categoria
+  const cats = {};
+  (qrCategories||[]).forEach(c=>{ cats[c]=[]; });
+  quickReplies.forEach(qr=>{ const c=qr.cat||"Generale"; if(!cats[c])cats[c]=[]; cats[c].push(qr); });
+
+  // Colori: intestazione tabella #1a73e8, riga alternata #f0f4ff
+  const headerFill = "1A73E8";
+  const altFill    = "EEF2FF";
+
+  let bodyXml = `<w:p><w:pPr><w:spacing w:after="120"/></w:pPr>
+    <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="36"/><w:color w:val="1A73E8"/></w:rPr>
+    <w:t>⚡ Risposte Rapide Yespresso</w:t></w:r></w:p>
+  <w:p><w:pPr><w:spacing w:after="80"/></w:pPr>
+    <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/><w:color w:val="888888"/></w:rPr>
+    <w:t>Esportato il ${new Date().toLocaleDateString("it-IT")} — ${quickReplies.length} risposte in ${Object.keys(cats).length} categorie</w:t></w:r></w:p>`;
+
+  Object.entries(cats).forEach(([cat, items]) => {
+    if(!items.length) return;
+    // Titolo categoria
+    bodyXml += `<w:p><w:pPr><w:spacing w:before="320" w:after="60"/><w:shd w:val="clear" w:fill="F0F4FF" w:color="auto"/>
+      <w:pBdr><w:left w:val="single" w:sz="12" w:space="6" w:color="1A73E8"/></w:pBdr></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="26"/><w:color w:val="1A73E8"/></w:rPr>
+      <w:t>${esc(cat)}</w:t></w:r></w:p>`;
+
+    // Tabella: col 1 = Nome (2800 DXA), col 2 = Testo risposta (6200 DXA) — tot 9000
+    bodyXml += `<w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="9000" w:type="dxa"/>
+        <w:tblBorders>
+          <w:top w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+          <w:left w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+          <w:bottom w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+          <w:right w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+          <w:insideH w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+          <w:insideV w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+        </w:tblBorders>
+        <w:tblLook w:val="04A0"/>
+      </w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2800"/>
+        <w:gridCol w:w="6200"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:trPr><w:tblHeader/></w:trPr>
+        <w:tc><w:tcPr><w:tcW w:w="2800" w:type="dxa"/><w:shd w:val="clear" w:fill="${headerFill}" w:color="auto"/>
+          <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="20"/><w:color w:val="FFFFFF"/></w:rPr><w:t>Nome</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="6200" w:type="dxa"/><w:shd w:val="clear" w:fill="${headerFill}" w:color="auto"/>
+          <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="20"/><w:color w:val="FFFFFF"/></w:rPr><w:t>Testo risposta</w:t></w:r></w:p></w:tc>
+      </w:tr>`;
+
+    items.forEach((qr, idx) => {
+      const fill = idx % 2 === 1 ? altFill : "FFFFFF";
+      bodyXml += `<w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="2800" w:type="dxa"/><w:shd w:val="clear" w:fill="${fill}" w:color="auto"/>
+          <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+          <w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="18"/></w:rPr><w:t>${esc(qr.name)}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="6200" w:type="dxa"/><w:shd w:val="clear" w:fill="${fill}" w:color="auto"/>
+          <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr>
+          ${nl2par(qr.body)}</w:tc>
+      </w:tr>`;
+    });
+    bodyXml += `</w:tbl><w:p><w:pPr><w:spacing w:after="60"/></w:pPr></w:p>`;
+  });
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+  <w:body>
+    ${bodyXml}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="709" w:footer="709" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+
+  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults><w:rPrDefault><w:rPr>
+    <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
+    <w:sz w:val="20"/>
+  </w:rPr></w:rPrDefault></w:docDefaults>
+</w:styles>`;
+
+  const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+  <Application>Yespresso Helpdesk</Application>
+</Properties>`;
+
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`;
+
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+
+  // Crea ZIP in memoria usando JSZip-like encoding manuale (senza librerie esterne)
+  // Usiamo la tecnica store (no compression) per semplicità e compatibilità
+  function strToBytes(str){ const e=new TextEncoder(); return e.encode(str); }
+  function u32le(n){ return [(n>>>0)&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF]; }
+  function u16le(n){ return [(n>>>0)&0xFF,(n>>>8)&0xFF]; }
+  function crc32(buf){
+    let crc=0xFFFFFFFF;
+    const t=new Uint32Array(256);
+    for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=c&1?(0xEDB88320^(c>>>1)):c>>>1;t[i]=c;}
+    for(const b of buf){crc=t[(crc^b)&0xFF]^(crc>>>8);}
+    return (crc^0xFFFFFFFF)>>>0;
+  }
+
+  const files = [
+    ["[Content_Types].xml", strToBytes(contentTypesXml)],
+    ["_rels/.rels", strToBytes(rootRelsXml)],
+    ["word/document.xml", strToBytes(documentXml)],
+    ["word/styles.xml", strToBytes(stylesXml)],
+    ["word/_rels/document.xml.rels", strToBytes(relsXml)],
+    ["docProps/app.xml", strToBytes(appXml)],
+  ];
+
+  const localHeaders = [];
+  const centralDir = [];
+  let offset = 0;
+  const allBytes = [];
+
+  files.forEach(([name, data]) => {
+    const nameBytes = strToBytes(name);
+    const crc = crc32(data);
+    const local = [
+      0x50,0x4B,0x03,0x04, // signature
+      ...u16le(20),         // version needed
+      ...u16le(0),          // general purpose bit flag
+      ...u16le(0),          // compression (0=store)
+      ...u16le(0x0000),     // mod time
+      ...u16le(0x0000),     // mod date
+      ...u32le(crc),        // crc32
+      ...u32le(data.length),// compressed size
+      ...u32le(data.length),// uncompressed size
+      ...u16le(nameBytes.length), // filename length
+      ...u16le(0),          // extra field length
+      ...nameBytes,
+      ...data
+    ];
+    centralDir.push({name:nameBytes, crc, size:data.length, offset});
+    localHeaders.push(local);
+    local.forEach(b=>allBytes.push(b));
+    offset += local.length;
+  });
+
+  const centralStart = offset;
+  centralDir.forEach(({name,crc,size,offset:off}) => {
+    const cd = [
+      0x50,0x4B,0x01,0x02, // signature
+      ...u16le(20),         // version made by
+      ...u16le(20),         // version needed
+      ...u16le(0),          // bit flag
+      ...u16le(0),          // compression
+      ...u16le(0x0000),     // mod time
+      ...u16le(0x0000),     // mod date
+      ...u32le(crc),
+      ...u32le(size),       // compressed
+      ...u32le(size),       // uncompressed
+      ...u16le(name.length),
+      ...u16le(0),          // extra length
+      ...u16le(0),          // comment length
+      ...u16le(0),          // disk start
+      ...u16le(0),          // int attr
+      ...u32le(0),          // ext attr
+      ...u32le(off),        // rel offset
+      ...name
+    ];
+    cd.forEach(b=>allBytes.push(b));
+  });
+
+  const centralEnd = allBytes.length;
+  const eocd = [
+    0x50,0x4B,0x05,0x06,
+    ...u16le(0),            // disk number
+    ...u16le(0),            // disk with central dir
+    ...u16le(files.length), // entries on this disk
+    ...u16le(files.length), // total entries
+    ...u32le(centralEnd - centralStart), // central dir size
+    ...u32le(centralStart),              // central dir offset
+    ...u16le(0)             // comment length
+  ];
+  eocd.forEach(b=>allBytes.push(b));
+
+  const blob = new Blob([new Uint8Array(allBytes)],{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "risposte-rapide-"+new Date().toISOString().slice(0,10)+".docx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("📄 File Word scaricato");
+}
+
+// ── GESTIONE CATEGORIE ────────────────────────────────────
+function openCatManager(){
+  const existing = document.getElementById("cat-manager-modal");
+  if(existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "cat-manager-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center";
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:14px;width:480px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
+      '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between">'+
+        '<div style="font-size:16px;font-weight:700;color:#1a1a2e">🗂️ Gestisci Categorie</div>'+
+        '<button onclick="document.getElementById('cat-manager-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#aaa">×</button>'+
+      '</div>'+
+      '<div style="flex:1;overflow-y:auto;padding:16px 20px">'+
+        '<div id="cat-list-edit" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px"></div>'+
+        '<div style="display:flex;gap:8px;margin-top:8px">'+
+          '<input id="cat-new-input" type="text" placeholder="Es. 🆕 Nuova categoria" style="flex:1;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;outline:none">'+
+          '<button onclick="addQRCat()" style="padding:9px 16px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Aggiungi</button>'+
+        '</div>'+
+      '</div>'+
+      '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px">'+
+        '<button onclick="document.getElementById('cat-manager-modal').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button>'+
+        '<button onclick="saveCatManagerAndClose()" style="padding:8px 16px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✓ Salva & Chiudi</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener("click",e=>{ if(e.target===modal) modal.remove(); });
+  renderCatListEdit();
+  setTimeout(()=>{ const i=document.getElementById("cat-new-input"); if(i) i.addEventListener("keydown",e=>{ if(e.key==="Enter") addQRCat(); }); },50);
+}
+
+function renderCatListEdit(){
+  const el = document.getElementById("cat-list-edit");
+  if(!el) return;
+  el.innerHTML = qrCategories.map((cat,i)=>{
+    const count = quickReplies.filter(q=>q.cat===cat).length;
+    return '<div style="display:flex;align-items:center;gap:8px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:8px 12px">'+
+      '<span style="flex:1;font-size:13px;font-weight:600;color:#1a1a2e">'+cat+'</span>'+
+      '<span style="font-size:11px;color:#aaa;background:#e8eaf0;padding:2px 8px;border-radius:10px">'+count+' risposte</span>'+
+      (count===0 ? '<button onclick="deleteQRCat(\'''+cat.replace(/'/g,"\\'")+'\')" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:700">✕</button>' : '<span style="width:32px"></span>')+
+    '</div>';
+  }).join("");
+}
+
+function addQRCat(){
+  const inp = document.getElementById("cat-new-input");
+  const val = (inp.value||"").trim();
+  if(!val){ showToast("Inserisci un nome per la categoria","error"); return; }
+  if(qrCategories.includes(val)){ showToast("Categoria già esistente","error"); return; }
+  qrCategories.push(val);
+  inp.value = "";
+  renderCatListEdit();
+  showToast("✅ Categoria aggiunta");
+}
+
+function deleteQRCat(cat){
+  const count = quickReplies.filter(q=>q.cat===cat).length;
+  if(count>0){ showToast("Non puoi eliminare una categoria con risposte assegnate","error"); return; }
+  if(!confirm("Eliminare la categoria \""+cat+"\"?")) return;
+  qrCategories = qrCategories.filter(c=>c!==cat);
+  renderCatListEdit();
+}
+
+async function saveCatManagerAndClose(){
+  saveQRCats();
+  renderQRCatButtons();
+  refreshQREditCatSelect();
+  await saveQRToStorage();
+  document.getElementById("cat-manager-modal").remove();
+  showToast("✅ Categorie salvate");
+}
+
+function renderQRCatButtons(){
+  const el = document.getElementById("qr-cat-filter");
+  if(!el) return;
+  el.innerHTML =
+    '<button onclick="filterQRCat(this,'')" class="qrcat-btn qrcat-active">Tutte</button>'+
+    qrCategories.map(cat=>{
+      const short = cat.replace(/^[^\s]+\s/,"").substring(0,12);
+      return '<button onclick="filterQRCat(this,\''+ cat.replace(/'/g,"\\'")+'\')" class="qrcat-btn">'+ cat.split(" ")[0]+" "+short +'</button>';
+    }).join("");
+}
+
+function refreshQREditCatSelect(){
+  const sel = document.getElementById("qr-edit-cat");
+  if(!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = qrCategories.map(c=>'<option value="'+c+'">'+c+'</option>').join("");
+  if(qrCategories.includes(cur)) sel.value = cur;
+}
 
 
 function insertQRFromModal(id){
@@ -4197,9 +4553,19 @@ function insertQRFromModal(id){
   }
 }
 
-function openQRModal(){
-  renderQRList();
+let _qrLoaded = false;
+async function openQRModal(){
   document.getElementById("qr-modal").style.display="flex";
+  if(!_qrLoaded){
+    _qrLoaded = true;
+    const statusEl = document.getElementById("qr-save-status");
+    if(statusEl){ statusEl.textContent="☁️ Caricamento cloud..."; statusEl.style.color="#f59e0b"; }
+    await loadQRFromRemote();
+    if(statusEl){ statusEl.textContent=""; }
+  }
+  renderQRCatButtons();
+  refreshQREditCatSelect();
+  renderQRList();
   setTimeout(()=>{const s=document.getElementById("qr-search");if(s){s.value="";s.focus();}},50);
 }
 
@@ -4340,8 +4706,8 @@ function setQRSort(mode){
   renderQRList();
 }
 
-function showAddQR(){ qrEditingId=null; document.getElementById("qr-edit-title").textContent="Nuova risposta rapida"; document.getElementById("qr-edit-cat").value="💬 Generale"; document.getElementById("qr-edit-name").value=""; document.getElementById("qr-edit-body").value=""; document.getElementById("qr-edit-modal").style.display="flex"; }
-function editQR(id){ const qr=quickReplies.find(q=>q.id===id); if(!qr)return; qrEditingId=id; document.getElementById("qr-edit-title").textContent="Modifica risposta"; document.getElementById("qr-edit-cat").value=qr.cat||"💬 Generale"; document.getElementById("qr-edit-name").value=qr.name; document.getElementById("qr-edit-body").value=qr.body; document.getElementById("qr-edit-modal").style.display="flex"; }
+function showAddQR(){ qrEditingId=null; refreshQREditCatSelect(); document.getElementById("qr-edit-title").textContent="Nuova risposta rapida"; document.getElementById("qr-edit-cat").value=qrCategories.includes("💬 Generale")?"💬 Generale":qrCategories[0]||""; document.getElementById("qr-edit-name").value=""; document.getElementById("qr-edit-body").value=""; document.getElementById("qr-edit-modal").style.display="flex"; }
+function editQR(id){ const qr=quickReplies.find(q=>q.id===id); if(!qr)return; qrEditingId=id; refreshQREditCatSelect(); document.getElementById("qr-edit-title").textContent="Modifica risposta"; document.getElementById("qr-edit-cat").value=qr.cat||"💬 Generale"; document.getElementById("qr-edit-name").value=qr.name; document.getElementById("qr-edit-body").value=qr.body; document.getElementById("qr-edit-modal").style.display="flex"; }
 function closeEditModal(){ document.getElementById("qr-edit-modal").style.display="none"; }
 function deleteQR(id){ if(!confirm("Eliminare questa risposta rapida?"))return; quickReplies=quickReplies.filter(q=>q.id!==id); saveQRToStorage(); renderQRList(); }
 function saveQR(){
@@ -6902,24 +7268,15 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
     </div>
     <div style="padding:10px 16px;border-bottom:1px solid #e8eaf0;background:#fff">
       <input type="text" id="qr-search" placeholder="🔍 Cerca per nome, categoria o testo..." oninput="renderQRList()" style="width:100%;padding:10px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:15px;font-family:inherit;box-sizing:border-box;outline:none">
-      <div id="qr-cat-filter" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
-        <button onclick="filterQRCat(this,'')" class="qrcat-btn qrcat-active">Tutte</button>
-        <button onclick="filterQRCat(this,'📦 Ordini')" class="qrcat-btn">📦 Ordini</button>
-        <button onclick="filterQRCat(this,'🚚 Spedizioni BRT')" class="qrcat-btn">🚚 Spedizioni</button>
-        <button onclick="filterQRCat(this,'↩️ Resi e Rimborsi')" class="qrcat-btn">↩️ Resi</button>
-        <button onclick="filterQRCat(this,'⚠️ Prodotti Danneggiati')" class="qrcat-btn">⚠️ Prodotti</button>
-        <button onclick="filterQRCat(this,'☕ Macchine')" class="qrcat-btn">☕ Macchine</button>
-        <button onclick="filterQRCat(this,'🟡 Amazon')" class="qrcat-btn">🟡 Amazon</button>
-        <button onclick="filterQRCat(this,'🟠 Temu')" class="qrcat-btn">🟠 Temu</button>
-        <button onclick="filterQRCat(this,'🎵 TIK RESI')" class="qrcat-btn">🎵 TIK RESI</button>
-        <button onclick="filterQRCat(this,'💬 TIK CHAT')" class="qrcat-btn">💬 TIK CHAT</button>
-        <button onclick="filterQRCat(this,'💬 Generale')" class="qrcat-btn">💬 Generale</button>
-      </div>
+      <div id="qr-cat-filter" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
     </div>
     <div class="modal-body" id="qr-modal-body" style="font-size:15px"></div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
       <button class="btn-sm btn-primary" onclick="showAddQR()">+ Aggiungi risposta</button>
-      <button class="btn-sm" onclick="closeQRModal()">Chiudi</button>
+      <button class="btn-sm" onclick="openCatManager()" style="background:#f0f4ff;border-color:#c7d7fc;color:#1a73e8">🗂️ Categorie</button>
+      <button class="btn-sm" onclick="downloadQR()" style="background:#f0fdf4;border-color:#bbf7d0;color:#16a34a">📄 Scarica Word</button>
+      <span id="qr-save-status" style="font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;align-self:center"></span>
+      <button class="btn-sm" onclick="closeQRModal()" style="margin-left:auto">Chiudi</button>
     </div>
   </div>
 </div>
@@ -6933,20 +7290,7 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
     <div class="modal-body">
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Categoria</label>
-        <select class="field" id="qr-edit-cat" style="padding:8px 12px">
-          <option value="📦 Ordini">📦 Ordini</option>
-          <option value="🚚 Spedizioni BRT">🚚 Spedizioni BRT</option>
-          <option value="↩️ Resi e Rimborsi">↩️ Resi e Rimborsi</option>
-          <option value="⚠️ Prodotti Danneggiati">⚠️ Prodotti Danneggiati</option>
-          <option value="☕ Macchine">☕ Macchine</option>
-          <option value="🟠 Temu">🟠 Temu</option>
-          <option value="🎵 TIK RESI">🎵 TIK RESI</option>
-          <option value="💬 TIK CHAT">💬 TIK CHAT</option>
-          <option value="💳 Pagamenti">💳 Pagamenti</option>
-          <option value="🧾 Fatture">🧾 Fatture</option>
-          <option value="🛍️ Prodotti e Sito">🛍️ Prodotti e Sito</option>
-          <option value="💬 Generale">💬 Generale</option>
-        </select>
+        <select class="field" id="qr-edit-cat" style="padding:8px 12px"></select>
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Titolo (es. "Spedizione in corso")</label>
