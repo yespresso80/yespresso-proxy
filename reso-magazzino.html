@@ -265,29 +265,106 @@ let selectedItems = {};
 
 
 const SHORT_NAMES = {
-  "10 capsule compatibili bialetti - ginseng": "10 BIALETTI GINSENG",
-  "10 capsule compatibili nespresso - ginseng": "10 NESPRESSO GINSENG",
-  "10 capsule compatibili nespresso - orzo": "10 NESPRESSO ORZO",
-  "10 capsule compatibili a modo mio - ginseng": "10 AMM GINSENG",
-  "100 capsule compatibili a modo mio - cremoso": "100 AMM CREMOSO",
-  "100 capsule compatibili a modo mio - intenso": "100 AMM INTENSO",
-  "100 capsule compatibili a modo mio - decaffeinato": "100 AMM DECA",
-  "100 capsule compatibili nespresso - cremoso": "100 NESPRESSO CREMOSO",
-  "100 capsule compatibili nespresso - intenso": "100 NESPRESSO INTENSO",
-  "100 capsule compatibili nespresso - decaffeinato": "100 NESPRESSO DECA",
-  "160 capsule compatibili dolce gusto - cremoso": "160 DG CREMOSO",
-  "160 capsule compatibili dolce gusto - intenso": "160 DG INTENSO",
-  "240 capsule compatibili nespresso - granbar": "240 NESPRESSO GRANBAR",
-  "240 capsule compatibili nespresso - cremoso": "240 NESPRESSO CREMOSO",
+  "Yespresso 240 Capsule Compatibili con Caffitaly Miscela Cremoso": "240 CAFFITALY - CREMOSO",
+  "Yespresso 240 Capsule Compatibili con Lavazza A Modo Mio Cremoso (12 confezioni da 20 capsule)": "240 A MODO MIO - CREMOSO",
+  "Yespresso 240 capsule compatibili LAVAZZA A MODO MIO Cremoso (12 confezioni da 20 capsule)": "240 A MODO MIO - CREMOSO",
+  "Yespresso 80 Capsule Compatibili CAFFITALY Miscela Cremoso": "80 CAFFITALY - CREMOSO",
+  "Yespresso, Cremoso Napoli - 100 Capsule compatibili con Bialetti Mokona e Mokespresso": "100 BIALETTI - CREMOSO",
+  "Yespresso, Cremoso Napoli \u2013 100 Capsule compatibili con Bialetti Mokona e Mokespresso": "100 BIALETTI - CREMOSO",
+  "OFFERTA! 150 CIALDE IN CARTA ESE 44MM (ESPRESSO INTENSO)": "150 CIALDE ESE44 - INTENSO",
+  "OFFERTA! 150 CIALDE IN CARTA ESE 44MM (ESPRESSO)": "150 CIALDE ESE44 - INTENSO",
+  "Yespresso 100 capsule compatibili con Bialetti miscela Cremoso": "100 BIALETTI - CREMOSO",
+  "Yespresso 100 Capsule Compatibili Con Nespresso Miscela Cremoso": "100 NESPRESSO - CREMOSO",
+  "Yespresso 240 Capsule Compatibili CAFFITALY Miscela Cremoso": "240 CAFFITALY - CREMOSO",
+  "Yespresso 240 Capsule Compatibili con Bialetti miscela Cremoso": "240 BIALETTI - CREMOSO",
+  "64 Capsule DOLCE GUSTO CAPPUCCINO compatibili": "64 DOLCE GUSTO - CAPPUCCINO",
+  "80 Capsule CAFFITALY compatibili - CREMOSO": "80 CAFFITALY - CREMOSO",
+  "80 Capsule CAFFITALY CREMOSO caff\u00e8 compatibili": "80 CAFFITALY - CREMOSO",
+  "80 Capsule compatibili CAFFITALY - CREMOSO": "80 CAFFITALY - CREMOSO",
+  "80 Capsule Compatibili con Caffitaly Miscela Cremoso": "80 CAFFITALY - CREMOSO",
+  "80 Capsule Compatibili con Caffitaly Miscela Cremoso (Non funzionano sulle macchine modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)": "80 CAFFITALY - CREMOSO",
+  "300 Capsule LINEA S - Espresso INTENSO": "300 LINEA S - INTENSO",
+  "300 Cialde Carta ESE 44 - ESPRESSO INTENSO": "300 Cialde ESE 44 - INTENSO",
+  "300 Capsule compatibili con Nespresso CREMOSO": "300 NESPRESSO - CREMOSO",
+  "300 Capsule compatibili FIOR LUI - INTENSO": "300 FIOR LUI - INTENSO",
+  "300 Capsule compatibili NESPRESSO - CREMOSO": "300 NESPRESSO - CREMOSO",
+  "240 Capsule Compatibili con Bialetti Miscela Cremoso": "240 BIALETTI - CREMOSO",
+  "240 Capsule compatibili con Nespresso GRANBAR": "240 NESPRESSO - GRANBAR",
+  "240 Capsule compatibili Lavazza A MODO MIO - CREMOSO": "240 A MODO MIO - CREMOSO",
+  "240 Capsule compatibili NESPRESSO - GRANBAR": "240 NESPRESSO - GRANBAR",
+  "240 Capsule LAVAZZA A MODO MIO CREMOSO caff\u00e8 compatibili": "240 A MODO MIO - CREMOSO",
+  "240 Capsule LAVAZZA A MODO MIO CREMOSO caff\u00e8 compatibili, Cialde caff\u00e8Lavazza a Modo Mio": "240 A MODO MIO - CREMOSO",
+  "240 Capsule NESPRESSO caff\u00e8 compatibili GRANBAR, cialde compatibili caff\u00e8 per Nespresso": "240 NESPRESSO - GRANBAR",
+  "240 Capsule NESPRESSO GRANBAR caff\u00e8 compatibili": "240 NESPRESSO - GRANBAR",
+  "240 Capsule BIALETTI compatibili caff\u00e8 CREMOSO, ccapsule compatibili Bialetti, cialde compatibili bialetti": "240 BIALETTI - CREMOSO",
+  "240 Capsule CAFFITALY CREMOSO caff\u00e8 compatibili": "240 CAFFITALY - CREMOSO",
+  "240 Capsule compatibili BIALETTI - CREMOSO": "240 BIALETTI - CREMOSO",
+  "240 capsule compatibili BIALETTI miscela CREMOSO": "240 BIALETTI - CREMOSO",
+  "240 Capsule compatibili CAFFITALY - CREMOSO": "240 CAFFITALY - CREMOSO",
+  "240 capsule compatibili CAFFITALY miscela Cremoso": "240 CAFFITALY - CREMOSO",
+  "240 capsule compatibili CAFFITALY miscela Cremoso (Non funzionano sulle macchine modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)": "240 CAFFITALY - CREMOSO",
+  "160 Capsule DOLCE GUSTO CREMOSO caff\u00e8 compatibili": "160 DOLCE GUSTO - CREMOSO",
+  "20 Capsule compatibili BIALETTI - CREMOSO": "20 BIALETTI - CREMOSO",
+  "200 Capsule Compatibili con Nespresso Cremoso Napoli - 2 Confezioni da 100 capsule": "200 NESPRESSO - CREMOSO",
+  "200 Capsule compatibili NESPRESSO - CREMOSO": "200 NESPRESSO - CREMOSO",
+  "200 Capsule Compatibili Nespresso Cremoso Napoli - 2 Confezioni da 100 capsule": "200 NESPRESSO - CREMOSO",
+  "16 Capsule DOLCE GUSTO GINSENG compatibili": "16 DOLCE GUSTO - GINSENG",
+  "16 Capsule DOLCE GUSTO ORZO compatibili, capsule caff\u00e8 dolce e gusto": "16 DOLCE GUSTO - ORZO",
+  "160 Capsule Compatibili con Dolce Gusto Nescaf\u00e8 Miscela Cremoso - 10 confezioni da 16 capsule": "160 DOLCE GUSTO - CREMOSO",
+  "160 Capsule Compatibili conDolce Gusto Nescaf\u00e8 Cremoso - 10 confezioni da 16 capsule": "160 DOLCE GUSTO - CREMOSO",
+  "160 Capsule compatibili DOLCE GUSTO - CREMOSO": "160 DOLCE GUSTO - CREMOSO",
+  "160 Capsule compatibili Dolce Gusto Nescaf\u00e8 Cremoso - 10 confezioni da 16 capsule": "160 DOLCE GUSTO - CREMOSO",
+  "160 Capsule DOLCE GUSTO caff\u00e8 compatibili CREMOSO , capsule caffe dolce e gusto, capsule caffe per dolce gusto": "160 DOLCE GUSTO - CREMOSO",
+  "16 Capsule compatibili DOLCE GUSTO - GINSENG": "16 DOLCE GUSTO - GINSENG",
+  "16 Capsule compatibili DOLCE GUSTO - NOCCIOLINO": "16 DOLCE GUSTO - NOCCIOLINO",
+  "16 Capsule compatibili DOLCE GUSTO - ORZO": "16 DOLCE GUSTO - ORZO",
+  "16 Capsule compatibili DOLCE GUSTO - T\u00e8 AL LIMONE": "16 DOLCE GUSTO - LIMONE",
+  "16 Capsule compatibili DOLCE GUSTO - TE' AL LIMONE": "16 DOLCE GUSTO - TE' AL LIMONE",
+  "16 Capsule DOLCE GUSTO CAPPUCCINO compatibili": "16 DOLCE GUSTO - CAPPUCCINO",
+  "16 Capsule DOLCE GUSTO CIOCCOLATA compatibili": "16 DOLCE GUSTO - CIOCCOLATA",
+  "150 Cialde caff\u00e8 CARTA ESE44 - Espresso INTENSO": "150 CIALDE ESE44 - INTENSO",
+  "150 Cialde CARTA ESE44 - Espresso INTENSO": "150 CIALDE ESE44 - INTENSO",
+  "16 Capsule compatibili DOLCE GUSTO - CAPPUCCINO": "16 DOLCE GUSTO - CAPPUCCINO",
+  "16 Capsule compatibili DOLCE GUSTO - CIOCCOLATA": "16 DOLCE GUSTO - CIOCCOLATA",
+  "16 Capsule compatibili DOLCE GUSTO - CORTADO": "16 DOLCE GUSTO - CORTADO",
+  "16 Capsule compatibili DOLCE GUSTO - CREMOSO": "16 DOLCE GUSTO - CREMOSO",
+  "16 Capsule compatibili DOLCE GUSTO - DECAFFEINATO": "16 DOLCE GUSTO - DECA",
+  "100 Capsule FIOR LUI - Espresso INTENSO": "100 FIOR LUI - INTENSO",
+  "100 Capsule FIOR LUI caff\u00e8 Espresso INTENSO compatibili": "100 FIOR LUI - INTENSO",
+  "100 Capsule LAVAZZA A MODO MIO CREMOSO": "100 A MODO MIO - CREMOSO",
+  "100 Capsule LAVAZZA A MODO MIO CREMOSO compatibili": "100 A MODO MIO - CREMOSO",
+  "100 Capsule LINEA S - Espresso INTENSO": "100 LINEA S - INTENSO",
+  "100 Capsule NESPRESSO ALLUMINIO caff\u00e8 compatibili - Miscela SUPREMO": "100 NESPRESSO - ALLUMINIO",
+  "100 Capsule NESPRESSO ALLUMINIO compatibili - Miscela SUPREMO": "100 NESPRESSO - ALLUMINIO",
+  "100 Capsule NESPRESSO caff\u00e8 compatibili - Miscela SUPREMO": "100 NESPRESSO - ALLUMINIO",
+  "100 Capsule NESPRESSO CREMOSO caff\u00e8 compatibili": "100 NESPRESSO - CREMOSO",
+  "100 Capsule FIOR FIORE Coop e LUI caff\u00e8 compatibili - INTENSO": "100 FIOR LUI - INTENSO",
+  "100 Capsule Compatibili con Lavazza A Modo Mio miscela Cremoso": "100 A MODO MIO - CREMOSO",
+  "100 Capsule compatibili Lavazza A MODO MIO - CREMOSO": "100 A MODO MIO - CREMOSO",
+  "100 Capsule compatibili NESPRESSO - CREMOSO": "100 NESPRESSO - CREMOSO",
+  "10 Capsule compatibili NESPRESSO - ORZO": "10 NESPRESSO - ORZO",
+  "100 Capsule ALLUMINIO compatibili con Nespresso SUPREMO": "100 NESPRESSO - ALLUMINIO",
+  "100 Capsule ALLUMINIO compatibili NESPRESSO - SUPREMO": "100 NESPRESSO - ALLUMINIO",
+  "100 Capsule BIALETTI compatibili CREMOSO, cialde caff\u00e8 compaibili bialetti": "100 BIALETTI - CREMOSO",
+  "100 Capsule compatibili BIALETTI - CREMOSO": "100 BIALETTI - CREMOSO",
+  "10 Capsule compatibili NESPRESSO - GINSENG": "10 NESPRESSO - GINSENG",
+  "240 capsule compatibili CAFFITALY miscela Cremoso (Non funzionano sulle macchine Caffitaly modello MAIA S33, LUNA S32, IRIS S27, VOLTA, QUADRA e ARKA)": "240 CAFFITALY - CREMOSO"
 };
 function shortName(t) {
   if (!t) return t;
-  const k = t.toLowerCase().trim();
+  const trimmed = t.trim();
+  // 1. Corrispondenza esatta (case-insensitive)
   for (const [pat, short] of Object.entries(SHORT_NAMES)) {
-    if (k.includes(pat.split(' ').slice(0,4).join(' '))) return short;
+    if (pat.toLowerCase() === trimmed.toLowerCase()) return short;
   }
-  // fallback: tronca a 30 chars
-  return t.length > 35 ? t.substring(0, 33) + '…' : t;
+  // 2. Corrispondenza parziale: il titolo contiene la chiave (o viceversa)
+  const tLow = trimmed.toLowerCase();
+  for (const [pat, short] of Object.entries(SHORT_NAMES)) {
+    const pLow = pat.toLowerCase();
+    if (tLow.includes(pLow) || pLow.includes(tLow)) return short;
+  }
+  // 3. Fallback: tronca a 35 chars
+  return trimmed.length > 35 ? trimmed.substring(0, 33) + '\u2026' : trimmed;
 }
 
 
