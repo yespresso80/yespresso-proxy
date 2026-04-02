@@ -4457,21 +4457,21 @@ function openCatManager(){
   modal.id = "cat-manager-modal";
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center";
   modal.innerHTML =
-    '<div style="background:#fff;border-radius:14px;width:480px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
-      '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between">'+
+    '<div style="background:#fff;border-radius:14px;width:660px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
+      '<div style="padding:16px 22px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
         '<div style="font-size:16px;font-weight:700;color:#1a1a2e">🗂️ Gestisci Categorie</div>'+
-        '<button onclick="document.getElementById(&quot;cat-manager-modal&quot;).remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#aaa">×</button>'+
+        '<button onclick="document.getElementById(&quot;cat-manager-modal&quot;).remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#aaa;line-height:1">×</button>'+
       '</div>'+
-      '<div style="flex:1;overflow-y:auto;padding:16px 20px">'+
-        '<div id="cat-list-edit" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px"></div>'+
-        '<div style="display:flex;gap:8px;margin-top:8px">'+
+      '<div style="flex:1;overflow-y:auto;padding:16px 22px">'+
+        '<div id="cat-list-edit" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px"></div>'+
+        '<div style="display:flex;gap:8px;margin-top:4px;padding-top:14px;border-top:1px solid #f0f2f5">'+
           '<input id="cat-new-input" type="text" placeholder="Es. 🆕 Nuova categoria" style="flex:1;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;outline:none">'+
-          '<button onclick="addQRCat()" style="padding:9px 16px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Aggiungi</button>'+
+          '<button onclick="addQRCat()" style="padding:9px 18px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Aggiungi</button>'+
         '</div>'+
       '</div>'+
-      '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px">'+
-        '<button onclick="document.getElementById(&quot;cat-manager-modal&quot;).remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button>'+
-        '<button onclick="saveCatManagerAndClose()" style="padding:8px 16px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✓ Salva & Chiudi</button>'+
+      '<div style="padding:12px 22px;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0">'+
+        '<button onclick="document.getElementById(&quot;cat-manager-modal&quot;).remove()" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Chiudi</button>'+
+        '<button onclick="saveCatManagerAndClose()" style="padding:8px 18px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✓ Salva & Chiudi</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(modal);
@@ -4486,12 +4486,58 @@ function renderCatListEdit(){
   el.innerHTML = qrCategories.map((cat,i)=>{
     const count = quickReplies.filter(q=>{ const qc=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]; return qc.includes(cat); }).length;
     const catEsc = cat.replace(/"/g,"&quot;");
-    return '<div style="display:flex;align-items:center;gap:8px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:8px 12px">'+
-      '<span style="flex:1;font-size:13px;font-weight:600;color:#1a1a2e">'+cat+'</span>'+
-      '<span style="font-size:11px;color:#aaa;background:#e8eaf0;padding:2px 8px;border-radius:10px">'+count+' risposte</span>'+
-      (count===0 ? '<button onclick="deleteQRCat(&quot;'+catEsc+'&quot;)" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:700">✕</button>' : '<span style="width:32px"></span>')+
+    const hasReplies = count > 0;
+    const xColor  = hasReplies ? '#e67e22' : '#c04040';
+    const xBg     = hasReplies ? '#fff8f0' : '#fee';
+    const xBorder = hasReplies ? '#f5cba7' : '#fcc';
+    const xTitle  = hasReplies ? 'Ha '+count+' risposte — clicca per forzare eliminazione' : 'Elimina categoria';
+    return '<div style="display:flex;align-items:center;gap:6px;background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:6px 8px;min-width:0">'+
+      '<span data-cat-idx="'+i+'" onclick="startRenameQRCat('+i+')" title="Clicca per rinominare" style="flex:1;font-size:12px;font-weight:600;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .15s" onmouseover="this.style.background=\'#e8f0fe\'" onmouseout="this.style.background=\'\'">'+cat+'</span>'+
+      '<span style="font-size:10px;color:#aaa;background:#e8eaf0;padding:1px 6px;border-radius:8px;flex-shrink:0;white-space:nowrap">'+count+'</span>'+
+      '<button onclick="startRenameQRCat('+i+')" title="Rinomina" style="background:#f0f4ff;border:1px solid #c7d7fc;color:#1a73e8;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;line-height:1.4">✏️</button>'+
+      '<button onclick="deleteQRCat(&quot;'+catEsc+'&quot;)" title="'+xTitle+'" style="background:'+xBg+';border:1px solid '+xBorder+';color:'+xColor+';border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;font-weight:700;flex-shrink:0;line-height:1.4">✕</button>'+
     '</div>';
   }).join("");
+}
+
+function startRenameQRCat(idx){
+  const el = document.getElementById("cat-list-edit");
+  if(!el) return;
+  const card = el.children[idx];
+  if(!card) return;
+  const nameSpan = card.querySelector('span[data-cat-idx]');
+  if(!nameSpan) return;
+  const oldName = qrCategories[idx];
+  // Sostituisce lo span con un input inline
+  const inp = document.createElement("input");
+  inp.value = oldName;
+  inp.style.cssText = "flex:1;font-size:12px;font-weight:600;color:#1a1a2e;border:1.5px solid #1a73e8;border-radius:4px;padding:2px 6px;outline:none;font-family:inherit;background:#fff;min-width:0";
+  nameSpan.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  function commitRename(){
+    const newName = inp.value.trim();
+    if(!newName){ inp.focus(); return; }
+    if(newName !== oldName){
+      if(qrCategories.includes(newName) && newName !== oldName){
+        showToast("Categoria \""+newName+"\" già esistente","error");
+        inp.focus(); return;
+      }
+      // Aggiorna tutte le risposte che usano la vecchia cat
+      quickReplies.forEach(qr=>{
+        if(Array.isArray(qr.cats)) qr.cats = qr.cats.map(c=>c===oldName?newName:c);
+        if(qr.cat===oldName) qr.cat = newName;
+      });
+      qrCategories[idx] = newName;
+      showToast("✅ Categoria rinominata");
+    }
+    renderCatListEdit();
+  }
+  inp.addEventListener("blur", commitRename);
+  inp.addEventListener("keydown", e=>{
+    if(e.key==="Enter"){ e.preventDefault(); commitRename(); }
+    if(e.key==="Escape"){ renderCatListEdit(); }
+  });
 }
 
 function addQRCat(){
@@ -4510,8 +4556,17 @@ function deleteQRCat(cat){
     const qCats=Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""];
     return qCats.includes(cat);
   }).length;
-  if(count>0){ showToast("Non puoi eliminare \""+cat+"\" — ha "+count+" risposte assegnate","error"); return; }
-  if(!confirm("Eliminare la categoria \""+cat+"\"?")) return;
+  if(count>0){
+    if(!confirm("La categoria \""+cat+"\" ha "+count+" risposte assegnate.\n\nEliminandola, quelle risposte manterranno gli altri assegnamenti di categoria (o resteranno in \"Generale\" se non ne hanno altri).\n\nConfermi l'eliminazione?")) return;
+    // Rimuovi questa cat dalle risposte che la hanno
+    quickReplies.forEach(qr=>{
+      if(Array.isArray(qr.cats)) qr.cats=qr.cats.filter(c=>c!==cat);
+      if(qr.cat===cat) qr.cat=qr.cats&&qr.cats.length?qr.cats[0]:"💬 Generale";
+      if(!qr.cats||!qr.cats.length) qr.cats=["💬 Generale"];
+    });
+  } else {
+    if(!confirm("Eliminare la categoria \""+cat+"\"?")) return;
+  }
   qrCategories = qrCategories.filter(c=>c!==cat);
   renderCatListEdit();
 }
