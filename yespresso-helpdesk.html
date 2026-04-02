@@ -7670,6 +7670,16 @@ const FAB_PRODUCTS_DEFAULT = [
 // ── STATO GLOBALE ──────────────────────────────────────────────
 let fabProducts = JSON.parse(localStorage.getItem('fab_products')||'null') || FAB_PRODUCTS_DEFAULT;
 let fabOrdini = JSON.parse(localStorage.getItem('fab_ordini')||'[]');   // ordini fornitore
+
+// Versione cache — incrementa per forzare invalidazione dati vecchi
+const FAB_CACHE_VERSION = '2';
+if(localStorage.getItem('fab_cache_version')!==FAB_CACHE_VERSION){
+  localStorage.removeItem('fab_sales_cache');
+  localStorage.removeItem('fab_sales_cache_date');
+  localStorage.removeItem('fab_inventory');
+  localStorage.setItem('fab_cache_version', FAB_CACHE_VERSION);
+}
+
 let fabSalesCache = JSON.parse(localStorage.getItem('fab_sales_cache')||'null');
 let fabSalesCacheDate = localStorage.getItem('fab_sales_cache_date')||'';
 let fabInventoryCache = {};  // sku_shopify -> qty disponibile
@@ -7703,7 +7713,8 @@ function openFabbisognoPanel(){
       '<button class="fab-tab" data-tab="ordini" onclick="renderFabTab(\'ordini\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🛒 Ordini Fornitori</button>'+
       '<button class="fab-tab" data-tab="fabbisogno" onclick="renderFabTab(\'fabbisogno\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🔮 Piano Fabbisogno</button>'+
     '</div>'+
-    '<button onclick="refreshFabData()" style="margin-left:auto;background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna dati Shopify</button>';
+    '<button onclick="refreshFabData()" style="margin-left:auto;background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna dati Shopify</button>'+
+    '<button onclick="fabClearCache()" style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:8px 12px;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Svuota cache localStorage e ricarica">🗑 Svuota cache</button>';
   page.appendChild(hdr);
 
   var body=document.createElement('div');
@@ -7836,6 +7847,18 @@ function fabDeleteProduct(id){
 // ════════════════════════════════════════════════════════════════
 // SHOPIFY DATA FETCH
 // ════════════════════════════════════════════════════════════════
+function fabClearCache(){
+  localStorage.removeItem('fab_sales_cache');
+  localStorage.removeItem('fab_sales_cache_date');
+  localStorage.removeItem('fab_inventory');
+  localStorage.removeItem('fab_cache_version');
+  fabSalesCache=null;
+  fabSalesCacheDate='';
+  fabInventoryCache={};
+  showToast('🗑 Cache svuotata — clicca Aggiorna dati Shopify');
+  renderFabTab(_fabCurrentTab);
+}
+
 async function refreshFabData(){
   showToast('⏳ Caricamento inventario...','info');
   try{
@@ -7925,7 +7948,16 @@ async function refreshFabData(){
     localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
 
     var matchedOurSkus=fabProducts.filter(function(p){return sales[p.sku_shopify]&&sales[p.sku_shopify].length>0;}).length;
-    showToast('✅ '+allOrders.length+' ordini • '+matchedOurSkus+'/'+fabProducts.length+' prodotti con venduto netto');
+    // Log diagnostico: mostra dati reali del primo prodotto trovato
+    var firstWithSales=fabProducts.find(function(p){return sales[p.sku_shopify]&&sales[p.sku_shopify].length>0;});
+    var diagMsg='';
+    if(firstWithSales){
+      var s=sales[firstWithSales.sku_shopify];
+      var tot=s.reduce(function(a,x){return a+x.qty;},0);
+      var dateRange=s.length>0?(s[s.length-1].date+' → '+s[0].date):'';
+      diagMsg=' | '+firstWithSales.sku+': tot='+tot+' ('+s.length+' ordini, '+dateRange+')';
+    }
+    showToast('✅ '+allOrders.length+' ordini • '+matchedOurSkus+'/'+fabProducts.length+' prodotti'+diagMsg);
     renderFabTab(_fabCurrentTab);
   }catch(e){showToast('❌ Errore: '+e.message,'error');console.error('[FAB]',e);}
 }
