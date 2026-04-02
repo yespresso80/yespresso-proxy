@@ -4731,11 +4731,14 @@ function closeSettingsModal(){
 function renderQRList(){
   const body=document.getElementById("qr-modal-body");
   const searchVal=(document.getElementById("qr-search")?.value||"").toLowerCase().trim();
-  const filteredQR=searchVal?quickReplies.filter(q=>(q.name||"").toLowerCase().includes(searchVal)||(q.cat||"").toLowerCase().includes(searchVal)||(q.body||"").toLowerCase().includes(searchVal)):quickReplies;
+  const filteredQR=searchVal?quickReplies.filter(q=>{
+    const allCats=(Array.isArray(q.cats)&&q.cats.length?q.cats:[q.cat||""]).join(" ").toLowerCase();
+    return (q.name||"").toLowerCase().includes(searchVal)||allCats.includes(searchVal)||(q.body||"").toLowerCase().includes(searchVal);
+  }):quickReplies;
   if(!filteredQR.length){ body.innerHTML='<div style="color:#aaa;text-align:center;padding:20px">'+( searchVal?"Nessun risultato":"Nessuna risposta rapida. Aggiungine una!")+'</div>'; return; }
   
-  // Ordina in base alla modalità
-  let sorted=[...filteredQR].filter(q=>q&&q.cat&&q.name);
+  // Ordina in base alla modalità — accetta sia q.cat che q.cats
+  let sorted=[...filteredQR].filter(q=>q&&q.name&&(q.cat||(Array.isArray(q.cats)&&q.cats.length)));
   if(qrSortMode==="usage"){
     sorted.sort((a,b)=>(qrUsageCount[b.id]||0)-(qrUsageCount[a.id]||0));
   }
