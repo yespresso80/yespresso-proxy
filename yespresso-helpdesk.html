@@ -5819,19 +5819,22 @@ async function sendCreditNotificationTicket(email, customerName, orderName, amou
   try{
     const amountStr = amount.toFixed(2).replace('.',',');
     const subject = 'Creazione credito su Yespresso per reso/rientro ordine '+orderName;
-    const body = 'Buongiorno,\n\nle abbiamo creato un credito di '+amountStr+'\u20AC per l\'ordine rientrato/reso da utilizzare sul negozio yespresso.it\n\nPu\u00f2 utilizzarlo al suo prossimo ordine, entro 90 giorni. Per utilizzarlo aggiunga i prodotti al carrello, vada al checkout e poi in alto a destra trover\u00e0 un banner con scritto utilizzalo. Se il totale dell\'ordine \u00e8 superiore al credito per saldare la differenza scelga la modalit\u00e0 di pagamento desiderata. Se il totale dell\'ordine \u00e8 inferiore al credito, pu\u00f2 anche utilizzarlo parzialmente.\n\nPer qualsiasi dubbio non esiti a contattarci.\n\nA presto\nIl Team Yespresso';
-    await hdFetch('/v1/tickets',{
+    const body = 'Buongiorno,\n\nle abbiamo creato un credito di '+amountStr+'\u20AC per l\'ordine rientrato/reso da utilizzare sul negozio yespresso.it\n\nPu\u00f2 utilizzarlo al suo prossimo ordine, entro 90 giorni. Per utilizzarlo aggiunga i prodotti al carrello, vada al checkout e poi in alto a destra trover\u00e0 un banner con scritto "utilizzalo". Se il totale dell\'ordine \u00e8 superiore al credito, per saldare la differenza scelga la modalit\u00e0 di pagamento desiderata. Se il totale dell\'ordine \u00e8 inferiore al credito, pu\u00f2 anche utilizzarlo parzialmente.\n\nPer qualsiasi dubbio non esiti a contattarci.\n\nA presto\nIl Team Yespresso';
+    const payload = {
+      subject: subject,
+      requester: {email: email, name: customerName||email},
+      message: {text: body},
+      status: 'solved'
+    };
+    const res = await proxyFetch(PROXY+'/api/v1/tickets',{
       method:'POST',
-      body:JSON.stringify({
-        subject: subject,
-        message: body,
-        status: 'solved',
-        customer: {name: customerName||email, email: email}
-      })
+      headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},
+      body:JSON.stringify(payload)
     });
-    showToast('📧 Ticket notifica credito inviato a '+email);
+    if(!res.ok){const b=await res.text();throw new Error('Errore '+res.status+': '+b.substring(0,200));}
+    showToast('\uD83D\uDCE7 Ticket notifica credito inviato a '+email);
   }catch(e){
-    showToast('⚠️ Credito OK ma ticket non inviato: '+e.message,'error');
+    showToast('\u26A0\uFE0F Credito OK ma ticket non inviato: '+e.message,'error');
   }
 }
 
