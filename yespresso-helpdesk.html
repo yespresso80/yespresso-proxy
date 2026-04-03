@@ -8173,6 +8173,7 @@ function renderFabVenduto(body){
 }
 
 // ── MODAL IMPORT CSV ───────────────────────────────────────────
+var _fabScortaSicGiorni=14;
 function renderFabPiano(body){
   if(!fabSalesCache){
     body.innerHTML='<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">📊 Prima importa il venduto dalla tab <strong>Analisi Venduto</strong></div>';
@@ -8180,9 +8181,9 @@ function renderFabPiano(body){
   }
 
   var LEAD_DAYS=14;
-  var LEAD_WEEKS=2;
+  var SAFETY_DAYS=_fabScortaSicGiorni;
   var HORIZON_DAYS=60;
-  var HORIZON_WEEKS=Math.ceil(HORIZON_DAYS/7); // 9 settimane
+  var HORIZON_WEEKS=Math.ceil(HORIZON_DAYS/7);
   var today=new Date(); today.setHours(0,0,0,0);
 
   // Funzione per parsare date YYYY-MM-DD in ora locale (evita bug UTC+X)
@@ -8201,7 +8202,7 @@ function renderFabPiano(body){
 
     var ms=getMasterSize(p);
     var consumoSett=Math.ceil(avgDay*7);
-    var scortaSic=consumoSett*LEAD_WEEKS; // 2 settimane di consumo
+    var scortaSic=Math.ceil(consumoSett*(SAFETY_DAYS/7));
     var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
 
     // Mappa arrivi già ordinati per settimana
@@ -8351,6 +8352,11 @@ function renderFabPiano(body){
   var critici=prodPlans.filter(function(a){return a.runoutDay<LEAD_DAYS;});
   var attenzione=prodPlans.filter(function(a){return a.runoutDay>=LEAD_DAYS&&a.runoutDay<LEAD_DAYS*2;});
 
+  var _ssB='';
+  [7,14,21,28].forEach(function(d){
+    var act=d===SAFETY_DAYS;
+    _ssB+='<button onclick="_fabScortaSicGiorni='+d+';renderFabTab(\'fabbisogno\')" style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:'+(act?'#6d28d9':'transparent')+';color:'+(act?'#fff':'#888')+(act?';box-shadow:0 1px 3px rgba(0,0,0,.15)':'')+'">' +d+'gg</button>';
+  });
   var html='<div style="margin-bottom:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
     '<div>'+
       '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno</h2>'+
@@ -8358,6 +8364,10 @@ function renderFabPiano(body){
         '📌 Lead time <strong>14gg</strong> &nbsp;·&nbsp; Scorta sicurezza <strong>2 sett. di consumo</strong> &nbsp;·&nbsp; '+
         'Riordino <strong>settimanale</strong> &nbsp;·&nbsp; Orizzonte <strong>60 giorni</strong>'+
       '</div>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">'+
+      '<span style="font-size:11px;color:#555;font-weight:600">🛡 Scorta sicurezza:</span>'+
+      '<div style="display:flex;background:#f0f2f5;border-radius:8px;padding:2px;gap:1px">'+_ssB+'</div>'+
     '</div>'+
     '<button onclick="fabDebugArticolo()" style="flex-shrink:0;background:#f5f3ff;border:1.5px solid #c4b5fd;color:#6d28d9;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Debug articolo</button>'+
   '</div>';
@@ -8484,6 +8494,147 @@ function renderFabPiano(body){
 
   body.innerHTML=html;
 }
+
+function fabDebugArticolo(){
+  var nomi=fabProducts.map(function(p){return p.sku;});
+  var scelta=prompt('Inserisci il nome (o parte) dell\'articolo:\n\n'+nomi.slice(0,10).join('\n')+'\n...');
+  if(!scelta) return;
+  var p=fabProducts.find(function(x){return x.sku.toLowerCase().includes(scelta.toLowerCase());});
+  if(!p){alert('Articolo non trovato: '+scelta);return;}
+
+  var SAFETY_DAYS=_fabScortaSicGiorni, HORIZON_WEEKS=9;
+  var today=new Date(); today.setHours(0,0,0,0);
+  function parseDataLocale(s){
+    if(!s) return null;
+    var pt=s.substring(0,10).split('-');
+    return new Date(parseInt(pt[0]),parseInt(pt[1])-1,parseInt(pt[2]));
+  }
+  function fmtD(d){return d?d.toLocaleDateString('it-IT'):'—';}
+
+  var ms=getMasterSize(p);
+  var avgDay=fabDailyAvg(p.sku_shopify,7);
+  var consumoSett=Math.ceil(avgDay*7);
+  var scortaSic=Math.ceil(consumoSett*(SAFETY_DAYS/7));
+  var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
+
+  var lines=[];
+  lines.push('DATI BASE');
+  lines.push('  Articolo:          '+p.sku);
+  lines.push('  Venduto 7gg:       '+Math.round(avgDay*7)+' pz  |  Media: '+avgDay.toFixed(2)+' pz/gg');
+  lines.push('  Consumo sett.:     '+consumoSett+' pz');
+  lines.push('  Inventario:        '+inv+' pz');
+  lines.push('  Scorta sicurezza:  '+scortaSic+' pz  ('+LEAD_WEEKS+' sett.)');
+  lines.push('  Ord. minimo:       '+p.ord_min+' pz  |  Multiplo: '+(ms>1?ms+' pz/master':p.multiplo+' pz'));
+  lines.push('');
+  lines.push('ORDINI APERTI IN ARRIVO');
+
+  var arriviGia={};
+  var nOrd=0;
+  fabOrdini.forEach(function(ord){
+    if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+    var dc=parseDataLocale(ord.data_consegna_prevista);
+    if(!dc) return;
+    var diff=Math.round((dc-today)/86400000);
+    if(diff<0) diff=0;
+    var wi=Math.floor(diff/7);
+    if(wi>HORIZON_WEEKS+LEAD_WEEKS) return;
+    ord.righe.forEach(function(r){
+      if(r.sku_shopify!==p.sku_shopify) return;
+      var res=r.qty_ordinata-(r.qty_ricevuta||0);
+      if(res<=0) return;
+      arriviGia[wi]=(arriviGia[wi]||0)+res;
+      lines.push('  S.'+wi+' ('+fmtD(dc)+'): +'+res+' pz  ['+ord.fornitore+' del '+ord.data_ordine+']');
+      nOrd++;
+    });
+  });
+  if(!nOrd) lines.push('  (nessun ordine aperto)');
+  lines.push('');
+  lines.push('SIMULAZIONE SETTIMANALE  [ord=ordinato, cons=consumo, scF=scorta fine sett., scP=scorta proiettata +14gg]');
+  lines.push('');
+
+  // Replica PASS1 urgente
+  var arriviGio={};
+  Object.keys(arriviGia).forEach(function(wi){
+    arriviGio[parseInt(wi)*7]=(arriviGio[parseInt(wi)*7]||0)+arriviGia[wi];
+  });
+  var scGio=inv, buchoG=-1;
+  for(var g=0;g<14;g++){
+    scGio+=(arriviGio[g]||0)-avgDay;
+    if(scGio<0&&buchoG<0) buchoG=g;
+  }
+  var nuoviOrdini={};
+  if(buchoG>=0){
+    var scBuco=inv;
+    for(var g2=0;g2<Math.max(1,buchoG);g2++) scBuco+=(arriviGio[g2]||0)-avgDay;
+    var defUr=scortaSic-scBuco;
+    var qtyUr=ms>1?Math.ceil(defUr/ms)*ms:(p.multiplo>1?Math.ceil(defUr/p.multiplo)*p.multiplo:Math.ceil(defUr));
+    qtyUr=Math.max(qtyUr,p.ord_min);
+    var wiUr=Math.floor(Math.max(1,buchoG)/7);
+    nuoviOrdini[wiUr]=(nuoviOrdini[wiUr]||0)+qtyUr;
+    arriviGia[wiUr]=(arriviGia[wiUr]||0)+qtyUr;
+    lines.push('  !! URGENTE: buco al gg '+buchoG+' => ordine '+qtyUr+' pz consegna S.'+wiUr);
+    lines.push('');
+  }
+
+  var scorta=inv;
+  for(var w=0;w<HORIZON_WEEKS;w++){
+    var aG=arriviGia[w]||0;
+    var aN=nuoviOrdini[w]||0;
+    scorta=scorta+aG+aN-consumoSett;
+    var scP=scorta;
+    for(var fw=w+1;fw<=w+LEAD_WEEKS;fw++) scP+=(arriviGia[fw]||0)+(nuoviOrdini[fw]||0)-consumoSett;
+    var wDate=new Date(today.getTime()+w*7*86400000);
+    var ordStr='';
+    if(scP<scortaSic){
+      var def=scortaSic-scP;
+      var qty=ms>1?Math.ceil(def/ms)*ms:(p.multiplo>1?Math.ceil(def/p.multiplo)*p.multiplo:Math.ceil(def));
+      qty=Math.max(qty,p.ord_min);
+      var wc=w+LEAD_WEEKS;
+      nuoviOrdini[wc]=(nuoviOrdini[wc]||0)+qty;
+      arriviGia[wc]=(arriviGia[wc]||0)+qty;
+      var consData=new Date(today.getTime()+wc*7*86400000);
+      ordStr='  => ORDINE '+qty+'pz cons.'+fmtD(consData)+'  (deficit='+Math.round(def)+')';
+    }
+    var extras='';
+    if(aG>0) extras+=' +'+aG+'pz(già ord.)';
+    if(aN>0) extras+=' +'+aN+'pz(nuovo)';
+    var warn=scorta<0?'  NEGATIVA!':scorta<scortaSic?'  sotto soglia':'';
+    var warnP=scP<scortaSic?'  scP SOTTO SOGLIA ('+Math.round(scP)+')':'';
+    lines.push('  S.'+(w+1)+' '+fmtD(wDate)+'  scF='+Math.round(scorta)+warn+extras+warnP+ordStr);
+  }
+
+  lines.push('');
+  lines.push('Fine debug.');
+
+  var existing=document.getElementById('fab-debug-modal');
+  if(existing) existing.remove();
+  var modal=document.createElement('div');
+  modal.id='fab-debug-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  var inner=document.createElement('div');
+  inner.style.cssText='background:#1e1e2e;border-radius:12px;width:820px;max-width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.6)';
+  inner.innerHTML=
+    '<div style="padding:12px 18px;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#1e1e2e;z-index:1">'+
+      '<span style="font-size:14px;font-weight:700;color:#c4b5fd">🔍 Debug: '+p.sku+'</span>'+
+      '<button id="fab-debug-close" style="background:#444;border:none;color:#aaa;font-size:18px;width:28px;height:28px;border-radius:6px;cursor:pointer">×</button>'+
+    '</div>'+
+    '<pre id="fab-debug-pre" style="padding:16px 20px;font-size:12px;line-height:1.75;color:#e2e8f0;font-family:monospace;white-space:pre-wrap;margin:0"></pre>';
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+  document.getElementById('fab-debug-close').onclick=function(){modal.remove();};
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+
+  // Colora le righe
+  var pre=document.getElementById('fab-debug-pre');
+  pre.innerHTML=lines.map(function(l){
+    if(l.includes('=> ORDINE')) return '<span style="color:#4ade80;font-weight:700">'+l+'</span>';
+    if(l.includes('!! URGENTE')||l.includes('NEGATIVA')) return '<span style="color:#f87171;font-weight:700">'+l+'</span>';
+    if(l.includes('sotto soglia')||l.includes('SOTTO SOGLIA')) return '<span style="color:#fbbf24">'+l+'</span>';
+    if(l==='DATI BASE'||l==='ORDINI APERTI IN ARRIVO'||l.startsWith('SIMULAZIONE')) return '<span style="color:#818cf8;font-weight:700">'+l+'</span>';
+    return l;
+  }).join('\n');
+}
+
 
 function fabDiagnosticSKU(){
   if(!fabSalesCache){showToast('Prima aggiorna i dati Shopify','error');return;}
