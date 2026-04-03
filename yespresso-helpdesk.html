@@ -8503,7 +8503,7 @@ function fabImportNoireExcel(){
       '</div>'+
       '<div style="padding:12px 22px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px">'+
         '<button onclick="document.getElementById(\'fab-noire-modal\').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
-        '<button id="noire-confirm-btn" onclick="fabConfirmNoireImport()" style="padding:8px 20px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:none">✅ Applica modifiche</button>'+
+        '<button id="noire-confirm-btn" onclick="fabConfirmNoireImport()" disabled style="padding:8px 20px;background:#93c5fd;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:not-allowed;font-family:inherit">✅ Applica modifiche</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(modal);
@@ -8798,9 +8798,12 @@ function noireRenderPreview(changes,notInSystem,excelRows,matched){
 
   prevEl.innerHTML=html;
 
-  // Mostra bottone conferma solo se ci sono modifiche o nuovi ordini
-  if(btn&&(changes.length||notInSystem.filter(function(r){return r.prod;}).length)){
-    btn.style.display='inline-block';
+  // Abilita bottone conferma se ci sono modifiche o nuovi ordini con prodotto trovato
+  var hasChanges=changes.length>0||notInSystem.filter(function(r){return r.prod;}).length>0;
+  if(btn){
+    btn.disabled=!hasChanges;
+    btn.style.background=hasChanges?'#1a73e8':'#93c5fd';
+    btn.style.cursor=hasChanges?'pointer':'not-allowed';
   }
 }
 
