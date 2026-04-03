@@ -7662,8 +7662,8 @@ const FAB_PRODUCTS_DEFAULT = [
 ];
 
 // ── STATO GLOBALE ──────────────────────────────────────────────
-let fabProducts = FAB_PRODUCTS_DEFAULT;
-let fabOrdini = [];   // ordini fornitore — caricati dal server
+var fabProducts = FAB_PRODUCTS_DEFAULT;
+var fabOrdini = [];   // ordini fornitore — caricati dal server
 
 // Cache locale solo per dati non condivisi (venduto, inventario)
 const FAB_CACHE_VERSION = '3';
@@ -7674,11 +7674,11 @@ if(localStorage.getItem('fab_cache_version')!==FAB_CACHE_VERSION){
   localStorage.setItem('fab_cache_version', FAB_CACHE_VERSION);
 }
 
-let fabSalesCache = JSON.parse(localStorage.getItem('fab_sales_cache')||'null');
-let fabSalesCacheDate = localStorage.getItem('fab_sales_cache_date')||'';
-let fabInventoryCache = {};
-let _fabCurrentTab = 'struttura';
-let _fabDataLoaded = false; // flag per evitare doppie chiamate
+var fabSalesCache = JSON.parse(localStorage.getItem('fab_sales_cache')||'null');
+var fabSalesCacheDate = localStorage.getItem('fab_sales_cache_date')||'';
+var fabInventoryCache = {};
+var _fabCurrentTab = 'struttura';
+var _fabDataLoaded = false; // flag per evitare doppie chiamate
 
 // ── SAVE/LOAD DAL SERVER ───────────────────────────────────────
 async function saveFabState(){
