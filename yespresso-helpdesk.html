@@ -8958,6 +8958,190 @@ function fabExportVenduto(){
 // ════════════════════════════════════════════════════════════════
 // TAB 3 — ORDINI FORNITORI
 // ════════════════════════════════════════════════════════════════
+// ── ORDINI INVIATI ────────────────────────────────────────────────
+function openOrdiniInviati(){
+  var fab=document.getElementById('fab-fullpage');
+  if(fab) fab.style.display='none';
+  var ex=document.getElementById('ordini-inviati-page');
+  if(ex){ex.style.display='flex';renderOrdiniInviati();return;}
+  var page=document.createElement('div');
+  page.id='ordini-inviati-page';
+  page.style.cssText='position:fixed;inset:0;background:#f5f7fa;z-index:9700;display:flex;flex-direction:column;overflow:hidden;font-family:inherit';
+  var hdr=document.createElement('div');
+  hdr.style.cssText='flex-shrink:0;padding:12px 24px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06)';
+  hdr.innerHTML=
+    '<button onclick="document.getElementById(\'ordini-inviati-page\').style.display=\'none\';var f=document.getElementById(\'fab-fullpage\');if(f){f.style.display=\'flex\';renderFabTab(\'ordini\');}" style="background:#f0f2f5;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit">← Torna agli ordini</button>'+
+    '<span style="font-size:18px;font-weight:700;color:#92400e">📋 Ordini Inviati</span>'+
+    '<span style="font-size:12px;color:#aaa">Archivio di tutti gli ordini inviati ai fornitori</span>';
+  page.appendChild(hdr);
+  var body=document.createElement('div');
+  body.id='ordini-inviati-body';
+  body.style.cssText='flex:1;overflow-y:auto;padding:20px 24px';
+  page.appendChild(body);
+  document.body.appendChild(page);
+  renderOrdiniInviati();
+}
+
+function renderOrdiniInviati(){
+  var body=document.getElementById('ordini-inviati-body');
+  if(!body) return;
+  if(!fabOrdini.length){
+    body.innerHTML='<div style="text-align:center;padding:60px;color:#aaa">Nessun ordine registrato.</div>';
+    return;
+  }
+  var fornitori=[...new Set(fabOrdini.map(function(o){return o.fornitore;}))].sort();
+  var html='';
+  fornitori.forEach(function(forn){
+    var ords=fabOrdini.filter(function(o){return o.fornitore===forn;});
+    if(!ords.length) return;
+    // Ordina per data ordine decrescente
+    ords=ords.slice().sort(function(a,b){return (b.data_ordine||'').localeCompare(a.data_ordine||'');});
+    var statoColor={'attesa':'#1a73e8','parziale':'#e67e22','ricevuto':'#16a34a','annullato':'#888'};
+    var statoLabel={'attesa':'⏳ In attesa','parziale':'📦 Parziale','ricevuto':'✅ Ricevuto','annullato':'❌ Annullato'};
+    html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;margin-bottom:16px">'+
+      '<div style="background:#fff8f0;padding:10px 16px;font-size:13px;font-weight:700;color:#92400e;border-bottom:1px solid #fde68a">'+
+        '🏭 '+forn+' — '+ords.length+' ordini'+
+      '</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:12px">'+
+      '<thead><tr style="background:#faf8ff;font-size:10px;font-weight:700;color:#888;text-transform:uppercase">'+
+        '<th style="padding:8px 14px;text-align:left">Data ordine</th>'+
+        '<th style="padding:8px 12px;text-align:left">Consegna prev.</th>'+
+        '<th style="padding:8px 12px;text-align:left">Stato</th>'+
+        '<th style="padding:8px 12px;text-align:left">Prodotti</th>'+
+        '<th style="padding:8px 12px;text-align:right">Tot. pz</th>'+
+        '<th style="padding:8px 12px;text-align:center">Azioni</th>'+
+      '</tr></thead><tbody>';
+    ords.forEach(function(ord,i){
+      var totPz=ord.righe.reduce(function(s,r){return s+(r.qty_ordinata||0);},0);
+      var nProd=ord.righe.filter(function(r){return r.qty_ordinata>0;}).length;
+      var sc=statoColor[ord.stato]||'#888';
+      var sl=statoLabel[ord.stato]||ord.stato;
+      html+='<tr style="border-top:1px solid #f4f5f7;'+(i%2===1?'background:#faf8ff':'')+'">'+
+        '<td style="padding:8px 14px;font-weight:600;color:#1a1a2e">'+ord.data_ordine+'</td>'+
+        '<td style="padding:8px 12px;color:'+(ord.data_consegna_prevista?'#6d28d9':'#aaa')+'">'+
+          (ord.data_consegna_prevista?noireFmtDateDisplay(ord.data_consegna_prevista):'—')+
+        '</td>'+
+        '<td style="padding:8px 12px"><span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px">'+sl+'</span></td>'+
+        '<td style="padding:8px 12px;color:#555">'+nProd+' art.</td>'+
+        '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1a1a2e">'+totPz.toLocaleString('it-IT')+'</td>'+
+        '<td style="padding:8px 12px;text-align:center;display:flex;gap:6px;justify-content:center">'+
+          '<button onclick="apriDettaglioOrdine(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">👁 Apri</button>'+
+          '<button onclick="scaricaPDFOrdine(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⬇ PDF</button>'+
+        '</td>'+
+      '</tr>';
+    });
+    html+='</tbody></table></div>';
+  });
+  body.innerHTML=html;
+}
+
+function apriDettaglioOrdine(id){
+  var ord=fabOrdini.find(function(o){return String(o.id)===String(id);});
+  if(!ord) return;
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10800;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  var statoLabel={'attesa':'⏳ In attesa','parziale':'📦 Parz. ricevuto','ricevuto':'✅ Ricevuto','annullato':'❌ Annullato'};
+  var righeHtml=ord.righe.filter(function(r){return r.qty_ordinata>0;}).map(function(r){
+    var p=fabProducts.find(function(x){return x.sku_shopify===r.sku_shopify;})||{};
+    var ms=getMasterSize(p);
+    var ordL=ms>1?Math.ceil(r.qty_ordinata/ms)+'m ('+r.qty_ordinata+'pz)':r.qty_ordinata+' pz';
+    var ricL=ms>1?Math.ceil((r.qty_ricevuta||0)/ms)+'m (':''+(r.qty_ricevuta||0)+(ms>1?'pz)':' pz');
+    var res=r.qty_ordinata-(r.qty_ricevuta||0);
+    return '<tr style="border-bottom:1px solid #f4f5f7">'+
+      '<td style="padding:8px 12px;font-weight:600;color:#1a1a2e">'+r.sku+'</td>'+
+      '<td style="padding:8px 10px;text-align:right">'+ordL+'</td>'+
+      '<td style="padding:8px 10px;text-align:right;color:#16a34a">'+ricL+'</td>'+
+      '<td style="padding:8px 10px;text-align:right;font-weight:700;color:'+(res>0?'#e67e22':'#16a34a')+'">'+res+' pz</td>'+
+    '</tr>';
+  }).join('');
+  var totPz=ord.righe.reduce(function(s,r){return s+(r.qty_ordinata||0);},0);
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:620px;max-width:98vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)">'+
+    '<div style="flex-shrink:0;padding:14px 20px;background:#fff8f0;border-bottom:1px solid #fde68a;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between">'+
+      '<div>'+
+        '<div style="font-size:15px;font-weight:700;color:#92400e">📋 '+ord.fornitore+'</div>'+
+        '<div style="font-size:12px;color:#888;margin-top:2px">'+
+          'Ordine del '+ord.data_ordine+
+          (ord.data_consegna_prevista?' · Consegna: '+noireFmtDateDisplay(ord.data_consegna_prevista):'')+
+          ' · '+(statoLabel[ord.stato]||ord.stato)+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;align-items:center">'+
+        '<button onclick="scaricaPDFOrdine(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⬇ PDF</button>'+
+        '<button id="ord-det-close" style="background:#f0f2f5;border:none;color:#555;font-size:18px;width:28px;height:28px;border-radius:6px;cursor:pointer">×</button>'+
+      '</div>'+
+    '</div>'+
+    '<div style="flex:1;overflow-y:auto;min-height:0">'+
+      '<table style="width:100%;border-collapse:collapse;font-size:13px">'+
+      '<thead><tr style="background:#f8f9fc;font-size:10px;font-weight:700;color:#888;text-transform:uppercase">'+
+        '<th style="padding:8px 12px;text-align:left">Prodotto</th>'+
+        '<th style="padding:8px 10px;text-align:right">Ordinato</th>'+
+        '<th style="padding:8px 10px;text-align:right">Ricevuto</th>'+
+        '<th style="padding:8px 10px;text-align:right">Residuo</th>'+
+      '</tr></thead><tbody>'+righeHtml+'</tbody>'+
+      '</table>'+
+    '</div>'+
+    '<div style="flex-shrink:0;padding:10px 20px;border-top:1px solid #f0f2f5;background:#f8f9fc;border-radius:0 0 12px 12px;display:flex;justify-content:space-between;align-items:center">'+
+      '<span style="font-size:12px;font-weight:700;color:#555">Totale: '+totPz.toLocaleString('it-IT')+' pz</span>'+
+      '<span style="font-size:12px;color:#aaa">'+(ord.note?'Note: '+ord.note:'')+'</span>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(modal);
+  document.getElementById('ord-det-close').onclick=function(){modal.remove();};
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+}
+
+function scaricaPDFOrdine(id){
+  var ord=fabOrdini.find(function(o){return String(o.id)===String(id);});
+  if(!ord) return;
+  var statoLabel={'attesa':'In attesa','parziale':'Parzialmente ricevuto','ricevuto':'Ricevuto','annullato':'Annullato'};
+  var righe=ord.righe.filter(function(r){return r.qty_ordinata>0;});
+  var totPz=righe.reduce(function(s,r){return s+(r.qty_ordinata||0);},0);
+  var righeHtml=righe.map(function(r){
+    var p=fabProducts.find(function(x){return x.sku_shopify===r.sku_shopify;})||{};
+    var ms=getMasterSize(p);
+    var ordL=ms>1?Math.ceil(r.qty_ordinata/ms)+' master ('+r.qty_ordinata+' pz)':r.qty_ordinata+' pz';
+    return '<tr><td style="padding:7px 10px;border-bottom:1px solid #e8eaf0">'+r.sku+'</td>'+
+      '<td style="padding:7px 10px;border-bottom:1px solid #e8eaf0;text-align:center">'+ordL+'</td>'+
+      '<td style="padding:7px 10px;border-bottom:1px solid #e8eaf0;text-align:center">'+(r.qty_ricevuta||0)+' pz</td>'+
+    '</tr>';
+  }).join('');
+  var html='<!DOCTYPE html><html><head><meta charset="utf-8">'+
+    '<title>Ordine '+ord.fornitore+' - '+ord.data_ordine+'</title>'+
+    '<style>'+
+      'body{font-family:Arial,sans-serif;margin:0;padding:30px;color:#1a1a2e;font-size:13px}'+
+      'h1{font-size:18px;color:#92400e;margin:0 0 4px}'+
+      '.meta{font-size:12px;color:#666;margin-bottom:20px}'+
+      'table{width:100%;border-collapse:collapse;margin-top:16px}'+
+      'thead tr{background:#f5f3ff}'+
+      'th{padding:8px 10px;text-align:left;font-weight:700;font-size:11px;text-transform:uppercase;color:#6d28d9;border-bottom:2px solid #e0d9ff}'+
+      'td{font-size:13px}'+
+      '.total{margin-top:16px;padding:10px;background:#f8f9fc;border-radius:6px;font-weight:700;text-align:right}'+
+      '@media print{body{padding:15px}button{display:none}}'+
+    '</style></head><body>'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+      '<div><h1>Ordine a: '+ord.fornitore+'</h1>'+
+        '<div class="meta">'+
+          'Data ordine: <strong>'+ord.data_ordine+'</strong>'+
+          (ord.data_consegna_prevista?' &nbsp;·&nbsp; Consegna prevista: <strong>'+noireFmtDateDisplay(ord.data_consegna_prevista)+'</strong>':'')+
+          ' &nbsp;·&nbsp; Stato: <strong>'+(statoLabel[ord.stato]||ord.stato)+'</strong>'+
+          (ord.note?' &nbsp;·&nbsp; Note: '+ord.note:'')+
+        '</div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:#aaa">YESPRESSO</div>'+
+    '</div>'+
+    '<table><thead><tr>'+
+      '<th>Prodotto</th><th style="text-align:center">Quantità ordinata</th><th style="text-align:center">Quantità ricevuta</th>'+
+    '</tr></thead><tbody>'+righeHtml+'</tbody></table>'+
+    '<div class="total">Totale: '+totPz.toLocaleString('it-IT')+' pz &nbsp;·&nbsp; '+righe.length+' prodotti</div>'+
+    '<div style="margin-top:30px;font-size:11px;color:#aaa;text-align:center">Documento generato da Yespresso Helpdesk · '+new Date().toLocaleString('it-IT')+'</div>'+
+    '<div style="margin-top:20px;text-align:right"><button onclick="window.print()" style="padding:8px 18px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">Stampa / Salva PDF</button></div>'+
+  '</body></html>';
+  var w=window.open('','_blank','width=800,height=700');
+  if(w){w.document.write(html);w.document.close();}
+  else{showToast('Pop-up bloccati — abilita i pop-up per scaricare il PDF','error');}
+}
+
+
 var _fabOrdiniView='lista';
 function fabSetOrdiniView(v){_fabOrdiniView=v;renderFabTab('ordini');}
 
@@ -8982,6 +9166,7 @@ function renderFabOrdini(body){
     '</div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="fabImportNoireExcel()" style="background:#e8f0fe;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📊 Importa Excel Noire</button>'+
+      '<button onclick="openOrdiniInviati()" style="background:#fff8f0;border:1.5px solid #f59e0b;color:#92400e;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📋 Ordini Inviati</button>'+
       '<button onclick="openRicezioneMerce()" style="background:#16a34a;border:none;border-radius:8px;padding:8px 14px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📦 Ricevi Merce</button>'+
       '<button onclick="fabNewOrdine()" style="background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo ordine</button>'+
     '</div>'+
@@ -9225,7 +9410,7 @@ function _openOrdineModal(ord){
   }
 
   var righeHtml=buildRigheHtml(ord.fornitore);
-  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:640px;max-width:96vw;height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:640px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
     '<div style="flex-shrink:0;padding:16px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#6d28d9;border-radius:12px 12px 0 0">'+(isNew?'+ Nuovo ordine fornitore':'✏️ Modifica ordine')+'</div>'+
     '<div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;min-height:0">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
