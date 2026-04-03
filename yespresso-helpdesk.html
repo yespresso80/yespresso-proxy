@@ -8123,23 +8123,59 @@ function renderFabPiano(body){
     });
 
     // SIMULAZIONE: settimana per settimana (w=0 è questa settimana)
-    // scorta = inventario attuale
-    // ogni settimana: scorta += arriviGia[w] + nuoviOrdini[w] - consumoSett
-    // prima di ogni settimana: guarda la scorta proiettata tra LEAD_WEEKS sett.
-    // se scende sotto scortaSic → genera ordine con consegna in w+LEAD_WEEKS
     var scorta=inv;
-    var nuoviOrdini={}; // wi_consegna → qty
+    var nuoviOrdini={}; // wi_consegna → {qty, urgente, giorniConsegna}
     var settimane=[];
 
+    // ── PASS 1: verifica buchi URGENTI entro il lead time (scorta < 0) ──
+    // Simula giorno per giorno i prossimi LEAD_DAYS per trovare buchi reali
+    var scortaGio=inv;
+    var consumoGio=avgDay;
+    var buchoUrgenteGiorno=-1; // giorno in cui la scorta va sotto zero
+    var arriviGiaOrdinatiGio={}; // giorno → qty (dagli ordini aperti)
+    // Converti arriviGia (per settimana) in arrivi per giorno
+    Object.keys(arriviGia).forEach(function(wi){
+      var giorno=parseInt(wi)*7;
+      arriviGiaOrdinatiGio[giorno]=(arriviGiaOrdinatiGio[giorno]||0)+arriviGia[wi];
+    });
+    for(var g=0;g<LEAD_DAYS;g++){
+      scortaGio+=(arriviGiaOrdinatiGio[g]||0)-consumoGio;
+      if(scortaGio<0&&buchoUrgenteGiorno<0){
+        buchoUrgenteGiorno=g; // primo giorno con scorta negativa
+      }
+    }
+    // Se c'è un buco urgente → crea ordine con consegna al giorno del buco
+    // (o il prima possibile, minimo 1 giorno)
+    if(buchoUrgenteGiorno>=0){
+      var giorniConsegnaUrgente=Math.max(1,buchoUrgenteGiorno);
+      // Calcola deficit al momento del buco
+      var scortaAlBuco=inv;
+      for(var g2=0;g2<giorniConsegnaUrgente;g2++){
+        scortaAlBuco+=(arriviGiaOrdinatiGio[g2]||0)-consumoGio;
+      }
+      var deficitUrgente=scortaSic-scortaAlBuco; // porta almeno a scorta sicurezza
+      var qtyUrgente;
+      if(ms>1) qtyUrgente=Math.ceil(deficitUrgente/ms)*ms;
+      else if(p.multiplo>1) qtyUrgente=Math.ceil(deficitUrgente/p.multiplo)*p.multiplo;
+      else qtyUrgente=Math.ceil(deficitUrgente);
+      qtyUrgente=Math.max(qtyUrgente,p.ord_min);
+      // Settimana di consegna urgente (arrotonda al piano settimana)
+      var wi_urgente=Math.floor(giorniConsegnaUrgente/7);
+      nuoviOrdini[wi_urgente]=(nuoviOrdini[wi_urgente]||0)+qtyUrgente;
+      arriviGia[wi_urgente]=(arriviGia[wi_urgente]||0)+qtyUrgente;
+      // Segna come urgente
+      nuoviOrdini['_urgente_'+wi_urgente]=true;
+      nuoviOrdini['_giorniConsegna_'+wi_urgente]=giorniConsegnaUrgente;
+    }
+
+    // ── PASS 2: pianificazione normale settimana per settimana ──────
     for(var w=0;w<=HORIZON_WEEKS+LEAD_WEEKS;w++){
-      // Aggiunge arrivi di questa settimana PRIMA di consumare
       var arrivoGia=arriviGia[w]||0;
       var arrivoNuovo=nuoviOrdini[w]||0;
       scorta=scorta+arrivoGia+arrivoNuovo-consumoSett;
 
       if(w<HORIZON_WEEKS){
-        // Calcola scorta proiettata al momento della consegna (tra LEAD_WEEKS sett.)
-        // = scorta attuale - consumo lead time + arrivi già noti nel lead time
+        // Scorta proiettata tra LEAD_WEEKS settimane
         var scortaAllaConsegna=scorta;
         for(var fw=w+1;fw<=w+LEAD_WEEKS;fw++){
           scortaAllaConsegna+=(arriviGia[fw]||0)+(nuoviOrdini[fw]||0)-consumoSett;
@@ -8147,53 +8183,62 @@ function renderFabPiano(body){
 
         if(scortaAllaConsegna<scortaSic){
           var deficit=scortaSic-scortaAllaConsegna;
-          // Arrotonda al multiplo/master e applica ord_min
           var qtyUnita;
-          if(ms>1){
-            qtyUnita=Math.ceil(deficit/ms)*ms;
-          } else if(p.multiplo>1){
-            qtyUnita=Math.ceil(deficit/p.multiplo)*p.multiplo;
-          } else {
-            qtyUnita=Math.ceil(deficit);
-          }
+          if(ms>1) qtyUnita=Math.ceil(deficit/ms)*ms;
+          else if(p.multiplo>1) qtyUnita=Math.ceil(deficit/p.multiplo)*p.multiplo;
+          else qtyUnita=Math.ceil(deficit);
           qtyUnita=Math.max(qtyUnita,p.ord_min);
 
           var wi_c=w+LEAD_WEEKS;
           nuoviOrdini[wi_c]=(nuoviOrdini[wi_c]||0)+qtyUnita;
-          // Registra come arrivo futuro per influenzare settimane successive
           arriviGia[wi_c]=(arriviGia[wi_c]||0)+qtyUnita;
         }
 
-        // Registra per tabella proiezione
         var wkDate=new Date(today);wkDate.setDate(today.getDate()+w*7);
-        var ordineQuestaSett=nuoviOrdini[w+LEAD_WEEKS]||0;
         settimane.push({
           w:w,wkDate:wkDate,
           scorta:scorta,consumo:consumoSett,
           arrivoGia:arrivoGia[w]||0,
-          ordinato:ordineQuestaSett,
+          ordinato:nuoviOrdini[w+LEAD_WEEKS]||0,
+          ordinatoUrgente:nuoviOrdini[w]&&nuoviOrdini['_urgente_'+w]?nuoviOrdini[w]:0,
           scortaSic:scortaSic
         });
       }
     }
 
-    // Costruisci lista ordini da emettere (settimana di emissione → dati ordine)
+    // Costruisci lista ordini da emettere
     var ordiniDaEmettere=[];
+    // Prima aggiungi gli ordini urgenti (consegna prima di LEAD_WEEKS)
+    for(var wu=0;wu<LEAD_WEEKS;wu++){
+      var qtyU=nuoviOrdini[wu]&&nuoviOrdini['_urgente_'+wu]?nuoviOrdini[wu]:0;
+      if(qtyU<=0) continue;
+      var giorniC=nuoviOrdini['_giorniConsegna_'+wu]||wu*7;
+      var dataConsUrgente=new Date(today);dataConsUrgente.setDate(today.getDate()+giorniC);
+      var qmU=ms>1?Math.ceil(qtyU/ms):null;
+      ordiniDaEmettere.push({
+        wo:-1, // urgente = da inviare oggi
+        urgente:true,
+        dataOrdine:new Date(today),
+        dataConsegna:dataConsUrgente,
+        giorniConsegna:giorniC,
+        qty:qtyU,
+        qm:qmU,
+        label:ms>1?(qmU+' master ('+qtyU+' pz)'):qtyU+' pz'
+      });
+    }
+    // Poi aggiungi gli ordini normali (consegna da LEAD_WEEKS in poi)
     for(var wo=0;wo<HORIZON_WEEKS;wo++){
       var wc=wo+LEAD_WEEKS;
       var qty=nuoviOrdini[wc]||0;
       if(qty===0) continue;
-      // Sottrai eventuali arrivi già presenti in quella settimana di consegna
-      // (già conteggiati in arriviGia originali, non nei nuoviOrdini)
       var dataOrdine=new Date(today);dataOrdine.setDate(today.getDate()+wo*7);
       var dataConsegna=new Date(today);dataConsegna.setDate(today.getDate()+wc*7);
       var qm=ms>1?Math.ceil(qty/ms):null;
       ordiniDaEmettere.push({
-        wo:wo,
+        wo:wo,urgente:false,
         dataOrdine:dataOrdine,
         dataConsegna:dataConsegna,
-        qty:qty,
-        qm:qm,
+        qty:qty,qm:qm,
         label:ms>1?(qm+' master ('+qty+' pz)'):qty+' pz'
       });
     }
@@ -8235,15 +8280,20 @@ function renderFabPiano(body){
     if(!prodsForn.length) return;
 
     // Raccogli tutte le settimane di emissione con almeno un prodotto
-    var settMap={}; // wo → {dataOrdine, dataConsegna, items[]}
+    var settMap={}; // key → {dataOrdine, dataConsegna, giorniConsegna, items[]}
     prodsForn.forEach(function(a){
       a.ordiniDaEmettere.forEach(function(o){
-        if(!settMap[o.wo]) settMap[o.wo]={dataOrdine:o.dataOrdine,dataConsegna:o.dataConsegna,items:[]};
-        settMap[o.wo].items.push({p:a.p,o:o,plan:a});
+        var key=o.urgente?('U'+o.giorniConsegna):String(o.wo);
+        if(!settMap[key]) settMap[key]={dataOrdine:o.dataOrdine,dataConsegna:o.dataConsegna,giorniConsegna:o.giorniConsegna||null,urgente:o.urgente,wo:o.wo,items:[]};
+        settMap[key].items.push({p:a.p,o:o,plan:a});
       });
     });
 
-    var settKeys=Object.keys(settMap).map(Number).sort(function(a,b){return a-b;});
+    var settKeys=Object.keys(settMap).sort(function(a,b){
+      var au=settMap[a].urgente, bu=settMap[b].urgente;
+      if(au&&!bu) return -1; if(!au&&bu) return 1;
+      return settMap[a].wo-settMap[b].wo;
+    });
     if(!settKeys.length) return;
 
     html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;margin-bottom:14px;overflow:hidden">'+
@@ -8252,19 +8302,26 @@ function renderFabPiano(body){
 
     settKeys.forEach(function(k){
       var sg=settMap[k];
-      var isOggi=k===0;
-      var isUrgente=k<LEAD_WEEKS;
-      var bc=isOggi?'#16a34a':isUrgente?'#dc2626':'#c4b5fd';
-      var bg=isOggi?'#f0fdf4':isUrgente?'#fff5f5':'#faf8ff';
-      var labelSett=isOggi?'✅ DA INVIARE OGGI':isUrgente?'⚡ Tra '+(k*7)+' giorni':'Tra '+(k*7)+' giorni';
+      var hasUrgente=sg.items.some(function(x){return x.o.urgente;});
+      var isOggi=!hasUrgente&&k===0;
+      var isNormale=!hasUrgente;
+      var bc=hasUrgente?'#dc2626':isOggi?'#16a34a':k<2?'#f59e0b':'#c4b5fd';
+      var bg=hasUrgente?'#fff5f5':isOggi?'#f0fdf4':k<2?'#fffbeb':'#faf8ff';
+      var labelTop=hasUrgente?
+        '🚨 URGENTE — consegna tra '+sg.items[0].o.giorniConsegna+'gg':
+        isOggi?'✅ DA INVIARE OGGI':
+        k===1?'📤 Tra 7 giorni':
+        '📤 Tra '+(k*7)+' giorni';
       html+='<div style="border:2px solid '+bc+';border-radius:8px;padding:10px 14px;min-width:200px;max-width:260px;background:'+bg+'">'+
-        '<div style="font-size:11px;font-weight:700;color:'+(isOggi?'#16a34a':isUrgente?'#dc2626':'#6d28d9')+';margin-bottom:2px">'+labelSett+'</div>'+
+        '<div style="font-size:11px;font-weight:700;color:'+bc+';margin-bottom:2px">'+labelTop+'</div>'+
         '<div style="font-size:11px;color:#555;margin-bottom:2px">📤 Emissione: <strong>'+sg.dataOrdine.toLocaleDateString('it-IT')+'</strong></div>'+
-        '<div style="font-size:11px;color:#6d28d9;margin-bottom:8px">🚚 Consegna: <strong>'+sg.dataConsegna.toLocaleDateString('it-IT')+'</strong></div>'+
+        '<div style="font-size:11px;color:#6d28d9;margin-bottom:8px">🚚 Consegna: <strong>'+sg.dataConsegna.toLocaleDateString('it-IT')+'</strong>'+
+          (hasUrgente?' <span style="color:#dc2626;font-weight:700">(anticipata!)</span>':'')+
+        '</div>'+
         sg.items.map(function(item){
           return '<div style="font-size:12px;color:#1a1a2e;padding:2px 0;border-top:1px solid #f0f2f5">'+
             '<span style="font-weight:600">'+item.p.sku+'</span><br>'+
-            '<span style="color:#16a34a;font-weight:700">'+item.o.label+'</span>'+
+            '<span style="color:'+(item.o.urgente?'#dc2626':'#16a34a')+';font-weight:700">'+item.o.label+'</span>'+
             ' <span style="color:#aaa;font-size:10px">cons.'+item.plan.consumoSett+'/sett</span>'+
           '</div>';
         }).join('')+
