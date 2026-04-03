@@ -8079,225 +8079,191 @@ function renderFabPiano(body){
     return;
   }
 
-  // ── PARAMETRI ──────────────────────────────────────────────────
-  var WEEKS=13;       // orizzonte pianificazione
-  var LEAD_WEEKS=2;   // lead time 14gg = 2 settimane
-  var SAFETY_WEEKS=1; // scorta sicurezza 7gg
-  var COVER_WEEKS=4;  // copertura ordine: 4 settimane
+  var WEEKS=13;          // pianifica 13 settimane
+  var LEAD_WEEKS=2;      // lead time 14 giorni = 2 settimane
+  var SAFETY_DAYS=7;     // scorta sicurezza 7 giorni
+  var REORDER_WEEKS=4;   // frequenza riordino: copre 4 settimane di consumo
+  var today=new Date();
+  today.setHours(0,0,0,0);
 
-  var today=new Date(); today.setHours(0,0,0,0);
   var fornitori=[...new Set(fabProducts.map(function(p){return p.fornitore;}))];
 
-  // ── SIMULAZIONE PER PRODOTTO ─────────────────────────────────
+  // ── CALCOLO PER PRODOTTO ────────────────────────────────────────
   var prodPlans=fabProducts.map(function(p){
     var avgDay=fabDailyAvg(p.sku_shopify,7);
     if(avgDay<0.01) return null;
 
     var ms=getMasterSize(p);
-    var consumoSett=Math.ceil(avgDay*7);
-    var scortaSicurezza=consumoSett*SAFETY_WEEKS;
-    var puntoRiordino=consumoSett*(LEAD_WEEKS+SAFETY_WEEKS); // 3 sett
-
     var invInizio=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
+    var consumoSett=Math.ceil(avgDay*7);       // consumo per settimana
+    var scortaMin=Math.ceil(avgDay*SAFETY_DAYS); // scorta minima = 7gg vendita
 
-    // Arrivi da ordini esistenti → mappa settimana → qty
-    var arriviEsistenti={};
+    // Mappa arrivi per settimana dagli ordini GIÀ aperti
+    var arriviPerSettimana={};
     fabOrdini.forEach(function(ord){
       if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
       var dc=ord.data_consegna_prevista?new Date(ord.data_consegna_prevista):null;
       if(!dc) return;
       dc.setHours(0,0,0,0);
       var diffDays=Math.ceil((dc-today)/86400000);
-      var wIdx=diffDays<=0?0:Math.ceil(diffDays/7);
-      if(wIdx>=WEEKS+LEAD_WEEKS) return;
+      var weekIdx=Math.max(0,Math.ceil(diffDays/7));
+      if(weekIdx>=WEEKS) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
-        var res=r.qty_ordinata-(r.qty_ricevuta||0);
-        if(res>0) arriviEsistenti[wIdx]=(arriviEsistenti[wIdx]||0)+res;
+        var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
+        if(residuo>0) arriviPerSettimana[weekIdx]=(arriviPerSettimana[weekIdx]||0)+residuo;
       });
     });
 
-    var arriviTotali=Object.assign({},arriviEsistenti);
+    // SIMULAZIONE settimana per settimana con lead time 14gg
+    // Logica corretta:
+    // - Guardo la scorta PROIETTATA tra LEAD_WEEKS settimane
+    // - Se quella scorta futura scende sotto scortaMin → devo ordinare ADESSO
+    // - L'ordine arriva tra LEAD_WEEKS settimane
     var scorta=invInizio;
     var weeks=[];
 
     for(var w=0;w<WEEKS;w++){
       var weekStart=new Date(today);weekStart.setDate(today.getDate()+w*7);
+      var arrivo=arriviPerSettimana[w]||0;
+      scorta=scorta+arrivo-consumoSett;
 
-      // Arrivi inizio settimana + consumo
-      var arrivo=arriviTotali[w]||0;
-      var arrivoDaEsistente=arriviEsistenti[w]||0;
-      scorta+=arrivo-consumoSett;
-
-      // Proietta scorta al momento della consegna (w+LEAD_WEEKS)
-      var scortaAllaConsegna=scorta;
-      for(var fw=w+1;fw<=w+LEAD_WEEKS;fw++){
-        scortaAllaConsegna+=(arriviTotali[fw]||0)-consumoSett;
-      }
-
-      // Non ordinare se c'è già merce in arrivo entro il lead time
-      var arrivoEntroLT=0;
-      for(var lw=w+1;lw<=w+LEAD_WEEKS;lw++) arrivoEntroLT+=(arriviTotali[lw]||0);
-      var needOrd=scortaAllaConsegna<puntoRiordino&&arrivoEntroLT<consumoSett*LEAD_WEEKS;
-
+      // Proiezione scorta al momento dell'arrivo (tra LEAD_WEEKS settimane da ora)
+      // = scorta attuale - consumo durante il lead time
+      var scortaAllaConsegna=scorta - consumoSett*(LEAD_WEEKS-1);
+      // Quanto serve ordinare per:
+      // 1. Compensare il buco durante il lead time
+      // 2. Coprire REORDER_WEEKS settimane di consumo dopo la consegna
+      // 3. Garantire la scorta di sicurezza
+      var fabbisognoFuturo=consumoSett*REORDER_WEEKS + scortaMin;
+      var needOrd=scortaAllaConsegna<scortaMin;
       var ordine=null;
+
       if(needOrd){
-        var fabb=consumoSett*COVER_WEEKS+scortaSicurezza-scortaAllaConsegna;
-        fabb=Math.max(fabb,0);
-        var qtyUnita=ms>1?Math.ceil(fabb/ms)*ms:Math.ceil(fabb/p.multiplo)*p.multiplo;
+        var qtyNecessaria=fabbisognoFuturo-scortaAllaConsegna;
+        // Arrotonda al multiplo/master e rispetta ord_min
+        var qtyUnita;
+        if(ms>1){
+          qtyUnita=Math.ceil(qtyNecessaria/ms)*ms;
+        } else {
+          qtyUnita=Math.ceil(qtyNecessaria/p.multiplo)*p.multiplo;
+        }
         qtyUnita=Math.max(qtyUnita,p.ord_min);
         var qtyMaster=ms>1?Math.ceil(qtyUnita/ms):null;
-        var delivW=w+LEAD_WEEKS;
-        // Data di consegna richiesta = inizio della settimana di consegna
-        var dataConsegna=new Date(today);dataConsegna.setDate(today.getDate()+delivW*7);
-        // Data ordine da inviare = oggi (settimana corrente)
-        var dataOrdine=new Date(weekStart);
         ordine={
           qtyUnita:qtyUnita,
           qtyMaster:qtyMaster,
-          delivWeek:delivW,
-          dataConsegna:dataConsegna,
-          dataOrdine:dataOrdine,
-          label:ms>1?(qtyMaster+' master ('+qtyUnita+' pz)'):qtyUnita+' pz'
+          label:ms>1?(qtyMaster+' master ('+qtyUnita+' pz)'):qtyUnita+' pz',
+          arrivoSettimana:w+LEAD_WEEKS
         };
-        arriviTotali[delivW]=(arriviTotali[delivW]||0)+qtyUnita;
+        // Registra l'arrivo tra LEAD_WEEKS settimane
+        var arrivoW=w+LEAD_WEEKS;
+        if(arrivoW<WEEKS+LEAD_WEEKS){
+          arriviPerSettimana[arrivoW]=(arriviPerSettimana[arrivoW]||0)+qtyUnita;
+        }
+        // Aggiorna scorta proiettata (l'ordine arriverà, quindi la scorta futura migliora)
+        scorta+=qtyUnita;
       }
 
       weeks.push({
         w:w,weekStart:weekStart,
-        arrivo:arrivo,arrivoDaEsistente:arrivoDaEsistente,
-        consumo:consumoSett,scortaFine:scorta,
-        scortaSicurezza:scortaSicurezza,puntoRiordino:puntoRiordino,
-        ordine:ordine
+        consumo:consumoSett,arrivo:arrivo,
+        scortaFine:scorta,scortaMin:scortaMin,
+        scortaAllaConsegna:scortaAllaConsegna,
+        needOrd:needOrd,ordine:ordine
       });
     }
 
     var runoutDay=avgDay>0?Math.floor(invInizio/avgDay):999;
-    return {p:p,avgDay:avgDay,consumoSett:consumoSett,inv:invInizio,ms:ms,
-            scortaSicurezza:scortaSicurezza,puntoRiordino:puntoRiordino,
-            weeks:weeks,runoutDay:runoutDay};
+    return {p:p,avgDay:avgDay,inv:invInizio,ms:ms,weeks:weeks,runoutDay:runoutDay,consumoSett:consumoSett,scortaMin:scortaMin};
   }).filter(Boolean);
 
-  // ── ALERT ───────────────────────────────────────────────────────
+  // ── HTML ────────────────────────────────────────────────────────
   var critici=prodPlans.filter(function(a){return a.runoutDay<14;});
-  var attenzione=prodPlans.filter(function(a){return a.runoutDay>=14&&a.runoutDay<21;});
+  var attenzione=prodPlans.filter(function(a){return a.runoutDay>=14&&a.runoutDay<28;});
 
-  var html='<div style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">'+
+  var html='<div style="margin-bottom:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
     '<div>'+
       '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno Settimanale</h2>'+
-      '<div style="font-size:11px;color:#888">'+
-        'Lead time: <strong>14 gg</strong> · Scorta sicurezza: <strong>7 gg</strong> · '+
-        'Punto riordino: <strong>3 sett.</strong> · Copertura ordine: <strong>4 sett.</strong>'+
+      '<div style="font-size:11px;color:#888;line-height:1.6">'+
+        '📌 <strong>Lead time:</strong> 14 giorni &nbsp;·&nbsp; '+
+        '<strong>Riordino:</strong> ogni settimana se necessario &nbsp;·&nbsp; '+
+        '<strong>Scorta sicurezza:</strong> 7 giorni &nbsp;·&nbsp; '+
+        '<strong>Copertura ordine:</strong> 4 settimane di consumo<br>'+
+        '⚙️ Logica: guarda la scorta proiettata a +14gg → se scende sotto 7gg di scorta sicurezza → ordina subito per coprire il lead time + 4 settimane + sicurezza'+
       '</div>'+
     '</div>'+
   '</div>';
 
   if(critici.length){
     html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;margin-bottom:10px">'+
-      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:6px">🚨 CRITICI ('+critici.length+')</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:6px">🚨 CRITICI — Scorta esaurisce entro 14 giorni ('+critici.length+')</div>'+
       critici.map(function(a){
         var w0=a.weeks[0];
-        return '<div style="font-size:12px;color:#7f1d1d;padding:1px 0">• <strong>'+a.p.sku+
-          '</strong> — inv. '+a.inv+' · consumo '+a.consumoSett+'/sett'+
-          (w0&&w0.ordine?' | <strong style="color:#16a34a">ORDINA: '+w0.ordine.label+
-          ' — consegna richiesta '+w0.ordine.dataConsegna.toLocaleDateString("it-IT")+'</strong>':'')+
-        '</div>';
+        return '<div style="font-size:12px;color:#7f1d1d;padding:1px 0">• <strong>'+a.p.sku+'</strong> — finisce tra '+a.runoutDay+' gg'+(w0&&w0.ordine?' | da ordinare subito: <strong>'+w0.ordine.label+'</strong>':'')+' | consumo sett.: '+a.consumoSett+' pz</div>';
       }).join('')+
     '</div>';
   }
   if(attenzione.length){
     html+='<div style="background:#fff8f0;border:1px solid #fdba74;border-radius:10px;padding:12px 16px;margin-bottom:10px">'+
-      '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:6px">⚠️ ATTENZIONE ('+attenzione.length+')</div>'+
-      attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:1px 0">• <strong>'+a.p.sku+'</strong> — finisce tra '+a.runoutDay+' gg</div>';}).join('')+
+      '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:6px">⚠️ ATTENZIONE — Scorta tra 14 e 28 giorni ('+attenzione.length+')</div>'+
+      attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:1px 0">• <strong>'+a.p.sku+'</strong> — finisce tra '+a.runoutDay+' gg &nbsp;·&nbsp; consumo sett.: '+a.consumoSett+' pz</div>';}).join('')+
     '</div>';
   }
 
-  // ── RIEPILOGO ORDINI DA FARE ─────────────────────────────────
-  // Raccoglie tutti gli ordini suggeriti raggruppati per fornitore e settimana ordine
-  var ordiniSuggeriti={}; // key: fornitore|weekOrdine → {fornitore, dataOrdine, dataConsegna, prodotti[]}
+  // ── ORDINI DA FARE QUESTA SETTIMANA ────────────────────────────
+  var ordiniQuesta=[];
   prodPlans.forEach(function(a){
-    a.weeks.forEach(function(wk){
-      if(!wk.ordine) return;
-      var key=a.p.fornitore+'|'+wk.w;
-      if(!ordiniSuggeriti[key]){
-        ordiniSuggeriti[key]={
-          fornitore:a.p.fornitore,
-          weekOrdine:wk.w,
-          dataOrdine:wk.weekStart,
-          dataConsegna:wk.ordine.dataConsegna,
-          prodotti:[]
-        };
-      }
-      ordiniSuggeriti[key].prodotti.push({p:a.p,ordine:wk.ordine});
-    });
+    if(a.weeks[0]&&a.weeks[0].ordine) ordiniQuesta.push({p:a.p,ordine:a.weeks[0].ordine,plan:a});
   });
-
-  // Ordina per settimana
-  var ordiniList=Object.values(ordiniSuggeriti).sort(function(a,b){return a.weekOrdine-b.weekOrdine;});
-
-  if(ordiniList.length){
-    html+='<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:16px 0 10px">📋 Ordini da inviare ai fornitori</h3>';
-    
-    // Raggruppa per settimana ordine
-    var byWeek={};
-    ordiniList.forEach(function(o){byWeek[o.weekOrdine]=byWeek[o.weekOrdine]||[];byWeek[o.weekOrdine].push(o);});
-
-    Object.keys(byWeek).sort(function(a,b){return a-b;}).forEach(function(wk){
-      var weekOrds=byWeek[wk];
-      var dataOrdine=weekOrds[0].dataOrdine.toLocaleDateString('it-IT');
-      var wNum=parseInt(wk);
-      var label=wNum===0?'📌 QUESTA SETTIMANA':'Settimana '+(wNum+1);
-      var bg=wNum===0?'#f0fdf4':'#f8f9fc';
-      var border=wNum===0?'2px solid #16a34a':'1px solid #e8eaf0';
-
-      html+='<div style="background:'+bg+';border:'+border+';border-radius:10px;margin-bottom:12px;overflow:hidden">'+
-        '<div style="padding:10px 16px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;gap:12px">'+
-          '<span style="font-size:13px;font-weight:700;color:'+(wNum===0?'#16a34a':'#6d28d9')+'">'+label+'</span>'+
-          '<span style="font-size:12px;color:#555">📅 Ordine da inviare: <strong>'+dataOrdine+'</strong></span>'+
-        '</div>'+
-        weekOrds.map(function(o){
-          var email=fabProducts.find(function(pp){return pp.fornitore===o.fornitore;});
-          email=email?email.email:'';
-          return '<div style="padding:10px 16px;border-bottom:1px solid #f4f5f7">'+
-            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
-              '<span style="font-size:12px;font-weight:700;color:#1a1a2e">🏭 '+o.fornitore+'</span>'+
-              '<span style="font-size:11px;color:#888">'+email+'</span>'+
-              '<span style="font-size:12px;color:#6d28d9;margin-left:auto">🚚 Consegna richiesta: <strong>'+o.dataConsegna.toLocaleDateString('it-IT')+'</strong></span>'+
-            '</div>'+
-            '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
-            o.prodotti.map(function(x){
-              return '<span style="background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:4px 10px;font-size:12px">'+
-                x.p.sku+': <strong>'+x.ordine.label+'</strong>'+
-              '</span>';
-            }).join('')+
-            '</div>'+
-          '</div>';
-        }).join('')+
-      '</div>';
-    });
-  } else {
-    html+='<div style="text-align:center;padding:30px;background:#f0fdf4;border-radius:10px;color:#16a34a;font-size:14px;font-weight:600;margin-top:16px">✅ Nessun ordine necessario nelle prossime '+WEEKS+' settimane</div>';
+  if(ordiniQuesta.length){
+    html+='<div style="background:#f0fdf4;border:2px solid #16a34a;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
+      '<div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:8px">✅ ORDINI DA INVIARE QUESTA SETTIMANA (consegna tra 14gg)</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:10px">'+
+      fornitori.map(function(forn){
+        var items=ordiniQuesta.filter(function(x){return x.p.fornitore===forn;});
+        if(!items.length) return '';
+        var delivDate=new Date(today);delivDate.setDate(today.getDate()+14);
+        return '<div style="background:#fff;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;min-width:220px">'+
+          '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:4px">'+forn+'</div>'+
+          '<div style="font-size:10px;color:#888;margin-bottom:6px">Consegna prevista: '+delivDate.toLocaleDateString('it-IT')+'</div>'+
+          items.map(function(x){
+            return '<div style="font-size:12px;color:#1a1a2e;padding:2px 0">• '+x.p.sku+'<br>'+
+              '  <span style="font-weight:700;color:#16a34a">'+x.ordine.label+'</span>'+
+              ' <span style="color:#aaa;font-size:10px">(cons.sett: '+x.plan.consumoSett+' pz)</span>'+
+            '</div>';
+          }).join('')+
+        '</div>';
+      }).join('')+
+      '</div>'+
+    '</div>';
   }
 
-  // ── TABELLA PIVOT PER FORNITORE ──────────────────────────────
-  html+='<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:20px 0 10px">📊 Dettaglio proiezione settimanale per prodotto</h3>';
+  // ── TABELLA PIANO PER FORNITORE ─────────────────────────────────
+  html+='<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0 0 12px">📅 Piano settimanale per fornitore (13 settimane)</h3>';
 
   fornitori.forEach(function(forn){
     var prodsForn=prodPlans.filter(function(a){return a.p.fornitore===forn;});
     if(!prodsForn.length) return;
 
     html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;margin-bottom:16px">'+
-      '<div style="background:#f5f3ff;padding:10px 16px;font-size:13px;font-weight:700;color:#6d28d9">🏭 '+forn+'</div>'+
+      '<div style="background:#f5f3ff;padding:10px 16px;font-size:13px;font-weight:700;color:#6d28d9;display:flex;align-items:center;gap:8px">'+
+        '🏭 '+forn+
+      '</div>'+
       '<div style="overflow-x:auto">'+
       '<table style="border-collapse:collapse;font-size:11px;white-space:nowrap;min-width:100%;background:#fff">'+
       '<thead><tr style="background:#faf8ff">'+
-        '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e8eaf0;position:sticky;left:0;background:#faf8ff;min-width:170px;color:#555">Prodotto</th>'+
-        '<th style="padding:8px 8px;text-align:right;border-bottom:2px solid #e8eaf0;color:#555;min-width:55px">Inv.</th>'+
-        '<th style="padding:8px 8px;text-align:right;border-bottom:2px solid #e8eaf0;color:#555;min-width:50px">Med/g</th>'+
+        '<th style="padding:8px 12px;text-align:left;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;position:sticky;left:0;background:#faf8ff;min-width:160px">Prodotto</th>'+
+        '<th style="padding:8px 8px;text-align:right;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;white-space:nowrap">Inv.<br><span style="font-weight:400;color:#aaa">att.</span></th>'+
+        '<th style="padding:8px 8px;text-align:right;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;white-space:nowrap">Cons.<br><span style="font-weight:400;color:#aaa">sett.</span></th>'+
+        '<th style="padding:8px 8px;text-align:right;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;white-space:nowrap">Sc.min<br><span style="font-weight:400;color:#aaa">7gg</span></th>'+
         Array.from({length:WEEKS},function(_,w){
           var d=new Date(today);d.setDate(today.getDate()+w*7);
-          var label=(w===0?'⭐ ':'')+d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
-          return '<th style="padding:6px 6px;text-align:center;border-bottom:2px solid #e8eaf0;min-width:100px;color:'+(w===0?'#16a34a':'#6d28d9')+'">'+label+'</th>';
+          var isUrgent=w<LEAD_WEEKS;
+          return '<th style="padding:6px 6px;text-align:center;font-weight:700;color:'+(isUrgent?'#dc2626':'#6d28d9')+';border-bottom:2px solid #e8eaf0;min-width:80px;background:'+(isUrgent?'#fff5f5':'#faf8ff')+'">'+
+            'S.'+(w+1)+(isUrgent?'⚡':'')+
+            '<br><span style="font-weight:400;font-size:10px;color:#888">'+d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'})+'</span>'+
+          '</th>';
         }).join('')+
       '</tr></thead><tbody>';
 
@@ -8305,29 +8271,44 @@ function renderFabPiano(body){
       var rowBg=idx%2===1?'#faf8ff':'#fff';
       html+='<tr style="border-bottom:1px solid #f4f5f7;background:'+rowBg+'">'+
         '<td style="padding:6px 12px;font-weight:600;color:#1a1a2e;position:sticky;left:0;background:'+rowBg+'">'+a.p.sku+
-          (a.ms>1?'<br><span style="font-size:10px;color:#7c3aed">master da '+a.ms+' pz</span>':'')+
+          (a.ms>1?'<br><span style="font-size:9px;color:#7c3aed">master da '+a.ms+' pz</span>':'')+
         '</td>'+
-        '<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+(a.inv<a.puntoRiordino?'#dc2626':'#1a1a2e')+'">'+a.inv+'</td>'+
-        '<td style="padding:6px 8px;text-align:right;color:#888">'+a.avgDay.toFixed(1)+'</td>'+
+        '<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+(a.inv<a.consumoSett*2?'#dc2626':'#1a1a2e')+'">'+a.inv+'</td>'+
+        '<td style="padding:6px 8px;text-align:right;color:#555">'+a.consumoSett+'</td>'+
+        '<td style="padding:6px 8px;text-align:right;color:#888">'+a.scortaMin+'</td>'+
         a.weeks.map(function(wk){
-          var scorta=wk.scortaFine;
-          var hasOrdine=!!wk.ordine;
           var hasArrivo=wk.arrivo>0;
-          var bg=scorta<0?'#fee2e2':scorta<wk.puntoRiordino?'#fef9c3':hasOrdine?'#ede9fe':hasArrivo?'#dcfce7':rowBg;
-          var lines=[];
-          if(wk.arrivoDaEsistente>0) lines.push('<div style="color:#1a73e8;font-size:10px">▼+'+wk.arrivoDaEsistente+' arr.</div>');
-          if(hasOrdine) lines.push(
-            '<div style="color:#16a34a;font-weight:700;font-size:10px">📦 '+wk.ordine.label+'</div>'+
-            '<div style="color:#16a34a;font-size:10px">→ consegna '+wk.ordine.dataConsegna.toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"})+'</div>'
-          );
-          lines.push('<div style="color:'+(scorta<0?'#dc2626':scorta<wk.scortaSicurezza?'#e67e22':'#555')+';font-size:10px">sc: '+Math.max(0,scorta)+'</div>');
-          return '<td style="padding:5px 6px;vertical-align:top;background:'+bg+';text-align:center">'+lines.join('')+'</td>';
+          var hasOrdine=!!wk.ordine;
+          var scorta=wk.scortaFine;
+          var bg=scorta<0?'#fee2e2':scorta<wk.scortaMin?'#fff3cd':hasOrdine?'#ede9fe':hasArrivo?'#e8f0fe':rowBg;
+          var content='';
+          if(hasOrdine){
+            content+='<div style="color:#16a34a;font-weight:700;font-size:10px;background:#f0fdf4;border-radius:3px;padding:1px 4px;margin-bottom:2px">📦 '+wk.ordine.label+'</div>';
+          }
+          if(hasArrivo&&!hasOrdine){
+            content+='<div style="color:#1a73e8;font-size:10px">↓'+wk.arrivo+'pz</div>';
+          } else if(hasArrivo&&hasOrdine){
+            content+='<div style="color:#1a73e8;font-size:10px">↓'+wk.arrivo+'pz già ord.</div>';
+          }
+          content+='<div style="color:'+(scorta<0?'#dc2626':scorta<wk.scortaMin?'#d97706':'#555')+';font-size:10px">sc:'+Math.max(0,scorta)+'</div>';
+          return '<td style="padding:4px 6px;text-align:center;background:'+bg+';vertical-align:top;border-right:1px solid #f0f2f5">'+content+'</td>';
         }).join('')+
       '</tr>';
     });
 
     html+='</tbody></table></div></div>';
   });
+
+  // ── LEGENDA ──────────────────────────────────────────────────────
+  html+='<div style="font-size:11px;color:#888;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">'+
+    '<span>📦 = ordine da inviare in quella settimana (arriva in 14gg)</span>'+
+    '<span>↓ = merce già ordinata in arrivo</span>'+
+    '<span>sc: = scorta proiettata a fine settimana</span>'+
+    '<span style="background:#ede9fe;padding:1px 6px;border-radius:3px">viola = settimana con ordine</span>'+
+    '<span style="background:#fff3cd;padding:1px 6px;border-radius:3px">giallo = scorta sotto soglia</span>'+
+    '<span style="background:#fee2e2;padding:1px 6px;border-radius:3px">rosso = scorta negativa</span>'+
+    '<span>S.1⚡ S.2⚡ = dentro il lead time (ordini urgenti)</span>'+
+  '</div>';
 
   body.innerHTML=html;
 }
