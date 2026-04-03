@@ -8553,10 +8553,40 @@ function noireReadExcel(file){
 
 function noireParseXLSX(arrayBuffer){
   try{
-    var wb=XLSX.read(arrayBuffer,{type:'array',cellDates:true});
+    // raw:true → numeri restano numerici (niente "1.024,00"), date restano serial number Excel
+    var wb=XLSX.read(arrayBuffer,{type:'array'});
     var ws=wb.Sheets[wb.SheetNames[0]];
-    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'YYYY-MM-DD'});
+    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
     if(!rows||rows.length<2){noireShowError('File vuoto o senza dati');return;}
+
+    // Converti serial number Excel in stringa YYYY-MM-DD
+    function excelDateToYMD(v){
+      if(!v&&v!==0) return '';
+      // Già stringa con data
+      if(typeof v==='string'){
+        var m=v.match(/(\d{4})-(\d{2})-(\d{2})/);
+        if(m) return m[1]+'-'+m[2]+'-'+m[3];
+        var m2=v.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+        if(m2){var y=m2[3].length===2?'20'+m2[3]:m2[3];return y+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');}
+        return v.substring(0,10);
+      }
+      // Oggetto Date (quando SheetJS usa cellDates:true)
+      if(v instanceof Date){
+        var yy=v.getFullYear();
+        var mm=String(v.getMonth()+1).padStart(2,'0');
+        var dd=String(v.getDate()).padStart(2,'0');
+        return yy+'-'+mm+'-'+dd;
+      }
+      // Serial number Excel: 1 = 1 gennaio 1900
+      if(typeof v==='number'){
+        var d=new Date(Math.round((v-25569)*86400*1000)); // UTC epoch
+        var yy=d.getUTCFullYear();
+        var mm=String(d.getUTCMonth()+1).padStart(2,'0');
+        var dd=String(d.getUTCDate()).padStart(2,'0');
+        return yy+'-'+mm+'-'+dd;
+      }
+      return '';
+    }
 
     // Trova riga header (riga 0)
     var hdr=rows[0].map(function(h){return (h||'').toString().toLowerCase().trim();});
@@ -8577,18 +8607,13 @@ function noireParseXLSX(arrayBuffer){
       var r=rows[i];
       if(!r||!r[iOrdine]) continue;
       var ordine=(r[iOrdine]||'').toString().trim();
-      var del_=noireFmtDate(r[iDel]);
+      var del_=excelDateToYMD(r[iDel]);
       var articoloRaw=(r[iArticolo]||'').toString().trim();
-      // Strip "PF  " o "PF " dal codice articolo
       var articolo=articoloRaw.replace(/^PF\s+/i,'').trim();
-      var qtaRaw=(r[iQta]||'0').toString().trim();
-      // Parsing numero italiano: "1.024,00" → 1024, "6,00" → 6
-      // Il punto è separatore migliaia, la virgola è decimale
-      var qtaNorm=qtaRaw.replace(/\./g,'').replace(',','.');  // "1024.00"
-      var qtaMaster=Math.round(parseFloat(qtaNorm)||0);
-      var consegna=noireFmtDate(r[iConsegna]);
+      // Con raw:true il valore è già un numero intero — nessun parsing necessario
+      var qtaMaster=Math.round(Number(r[iQta])||0);
+      var consegna=excelDateToYMD(r[iConsegna]);
       if(!ordine||!articolo||!consegna) continue;
-      // Trova prodotto
       var prod=noireGetProductByForn(articolo);
       excelRows.push({ordine:ordine,del_:del_,articolo:articolo,qtaMaster:qtaMaster,consegna:consegna,prod:prod||null});
     }
