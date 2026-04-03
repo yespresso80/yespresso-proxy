@@ -8351,12 +8351,15 @@ function renderFabPiano(body){
   var critici=prodPlans.filter(function(a){return a.runoutDay<LEAD_DAYS;});
   var attenzione=prodPlans.filter(function(a){return a.runoutDay>=LEAD_DAYS&&a.runoutDay<LEAD_DAYS*2;});
 
-  var html='<div style="margin-bottom:12px">'+
-    '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno</h2>'+
-    '<div style="font-size:11px;color:#888;background:#f5f3ff;border-radius:6px;padding:8px 12px;display:inline-block">'+
-      '📌 Lead time <strong>14gg</strong> &nbsp;·&nbsp; Scorta sicurezza <strong>2 sett. di consumo</strong> &nbsp;·&nbsp; '+
-      'Riordino <strong>settimanale</strong> &nbsp;·&nbsp; Orizzonte <strong>60 giorni</strong>'+
+  var html='<div style="margin-bottom:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
+    '<div>'+
+      '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno</h2>'+
+      '<div style="font-size:11px;color:#888;background:#f5f3ff;border-radius:6px;padding:8px 12px;display:inline-block">'+
+        '📌 Lead time <strong>14gg</strong> &nbsp;·&nbsp; Scorta sicurezza <strong>2 sett. di consumo</strong> &nbsp;·&nbsp; '+
+        'Riordino <strong>settimanale</strong> &nbsp;·&nbsp; Orizzonte <strong>60 giorni</strong>'+
+      '</div>'+
     '</div>'+
+    '<button onclick="fabDebugArticolo()" style="flex-shrink:0;background:#f5f3ff;border:1.5px solid #c4b5fd;color:#6d28d9;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Debug articolo</button>'+
   '</div>';
 
   if(critici.length){
