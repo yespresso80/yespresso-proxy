@@ -8075,153 +8075,216 @@ function renderFabVenduto(body){
 // ── MODAL IMPORT CSV ───────────────────────────────────────────
 function renderFabPiano(body){
   if(!fabSalesCache){
-    body.innerHTML='<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">📊 Prima clicca <strong>Aggiorna dati Shopify</strong> per caricare il venduto</div>';
+    body.innerHTML='<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">📊 Prima importa il venduto dalla tab <strong>Analisi Venduto</strong></div>';
     return;
   }
-  var horizons=[7,15,21,28,35,45,60,90,120];
-  var safetyWeeks=1; // scorta di sicurezza = 1 settimana
 
-  // Calcola per ogni prodotto
-  var analysis=fabProducts.map(function(p){
-    // Media giornaliera: media pesata 30/90gg
-    var avg30=fabDailyAvg(p.sku_shopify,30);
-    var avg90=fabDailyAvg(p.sku_shopify,90);
-    var avgDay=(avg30*0.6+avg90*0.4); // peso maggiore al recente
-    var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
-    // Ordini in arrivo (attesa/parziale)
-    var inArrivo=0;
-    var inArrivoDetails=[];
+  var WEEKS=13; // pianifica 13 settimane
+  var SAFETY_DAYS=7; // scorta sicurezza 1 settimana
+  var today=new Date();
+  today.setHours(0,0,0,0);
+
+  // Per ogni prodotto costruiamo una proiezione settimana per settimana
+  var fornitori=[...new Set(fabProducts.map(function(p){return p.fornitore;}))];
+
+  // ── CALCOLO PER PRODOTTO ────────────────────────────────────────
+  var prodPlans=fabProducts.map(function(p){
+    var avgDay=fabDailyAvg(p.sku_shopify,7); // usa base 7gg come da import CSV
+    if(avgDay<0.01) return null; // prodotto senza venduto
+
+    var ms=getMasterSize(p);
+    var invInizio=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
+
+    // Mappa arrivi per settimana: weekIdx(0=questa settimana) → qty in arrivo
+    var arriviPerSettimana={};
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale')return;
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+      var dc=ord.data_consegna_prevista?new Date(ord.data_consegna_prevista):null;
+      if(!dc) return;
+      dc.setHours(0,0,0,0);
+      var diffDays=Math.ceil((dc-today)/86400000);
+      var weekIdx=Math.max(0,Math.ceil(diffDays/7)); // settimana di arrivo (0=già questa settimana)
+      if(weekIdx>=WEEKS) return;
       ord.righe.forEach(function(r){
-        if(r.sku_shopify===p.sku_shopify){
-          var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
-          if(residuo>0){inArrivo+=residuo;inArrivoDetails.push({data:ord.data_consegna_prevista||'?',qty:residuo,fornitore:ord.fornitore});}
-        }
+        if(r.sku_shopify!==p.sku_shopify) return;
+        var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
+        if(residuo<=0) return;
+        arriviPerSettimana[weekIdx]=(arriviPerSettimana[weekIdx]||0)+residuo;
       });
     });
-    // Fabbisogno per ogni orizzonte
-    var fab=horizons.map(function(h){
-      var needed=Math.ceil(avgDay*h);
-      var safety=Math.ceil(avgDay*7); // 1 sett
-      var totalNeeded=needed+safety;
-      var projected=inv+inArrivo;
-      var gap=totalNeeded-projected;
-      return {days:h,needed:needed,safety:safety,totalNeeded:totalNeeded,projected:projected,gap:gap};
-    });
-    // Primo buco: il giorno in cui finisce scorta
-    var runoutDay=avgDay>0?Math.floor((inv+inArrivo)/avgDay):999;
-    var runoutDate=new Date();runoutDate.setDate(runoutDate.getDate()+runoutDay);
-    // Ordine suggerito: qty arrotondata al multiplo, >= ord_min
-    var orderForDays=90;
-    var avgDay90=fabDailyAvg(p.sku_shopify,90);
-    var neededUnita=Math.max(p.ord_min,Math.ceil(avgDay90*orderForDays));
-    var ms=getMasterSize(p);
-    // Ordine suggerito: in master per prodotti master, in pz per gli altri
-    var suggestedQty=ms>1?unitaToMaster(p,neededUnita):neededUnita;
-    var suggestedLabel=ms>1?(suggestedQty+' master ('+masterToUnita(p,suggestedQty)+' pz)'):suggestedQty+' pz';
-    return {p:p,avgDay:avgDay,inv:inv,inArrivo:inArrivo,inArrivoDetails:inArrivoDetails,fab:fab,runoutDay:runoutDay,runoutDate:runoutDate,suggestedQty:suggestedQty,suggestedLabel:suggestedLabel};
-  });
 
-  var critici=analysis.filter(function(a){return a.runoutDay<14&&a.avgDay>0;});
-  var attenzione=analysis.filter(function(a){return a.runoutDay>=14&&a.runoutDay<35&&a.avgDay>0;});
+    // Simula settimana per settimana
+    var scorta=invInizio;
+    var weeks=[];
+    var needsOrderWeek=[]; // settimane dove serve ordinare
+
+    for(var w=0;w<WEEKS;w++){
+      var weekStart=new Date(today);weekStart.setDate(today.getDate()+w*7);
+      var weekEnd=new Date(today);weekEnd.setDate(today.getDate()+(w+1)*7);
+
+      // Consuma venduto settimanale
+      var consumo=Math.ceil(avgDay*7);
+      // Aggiungi arrivi previsti questa settimana
+      var arrivo=arriviPerSettimana[w]||0;
+      scorta=scorta+arrivo-consumo;
+
+      // Fabbisogno con scorta sicurezza: serve avere almeno SAFETY_DAYS di scorta
+      var scortaMinima=Math.ceil(avgDay*SAFETY_DAYS);
+      var gap=scortaMinima-scorta; // positivo = buco
+      var needOrd=gap>0;
+
+      weeks.push({
+        w:w,
+        weekStart:weekStart,
+        weekEnd:weekEnd,
+        consumo:consumo,
+        arrivo:arrivo,
+        scortaFine:scorta,
+        scortaMinima:scortaMinima,
+        gap:gap,
+        needOrd:needOrd
+      });
+
+      // Se c'è un buco, calcola quante unità ordinare (rispettando multipli)
+      if(needOrd){
+        // Ordina per coprire le prossime 4 settimane + sicurezza
+        var fabbisogno4w=Math.ceil(avgDay*7*4)+scortaMinima-scorta;
+        var qtyUnita=ms>1?Math.ceil(fabbisogno4w/ms)*ms:Math.ceil(fabbisogno4w/p.multiplo)*p.multiplo;
+        qtyUnita=Math.max(qtyUnita,p.ord_min);
+        var qtyMaster=ms>1?Math.ceil(qtyUnita/ms):null;
+        weeks[w].ordine={
+          qtyUnita:qtyUnita,
+          qtyMaster:qtyMaster,
+          label:ms>1?(qtyMaster+' master ('+qtyUnita+' pz)'):qtyUnita+' pz'
+        };
+        // Simula che l'ordine arrivi la settimana dopo (lead time 1 settimana)
+        arriviPerSettimana[w+1]=(arriviPerSettimana[w+1]||0)+qtyUnita;
+        scorta+=qtyUnita; // aggiorna scorta corrente
+      }
+    }
+
+    var runoutDay=avgDay>0?Math.floor(invInizio/avgDay):999;
+    return {p:p,avgDay:avgDay,inv:invInizio,ms:ms,weeks:weeks,runoutDay:runoutDay};
+  }).filter(Boolean);
+
+  // ── HTML ────────────────────────────────────────────────────────
+  var critici=prodPlans.filter(function(a){return a.runoutDay<14;});
+  var attenzione=prodPlans.filter(function(a){return a.runoutDay>=14&&a.runoutDay<28;});
 
   var html='<div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">'+
     '<div>'+
-      '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno — Analisi Buchi</h2>'+
-      '<div style="font-size:12px;color:#aaa">Media pesata: 60% ultimi 30gg + 40% ultimi 90gg. Scorta sicurezza: 7 giorni.</div>'+
+      '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno Settimanale</h2>'+
+      '<div style="font-size:12px;color:#aaa">Proiezione '+WEEKS+' settimane · Scorta sicurezza '+SAFETY_DAYS+' giorni · Ordini calcolati per coprire 4 settimane + sicurezza</div>'+
     '</div>'+
-    '<button onclick="fabExportPiano()" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📥 Esporta piano</button>'+
   '</div>';
 
-  // Alert critici
+  // Alert
   if(critici.length){
-    html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
-      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px">🚨 CRITICI — Scorta insufficiente entro 14 giorni ('+critici.length+' prodotti)</div>'+
-      critici.map(function(a){return '<div style="font-size:12px;color:#7f1d1d;padding:2px 0">• <strong>'+a.p.sku+'</strong> — scorta finisce tra <strong>'+a.runoutDay+' gg</strong> ('+a.runoutDate.toLocaleDateString('it-IT')+') | suggerito ordinare <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
+    html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;margin-bottom:12px">'+
+      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:6px">🚨 CRITICI — Scorta esaurisce entro 14 giorni ('+critici.length+')</div>'+
+      critici.map(function(a){
+        var w0=a.weeks[0];
+        return '<div style="font-size:12px;color:#7f1d1d;padding:1px 0">• <strong>'+a.p.sku+'</strong> — finisce tra '+a.runoutDay+' gg'+
+          (w0.ordine?' | ordine suggerito: <strong>'+w0.ordine.label+'</strong>':'')+
+        '</div>';
+      }).join('')+
     '</div>';
   }
   if(attenzione.length){
-    html+='<div style="background:#fff8f0;border:1px solid #fdba74;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
-      '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:8px">⚠️ ATTENZIONE — Scorta tra 14 e 35 giorni ('+attenzione.length+' prodotti)</div>'+
-      attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:2px 0">• <strong>'+a.p.sku+'</strong> — finisce tra <strong>'+a.runoutDay+' gg</strong> | suggerito ordinare <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
+    html+='<div style="background:#fff8f0;border:1px solid #fdba74;border-radius:10px;padding:12px 16px;margin-bottom:12px">'+
+      '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:6px">⚠️ ATTENZIONE — Scorta tra 14 e 28 giorni ('+attenzione.length+')</div>'+
+      attenzione.map(function(a){
+        return '<div style="font-size:12px;color:#7c2d12;padding:1px 0">• <strong>'+a.p.sku+'</strong> — finisce tra '+a.runoutDay+' gg</div>';
+      }).join('')+
     '</div>';
   }
 
-  // Tabella principale
-  html+='<div style="overflow-x:auto;margin-bottom:20px">'+
-    '<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;font-size:12px">'+
-    '<thead>'+
-    '<tr style="background:#f5f3ff">'+
-      '<th style="padding:10px 12px;text-align:left;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;position:sticky;left:0;background:#f5f3ff;min-width:180px">PRODOTTO</th>'+
-      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">INV.</th>'+
-      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">IN ARRIVO</th>'+
-      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">MED/GG</th>'+
-      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#dc2626;border-bottom:2px solid #e8eaf0;white-space:nowrap">FINE SCORTA</th>'+
-      horizons.map(function(h){
-        return '<th style="padding:10px 8px;text-align:center;font-weight:700;color:#1a73e8;border-bottom:2px solid #e8eaf0;white-space:nowrap;min-width:60px">'+h+'gg</th>';
-      }).join('')+
-      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#16a34a;border-bottom:2px solid #e8eaf0;white-space:nowrap">ORDINE SUGG.</th>'+
-    '</tr>'+
-    '<tr style="background:#faf8ff;font-size:10px;color:#aaa">'+
-      '<td style="padding:4px 12px;position:sticky;left:0;background:#faf8ff"></td>'+
-      '<td style="padding:4px 12px;text-align:right">attuale</td>'+
-      '<td style="padding:4px 12px;text-align:right">in ordine</td>'+
-      '<td style="padding:4px 12px;text-align:right">media</td>'+
-      '<td style="padding:4px 12px;text-align:right">tra N giorni</td>'+
-      horizons.map(function(){return '<td style="padding:4px 8px;text-align:center">gap</td>';}).join('')+
-      '<td style="padding:4px 12px;text-align:right">90gg+sic.</td>'+
-    '</tr>'+
-    '</thead><tbody>';
+  // ── CALENDARIO ORDINI PER FORNITORE ────────────────────────────
+  html+='<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0 0 12px">📅 Ordini da fare per fornitore — settimana per settimana</h3>';
 
-  analysis.forEach(function(a,idx){
-    var runColor=a.runoutDay<14?'#dc2626':a.runoutDay<35?'#e67e22':a.runoutDay>90?'#16a34a':'#555';
-    var runLabel=a.avgDay<0.01?'—':a.runoutDay+' gg';
-    html+='<tr style="border-bottom:1px solid #f4f5f7;'+(idx%2===1?'background:#faf8ff;':'')+'">'+
-      '<td style="padding:8px 12px;font-weight:600;color:#1a1a2e;position:sticky;left:0;background:'+(idx%2===1?'#faf8ff':'#fff')+'">'+a.p.sku+'</td>'+
-      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:'+(a.inv<20?'#dc2626':'#1a1a2e')+'">'+a.inv+'</td>'+
-      '<td style="padding:8px 12px;text-align:right;color:'+(a.inArrivo>0?'#1a73e8':'#aaa')+'">'+a.inArrivo+(a.inArrivoDetails.length?' <span title="'+a.inArrivoDetails.map(function(d){return d.data+': +'+d.qty;}).join(', ')+'" style="cursor:help">ℹ️</span>':'')+'</td>'+
-      '<td style="padding:8px 12px;text-align:right;color:#555">'+a.avgDay.toFixed(1)+'</td>'+
-      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:'+runColor+'">'+runLabel+'</td>'+
-      a.fab.map(function(f){
-        var bg=f.gap>0?'#fee2e2':f.gap>-50?'#fef9c3':'#dcfce7';
-        var col=f.gap>0?'#dc2626':f.gap>-50?'#854d0e':'#15803d';
-        return '<td style="padding:8px 8px;text-align:center;background:'+bg+';color:'+col+';font-weight:700">'+(f.gap>0?'+'+f.gap:f.gap)+'</td>';
-      }).join('')+
-      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#6d28d9;white-space:nowrap">'+a.suggestedLabel+'</td>'+
-    '</tr>';
-  });
-
-  html+='</tbody></table></div>'+
-    '<div style="font-size:11px;color:#aaa;margin-bottom:24px">'+
-      '📌 <strong>Gap</strong> = (Fabbisogno N giorni + scorta 7gg) − (Inventario + In arrivo) &nbsp;|&nbsp; '+
-      '<span style="color:#dc2626">■</span> Gap positivo = buco previsto &nbsp;'+
-      '<span style="color:#854d0e">■</span> Margine &lt;50 pz &nbsp;'+
-      '<span style="color:#15803d">■</span> Ok'+
-    '</div>';
-
-  // Piano ordini 90gg: suggerisce ordini settimanali
-  html+='<div style="margin-bottom:16px"><h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0 0 12px">📅 Calendario ordini suggeriti (prossime 13 settimane)</h3>';
-  var fornitori=[...new Set(fabProducts.map(function(p){return p.fornitore;}))];
   fornitori.forEach(function(forn){
-    var prodsForn=analysis.filter(function(a){return a.p.fornitore===forn&&a.avgDay>0.01&&a.runoutDay<90;});
-    if(!prodsForn.length)return;
-    html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;margin-bottom:12px">'+
-      '<div style="background:#f5f3ff;padding:10px 16px;font-size:13px;font-weight:700;color:#6d28d9">'+forn+'</div>'+
-      '<div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px">';
-    // Proponi consegne settimanali per le prossime 13 settimane
-    for(var w=1;w<=13;w++){
-      var delivDate=new Date();delivDate.setDate(delivDate.getDate()+w*7);
-      var weekProds=prodsForn.filter(function(a){return a.runoutDay<=(w+1)*7;});
-      if(!weekProds.length)continue;
-      html+='<div style="border:1px solid #e8eaf0;border-radius:8px;padding:10px 12px;min-width:180px;background:#faf8ff">'+
-        '<div style="font-size:11px;font-weight:700;color:#6d28d9;margin-bottom:6px">Settimana '+w+' — entro '+delivDate.toLocaleDateString('it-IT')+'</div>'+
-        weekProds.map(function(a){return '<div style="font-size:12px;color:#1a1a2e;padding:1px 0">• '+a.p.sku+': <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
-      '</div>';
-    }
-    html+='</div></div>';
+    var prodsForn=prodPlans.filter(function(a){return a.p.fornitore===forn;});
+    if(!prodsForn.length) return;
+
+    // Raccogli settimane con almeno un ordine
+    var weekOrders={}; // w → [{prod, ordine}]
+    prodsForn.forEach(function(a){
+      a.weeks.forEach(function(wk){
+        if(wk.ordine){
+          if(!weekOrders[wk.w]) weekOrders[wk.w]=[];
+          weekOrders[wk.w].push({prod:a.p,ordine:wk.ordine,wk:wk});
+        }
+      });
+    });
+
+    if(!Object.keys(weekOrders).length) return;
+
+    html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;margin-bottom:16px">'+
+      '<div style="background:#f5f3ff;padding:10px 16px;font-size:13px;font-weight:700;color:#6d28d9;display:flex;align-items:center;gap:8px">'+
+        '🏭 '+forn+
+        '<span style="font-size:11px;font-weight:400;color:#888;margin-left:4px">'+fabProducts.find(function(p){return p.fornitore===forn;}).email+'</span>'+
+      '</div>'+
+      '<div style="overflow-x:auto">'+
+      '<table style="border-collapse:collapse;font-size:12px;white-space:nowrap;min-width:100%;background:#fff">'+
+      '<thead><tr style="background:#faf8ff">'+
+        '<th style="padding:8px 12px;text-align:left;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;position:sticky;left:0;background:#faf8ff;min-width:180px">Prodotto</th>'+
+        '<th style="padding:8px 10px;text-align:right;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;white-space:nowrap">Inv.</th>'+
+        '<th style="padding:8px 10px;text-align:right;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;white-space:nowrap">Med/gg</th>'+
+        Array.from({length:WEEKS},function(_,w){
+          var d=new Date(today);d.setDate(today.getDate()+w*7);
+          var label='Sett.'+(w+1)+'<br><span style="font-weight:400;font-size:10px">'+d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'})+'</span>';
+          return '<th style="padding:8px 8px;text-align:center;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;min-width:90px">'+label+'</th>';
+        }).join('')+
+      '</tr></thead><tbody>';
+
+    prodsForn.forEach(function(a,idx){
+      var rowBg=idx%2===1?'#faf8ff':'#fff';
+      html+='<tr style="border-bottom:1px solid #f4f5f7;background:'+rowBg+'">'+
+        '<td style="padding:7px 12px;font-weight:600;color:#1a1a2e;position:sticky;left:0;background:'+rowBg+'">'+a.p.sku+
+          (a.ms>1?'<br><span style="font-size:10px;color:#7c3aed">master da '+a.ms+' pz</span>':'')+
+        '</td>'+
+        '<td style="padding:7px 10px;text-align:right;font-weight:700;color:'+(a.inv<a.avgDay*7?'#dc2626':'#1a1a2e')+'">'+a.inv+'</td>'+
+        '<td style="padding:7px 10px;text-align:right;color:#888">'+a.avgDay.toFixed(1)+'</td>'+
+        a.weeks.map(function(wk){
+          var hasArrivo=wk.arrivo>0;
+          var needOrd=!!wk.ordine;
+          var scorta=wk.scortaFine;
+          var bg=scorta<0?'#fee2e2':scorta<wk.scortaMinima?'#fef9c3':needOrd?'#ede9fe':'#fff';
+          var content='';
+          if(hasArrivo) content+='<div style="color:#1a73e8;font-size:11px">+'+wk.arrivo+'pz</div>';
+          if(needOrd) content+='<div style="color:#16a34a;font-weight:700;font-size:11px">📦 '+wk.ordine.label+'</div>';
+          content+='<div style="color:'+(scorta<0?'#dc2626':scorta<wk.scortaMinima?'#e67e22':'#555')+';font-size:10px">scorta: '+Math.max(0,scorta)+'</div>';
+          return '<td style="padding:5px 8px;text-align:center;background:'+bg+';vertical-align:top">'+content+'</td>';
+        }).join('')+
+      '</tr>';
+    });
+
+    html+='</tbody></table></div></div>';
   });
-  html+='</div>';
+
+  // ── RIEPILOGO ORDINI DA FARE QUESTA SETTIMANA ──────────────────
+  var ordiniQuesta=[];
+  prodPlans.forEach(function(a){
+    if(a.weeks[0]&&a.weeks[0].ordine){
+      ordiniQuesta.push({p:a.p,ordine:a.weeks[0].ordine});
+    }
+  });
+  if(ordiniQuesta.length){
+    html+='<div style="background:#f0fdf4;border:2px solid #16a34a;border-radius:10px;padding:14px 16px;margin-top:8px">'+
+      '<div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:8px">✅ Da ordinare QUESTA SETTIMANA ('+ordiniQuesta.length+' prodotti)</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:8px">'+
+      fornitori.map(function(forn){
+        var items=ordiniQuesta.filter(function(x){return x.p.fornitore===forn;});
+        if(!items.length) return '';
+        return '<div style="background:#fff;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;min-width:220px">'+
+          '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:6px">'+forn+'</div>'+
+          items.map(function(x){return '<div style="font-size:12px;color:#1a1a2e">• '+x.p.sku+': <strong>'+x.ordine.label+'</strong></div>';}).join('')+
+        '</div>';
+      }).join('')+
+      '</div>'+
+    '</div>';
+  }
+
   body.innerHTML=html;
 }
 
