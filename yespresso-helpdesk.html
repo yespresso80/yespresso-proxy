@@ -8264,9 +8264,12 @@ function fabExportVenduto(){
 // TAB 3 — ORDINI FORNITORI
 // ════════════════════════════════════════════════════════════════
 function renderFabOrdini(body){
-  var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
+  var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
     '<h2 style="margin:0;font-size:16px;font-weight:700;color:#1a1a2e">🛒 Ordini Fornitori</h2>'+
-    '<button onclick="fabNewOrdine()" style="background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo ordine</button>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="fabImportNoireExcel()" style="background:#e8f0fe;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📊 Importa Excel Noire</button>'+
+      '<button onclick="fabNewOrdine()" style="background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo ordine</button>'+
+    '</div>'+
   '</div>';
 
   if(!fabOrdini.length){
@@ -8473,6 +8476,373 @@ window.fabSaveOrdine=function(id){
   document.getElementById('fab-ordine-modal').remove();
   renderFabTab('ordini');
   showToast('✅ Ordine salvato');
+};
+
+function fabImportNoireExcel(){
+  var modal=document.createElement('div');
+  modal.id='fab-noire-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10700;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:14px;width:780px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden">'+
+      '<div style="padding:16px 22px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;background:#1a73e8">'+
+        '<div>'+
+          '<div style="font-size:16px;font-weight:700;color:#fff">📊 Importa Ordini Aperti Noire</div>'+
+          '<div style="font-size:11px;color:rgba(255,255,255,.8);margin-top:2px">Carica il file Excel settimanale di Noire srl — verifica e sincronizza automaticamente</div>'+
+        '</div>'+
+        '<button id="noire-close" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:20px;width:30px;height:30px;border-radius:6px;cursor:pointer">×</button>'+
+      '</div>'+
+      '<div style="flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:16px">'+
+        '<div style="background:#f0f7ff;border:1.5px dashed #93c5fd;border-radius:10px;padding:24px;text-align:center;cursor:pointer" id="noire-dropzone" onclick="document.getElementById(\'noire-file-inp\').click()">'+
+          '<div style="font-size:32px;margin-bottom:8px">📂</div>'+
+          '<div style="font-size:14px;font-weight:700;color:#1a73e8">Clicca o trascina il file Excel qui</div>'+
+          '<div style="font-size:12px;color:#aaa;margin-top:4px">File .xlsx ricevuto da Noire srl (es. ordini_aperti.xlsx)</div>'+
+          '<input type="file" id="noire-file-inp" accept=".xlsx,.xls" style="display:none">'+
+        '</div>'+
+        '<div id="noire-preview" style="display:none"></div>'+
+        '<div id="noire-error" style="display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:12px;font-size:13px;color:#dc2626"></div>'+
+      '</div>'+
+      '<div style="padding:12px 22px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px">'+
+        '<button onclick="document.getElementById(\'fab-noire-modal\').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
+        '<button id="noire-confirm-btn" onclick="fabConfirmNoireImport()" style="padding:8px 20px;background:#1a73e8;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:none">✅ Applica modifiche</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#noire-close').addEventListener('click',function(){modal.remove();});
+
+  // Drag & drop
+  var dz=modal.querySelector('#noire-dropzone');
+  dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.background='#dbeafe';});
+  dz.addEventListener('dragleave',function(){dz.style.background='';});
+  dz.addEventListener('drop',function(e){e.preventDefault();dz.style.background='';var f=e.dataTransfer.files[0];if(f)noireReadExcel(f);});
+  modal.querySelector('#noire-file-inp').addEventListener('change',function(e){if(e.target.files[0])noireReadExcel(e.target.files[0]);});
+}
+
+// Mappa codice_forn → prodotto fabProducts
+function noireGetProductByForn(codForn){
+  return fabProducts.find(function(p){return p.codice_forn&&p.codice_forn.trim().toUpperCase()===codForn.trim().toUpperCase();});
+}
+
+window._noireParsed=null; // risultato parsing pronto per conferma
+
+function noireReadExcel(file){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      // Usa SheetJS (disponibile come XLSX globale) oppure parsifichiamo come CSV
+      // SheetJS non è incluso — usiamo la lettura binaria e parse manuale via FileReader ArrayBuffer
+      var data=new Uint8Array(e.target.result);
+      // Verifica header magic bytes XLSX (PK zip)
+      if(data[0]!==0x50||data[1]!==0x4B){
+        noireShowError('File non riconosciuto come Excel. Assicurati di caricare un file .xlsx');return;
+      }
+      // Usa SheetJS se disponibile globalmente, altrimenti caricalo dinamicamente
+      if(typeof XLSX!=='undefined'){
+        noireParseXLSX(e.target.result);
+      } else {
+        var script=document.createElement('script');
+        script.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        script.onload=function(){noireParseXLSX(e.target.result);};
+        script.onerror=function(){noireShowError('Impossibile caricare la libreria Excel. Verifica la connessione.');};
+        document.head.appendChild(script);
+      }
+    }catch(ex){noireShowError('Errore lettura file: '+ex.message);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function noireParseXLSX(arrayBuffer){
+  try{
+    var wb=XLSX.read(arrayBuffer,{type:'array',cellDates:true});
+    var ws=wb.Sheets[wb.SheetNames[0]];
+    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'YYYY-MM-DD'});
+    if(!rows||rows.length<2){noireShowError('File vuoto o senza dati');return;}
+
+    // Trova riga header (riga 0)
+    var hdr=rows[0].map(function(h){return (h||'').toString().toLowerCase().trim();});
+    var iOrdine=hdr.findIndex(function(h){return h.includes('ordine');});
+    var iDel=hdr.findIndex(function(h){return h==='del'||h.includes('del');});
+    var iArticolo=hdr.findIndex(function(h){return h.includes('articolo');});
+    var iQta=hdr.findIndex(function(h){return h.includes('residua');});
+    var iConsegna=hdr.findIndex(function(h){return h.includes('consegna');});
+
+    if([iOrdine,iDel,iArticolo,iQta,iConsegna].some(function(i){return i<0;})){
+      noireShowError('Colonne non trovate. Attese: Ordine, Del, Articolo, Q.tà residua, Consegna. Trovate: '+hdr.join(', '));
+      return;
+    }
+
+    // Parsa ogni riga dati
+    var excelRows=[];
+    for(var i=1;i<rows.length;i++){
+      var r=rows[i];
+      if(!r||!r[iOrdine]) continue;
+      var ordine=(r[iOrdine]||'').toString().trim();
+      var del_=noireFmtDate(r[iDel]);
+      var articoloRaw=(r[iArticolo]||'').toString().trim();
+      // Strip "PF  " o "PF " dal codice articolo
+      var articolo=articoloRaw.replace(/^PF\s+/i,'').trim();
+      var qtaRaw=r[iQta];
+      var qtaMaster=parseInt((qtaRaw||'0').toString().replace(/[^0-9]/g,''))||0;
+      var consegna=noireFmtDate(r[iConsegna]);
+      if(!ordine||!articolo||!consegna) continue;
+      // Trova prodotto
+      var prod=noireGetProductByForn(articolo);
+      excelRows.push({ordine:ordine,del_:del_,articolo:articolo,qtaMaster:qtaMaster,consegna:consegna,prod:prod||null});
+    }
+
+    if(!excelRows.length){noireShowError('Nessuna riga valida trovata nel file');return;}
+    noireAnalyzeAndPreview(excelRows);
+  }catch(ex){noireShowError('Errore parsing Excel: '+ex.message);console.error(ex);}
+}
+
+function noireFmtDate(val){
+  if(!val) return '';
+  var s=val.toString().trim();
+  // Già formato YYYY-MM-DD
+  var m=s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  // Formato DD/MM/YYYY
+  var m2=s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m2) return m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');
+  return s.substring(0,10);
+}
+
+function noireAnalyzeAndPreview(excelRows){
+  // Per ogni riga Excel, calcola qty in UNITÀ (master × masterSize)
+  // Costruisci mappa chiave → riga excel
+  // Chiave: ordine|del|articolo|consegna
+  var excelMap={};
+  excelRows.forEach(function(r){
+    var key=r.ordine+'|'+r.del_+'|'+r.articolo+'|'+r.consegna;
+    excelMap[key]=r;
+  });
+
+  // Analizza rispetto agli ordini in fabOrdini (solo Noire, solo attesa/parziale)
+  var changes=[]; // {tipo, ordine, riga, prod, qtaExcel, qtaSistema, delta}
+  var notInSystem=[]; // righe Excel non trovate nel sistema
+  var matched=0;
+
+  excelRows.forEach(function(exRow){
+    var prod=exRow.prod;
+    var ms=prod?getMasterSize(prod):1;
+    var qtaUnitaExcel=exRow.qtaMaster*ms; // converti master → unità
+
+    // Cerca questa riga in fabOrdini
+    var found=false;
+    fabOrdini.forEach(function(ord){
+      if(ord.fornitore!=='Noire srl') return;
+      if(ord.stato==='ricevuto'||ord.stato==='annullato') return;
+      ord.righe.forEach(function(riga){
+        if(!prod||riga.sku_shopify!==prod.sku_shopify) return;
+        // Controlla se la data consegna corrisponde
+        var dc=(ord.data_consegna_prevista||'').substring(0,10);
+        if(dc!==exRow.consegna) return;
+        found=true;
+        matched++;
+        // Confronta qty residua: riga.qty_ordinata (unità) vs qtaUnitaExcel
+        var qtaSistema=riga.qty_ordinata-(riga.qty_ricevuta||0);
+        var delta=qtaUnitaExcel-qtaSistema;
+        if(Math.abs(delta)>0){
+          changes.push({
+            tipo:'modifica',
+            ordId:ord.id,
+            rigaSku:riga.sku_shopify,
+            prod:prod,
+            exRow:exRow,
+            qtaExcelUnita:qtaUnitaExcel,
+            qtaExcelMaster:exRow.qtaMaster,
+            qtaSistema:qtaSistema,
+            delta:delta,
+            ms:ms
+          });
+        }
+      });
+    });
+
+    if(!found){
+      notInSystem.push(exRow);
+    }
+  });
+
+  window._noireParsed={changes:changes,notInSystem:notInSystem,excelRows:excelRows,matched:matched};
+  noireRenderPreview(changes,notInSystem,excelRows,matched);
+}
+
+function noireRenderPreview(changes,notInSystem,excelRows,matched){
+  var prevEl=document.getElementById('noire-preview');
+  var btn=document.getElementById('noire-confirm-btn');
+  if(!prevEl) return;
+  prevEl.style.display='block';
+
+  var html='';
+
+  // Sommario
+  html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
+    '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;text-align:center">'+
+      '<div style="font-size:22px;font-weight:700;color:#16a34a">'+excelRows.length+'</div>'+
+      '<div style="font-size:11px;color:#555">Righe Excel</div>'+
+    '</div>'+
+    '<div style="background:#f0f7ff;border:1px solid #93c5fd;border-radius:8px;padding:12px;text-align:center">'+
+      '<div style="font-size:22px;font-weight:700;color:#1a73e8">'+matched+'</div>'+
+      '<div style="font-size:11px;color:#555">Abbinate al sistema</div>'+
+    '</div>'+
+    '<div style="background:'+(changes.length?'#fff8f0':'#f0fdf4')+';border:1px solid '+(changes.length?'#fdba74':'#bbf7d0')+';border-radius:8px;padding:12px;text-align:center">'+
+      '<div style="font-size:22px;font-weight:700;color:'+(changes.length?'#e67e22':'#16a34a')+'">'+changes.length+'</div>'+
+      '<div style="font-size:11px;color:#555">Diff. quantità</div>'+
+    '</div>'+
+    '<div style="background:'+(notInSystem.length?'#fff5f5':'#f0fdf4')+';border:1px solid '+(notInSystem.length?'#fca5a5':'#bbf7d0')+';border-radius:8px;padding:12px;text-align:center">'+
+      '<div style="font-size:22px;font-weight:700;color:'+(notInSystem.length?'#dc2626':'#16a34a')+'">'+notInSystem.length+'</div>'+
+      '<div style="font-size:11px;color:#555">Non in sistema</div>'+
+    '</div>'+
+  '</div>';
+
+  // Differenze quantità
+  if(changes.length){
+    html+='<div style="margin-bottom:16px">'+
+      '<div style="font-size:13px;font-weight:700;color:#e67e22;margin-bottom:8px">⚠️ Quantità da aggiornare ('+changes.length+')</div>'+
+      '<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden;font-size:12px">'+
+      '<tr style="background:#fff8f0;font-weight:700;color:#888;font-size:10px;text-transform:uppercase">'+
+        '<td style="padding:7px 10px">Prodotto</td>'+
+        '<td style="padding:7px 10px">N° Ordine</td>'+
+        '<td style="padding:7px 10px">Consegna</td>'+
+        '<td style="padding:7px 10px;text-align:right">Sistema (pz)</td>'+
+        '<td style="padding:7px 10px;text-align:right">Excel (master→pz)</td>'+
+        '<td style="padding:7px 10px;text-align:right">Delta pz</td>'+
+      '</tr>'+
+      changes.map(function(c){
+        var deltaColor=c.delta>0?'#16a34a':'#dc2626';
+        var deltaStr=(c.delta>0?'+':'')+c.delta+' pz';
+        var masterStr=c.ms>1?c.qtaExcelMaster+' master × '+c.ms+' = '+c.qtaUnitaExcel+' pz':c.qtaExcelUnita+' pz';
+        return '<tr style="border-top:1px solid #f4f5f7">'+
+          '<td style="padding:7px 10px;font-weight:600">'+(c.prod?c.prod.sku:c.exRow.articolo)+'</td>'+
+          '<td style="padding:7px 10px;font-size:11px;color:#888">'+c.exRow.ordine+'</td>'+
+          '<td style="padding:7px 10px;font-size:11px;color:#555">'+c.exRow.consegna+'</td>'+
+          '<td style="padding:7px 10px;text-align:right;font-weight:600">'+c.qtaSistema+'</td>'+
+          '<td style="padding:7px 10px;text-align:right;color:#1a73e8">'+masterStr+'</td>'+
+          '<td style="padding:7px 10px;text-align:right;font-weight:700;color:'+deltaColor+'">'+deltaStr+'</td>'+
+        '</tr>';
+      }).join('')+
+      '</table>'+
+    '</div>';
+  } else {
+    html+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;font-size:13px;color:#166534;margin-bottom:12px">'+
+      '✅ Tutte le quantità coincidono — nessuna modifica necessaria'+
+    '</div>';
+  }
+
+  // Righe non in sistema (nuovi ordini da aggiungere)
+  if(notInSystem.length){
+    html+='<div>'+
+      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px">🆕 Righe Excel non trovate nel sistema ('+notInSystem.length+') — verranno create come nuovo ordine</div>'+
+      '<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden;font-size:12px">'+
+      '<tr style="background:#fff5f5;font-weight:700;color:#888;font-size:10px;text-transform:uppercase">'+
+        '<td style="padding:7px 10px">Prodotto</td>'+
+        '<td style="padding:7px 10px">Cod. Fornitore</td>'+
+        '<td style="padding:7px 10px">N° Ordine</td>'+
+        '<td style="padding:7px 10px">Consegna</td>'+
+        '<td style="padding:7px 10px;text-align:right">Q.tà (master→pz)</td>'+
+        '<td style="padding:7px 10px;text-align:center">Match</td>'+
+      '</tr>'+
+      notInSystem.map(function(r){
+        var ms=r.prod?getMasterSize(r.prod):1;
+        var pzStr=ms>1?r.qtaMaster+' master × '+ms+' = '+(r.qtaMaster*ms)+' pz':r.qtaMaster+' pz';
+        var matchOk=!!r.prod;
+        return '<tr style="border-top:1px solid #f4f5f7">'+
+          '<td style="padding:7px 10px;font-weight:600">'+(r.prod?r.prod.sku:'❌ Non trovato')+'</td>'+
+          '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#888">'+r.articolo+'</td>'+
+          '<td style="padding:7px 10px;font-size:11px;color:#888">'+r.ordine+'</td>'+
+          '<td style="padding:7px 10px;font-size:11px">'+r.consegna+'</td>'+
+          '<td style="padding:7px 10px;text-align:right;color:#1a73e8">'+pzStr+'</td>'+
+          '<td style="padding:7px 10px;text-align:center">'+(matchOk?'✅':'⚠️ cod. sconosciuto')+'</td>'+
+        '</tr>';
+      }).join('')+
+      '</table>'+
+    '</div>';
+  }
+
+  prevEl.innerHTML=html;
+
+  // Mostra bottone conferma solo se ci sono modifiche o nuovi ordini
+  if(btn&&(changes.length||notInSystem.filter(function(r){return r.prod;}).length)){
+    btn.style.display='inline-block';
+  }
+}
+
+function noireShowError(msg){
+  var el=document.getElementById('noire-error');
+  if(el){el.style.display='block';el.textContent='❌ '+msg;}
+}
+
+window.fabConfirmNoireImport=function(){
+  var parsed=window._noireParsed;
+  if(!parsed) return;
+  var btn=document.getElementById('noire-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Applicazione...';}
+
+  // 1. Applica modifiche di quantità agli ordini esistenti
+  parsed.changes.forEach(function(c){
+    var ord=fabOrdini.find(function(o){return String(o.id)===String(c.ordId);});
+    if(!ord) return;
+    var riga=ord.righe.find(function(r){return r.sku_shopify===c.rigaSku;});
+    if(!riga) return;
+    // Aggiorna qty_ordinata in unità (aggiunge il delta)
+    riga.qty_ordinata=Math.max(0,riga.qty_ordinata+c.delta);
+    // Se prodotto master, aggiorna anche qty_master
+    if(c.ms>1) riga.qty_master=unitaToMaster(c.prod,riga.qty_ordinata);
+  });
+
+  // 2. Raggruppa nuove righe per numero ordine Noire e crea ordini nel sistema
+  var nuove=parsed.notInSystem.filter(function(r){return r.prod;});
+  if(nuove.length){
+    // Raggruppa per numero ordine Noire
+    var byOrdine={};
+    nuove.forEach(function(r){
+      var key=r.ordine+'|'+r.del_;
+      if(!byOrdine[key]) byOrdine[key]={ordine:r.ordine,del_:r.del_,righe:[]};
+      byOrdine[key].righe.push(r);
+    });
+    Object.values(byOrdine).forEach(function(grp){
+      // Per ogni data consegna distinta crea un ordine separato
+      var byData={};
+      grp.righe.forEach(function(r){
+        if(!byData[r.consegna]) byData[r.consegna]=[];
+        byData[r.consegna].push(r);
+      });
+      Object.keys(byData).forEach(function(dataConsegna){
+        var righeOrd=byData[dataConsegna];
+        var ms0=getMasterSize(righeOrd[0].prod);
+        var newOrd={
+          id:'ord_noire_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+          fornitore:'Noire srl',
+          stato:'attesa',
+          data_ordine:righeOrd[0].del_||new Date().toISOString().substring(0,10),
+          data_consegna_prevista:dataConsegna,
+          note:'Importato da Excel Noire — ord. '+grp.ordine,
+          righe:righeOrd.map(function(r){
+            var ms=getMasterSize(r.prod);
+            var qtyUnita=r.qtaMaster*ms;
+            return {
+              sku_shopify:r.prod.sku_shopify,
+              sku:r.prod.sku,
+              qty_master:ms>1?r.qtaMaster:null,
+              qty_ordinata:qtyUnita,
+              qty_ricevuta:0,
+              qty_ricevuta_master:0
+            };
+          })
+        };
+        fabOrdini.unshift(newOrd);
+      });
+    });
+  }
+
+  saveFabState();
+  document.getElementById('fab-noire-modal').remove();
+  window._noireParsed=null;
+  renderFabTab('ordini');
+  var msg='✅ Import Noire: '+parsed.changes.length+' quantità aggiornate';
+  if(nuove.length) msg+=', '+nuove.length+' nuove righe aggiunte';
+  showToast(msg);
 };
 
 function fabDeleteOrdine(id){
