@@ -22,6 +22,7 @@ console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
 console.log("[INIT] IMAP_USER:", IMAP_USER);
 console.log("[INIT] IMAP_PASSWORD presente:", !!IMAP_PASSWORD);
 
+
 // Cache allegati in memoria
 const attachmentsCache = new Map();
 let lastImapSync = 0;
@@ -668,46 +669,66 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // ── FAB DATA: salvataggio/lettura ordini fornitori (condiviso tra utenti) ──
+  // ── FAB DATA: salvataggio/lettura ordini fornitori su GitHub ────
+  const GH_FAB_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/fab-data.json';
+
+  async function ghFabGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: {fabOrdini:[],fabProducts:null}, sha: null };
+    const r = await fetch(GH_FAB_URL, {
+      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (r.status === 404) return { data: {fabOrdini:[],fabProducts:null}, sha: null };
+    const j = await r.json();
+    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
+    return { data, sha: j.sha };
+  }
+
+  async function ghFabSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update fab-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_FAB_URL, {
+      method: 'PUT',
+      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
   if (req.url === '/fab-data') {
-    const fabFile = path.join(__dirname, 'fab_data.json');
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') {
       res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
       res.end(); return;
     }
     if (req.method === 'GET') {
-      fs.readFile(fabFile, 'utf8', function(err, data) {
-        if (err) {
-          res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-          res.end(JSON.stringify({fabOrdini:[],fabProducts:null}));
-          return;
-        }
-        res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-        res.end(data);
-      });
+      try {
+        const { data } = await ghFabGet();
+        res.writeHead(200, CORS);
+        res.end(JSON.stringify(data));
+      } catch(e) {
+        console.error('[FAB DATA GET]', e.message);
+        res.writeHead(200, CORS);
+        res.end(JSON.stringify({fabOrdini:[],fabProducts:null}));
+      }
       return;
     }
     if (req.method === 'POST') {
       const fabChunks = [];
       req.on('data', function(c){ fabChunks.push(c); });
-      req.on('end', function(){
+      req.on('end', async function(){
         try {
-          const body = Buffer.concat(fabChunks).toString();
-          JSON.parse(body); // valida JSON
-          fs.writeFile(fabFile, body, 'utf8', function(err){
-            if (err) {
-              console.error('[FAB DATA] Errore scrittura:', err.message);
-              res.writeHead(500, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-              res.end(JSON.stringify({ok:false,error:err.message}));
-              return;
-            }
-            console.log('[FAB DATA] Salvato', body.length, 'bytes');
-            res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-            res.end(JSON.stringify({ok:true,bytes:body.length}));
-          });
+          const parsed = JSON.parse(Buffer.concat(fabChunks).toString());
+          const { sha } = await ghFabGet();
+          await ghFabSave(parsed, sha);
+          console.log('[FAB DATA] Salvato su GitHub: ' + (parsed.fabOrdini||[]).length + ' ordini');
+          res.writeHead(200, CORS);
+          res.end(JSON.stringify({ok:true,ordini:(parsed.fabOrdini||[]).length}));
         } catch(e) {
-          res.writeHead(400, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-          res.end(JSON.stringify({ok:false,error:'JSON non valido'}));
+          console.error('[FAB DATA POST]', e.message);
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({ok:false,error:e.message}));
         }
       });
       return;

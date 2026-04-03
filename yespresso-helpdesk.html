@@ -7682,7 +7682,12 @@ let _fabDataLoaded = false; // flag per evitare doppie chiamate
 
 // ── SAVE/LOAD DAL SERVER ───────────────────────────────────────
 async function saveFabState(){
-  // Salva sempre su server (condiviso tra utenti)
+  // Salva sempre in locale come backup immediato
+  try{
+    localStorage.setItem('fab_ordini', JSON.stringify(fabOrdini));
+    localStorage.setItem('fab_products', JSON.stringify(fabProducts));
+  }catch(e){}
+  // Poi salva sul server
   try{
     var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts});
     var res=await fetch(PROXY+'/fab-data',{
@@ -7691,15 +7696,10 @@ async function saveFabState(){
       body:payload
     });
     if(!res.ok) throw new Error('HTTP '+res.status);
-    // Fallback locale per offline
-    try{localStorage.setItem('fab_ordini_backup',payload);}catch(e){}
+    var result=await res.json();
+    console.log('[FAB] Salvato sul server: '+result.ordini+' ordini');
   }catch(e){
     console.error('[FAB] Errore salvataggio server:',e.message);
-    // Salva in locale come backup
-    try{
-      localStorage.setItem('fab_ordini', JSON.stringify(fabOrdini));
-      localStorage.setItem('fab_products', JSON.stringify(fabProducts));
-    }catch(e2){}
     showToast('⚠️ Salvataggio solo locale — server non raggiungibile','error');
   }
 }
@@ -7711,19 +7711,39 @@ async function loadFabState(){
     var res=await fetch(PROXY+'/fab-data');
     if(!res.ok) throw new Error('HTTP '+res.status);
     var data=await res.json();
-    if(data.fabOrdini&&Array.isArray(data.fabOrdini)) fabOrdini=data.fabOrdini;
-    if(data.fabProducts&&Array.isArray(data.fabProducts)) fabProducts=data.fabProducts;
-    console.log('[FAB] Caricato dal server: '+fabOrdini.length+' ordini, '+fabProducts.length+' prodotti');
+    var serverHasData=(data.fabOrdini&&data.fabOrdini.length>0)||(data.fabProducts&&data.fabProducts.length>0);
+    if(serverHasData){
+      if(data.fabOrdini&&Array.isArray(data.fabOrdini)) fabOrdini=data.fabOrdini;
+      if(data.fabProducts&&Array.isArray(data.fabProducts)) fabProducts=data.fabProducts;
+      console.log('[FAB] Caricato dal server: '+fabOrdini.length+' ordini');
+    } else {
+      // Server vuoto (es. dopo restart) — ripristina da localStorage e ri-salva sul server
+      var localOrdini=localStorage.getItem('fab_ordini');
+      var localProducts=localStorage.getItem('fab_products');
+      var restored=false;
+      if(localOrdini) try{fabOrdini=JSON.parse(localOrdini);restored=true;}catch(e2){}
+      if(localProducts) try{fabProducts=JSON.parse(localProducts);}catch(e2){}
+      if(restored&&fabOrdini.length>0){
+        console.log('[FAB] Server vuoto, ripristino da locale: '+fabOrdini.length+' ordini');
+        // Ri-salva automaticamente sul server
+        setTimeout(async function(){
+          try{
+            var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts});
+            await fetch(PROXY+'/fab-data',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
+            console.log('[FAB] Dati locali ripristinati sul server');
+            showToast('☁️ Dati ripristinati sul server da cache locale');
+          }catch(e3){}
+        },500);
+      }
+    }
   }catch(e){
     console.error('[FAB] Errore caricamento server:',e.message);
-    // Fallback: prova a leggere dal localStorage
+    // Fallback locale
     var localOrdini=localStorage.getItem('fab_ordini');
     var localProducts=localStorage.getItem('fab_products');
     if(localOrdini) try{fabOrdini=JSON.parse(localOrdini);}catch(e2){}
     if(localProducts) try{fabProducts=JSON.parse(localProducts);}catch(e2){}
-    if(fabOrdini.length||fabProducts!==FAB_PRODUCTS_DEFAULT){
-      showToast('⚠️ Dati caricati da cache locale — server non raggiungibile');
-    }
+    showToast('⚠️ Server non raggiungibile — dati da cache locale');
   }
 }
 
