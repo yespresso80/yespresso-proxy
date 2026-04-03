@@ -9278,19 +9278,39 @@ window.ricezioneSalva=async function(){
     // Aggiorna inventario Shopify se checkbox attiva
     if(aggiornaShopify){
       try{
-        var vd=await shopifyGet('variants.json?sku='+encodeURIComponent(sku)+'&limit=1');
-        if(vd&&vd.variants&&vd.variants[0]){
-          var invItemId=vd.variants[0].inventory_item_id;
+        // Cerca la variante scorrendo i prodotti per SKU
+        // (variants.json?sku= non è supportato da Shopify)
+        var invItemId=null;
+        var nextProd='products.json?limit=250&fields=id,variants';
+        var safety=0;
+        while(nextProd&&safety<20&&!invItemId){
+          safety++;
+          var pd=await shopifyGet(nextProd);
+          if(pd&&pd.products){
+            for(var pi=0;pi<pd.products.length;pi++){
+              var variants=pd.products[pi].variants||[];
+              for(var vi=0;vi<variants.length;vi++){
+                if((variants[vi].sku||'').trim().toLowerCase()===sku.toLowerCase()){
+                  invItemId=variants[vi].inventory_item_id;
+                  break;
+                }
+              }
+              if(invItemId) break;
+            }
+            nextProd=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
+          } else { nextProd=null; }
+        }
+        if(invItemId){
           var locD=await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
           if(locD&&locD.inventory_levels&&locD.inventory_levels[0]){
             var locId=locD.inventory_levels[0].location_id;
-            await proxyFetch(PROXY+'/shopify/inventory_adjustments.json',{
+            var adjRes=await proxyFetch(PROXY+'/shopify/inventory_adjustments.json',{
               method:'POST',headers:{'Content-Type':'application/json'},
               body:JSON.stringify({inventory_adjustment:{inventory_item_id:invItemId,location_id:locId,available_adjustment:qtyRicevuta}})
             });
             if(fabInventoryCache) fabInventoryCache[sku]=(fabInventoryCache[sku]||0)+qtyRicevuta;
-          }
-        }
+          } else { errors.push(p.sku+': nessun inventory_level trovato'); }
+        } else { errors.push(p.sku+': variante non trovata su Shopify (SKU: '+sku+')'); }
       }catch(e2){errors.push(p.sku+': '+e2.message);}
     }
   }
