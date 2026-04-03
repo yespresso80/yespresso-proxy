@@ -612,6 +612,108 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // ── QUICK REPLIES — GitHub come database persistente ──
+  const GH_QR_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/quick-replies.json';
+
+  async function ghQrGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: { replies: [], cats: [] }, sha: null };
+    const r = await fetch(GH_QR_URL, {
+      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (r.status === 404) return { data: { replies: [], cats: [] }, sha: null };
+    const j = await r.json();
+    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
+    return { data, sha: j.sha };
+  }
+
+  async function ghQrSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update quick-replies', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_QR_URL, {
+      method: 'PUT',
+      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  if (req.url === '/quick-replies' && req.method === 'GET') {
+    try {
+      const { data } = await ghQrGet();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch(e) {
+      console.error('[QR GET]', e.message);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ replies: [], cats: [] }));
+    }
+    return;
+  }
+
+  if (req.url === '/quick-replies' && req.method === 'POST') {
+    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+    try {
+      const newData = JSON.parse(Buffer.concat(chunks).toString());
+      const { sha } = await ghQrGet();
+      await ghQrSave(newData, sha);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      console.error('[QR POST]', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // ── FAB DATA: salvataggio/lettura ordini fornitori (condiviso tra utenti) ──
+  if (req.url === '/fab-data') {
+    const fabFile = path.join(__dirname, 'fab_data.json');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    if (req.method === 'GET') {
+      fs.readFile(fabFile, 'utf8', function(err, data) {
+        if (err) {
+          res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+          res.end(JSON.stringify({fabOrdini:[],fabProducts:null}));
+          return;
+        }
+        res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        res.end(data);
+      });
+      return;
+    }
+    if (req.method === 'POST') {
+      const fabChunks = [];
+      req.on('data', function(c){ fabChunks.push(c); });
+      req.on('end', function(){
+        try {
+          const body = Buffer.concat(fabChunks).toString();
+          JSON.parse(body); // valida JSON
+          fs.writeFile(fabFile, body, 'utf8', function(err){
+            if (err) {
+              console.error('[FAB DATA] Errore scrittura:', err.message);
+              res.writeHead(500, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+              res.end(JSON.stringify({ok:false,error:err.message}));
+              return;
+            }
+            console.log('[FAB DATA] Salvato', body.length, 'bytes');
+            res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+            res.end(JSON.stringify({ok:true,bytes:body.length}));
+          });
+        } catch(e) {
+          res.writeHead(400, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+          res.end(JSON.stringify({ok:false,error:'JSON non valido'}));
+        }
+      });
+      return;
+    }
+  }
+
   let targetUrl, requestHeaders;
 
   if (req.url.startsWith("/shopify")) {
