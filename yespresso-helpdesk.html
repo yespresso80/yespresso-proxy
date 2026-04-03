@@ -7974,6 +7974,18 @@ async function refreshFabData(){ return refreshFabInventory(); }
 // fabSalesCache = { sku: qty7gg } — venduto reale 7 giorni importato da Shopify
 // Tutti gli altri periodi si calcolano per proporzione lineare dalla media giornaliera
 
+// ── HELPER MASTER ──────────────────────────────────────────────
+// "master da 120 unità" → 120  |  "1 unità" → 1
+function getMasterSize(p){
+  var m=(p.unita_acq||'').match(/master\s+da\s+(\d+)/i);
+  return m?parseInt(m[1]):1;
+}
+function isMasterProduct(p){ return getMasterSize(p)>1; }
+// unità → master (ceil al master intero)
+function unitaToMaster(p,unita){ var ms=getMasterSize(p); return ms>1?Math.ceil(unita/ms):unita; }
+// master → unità
+function masterToUnita(p,master){ return master*getMasterSize(p); }
+
 function fabSoldInDays(sku, days){
   if(!fabSalesCache||!fabSalesCache[sku]) return 0;
   // Proiezione lineare: (qty7gg / 7) * days
@@ -8330,16 +8342,37 @@ function _openOrdineModal(ord){
   function buildRigheHtml(fornitore){
     var prods=fabProducts.filter(function(p){return p.fornitore===fornitore;});
     return prods.map(function(p){
+      var ms=getMasterSize(p);
+      var isMaster=ms>1;
       var existing=ord.righe.find(function(r){return r.sku_shopify===p.sku_shopify;});
-      var qty=existing?existing.qty_ordinata:0;
-      return '<tr><td style="padding:5px 8px;font-size:13px;font-weight:600">'+p.sku+'</td>'+
-        '<td style="padding:5px 8px;font-size:11px;color:#aaa">'+p.ord_min+' (min '+p.multiplo+')</td>'+
-        '<td style="padding:5px 8px;text-align:right"><input type="number" min="0" step="'+p.multiplo+'" data-sku="'+p.sku_shopify+'" data-nome="'+p.sku+'" value="'+qty+'" style="width:90px;padding:4px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;text-align:right;font-family:inherit"></td></tr>';
+      // Se esiste già, leggi in master; altrimenti 0
+      var valMaster=existing?(isMaster?(existing.qty_master!=null?existing.qty_master:unitaToMaster(p,existing.qty_ordinata)):existing.qty_ordinata):0;
+      var minVal=isMaster?1:p.ord_min;
+      var stepVal=1;
+      var unitLabel=isMaster?'master (1 master = '+ms+' pz)':'pz';
+      var borderColor=isMaster?'#7c3aed':'#e0e4ea';
+      var previewId='fom-prev-'+p.id;
+      var previewPz=isMaster?(valMaster*ms):0;
+      var onchg=isMaster?'var v=parseInt(this.value)||0;document.getElementById(\''+previewId+'\').textContent=v*'+ms+' +\' pz totali\';':'';
+      return '<tr style="border-bottom:1px solid #f4f5f7">'+
+        '<td style="padding:6px 8px;font-size:13px;font-weight:600;color:#1a1a2e">'+p.sku+'</td>'+
+        '<td style="padding:6px 8px;font-size:11px;color:'+(isMaster?'#7c3aed':'#888')+';white-space:nowrap">'+
+          (isMaster?'<strong>MASTER</strong> da '+ms+' pz<br>min 1 master':'min '+p.ord_min+' pz')+
+        '</td>'+
+        '<td style="padding:6px 8px;text-align:right">'+
+          '<input type="number" min="0" step="'+stepVal+'" value="'+valMaster+'" '+
+            'data-sku="'+p.sku_shopify+'" data-nome="'+p.sku+'" data-ms="'+ms+'" '+
+            'onchange="'+onchg+'" '+
+            'style="width:80px;padding:4px 8px;border:1px solid '+borderColor+';border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:inherit">'+
+          '<br><span style="font-size:10px;color:#888">'+unitLabel+'</span>'+
+          (isMaster?'<br><span id="'+previewId+'" style="font-size:11px;color:#7c3aed;font-weight:700">'+(previewPz>0?previewPz+' pz totali':'')+'</span>':'')+
+        '</td>'+
+      '</tr>';
     }).join('');
   }
 
   var righeHtml=buildRigheHtml(ord.fornitore);
-  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:620px;max-width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:640px;max-width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
     '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#6d28d9">'+(isNew?'+ Nuovo ordine fornitore':'✏️ Modifica ordine')+'</div>'+
     '<div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
@@ -8359,11 +8392,17 @@ function _openOrdineModal(ord){
       '<div><label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:3px">Note</label>'+
         '<input id="fom-note" value="'+(ord.note||'')+'" style="width:100%;padding:8px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box"></div>'+
       '<div>'+
-        '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:6px">Quantità per prodotto</label>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+          '<label style="font-size:11px;font-weight:700;color:#555">Quantità per prodotto</label>'+
+          '<span style="font-size:11px;background:#f5f3ff;color:#7c3aed;padding:2px 8px;border-radius:4px">Prodotti viola = ordine in MASTER</span>'+
+        '</div>'+
         '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse" id="fom-righe-table">'+
-          '<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e8eaf0">'+
-            '<td style="padding:5px 8px">Prodotto</td><td style="padding:5px 8px">Min/Multiplo</td><td style="padding:5px 8px;text-align:right">Qtà da ordinare</td>'+
-          '</tr>'+righeHtml+'</table></div>'+
+          '<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;border-bottom:2px solid #e8eaf0;background:#f8f9fc">'+
+            '<td style="padding:6px 8px">Prodotto</td>'+
+            '<td style="padding:6px 8px">Unità acquisto</td>'+
+            '<td style="padding:6px 8px;text-align:right">Qtà da ordinare</td>'+
+          '</tr>'+righeHtml+
+        '</table></div>'+
       '</div>'+
     '</div>'+
     '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px">'+
@@ -8376,14 +8415,28 @@ function _openOrdineModal(ord){
 }
 
 window.fabUpdateOrdineRighe=function(fornitore){
+  // Ricostruisce le righe quando cambia fornitore — stesso buildRigheHtml ma senza ord.righe
   var tbl=document.getElementById('fom-righe-table');if(!tbl)return;
   var prods=fabProducts.filter(function(p){return p.fornitore===fornitore;});
   var rows=prods.map(function(p){
-    return '<tr><td style="padding:5px 8px;font-size:13px;font-weight:600">'+p.sku+'</td>'+
-      '<td style="padding:5px 8px;font-size:11px;color:#aaa">'+p.ord_min+' (min '+p.multiplo+')</td>'+
-      '<td style="padding:5px 8px;text-align:right"><input type="number" min="0" step="'+p.multiplo+'" data-sku="'+p.sku_shopify+'" data-nome="'+p.sku+'" value="0" style="width:90px;padding:4px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;text-align:right;font-family:inherit"></td></tr>';
+    var ms=getMasterSize(p);var isMaster=ms>1;
+    var unitLabel=isMaster?'master (1 master = '+ms+' pz)':'pz';
+    var borderColor=isMaster?'#7c3aed':'#e0e4ea';
+    var previewId='fom-prev-'+p.id;
+    var onchg=isMaster?'var v=parseInt(this.value)||0;document.getElementById(\''+previewId+'\').textContent=v*'+ms+' +\' pz totali\';':'';
+    return '<tr style="border-bottom:1px solid #f4f5f7">'+
+      '<td style="padding:6px 8px;font-size:13px;font-weight:600;color:#1a1a2e">'+p.sku+'</td>'+
+      '<td style="padding:6px 8px;font-size:11px;color:'+(isMaster?'#7c3aed':'#888')+';white-space:nowrap">'+
+        (isMaster?'<strong>MASTER</strong> da '+ms+' pz<br>min 1 master':'min '+p.ord_min+' pz')+
+      '</td>'+
+      '<td style="padding:6px 8px;text-align:right">'+
+        '<input type="number" min="0" step="1" value="0" data-sku="'+p.sku_shopify+'" data-nome="'+p.sku+'" data-ms="'+ms+'" onchange="'+onchg+'" '+
+          'style="width:80px;padding:4px 8px;border:1px solid '+borderColor+';border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:inherit">'+
+        '<br><span style="font-size:10px;color:#888">'+unitLabel+'</span>'+
+        (isMaster?'<br><span id="'+previewId+'" style="font-size:11px;color:#7c3aed;font-weight:700"></span>':'')+
+      '</td></tr>';
   }).join('');
-  var header='<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e8eaf0"><td style="padding:5px 8px">Prodotto</td><td style="padding:5px 8px">Min/Multiplo</td><td style="padding:5px 8px;text-align:right">Qtà da ordinare</td></tr>';
+  var header='<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;border-bottom:2px solid #e8eaf0;background:#f8f9fc"><td style="padding:6px 8px">Prodotto</td><td style="padding:6px 8px">Unità acquisto</td><td style="padding:6px 8px;text-align:right">Qtà da ordinare</td></tr>';
   tbl.innerHTML=header+rows;
 };
 
@@ -8395,8 +8448,22 @@ window.fabSaveOrdine=function(id){
   var note=document.getElementById('fom-note').value;
   var righe=[];
   document.querySelectorAll('#fom-righe-table input[type=number]').forEach(function(inp){
-    var qty=parseInt(inp.value)||0;
-    if(qty>0)righe.push({sku_shopify:inp.dataset.sku,sku:inp.dataset.nome,qty_ordinata:qty,qty_ricevuta:0});
+    var valInput=parseInt(inp.value)||0;
+    if(valInput<=0)return;
+    var ms=parseInt(inp.dataset.ms)||1;
+    var isMaster=ms>1;
+    // qty_master = valore inserito (in master se prodotto master, in pz altrimenti)
+    // qty_ordinata = sempre in UNITÀ SINGOLE per coerenza con fabbisogno
+    var qtyMaster=isMaster?valInput:null;
+    var qtyUnita=isMaster?masterToUnita({unita_acq:'master da '+ms+' unità'},valInput):valInput;
+    righe.push({
+      sku_shopify:inp.dataset.sku,
+      sku:inp.dataset.nome,
+      qty_master:qtyMaster,        // null se non master
+      qty_ordinata:qtyUnita,       // sempre in unità singole
+      qty_ricevuta:0,
+      qty_ricevuta_master:0
+    });
   });
   if(!righe.length){showToast('Inserisci almeno una quantità','error');return;}
   var existing=fabOrdini.find(function(o){return String(o.id)===String(id);});
@@ -8419,21 +8486,46 @@ function fabRiceviOrdine(id){
   if(!ord)return;
   var modal=document.createElement('div');
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10600;display:flex;align-items:center;justify-content:center';
-  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:540px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:600px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">'+
     '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#16a34a">📦 Registra ricezione merce</div>'+
     '<div style="padding:16px 20px">'+
-      '<div style="font-size:13px;color:#555;margin-bottom:12px">Inserisci le quantità effettivamente ricevute. L\'inventario Shopify verrà aggiornato.</div>'+
+      '<div style="font-size:12px;color:#555;margin-bottom:12px;background:#f0fdf4;padding:8px 12px;border-radius:6px">'+
+        'Per prodotti in <strong>MASTER</strong>: inserisci il numero di master ricevuti — il sistema calcola automaticamente le unità da aggiungere in Shopify.'+
+      '</div>'+
       '<table style="width:100%;border-collapse:collapse" id="recv-table">'+
-        '<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e8eaf0">'+
-          '<td style="padding:5px 8px">Prodotto</td><td style="padding:5px 8px;text-align:right">Ordinato</td><td style="padding:5px 8px;text-align:right">Già ricevuto</td><td style="padding:5px 8px;text-align:right">Ora ricevo</td>'+
+        '<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;border-bottom:2px solid #e8eaf0;background:#f8f9fc">'+
+          '<td style="padding:5px 8px">Prodotto</td>'+
+          '<td style="padding:5px 8px;text-align:center">Ord.</td>'+
+          '<td style="padding:5px 8px;text-align:center">Già ric.</td>'+
+          '<td style="padding:5px 8px;text-align:right">Ora ricevo</td>'+
+          '<td style="padding:5px 8px;text-align:center">= Pz Shopify</td>'+
         '</tr>'+
         ord.righe.map(function(r){
-          var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
+          var prod=fabProducts.find(function(p){return p.sku_shopify===r.sku_shopify;});
+          var ms=prod?getMasterSize(prod):1;
+          var isMaster=ms>1;
+          var ordLabel=isMaster?(r.qty_master||unitaToMaster({unita_acq:'master da '+ms+' unità'},r.qty_ordinata))+' master ('+r.qty_ordinata+' pz)':r.qty_ordinata+' pz';
+          var ricevLabel=isMaster?((r.qty_ricevuta_master||0)+' master ('+(r.qty_ricevuta||0)+' pz)'):(r.qty_ricevuta||0)+' pz';
+          var residuoMaster=isMaster?((r.qty_master||0)-(r.qty_ricevuta_master||0)):r.qty_ordinata-(r.qty_ricevuta||0);
+          var previewId='recv-prev-'+r.sku_shopify.replace(/[^a-z0-9]/gi,'');
+          var onchg=isMaster?'document.getElementById(\''+previewId+'\').textContent=(parseInt(this.value)||0)*'+ms+' +\' pz\';':'document.getElementById(\''+previewId+'\').textContent=(parseInt(this.value)||0)+\' pz\';';
+          var defaultVal=isMaster?residuoMaster:residuoMaster;
           return '<tr style="border-bottom:1px solid #f4f5f7">'+
-            '<td style="padding:6px 8px;font-size:13px;font-weight:600">'+r.sku+'</td>'+
-            '<td style="padding:6px 8px;text-align:right;font-size:13px">'+r.qty_ordinata+'</td>'+
-            '<td style="padding:6px 8px;text-align:right;font-size:13px;color:#16a34a">'+(r.qty_ricevuta||0)+'</td>'+
-            '<td style="padding:6px 8px;text-align:right"><input type="number" min="0" max="'+residuo+'" value="'+residuo+'" data-sku="'+r.sku_shopify+'" data-nome="'+r.sku+'" style="width:80px;padding:4px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;text-align:right;font-family:inherit"></td>'+
+            '<td style="padding:6px 8px;font-size:13px;font-weight:600">'+r.sku+
+              (isMaster?'<br><span style="font-size:10px;color:#7c3aed;font-weight:700">MASTER da '+ms+' pz</span>':'')+
+            '</td>'+
+            '<td style="padding:6px 8px;text-align:center;font-size:12px;color:#555">'+ordLabel+'</td>'+
+            '<td style="padding:6px 8px;text-align:center;font-size:12px;color:#16a34a">'+ricevLabel+'</td>'+
+            '<td style="padding:6px 8px;text-align:right">'+
+              '<input type="number" min="0" value="'+defaultVal+'" '+
+                'data-sku="'+r.sku_shopify+'" data-nome="'+r.sku+'" data-ms="'+ms+'" '+
+                'onchange="'+onchg+'" '+
+                'style="width:75px;padding:4px 8px;border:1px solid '+(isMaster?'#7c3aed':'#e0e4ea')+';border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:inherit">'+
+              '<br><span style="font-size:10px;color:#888">'+(isMaster?'master':'pz')+'</span>'+
+            '</td>'+
+            '<td style="padding:6px 8px;text-align:center;font-size:13px;font-weight:700;color:#6d28d9">'+
+              '<span id="'+previewId+'">'+(isMaster?defaultVal*ms:defaultVal)+' pz</span>'+
+            '</td>'+
           '</tr>';
         }).join('')+
       '</table>'+
@@ -8452,17 +8544,28 @@ window.fabConfirmRicezione=async function(id,btn){
   var inputs=document.querySelectorAll('#recv-table input[type=number]');
   var updates=[];
   inputs.forEach(function(inp){
-    var qty=parseInt(inp.value)||0;
-    if(qty>0)updates.push({sku_shopify:inp.dataset.sku,sku:inp.dataset.nome,qty:qty});
+    var valInput=parseInt(inp.value)||0;
+    if(valInput<=0)return;
+    var ms=parseInt(inp.dataset.ms)||1;
+    var isMaster=ms>1;
+    var qtyUnita=isMaster?valInput*ms:valInput; // unità da aggiungere a Shopify
+    updates.push({sku_shopify:inp.dataset.sku,sku:inp.dataset.nome,ms:ms,isMaster:isMaster,qtyInput:valInput,qtyUnita:qtyUnita});
   });
-  // Aggiorna ord.righe
+  // Aggiorna ord.righe con master ricevuti e unità equivalenti
   updates.forEach(function(u){
     var r=ord.righe.find(function(x){return x.sku_shopify===u.sku_shopify;});
-    if(r){r.qty_ricevuta=(r.qty_ricevuta||0)+u.qty;}
+    if(!r)return;
+    r.qty_ricevuta=(r.qty_ricevuta||0)+u.qtyUnita;
+    if(u.isMaster) r.qty_ricevuta_master=(r.qty_ricevuta_master||0)+u.qtyInput;
   });
-  var allReceived=ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty_ordinata;});
+  var allReceived=ord.righe.every(function(r){
+    var prod=fabProducts.find(function(p){return p.sku_shopify===r.sku_shopify;});
+    var ms=prod?getMasterSize(prod):1;
+    if(ms>1) return (r.qty_ricevuta_master||0)>=(r.qty_master||unitaToMaster(prod,r.qty_ordinata));
+    return (r.qty_ricevuta||0)>=r.qty_ordinata;
+  });
   ord.stato=allReceived?'ricevuto':'parziale';
-  // Aggiorna inventario Shopify tramite proxy
+  // Aggiorna inventario Shopify: sempre in UNITÀ SINGOLE
   var errors=[];
   for(var i=0;i<updates.length;i++){
     var u=updates[i];
@@ -8476,8 +8579,8 @@ window.fabConfirmRicezione=async function(id,btn){
         var locD=await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
         if(locD&&locD.inventory_levels&&locD.inventory_levels[0]){
           var locId=locD.inventory_levels[0].location_id;
-          await proxyFetch(PROXY+'/shopify/inventory_adjustments.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({inventory_adjustment:{inventory_item_id:invItemId,location_id:locId,available_adjustment:u.qty}})});
-          if(fabInventoryCache)fabInventoryCache[u.sku_shopify]=(fabInventoryCache[u.sku_shopify]||0)+u.qty;
+          await proxyFetch(PROXY+'/shopify/inventory_adjustments.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({inventory_adjustment:{inventory_item_id:invItemId,location_id:locId,available_adjustment:u.qtyUnita}})});
+          if(fabInventoryCache)fabInventoryCache[u.sku_shopify]=(fabInventoryCache[u.sku_shopify]||0)+u.qtyUnita;
         }
       }
     }catch(e2){errors.push(u.sku+': '+e2.message);}
@@ -8532,9 +8635,14 @@ function renderFabPiano(body){
     var runoutDay=avgDay>0?Math.floor((inv+inArrivo)/avgDay):999;
     var runoutDate=new Date();runoutDate.setDate(runoutDate.getDate()+runoutDay);
     // Ordine suggerito: qty arrotondata al multiplo, >= ord_min
-    var orderForDays=90; // pianifica per 90gg
-    var suggestedQty=Math.max(p.ord_min,Math.ceil(avgDay*orderForDays/p.multiplo)*p.multiplo);
-    return {p:p,avgDay:avgDay,inv:inv,inArrivo:inArrivo,inArrivoDetails:inArrivoDetails,fab:fab,runoutDay:runoutDay,runoutDate:runoutDate,suggestedQty:suggestedQty};
+    var orderForDays=90;
+    var avgDay90=fabDailyAvg(p.sku_shopify,90);
+    var neededUnita=Math.max(p.ord_min,Math.ceil(avgDay90*orderForDays));
+    var ms=getMasterSize(p);
+    // Ordine suggerito: in master per prodotti master, in pz per gli altri
+    var suggestedQty=ms>1?unitaToMaster(p,neededUnita):neededUnita;
+    var suggestedLabel=ms>1?(suggestedQty+' master ('+masterToUnita(p,suggestedQty)+' pz)'):suggestedQty+' pz';
+    return {p:p,avgDay:avgDay,inv:inv,inArrivo:inArrivo,inArrivoDetails:inArrivoDetails,fab:fab,runoutDay:runoutDay,runoutDate:runoutDate,suggestedQty:suggestedQty,suggestedLabel:suggestedLabel};
   });
 
   var critici=analysis.filter(function(a){return a.runoutDay<14&&a.avgDay>0;});
@@ -8552,13 +8660,13 @@ function renderFabPiano(body){
   if(critici.length){
     html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
       '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px">🚨 CRITICI — Scorta insufficiente entro 14 giorni ('+critici.length+' prodotti)</div>'+
-      critici.map(function(a){return '<div style="font-size:12px;color:#7f1d1d;padding:2px 0">• <strong>'+a.p.sku+'</strong> — scorta finisce tra <strong>'+a.runoutDay+' gg</strong> ('+a.runoutDate.toLocaleDateString('it-IT')+') | suggerito ordinare <strong>'+a.suggestedQty+'</strong> pz</div>';}).join('')+
+      critici.map(function(a){return '<div style="font-size:12px;color:#7f1d1d;padding:2px 0">• <strong>'+a.p.sku+'</strong> — scorta finisce tra <strong>'+a.runoutDay+' gg</strong> ('+a.runoutDate.toLocaleDateString('it-IT')+') | suggerito ordinare <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
     '</div>';
   }
   if(attenzione.length){
     html+='<div style="background:#fff8f0;border:1px solid #fdba74;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
       '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:8px">⚠️ ATTENZIONE — Scorta tra 14 e 35 giorni ('+attenzione.length+' prodotti)</div>'+
-      attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:2px 0">• <strong>'+a.p.sku+'</strong> — finisce tra <strong>'+a.runoutDay+' gg</strong> | suggerito ordinare <strong>'+a.suggestedQty+'</strong> pz</div>';}).join('')+
+      attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:2px 0">• <strong>'+a.p.sku+'</strong> — finisce tra <strong>'+a.runoutDay+' gg</strong> | suggerito ordinare <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
     '</div>';
   }
 
@@ -8602,7 +8710,7 @@ function renderFabPiano(body){
         var col=f.gap>0?'#dc2626':f.gap>-50?'#854d0e':'#15803d';
         return '<td style="padding:8px 8px;text-align:center;background:'+bg+';color:'+col+';font-weight:700">'+(f.gap>0?'+'+f.gap:f.gap)+'</td>';
       }).join('')+
-      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#6d28d9">'+a.suggestedQty+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#6d28d9;white-space:nowrap">'+a.suggestedLabel+'</td>'+
     '</tr>';
   });
 
@@ -8630,7 +8738,7 @@ function renderFabPiano(body){
       if(!weekProds.length)continue;
       html+='<div style="border:1px solid #e8eaf0;border-radius:8px;padding:10px 12px;min-width:180px;background:#faf8ff">'+
         '<div style="font-size:11px;font-weight:700;color:#6d28d9;margin-bottom:6px">Settimana '+w+' — entro '+delivDate.toLocaleDateString('it-IT')+'</div>'+
-        weekProds.map(function(a){return '<div style="font-size:12px;color:#1a1a2e;padding:1px 0">• '+a.p.sku+': <strong>'+a.suggestedQty+'</strong> pz</div>';}).join('')+
+        weekProds.map(function(a){return '<div style="font-size:12px;color:#1a1a2e;padding:1px 0">• '+a.p.sku+': <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
       '</div>';
     }
     html+='</div></div>';
