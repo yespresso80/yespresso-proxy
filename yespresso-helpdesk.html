@@ -7643,28 +7643,28 @@ window.addEventListener('message',function(e){
 <script>
 // ── DATI PRODOTTI (da CSV) ─────────────────────────────────────
 const FAB_PRODUCTS_DEFAULT = [
-  {id:1,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P011120006",sku:"100 NESPRESSO - ALLUMINIO",sku_shopify:"CNALLAX10CAF014",ord_min:155,multiplo:155,unita_acq:"1 unità"},
-  {id:2,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P011120017",sku:"100 NESPRESSO - CREMOSO",sku_shopify:"CNFAX10CAF187",ord_min:377,multiplo:377,unita_acq:"1 unità"},
-  {id:3,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P013120007",sku:"10 NESPRESSO - ORZO",sku_shopify:"CNBX10SOL93",ord_min:120,multiplo:120,unita_acq:"master da 120 unità"},
-  {id:4,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P013120008",sku:"10 NESPRESSO - GINSENG",sku_shopify:"CNBX10SOL94",ord_min:120,multiplo:120,unita_acq:"master da 120 unità"},
-  {id:5,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P021120006",sku:"160 DOLCE GUSTO - CREMOSO",sku_shopify:"CDGE16CAF004",ord_min:64,multiplo:64,unita_acq:"1 unità"},
-  {id:6,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P022120003",sku:"16 DOLCE GUSTO - DECA",sku_shopify:"CDGE16CAF010",ord_min:40,multiplo:40,unita_acq:"master da 40 unità"},
-  {id:7,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120003",sku:"16 DOLCE GUSTO - ORZO",sku_shopify:"CDG16SOL229",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:8,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120004",sku:"16 DOLCE GUSTO - CAPPUCCINO",sku_shopify:"CDG16SOL230",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:9,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120005",sku:"16 DOLCE GUSTO - CORTADO",sku_shopify:"CDG16SOL231",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:10,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120006",sku:"16 DOLCE GUSTO - CIOCCOLATA",sku_shopify:"CDG16SOL232",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:11,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120008",sku:"16 DOLCE GUSTO - NOCCIOLINO",sku_shopify:"CDG16SOL234",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:12,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120009",sku:"16 DOLCE GUSTO - LIMONE",sku_shopify:"CDG16SOL235",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:13,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P023120010",sku:"16 DOLCE GUSTO - GRANGINSENG",sku_shopify:"CDG16SOL241",ord_min:60,multiplo:60,unita_acq:"master da 60 unità"},
-  {id:14,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P031120001",sku:"240 A MODO MIO - CREMOSO",sku_shopify:"CAX20CAF001",ord_min:64,multiplo:64,unita_acq:"1 unità"},
-  {id:15,fornitore:"Noire srl",email:"m.bonaguro@neronobile.com",codice_forn:"P031120002",sku:"100 A MODO MIO - CREMOSO",sku_shopify:"CAX20CAF002",ord_min:144,multiplo:144,unita_acq:"1 unità"},
-  {id:16,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",codice_forn:"YES_NES_240_INT",sku:"240 NESPRESSO - GRANBAR",sku_shopify:"CNX5CAF872-240",ord_min:64,multiplo:64,unita_acq:"1 unità"},
-  {id:17,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",codice_forn:"N_240_YES_CREM",sku:"240 BIALETTI - CREMOSO",sku_shopify:"CBLX10CAF010",ord_min:64,multiplo:64,unita_acq:"1 unità"},
-  {id:18,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",codice_forn:"N_100_YES_CREM",sku:"100 BIALETTI - CREMOSO",sku_shopify:"CBLX10CAF058",ord_min:154,multiplo:154,unita_acq:"1 unità"},
-  {id:19,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",codice_forn:"YES_CAFFI_240_CREM",sku:"240 CAFFITALY - CREMOSO",sku_shopify:"CCX10CAF144",ord_min:64,multiplo:64,unita_acq:"1 unità"},
-  {id:20,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",codice_forn:"YES_CAFFI_80_CREM",sku:"80 CAFFITALY - CREMOSO",sku_shopify:"CCX10CAF205",ord_min:154,multiplo:154,unita_acq:"1 unità"},
-  {id:21,fornitore:"Simfed srl",email:"daniele.grilli@sim-fed.it",codice_forn:"YESCIA001150",sku:"150 CIALDE CARTA - INTENSO",sku_shopify:"PFP416",ord_min:144,multiplo:144,unita_acq:"1 unità"},
-  {id:22,fornitore:"Simfed srl",email:"daniele.grilli@sim-fed.it",codice_forn:"YESTUO001100",sku:"100 FIOR LUI - INTENSO",sku_shopify:"CFFX1CAF016",ord_min:144,multiplo:144,unita_acq:"1 unità"}
+  {id:5, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P021120006",        sku:"160 DOLCE GUSTO - CREMOSO",   sku_shopify:"CDGE16CAF004",    ord_min:64,  multiplo:64,  unita_acq:"1 unità"},
+  {id:16,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",  codice_forn:"YES_NES_240_INT",   sku:"240 NESPRESSO - GRANBAR",     sku_shopify:"CNX5CAF872-240",  ord_min:64,  multiplo:64,  unita_acq:"1 unità"},
+  {id:2, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P011120017",        sku:"100 NESPRESSO - CREMOSO",     sku_shopify:"CNFAX10CAF187",   ord_min:377, multiplo:377, unita_acq:"1 unità"},
+  {id:1, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P011120006",        sku:"100 NESPRESSO - ALLUMINIO",   sku_shopify:"CNALLAX10CAF014", ord_min:155, multiplo:155, unita_acq:"1 unità"},
+  {id:14,fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P031120001",        sku:"240 A MODO MIO - CREMOSO",    sku_shopify:"CAX20CAF001",     ord_min:64,  multiplo:64,  unita_acq:"1 unità"},
+  {id:15,fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P031120002",        sku:"100 A MODO MIO - CREMOSO",    sku_shopify:"CAX20CAF002",     ord_min:144, multiplo:144, unita_acq:"1 unità"},
+  {id:17,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",  codice_forn:"N_240_YES_CREM",    sku:"240 BIALETTI - CREMOSO",      sku_shopify:"CBLX10CAF010",    ord_min:64,  multiplo:64,  unita_acq:"1 unità"},
+  {id:18,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",  codice_forn:"N_100_YES_CREM",    sku:"100 BIALETTI - CREMOSO",      sku_shopify:"CBLX10CAF058",    ord_min:154, multiplo:154, unita_acq:"1 unità"},
+  {id:19,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",  codice_forn:"YES_CAFFI_240_CREM",sku:"240 CAFFITALY - CREMOSO",     sku_shopify:"CCX10CAF144",     ord_min:64,  multiplo:64,  unita_acq:"1 unità"},
+  {id:20,fornitore:"Best Espresso srl",email:"p.moro@bestespresso.biz",  codice_forn:"YES_CAFFI_80_CREM", sku:"80 CAFFITALY - CREMOSO",      sku_shopify:"CCX10CAF205",     ord_min:154, multiplo:154, unita_acq:"1 unità"},
+  {id:21,fornitore:"Simfed srl",     email:"daniele.grilli@sim-fed.it",  codice_forn:"YESCIA001150",      sku:"150 CIALDE CARTA - INTENSO",  sku_shopify:"PFP416",          ord_min:144, multiplo:144, unita_acq:"1 unità"},
+  {id:22,fornitore:"Simfed srl",     email:"daniele.grilli@sim-fed.it",  codice_forn:"YESTUO001100",      sku:"100 FIOR LUI - INTENSO",      sku_shopify:"CFFX1CAF016",     ord_min:144, multiplo:144, unita_acq:"1 unità"},
+  {id:3, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P013120007",        sku:"10 NESPRESSO - ORZO",         sku_shopify:"CNBX10SOL93",     ord_min:120, multiplo:120, unita_acq:"master da 120 unità"},
+  {id:4, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P013120008",        sku:"10 NESPRESSO - GINSENG",      sku_shopify:"CNBX10SOL94",     ord_min:120, multiplo:120, unita_acq:"master da 120 unità"},
+  {id:6, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P022120003",        sku:"16 DOLCE GUSTO - DECA",       sku_shopify:"CDGE16CAF010",    ord_min:40,  multiplo:40,  unita_acq:"master da 40 unità"},
+  {id:7, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120003",        sku:"16 DOLCE GUSTO - ORZO",       sku_shopify:"CDG16SOL229",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"},
+  {id:8, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120004",        sku:"16 DOLCE GUSTO - CAPPUCCINO", sku_shopify:"CDG16SOL230",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"},
+  {id:9, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120005",        sku:"16 DOLCE GUSTO - CORTADO",    sku_shopify:"CDG16SOL231",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"},
+  {id:10,fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120006",        sku:"16 DOLCE GUSTO - CIOCCOLATA", sku_shopify:"CDG16SOL232",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"},
+  {id:11,fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120008",        sku:"16 DOLCE GUSTO - NOCCIOLINO", sku_shopify:"CDG16SOL234",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"},
+  {id:12,fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120009",        sku:"16 DOLCE GUSTO - LIMONE",     sku_shopify:"CDG16SOL235",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"},
+  {id:13,fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P023120010",        sku:"16 DOLCE GUSTO - GRANGINSENG",sku_shopify:"CDG16SOL241",     ord_min:60,  multiplo:60,  unita_acq:"master da 60 unità"}
 ];
 
 // ── STATO GLOBALE ──────────────────────────────────────────────
@@ -7677,6 +7677,7 @@ if(localStorage.getItem('fab_cache_version')!==FAB_CACHE_VERSION){
   localStorage.removeItem('fab_sales_cache');
   localStorage.removeItem('fab_sales_cache_date');
   localStorage.removeItem('fab_inventory');
+  localStorage.removeItem('fab_products');
   localStorage.setItem('fab_cache_version', FAB_CACHE_VERSION);
 }
 
@@ -8168,18 +8169,16 @@ function fabParseAndPreviewCSV(text){
   var firstLine=rows[0];
   var sep=firstLine.split(';').length>firstLine.split(',').length?';':',';
 
-  var headers=parseCSVRow(rows[0],sep).map(function(h){return h.replace(/^["']|["']$/g,'').toLowerCase().trim();});
-
-  // Trova colonne SKU e qty con nomi flessibili — include intestazioni italiane Shopify
-  var skuIdx=headers.findIndex(function(h){
-    return h==='sku'||h.includes('sku della variante')||h.includes('variant sku')||
-           h.includes('product variant sku')||h.includes('sku variante');
+  var headers=parseCSVRow(rows[0],sep).map(function(h){
+    // Rimuove BOM UTF-8, apici, spazi, normalizza
+    return h.replace(/^\uFEFF/,'').replace(/^["'\s]+|["'\s]+$/g,'').toLowerCase();
   });
+
+  // Trova colonne: cerca 'sku' nel nome colonna e 'vendut' o 'quant' o 'net' nella colonna qty
+  var skuIdx=headers.findIndex(function(h){ return h.includes('sku'); });
   var qtyIdx=headers.findIndex(function(h){
-    return h.includes('netti')||h.includes('net quantity')||h.includes('net_quantity')||
-           h.includes('quantità netta')||h.includes('quantita netta')||
-           h.includes('net_items_sold')||h.includes('articoli venduti')||
-           h==='quantity'||h==='qty';
+    return h.includes('vendut')||h.includes('netti')||h.includes('net')||
+           h.includes('quant')||h==='qty';
   });
 
   if(skuIdx<0){errEl.textContent='Colonna SKU non trovata. Intestazioni trovate: '+headers.join(', ');errEl.style.display='block';return;}
@@ -8219,12 +8218,16 @@ function fabParseAndPreviewCSV(text){
 }
 
 function fabConfirmImport(){
-  if(!_fabParsedImport) return;
+  if(!_fabParsedImport||Object.keys(_fabParsedImport).length===0){
+    showToast('Nessun dato da importare — ricarica il CSV','error');
+    return;
+  }
   fabSalesCache=_fabParsedImport;
   fabSalesCacheDate=new Date().toISOString().substring(0,16);
   localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
   localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
-  document.getElementById('fab-import-modal').remove();
+  var modal=document.getElementById('fab-import-modal');
+  if(modal)modal.remove();
   showToast('✅ Venduto importato: '+Object.keys(fabSalesCache).length+' prodotti');
   renderFabTab('venduto');
 }
