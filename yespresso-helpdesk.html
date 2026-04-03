@@ -8075,6 +8075,199 @@ function renderFabVenduto(body){
 }
 
 // ── MODAL IMPORT CSV ───────────────────────────────────────────
+function renderFabPiano(body){
+  if(!fabSalesCache){
+    body.innerHTML='<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">📊 Prima clicca <strong>Aggiorna dati Shopify</strong> per caricare il venduto</div>';
+    return;
+  }
+  var horizons=[7,15,21,28,35,45,60,90,120];
+  var safetyWeeks=1; // scorta di sicurezza = 1 settimana
+
+  // Calcola per ogni prodotto
+  var analysis=fabProducts.map(function(p){
+    // Media giornaliera: media pesata 30/90gg
+    var avg30=fabDailyAvg(p.sku_shopify,30);
+    var avg90=fabDailyAvg(p.sku_shopify,90);
+    var avgDay=(avg30*0.6+avg90*0.4); // peso maggiore al recente
+    var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
+    // Ordini in arrivo (attesa/parziale)
+    var inArrivo=0;
+    var inArrivoDetails=[];
+    fabOrdini.forEach(function(ord){
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale')return;
+      ord.righe.forEach(function(r){
+        if(r.sku_shopify===p.sku_shopify){
+          var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
+          if(residuo>0){inArrivo+=residuo;inArrivoDetails.push({data:ord.data_consegna_prevista||'?',qty:residuo,fornitore:ord.fornitore});}
+        }
+      });
+    });
+    // Fabbisogno per ogni orizzonte
+    var fab=horizons.map(function(h){
+      var needed=Math.ceil(avgDay*h);
+      var safety=Math.ceil(avgDay*7); // 1 sett
+      var totalNeeded=needed+safety;
+      var projected=inv+inArrivo;
+      var gap=totalNeeded-projected;
+      return {days:h,needed:needed,safety:safety,totalNeeded:totalNeeded,projected:projected,gap:gap};
+    });
+    // Primo buco: il giorno in cui finisce scorta
+    var runoutDay=avgDay>0?Math.floor((inv+inArrivo)/avgDay):999;
+    var runoutDate=new Date();runoutDate.setDate(runoutDate.getDate()+runoutDay);
+    // Ordine suggerito: qty arrotondata al multiplo, >= ord_min
+    var orderForDays=90;
+    var avgDay90=fabDailyAvg(p.sku_shopify,90);
+    var neededUnita=Math.max(p.ord_min,Math.ceil(avgDay90*orderForDays));
+    var ms=getMasterSize(p);
+    // Ordine suggerito: in master per prodotti master, in pz per gli altri
+    var suggestedQty=ms>1?unitaToMaster(p,neededUnita):neededUnita;
+    var suggestedLabel=ms>1?(suggestedQty+' master ('+masterToUnita(p,suggestedQty)+' pz)'):suggestedQty+' pz';
+    return {p:p,avgDay:avgDay,inv:inv,inArrivo:inArrivo,inArrivoDetails:inArrivoDetails,fab:fab,runoutDay:runoutDay,runoutDate:runoutDate,suggestedQty:suggestedQty,suggestedLabel:suggestedLabel};
+  });
+
+  var critici=analysis.filter(function(a){return a.runoutDay<14&&a.avgDay>0;});
+  var attenzione=analysis.filter(function(a){return a.runoutDay>=14&&a.runoutDay<35&&a.avgDay>0;});
+
+  var html='<div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">'+
+    '<div>'+
+      '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno — Analisi Buchi</h2>'+
+      '<div style="font-size:12px;color:#aaa">Media pesata: 60% ultimi 30gg + 40% ultimi 90gg. Scorta sicurezza: 7 giorni.</div>'+
+    '</div>'+
+    '<button onclick="fabExportPiano()" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📥 Esporta piano</button>'+
+  '</div>';
+
+  // Alert critici
+  if(critici.length){
+    html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
+      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px">🚨 CRITICI — Scorta insufficiente entro 14 giorni ('+critici.length+' prodotti)</div>'+
+      critici.map(function(a){return '<div style="font-size:12px;color:#7f1d1d;padding:2px 0">• <strong>'+a.p.sku+'</strong> — scorta finisce tra <strong>'+a.runoutDay+' gg</strong> ('+a.runoutDate.toLocaleDateString('it-IT')+') | suggerito ordinare <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
+    '</div>';
+  }
+  if(attenzione.length){
+    html+='<div style="background:#fff8f0;border:1px solid #fdba74;border-radius:10px;padding:14px 16px;margin-bottom:16px">'+
+      '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:8px">⚠️ ATTENZIONE — Scorta tra 14 e 35 giorni ('+attenzione.length+' prodotti)</div>'+
+      attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:2px 0">• <strong>'+a.p.sku+'</strong> — finisce tra <strong>'+a.runoutDay+' gg</strong> | suggerito ordinare <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
+    '</div>';
+  }
+
+  // Tabella principale
+  html+='<div style="overflow-x:auto;margin-bottom:20px">'+
+    '<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;font-size:12px">'+
+    '<thead>'+
+    '<tr style="background:#f5f3ff">'+
+      '<th style="padding:10px 12px;text-align:left;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;position:sticky;left:0;background:#f5f3ff;min-width:180px">PRODOTTO</th>'+
+      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">INV.</th>'+
+      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">IN ARRIVO</th>'+
+      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#6d28d9;border-bottom:2px solid #e8eaf0;white-space:nowrap">MED/GG</th>'+
+      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#dc2626;border-bottom:2px solid #e8eaf0;white-space:nowrap">FINE SCORTA</th>'+
+      horizons.map(function(h){
+        return '<th style="padding:10px 8px;text-align:center;font-weight:700;color:#1a73e8;border-bottom:2px solid #e8eaf0;white-space:nowrap;min-width:60px">'+h+'gg</th>';
+      }).join('')+
+      '<th style="padding:10px 12px;text-align:right;font-weight:700;color:#16a34a;border-bottom:2px solid #e8eaf0;white-space:nowrap">ORDINE SUGG.</th>'+
+    '</tr>'+
+    '<tr style="background:#faf8ff;font-size:10px;color:#aaa">'+
+      '<td style="padding:4px 12px;position:sticky;left:0;background:#faf8ff"></td>'+
+      '<td style="padding:4px 12px;text-align:right">attuale</td>'+
+      '<td style="padding:4px 12px;text-align:right">in ordine</td>'+
+      '<td style="padding:4px 12px;text-align:right">media</td>'+
+      '<td style="padding:4px 12px;text-align:right">tra N giorni</td>'+
+      horizons.map(function(){return '<td style="padding:4px 8px;text-align:center">gap</td>';}).join('')+
+      '<td style="padding:4px 12px;text-align:right">90gg+sic.</td>'+
+    '</tr>'+
+    '</thead><tbody>';
+
+  analysis.forEach(function(a,idx){
+    var runColor=a.runoutDay<14?'#dc2626':a.runoutDay<35?'#e67e22':a.runoutDay>90?'#16a34a':'#555';
+    var runLabel=a.avgDay<0.01?'—':a.runoutDay+' gg';
+    html+='<tr style="border-bottom:1px solid #f4f5f7;'+(idx%2===1?'background:#faf8ff;':'')+'">'+
+      '<td style="padding:8px 12px;font-weight:600;color:#1a1a2e;position:sticky;left:0;background:'+(idx%2===1?'#faf8ff':'#fff')+'">'+a.p.sku+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:'+(a.inv<20?'#dc2626':'#1a1a2e')+'">'+a.inv+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;color:'+(a.inArrivo>0?'#1a73e8':'#aaa')+'">'+a.inArrivo+(a.inArrivoDetails.length?' <span title="'+a.inArrivoDetails.map(function(d){return d.data+': +'+d.qty;}).join(', ')+'" style="cursor:help">ℹ️</span>':'')+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;color:#555">'+a.avgDay.toFixed(1)+'</td>'+
+      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:'+runColor+'">'+runLabel+'</td>'+
+      a.fab.map(function(f){
+        var bg=f.gap>0?'#fee2e2':f.gap>-50?'#fef9c3':'#dcfce7';
+        var col=f.gap>0?'#dc2626':f.gap>-50?'#854d0e':'#15803d';
+        return '<td style="padding:8px 8px;text-align:center;background:'+bg+';color:'+col+';font-weight:700">'+(f.gap>0?'+'+f.gap:f.gap)+'</td>';
+      }).join('')+
+      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#6d28d9;white-space:nowrap">'+a.suggestedLabel+'</td>'+
+    '</tr>';
+  });
+
+  html+='</tbody></table></div>'+
+    '<div style="font-size:11px;color:#aaa;margin-bottom:24px">'+
+      '📌 <strong>Gap</strong> = (Fabbisogno N giorni + scorta 7gg) − (Inventario + In arrivo) &nbsp;|&nbsp; '+
+      '<span style="color:#dc2626">■</span> Gap positivo = buco previsto &nbsp;'+
+      '<span style="color:#854d0e">■</span> Margine &lt;50 pz &nbsp;'+
+      '<span style="color:#15803d">■</span> Ok'+
+    '</div>';
+
+  // Piano ordini 90gg: suggerisce ordini settimanali
+  html+='<div style="margin-bottom:16px"><h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0 0 12px">📅 Calendario ordini suggeriti (prossime 13 settimane)</h3>';
+  var fornitori=[...new Set(fabProducts.map(function(p){return p.fornitore;}))];
+  fornitori.forEach(function(forn){
+    var prodsForn=analysis.filter(function(a){return a.p.fornitore===forn&&a.avgDay>0.01&&a.runoutDay<90;});
+    if(!prodsForn.length)return;
+    html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;margin-bottom:12px">'+
+      '<div style="background:#f5f3ff;padding:10px 16px;font-size:13px;font-weight:700;color:#6d28d9">'+forn+'</div>'+
+      '<div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px">';
+    // Proponi consegne settimanali per le prossime 13 settimane
+    for(var w=1;w<=13;w++){
+      var delivDate=new Date();delivDate.setDate(delivDate.getDate()+w*7);
+      var weekProds=prodsForn.filter(function(a){return a.runoutDay<=(w+1)*7;});
+      if(!weekProds.length)continue;
+      html+='<div style="border:1px solid #e8eaf0;border-radius:8px;padding:10px 12px;min-width:180px;background:#faf8ff">'+
+        '<div style="font-size:11px;font-weight:700;color:#6d28d9;margin-bottom:6px">Settimana '+w+' — entro '+delivDate.toLocaleDateString('it-IT')+'</div>'+
+        weekProds.map(function(a){return '<div style="font-size:12px;color:#1a1a2e;padding:1px 0">• '+a.p.sku+': <strong>'+a.suggestedLabel+'</strong></div>';}).join('')+
+      '</div>';
+    }
+    html+='</div></div>';
+  });
+  html+='</div>';
+  body.innerHTML=html;
+}
+
+function fabDiagnosticSKU(){
+  if(!fabSalesCache){showToast('Prima aggiorna i dati Shopify','error');return;}
+  // Trova tutti gli SKU negli ordini che NON corrispondono ai nostri prodotti
+  var ourSkus=new Set(fabProducts.map(function(p){return p.sku_shopify;}));
+  var foundInOrders=Object.keys(fabSalesCache);
+  var matched=foundInOrders.filter(function(s){return ourSkus.has(s);});
+  var unmatched=foundInOrders.filter(function(s){return !ourSkus.has(s);}).slice(0,20);
+  var missing=fabProducts.filter(function(p){return !fabSalesCache[p.sku_shopify];});
+  var msg='✅ SKU trovati con venduto: '+matched.length+'/'+fabProducts.length+'\n\n';
+  if(missing.length) msg+='❌ Prodotti SENZA venduto (SKU non trovato negli ordini):\n'+missing.map(function(p){return '  • '+p.sku_shopify+' ('+p.sku+')';}).join('\n')+'\n\n';
+  if(unmatched.length) msg+='📦 Primi SKU negli ordini NON in anagrafica:\n'+unmatched.map(function(s){var tot=fabSalesCache[s].reduce(function(a,x){return a+x.qty;},0);return '  • '+s+' (tot: '+tot+')';}).join('\n');
+  alert(msg);
+}
+
+function fabExportPiano(){
+  var horizons=[7,15,21,28,35,45,60,90,120];
+  var rows=['Prodotto,SKU,Fornitore,Inv.Attuale,In Arrivo,Media/gg,Fine Scorta(gg),'
+    +horizons.map(function(h){return 'Gap '+h+'gg';}).join(',')+',Ordine Suggerito 90gg'];
+  fabProducts.forEach(function(p){
+    var avg30=fabDailyAvg(p.sku_shopify,30);
+    var avg90=fabDailyAvg(p.sku_shopify,90);
+    var avgDay=(avg30*0.6+avg90*0.4);
+    var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
+    var inArrivo=0;
+    fabOrdini.forEach(function(ord){if(ord.stato!=='attesa'&&ord.stato!=='parziale')return;ord.righe.forEach(function(r){if(r.sku_shopify===p.sku_shopify)inArrivo+=r.qty_ordinata-(r.qty_ricevuta||0);});});
+    var runout=avgDay>0?Math.floor((inv+inArrivo)/avgDay):999;
+    var sugg=Math.max(p.ord_min,Math.ceil(avgDay*90/p.multiplo)*p.multiplo);
+    var gaps=horizons.map(function(h){var needed=Math.ceil(avgDay*h)+Math.ceil(avgDay*7);return needed-(inv+inArrivo);});
+    rows.push([p.sku,p.sku_shopify,p.fornitore,inv,inArrivo,avgDay.toFixed(2),runout].concat(gaps).concat([sugg]).join(','));
+  });
+  var blob=new Blob([rows.join('\n')],{type:'text/csv'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='fabbisogno-'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+
+// Carica inventario da cache locale all'avvio
+(function(){
+  var cached=localStorage.getItem('fab_inventory');
+  if(cached)try{fabInventoryCache=JSON.parse(cached);}catch(e){}
+})();
+</script>
+
 function fabShowImportModal(){
   var existing=document.getElementById('fab-import-modal');
   if(existing)existing.remove();
@@ -8274,50 +8467,111 @@ function renderFabOrdini(body){
     return;
   }
 
-  // Raggruppa per stato
-  var statusGroups={attesa:'⏳ In attesa',parziale:'📦 Parzialmente ricevuto',ricevuto:'✅ Ricevuto',annullato:'❌ Annullato'};
-  var pending=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
-  var done=fabOrdini.filter(function(o){return o.stato==='ricevuto'||o.stato==='annullato';});
+  // ── TABELLA PIVOT: articoli (righe) × date consegna (colonne) ──
+  // Considera solo ordini aperti (attesa/parziale) per la pivot principale
+  var openOrds=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
+  var closedOrds=fabOrdini.filter(function(o){return o.stato==='ricevuto'||o.stato==='annullato';});
 
-  html+='<div style="display:flex;flex-direction:column;gap:12px">';
-  [...pending,...done].forEach(function(ord){
-    var isOpen=ord.stato==='attesa'||ord.stato==='parziale';
-    var statoLabel=statusGroups[ord.stato]||ord.stato;
-    var statoColor=ord.stato==='ricevuto'?'#16a34a':ord.stato==='annullato'?'#888':ord.stato==='parziale'?'#e67e22':'#1a73e8';
-    var statoB=ord.stato==='ricevuto'?'#dcfce7':ord.stato==='annullato'?'#f0f2f5':ord.stato==='parziale'?'#fff8f0':'#e8f0fe';
-    html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden'+(isOpen?';border-left:4px solid #6d28d9':'')+'">'+
-      '<div style="padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #f4f5f7">'+
-        '<span style="font-size:13px;font-weight:700;color:#1a1a2e">'+ord.fornitore+'</span>'+
-        '<span style="font-size:11px;background:'+statoB+';color:'+statoColor+';padding:2px 8px;border-radius:8px;font-weight:700">'+statoLabel+'</span>'+
-        '<span style="font-size:12px;color:#888">📅 Ordine: '+ord.data_ordine+'</span>'+
-        (ord.data_consegna_prevista?'<span style="font-size:12px;color:#6d28d9">🚚 Consegna: '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span>':'')+
-        '<span style="font-size:12px;color:#555;font-weight:600;margin-left:auto">'+ord.righe.length+' prodotti</span>'+
-        '<div style="display:flex;gap:6px">'+
-          (isOpen?'<button onclick="fabRiceviOrdine(\''+ord.id+'\')" style="background:#16a34a;border:none;border-radius:6px;padding:4px 10px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📦 Ricevi merce</button>':'')+
-          '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="background:#f0f4ff;border:1px solid #c7d7fc;color:#1a73e8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✏️</button>'+
-          '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕</button>'+
-        '</div>'+
-      '</div>'+
-      '<div style="padding:8px 16px;overflow-x:auto">'+
-        '<table style="width:100%;border-collapse:collapse">'+
-          '<tr style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase">'+
-            '<td style="padding:4px 8px">Prodotto</td><td style="padding:4px 8px;text-align:right">Ord.</td>'+
-            '<td style="padding:4px 8px;text-align:right">Ricevuto</td><td style="padding:4px 8px;text-align:right">Residuo</td>'+
-          '</tr>'+
-          ord.righe.map(function(r){
-            var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
-            return '<tr style="border-top:1px solid #f4f5f7">'+
-              '<td style="padding:5px 8px;font-size:12px;font-weight:600;color:#1a1a2e">'+r.sku+'</td>'+
-              '<td style="padding:5px 8px;font-size:12px;text-align:right">'+r.qty_ordinata+'</td>'+
-              '<td style="padding:5px 8px;font-size:12px;text-align:right;color:#16a34a">'+( r.qty_ricevuta||0)+'</td>'+
-              '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:'+(residuo>0?'#e67e22':'#16a34a')+'">'+residuo+'</td>'+
-            '</tr>';
-          }).join('')+
-        '</table>'+
-      '</div>'+
-    '</div>';
-  });
-  html+='</div>';
+  if(openOrds.length){
+    // Raccogli tutte le date di consegna uniche ordinate
+    var datesSet={};
+    openOrds.forEach(function(ord){
+      var d=(ord.data_consegna_prevista||'').substring(0,10);
+      if(d) datesSet[d]=true;
+    });
+    var dates=Object.keys(datesSet).sort();
+
+    // Per ogni prodotto in fabProducts, calcola qty per data
+    // prodData[sku_shopify][data] = {qty_ordinata, qty_ricevuta, residuo, ordIds[]}
+    var prodData={};
+    fabProducts.forEach(function(p){ prodData[p.sku_shopify]={}; });
+
+    openOrds.forEach(function(ord){
+      var d=(ord.data_consegna_prevista||'').substring(0,10);
+      if(!d) return;
+      ord.righe.forEach(function(r){
+        if(!prodData[r.sku_shopify]) prodData[r.sku_shopify]={};
+        if(!prodData[r.sku_shopify][d]) prodData[r.sku_shopify][d]={ord:0,ric:0,res:0};
+        var cell=prodData[r.sku_shopify][d];
+        cell.ord+=r.qty_ordinata||0;
+        cell.ric+=r.qty_ricevuta||0;
+        cell.res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
+      });
+    });
+
+    // Filtra prodotti che hanno almeno una data con residuo > 0
+    var prodWithData=fabProducts.filter(function(p){
+      return dates.some(function(d){
+        return prodData[p.sku_shopify]&&prodData[p.sku_shopify][d]&&prodData[p.sku_shopify][d].res>0;
+      });
+    });
+
+    html+='<div style="margin-bottom:8px;font-size:12px;color:#888">📋 Ordini aperti — residuo per data consegna (pz). <span style="color:#e67e22">Arancio = residuo</span> · <span style="color:#16a34a">Verde = ricevuto</span></div>';
+    html+='<div style="overflow:auto;border:1px solid #e8eaf0;border-radius:10px;margin-bottom:24px">'+
+      '<table style="border-collapse:collapse;font-size:12px;white-space:nowrap;background:#fff;min-width:100%">'+
+      '<thead><tr style="background:#f5f3ff">'+
+        '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#6d28d9;border-bottom:2px solid #e0d9ff;border-right:2px solid #e0d9ff;position:sticky;left:0;background:#f5f3ff;min-width:190px;z-index:2">Articolo</th>'+
+        dates.map(function(d){
+          return '<th style="padding:10px 10px;text-align:center;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;border-right:1px solid #f0f2f5;min-width:110px">'+noireFmtDateDisplay(d)+'</th>';
+        }).join('')+
+        '<th style="padding:10px 10px;text-align:right;font-weight:700;color:#1a1a2e;border-bottom:2px solid #e8eaf0;min-width:80px">Totale</th>'+
+      '</tr>'+
+      '<tr style="background:#faf8ff;font-size:10px;color:#aaa">'+
+        '<td style="padding:3px 14px;border-right:2px solid #e0d9ff;position:sticky;left:0;background:#faf8ff"></td>'+
+        dates.map(function(){return '<td style="padding:3px 10px;text-align:center;border-right:1px solid #f0f2f5">ord / res</td>';}).join('')+
+        '<td style="padding:3px 10px;text-align:right">residuo</td>'+
+      '</tr></thead><tbody>';
+
+    prodWithData.forEach(function(p,idx){
+      var ms=getMasterSize(p);
+      var totRes=0;
+      var rowBg=idx%2===1?'#faf8ff':'#fff';
+      var cells=dates.map(function(d){
+        var cell=prodData[p.sku_shopify]&&prodData[p.sku_shopify][d];
+        if(!cell||cell.ord===0) return '<td style="padding:8px 10px;text-align:center;border-right:1px solid #f0f2f5;background:'+rowBg+';color:#ddd">—</td>';
+        totRes+=cell.res;
+        var ordLabel=ms>1?Math.ceil(cell.ord/ms)+'m':cell.ord;
+        var resLabel=ms>1?Math.ceil(cell.res/ms)+'m':cell.res;
+        var resColor=cell.res>0?'#e67e22':'#16a34a';
+        return '<td style="padding:8px 10px;text-align:center;border-right:1px solid #f0f2f5;background:'+(cell.res>0?'#fff8f0':'#f0fdf4')+'">'+
+          '<span style="color:#888;font-size:11px">'+ordLabel+'</span>'+
+          '<span style="color:#ccc;margin:0 3px">/</span>'+
+          '<span style="color:'+resColor+';font-weight:700">'+resLabel+'</span>'+
+          (ms>1?'<br><span style="font-size:10px;color:#aaa">'+(cell.res)+'pz</span>':'')+
+        '</td>';
+      });
+      var totLabel=ms>1?Math.ceil(totRes/ms)+'m ('+totRes+'pz)':totRes+'pz';
+      html+='<tr style="border-bottom:1px solid #f4f5f7">'+
+        '<td style="padding:8px 14px;font-weight:600;color:#1a1a2e;border-right:2px solid #e0d9ff;position:sticky;left:0;background:'+rowBg+'">'+p.sku+
+          (ms>1?'<br><span style="font-size:10px;color:#7c3aed">master da '+ms+' pz</span>':'')+
+        '</td>'+
+        cells.join('')+
+        '<td style="padding:8px 10px;text-align:right;font-weight:700;color:'+(totRes>0?'#e67e22':'#16a34a')+'">'+totLabel+'</td>'+
+      '</tr>';
+    });
+
+    html+='</tbody></table></div>';
+  }
+
+  // ── ORDINI CHIUSI (sezione collassabile) ──
+  if(closedOrds.length){
+    html+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:#888;padding:8px 0;list-style:none">▸ Ordini chiusi/annullati ('+closedOrds.length+')</summary>'+
+      '<div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">';
+    closedOrds.forEach(function(ord){
+      var statoLabel=ord.stato==='ricevuto'?'✅ Ricevuto':'❌ Annullato';
+      var statoColor=ord.stato==='ricevuto'?'#16a34a':'#888';
+      html+='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:10px 14px;font-size:12px">'+
+        '<span style="font-weight:700;color:#1a1a2e">'+ord.fornitore+'</span> '+
+        '<span style="color:'+statoColor+';font-weight:700">'+statoLabel+'</span> '+
+        '<span style="color:#888">📅 '+ord.data_ordine+'</span> '+
+        (ord.data_consegna_prevista?'<span style="color:#6d28d9">🚚 '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span> ':'')+
+        '<span style="color:#aaa">'+ord.righe.length+' prodotti · '+ord.righe.map(function(r){return r.sku+': '+r.qty_ordinata+'pz';}).join(', ')+'</span>'+
+        '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="float:right;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit">✕</button>'+
+      '</div>';
+    });
+    html+='</div></details>';
+  }
+
   body.innerHTML=html;
 }
 
