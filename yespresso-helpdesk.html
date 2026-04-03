@@ -7635,11 +7635,7 @@ window.addEventListener('message',function(e){
   }
 });
 </script>
-</body>
-</html>
-<!-- ═══════════════════════════════════════════════════════════════
-     FABBISOGNO SYSTEM
-═══════════════════════════════════════════════════════════════ -->
+
 <script>
 // ── DATI PRODOTTI (da CSV) ─────────────────────────────────────
 const FAB_PRODUCTS_DEFAULT = [
@@ -8923,7 +8919,7 @@ function renderRicezioneTable(){
 
   // Per ogni prodotto (fabProducts) calcola quanto è in arrivo e da quali ordini
   var html='<div style="font-size:12px;color:#888;margin-bottom:12px">'+
-    '📌 La quantità inserita viene scalata dall'ordine con data consegna più vicina. Se l'ordine ha meno pezzi, il residuo scala sul successivo.'+
+    '📌 La quantità inserita viene scalata dall\'ordine con data consegna più vicina. Se l\'ordine ha meno pezzi, il residuo scala sul successivo.'+
   '</div>'+
   '<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;font-size:13px">'+
   '<thead><tr style="background:#f0fdf4;border-bottom:2px solid #e8eaf0">'+
@@ -8964,7 +8960,7 @@ function renderRicezioneTable(){
       '<td style="padding:9px 12px;text-align:right">'+
         '<input type="number" id="'+inputId+'" min="0" placeholder="0" '+
           'style="width:100px;padding:6px 10px;border:1.5px solid #d1fae5;border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:inherit;outline:none" '+
-          'onfocus="this.style.borderColor='#16a34a'" onblur="this.style.borderColor='#d1fae5'">'+
+          'onfocus="this.style.borderColor=\'#16a34a\'" onblur="this.style.borderColor=\'#d1fae5\'">'+
         '<span style="font-size:11px;color:#888;margin-left:4px">pz</span>'+
       '</td>'+
       '<td style="padding:9px 12px;text-align:center">'+
@@ -9061,6 +9057,6 @@ window.ricezioneSalva=async function(){
 
 // Mantieni la vecchia fabRiceviOrdine per retrocompat (non più usata)
 function fabRiceviOrdine(id){ openRicezioneMerce(); }
-
-
-
+</script>
+</body>
+</html>
