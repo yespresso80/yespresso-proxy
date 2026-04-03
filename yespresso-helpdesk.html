@@ -8293,7 +8293,7 @@ function renderFabOrdini(body){
         '<span style="font-size:13px;font-weight:700;color:#1a1a2e">'+ord.fornitore+'</span>'+
         '<span style="font-size:11px;background:'+statoB+';color:'+statoColor+';padding:2px 8px;border-radius:8px;font-weight:700">'+statoLabel+'</span>'+
         '<span style="font-size:12px;color:#888">📅 Ordine: '+ord.data_ordine+'</span>'+
-        (ord.data_consegna_prevista?'<span style="font-size:12px;color:#6d28d9">🚚 Consegna: '+ord.data_consegna_prevista+'</span>':'')+
+        (ord.data_consegna_prevista?'<span style="font-size:12px;color:#6d28d9">🚚 Consegna: '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span>':'')+
         '<span style="font-size:12px;color:#555;font-weight:600;margin-left:auto">'+ord.righe.length+' prodotti</span>'+
         '<div style="display:flex;gap:6px">'+
           (isOpen?'<button onclick="fabRiceviOrdine(\''+ord.id+'\')" style="background:#16a34a;border:none;border-radius:6px;padding:4px 10px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📦 Ricevi merce</button>':'')+
@@ -8581,8 +8581,11 @@ function noireParseXLSX(arrayBuffer){
       var articoloRaw=(r[iArticolo]||'').toString().trim();
       // Strip "PF  " o "PF " dal codice articolo
       var articolo=articoloRaw.replace(/^PF\s+/i,'').trim();
-      var qtaRaw=r[iQta];
-      var qtaMaster=parseInt((qtaRaw||'0').toString().replace(/[^0-9]/g,''))||0;
+      var qtaRaw=(r[iQta]||'0').toString().trim();
+      // Parsing numero italiano: "1.024,00" → 1024, "6,00" → 6
+      // Il punto è separatore migliaia, la virgola è decimale
+      var qtaNorm=qtaRaw.replace(/\./g,'').replace(',','.');  // "1024.00"
+      var qtaMaster=Math.round(parseFloat(qtaNorm)||0);
       var consegna=noireFmtDate(r[iConsegna]);
       if(!ordine||!articolo||!consegna) continue;
       // Trova prodotto
@@ -8605,6 +8608,14 @@ function noireFmtDate(val){
   var m2=s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if(m2) return m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');
   return s.substring(0,10);
+}
+
+// Mostra data in formato italiano DD/MM/YYYY da stringa YYYY-MM-DD
+function noireFmtDateDisplay(ymd){
+  if(!ymd||ymd.length<10) return ymd||'';
+  var parts=ymd.substring(0,10).split('-');
+  if(parts.length!==3) return ymd;
+  return parts[2]+'/'+parts[1]+'/'+parts[0];
 }
 
 function noireAnalyzeAndPreview(excelRows){
@@ -8751,7 +8762,7 @@ function noireRenderPreview(changes,notInSystem,excelRows,matched){
           '<td style="padding:7px 10px;font-weight:600">'+(r.prod?r.prod.sku:'❌ Non trovato')+'</td>'+
           '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#888">'+r.articolo+'</td>'+
           '<td style="padding:7px 10px;font-size:11px;color:#888">'+r.ordine+'</td>'+
-          '<td style="padding:7px 10px;font-size:11px">'+r.consegna+'</td>'+
+          '<td style="padding:7px 10px;font-size:11px">'+noireFmtDateDisplay(r.consegna)+'</td>'+
           '<td style="padding:7px 10px;text-align:right;color:#1a73e8">'+pzStr+'</td>'+
           '<td style="padding:7px 10px;text-align:center">'+(matchOk?'✅':'⚠️ cod. sconosciuto')+'</td>'+
         '</tr>';
