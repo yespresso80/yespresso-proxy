@@ -7626,6 +7626,13 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
 
 
 <script>
+// Helper data display — usata da _renderOrdFornLista e _renderOrdFornTabella
+function _fmtDataOrd(ymd){
+  if(!ymd||ymd.length<10) return ymd||'';
+  var p=ymd.substring(0,10).split('-');
+  return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:ymd;
+}
+
 // Handler messaggi da iframe Molnar
 window.addEventListener('message',function(e){
   if(!e.data)return;
@@ -9021,7 +9028,7 @@ function renderOrdiniInviati(){
       html+='<tr style="border-top:1px solid #f4f5f7;'+(i%2===1?'background:#faf8ff':'')+'">'+
         '<td style="padding:8px 14px;font-weight:600;color:#1a1a2e">'+ord.data_ordine+'</td>'+
         '<td style="padding:8px 12px;color:'+(ord.data_consegna_prevista?'#6d28d9':'#aaa')+'">'+
-          (ord.data_consegna_prevista?noireFmtDateDisplay(ord.data_consegna_prevista):'—')+
+          (ord.data_consegna_prevista?_fmtDataOrd(ord.data_consegna_prevista):'—')+
         '</td>'+
         '<td style="padding:8px 12px"><span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px">'+sl+'</span></td>'+
         '<td style="padding:8px 12px;color:#555">'+nProd+' art.</td>'+
@@ -9063,7 +9070,7 @@ function apriDettaglioOrdine(id){
         '<div style="font-size:15px;font-weight:700;color:#92400e">📋 '+ord.fornitore+'</div>'+
         '<div style="font-size:12px;color:#888;margin-top:2px">'+
           'Ordine del '+ord.data_ordine+
-          (ord.data_consegna_prevista?' · Consegna: '+noireFmtDateDisplay(ord.data_consegna_prevista):'')+
+          (ord.data_consegna_prevista?' · Consegna: '+_fmtDataOrd(ord.data_consegna_prevista):'')+
           ' · '+(statoLabel[ord.stato]||ord.stato)+
         '</div>'+
       '</div>'+
@@ -9102,7 +9109,7 @@ function scaricaPDFOrdine(id){
     var p=fabProducts.find(function(x){return x.sku_shopify===r.sku_shopify;})||{};
     var ms=getMasterSize(p);
     var ordL=ms>1?Math.ceil(r.qty_ordinata/ms)+' master ('+r.qty_ordinata+' pz)':r.qty_ordinata+' pz';
-    var dataCons=r.data_cons_riga?noireFmtDateDisplay(r.data_cons_riga):'—';
+    var dataCons=r.data_cons_riga?_fmtDataOrd(r.data_cons_riga):'—';
     return '<tr><td style="padding:7px 10px;border-bottom:1px solid #eee;font-size:11px;color:#888">'+( p.codice_forn||'—')+'</td>'+
       '<td style="padding:7px 10px;border-bottom:1px solid #eee">'+r.sku+'</td>'+
       '<td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center;font-weight:700">'+ordL+'</td>'+
@@ -9189,12 +9196,6 @@ function renderFabOrdini(body){
   body.innerHTML=html;
 }
 
-// Helper data display — usata da _renderOrdFornLista e _renderOrdFornTabella
-function _fmtDataOrd(ymd){
-  if(!ymd||ymd.length<10) return ymd||'';
-  var p=ymd.substring(0,10).split('-');
-  return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:ymd;
-}
 
 
 function _renderOrdFornTabella(openOrds,today,parseDataLocale){
@@ -9778,7 +9779,7 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
         '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:11px;color:#888;font-weight:600">Ordini:</span>';
       wg.ordini.forEach(function(ord){
         var nArt=ord.righe.filter(function(r){return r.qty_ordinata>0;}).length;
-        html+='<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+ord.fornitore+' · '+nArt+' art. · '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span>'+
+        html+='<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+ord.fornitore+' · '+nArt+' art. · '+_fmtDataOrd(ord.data_consegna_prevista)+'</span>'+
           '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✏️ Modifica</button>'+
           '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="font-size:11px;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✕ Elimina</button>';
       });
@@ -9798,7 +9799,7 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
         '<span style="font-weight:700">'+ord.fornitore+'</span>'+
         '<span style="color:'+sc+';font-weight:700">'+sl+'</span>'+
         '<span style="color:#888">'+ord.data_ordine+'</span>'+
-        (ord.data_consegna_prevista?'<span style="color:#6d28d9">🚚 '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span>':'')+
+        (ord.data_consegna_prevista?'<span style="color:#6d28d9">🚚 '+_fmtDataOrd(ord.data_consegna_prevista)+'</span>':'')+
         '<span style="color:#aaa">'+ord.righe.map(function(r){return r.sku+': '+r.qty_ordinata+'pz';}).join(', ')+'</span>'+
         '<div style="margin-left:auto;display:flex;gap:6px">'+
           '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:2px 8px;cursor:pointer;font-family:inherit">✏️</button>'+
@@ -9892,7 +9893,7 @@ function renderRicezioneTable(){
     });
     righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
     var totInArrivo=righeAperte.reduce(function(s,x){return s+x.residuo;},0);
-    var prossimaData=righeAperte.length?noireFmtDateDisplay(righeAperte[0].data):'—';
+    var prossimaData=righeAperte.length?_fmtDataOrd(righeAperte[0].data):'—';
 
     if(!totInArrivo) return; // nessun ordine aperto per questo prodotto
 
