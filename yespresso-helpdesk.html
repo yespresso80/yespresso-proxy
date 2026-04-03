@@ -8503,7 +8503,7 @@ function fabDebugArticolo(){
   var p=fabProducts.find(function(x){return x.sku.toLowerCase().includes(scelta.toLowerCase());});
   if(!p){alert('Articolo non trovato: '+scelta);return;}
 
-  var SAFETY_DAYS=_fabScortaSicGiorni, HORIZON_WEEKS=9;
+  var SAFETY_DAYS=_fabScortaSicGiorni, LEAD_WEEKS=2, HORIZON_WEEKS=9;
   var today=new Date(); today.setHours(0,0,0,0);
   function parseDataLocale(s){
     if(!s) return null;
