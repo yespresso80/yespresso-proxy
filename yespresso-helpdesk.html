@@ -9304,11 +9304,17 @@ window.ricezioneSalva=async function(){
           var locD=await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
           if(locD&&locD.inventory_levels&&locD.inventory_levels[0]){
             var locId=locD.inventory_levels[0].location_id;
-            var adjRes=await proxyFetch(PROXY+'/shopify/inventory_adjustments.json',{
+            // Endpoint corretto: inventory_levels/adjust.json (inventory_adjustments.json è deprecato)
+            var adjRes=await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
               method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({inventory_adjustment:{inventory_item_id:invItemId,location_id:locId,available_adjustment:qtyRicevuta}})
+              body:JSON.stringify({location_id:locId,inventory_item_id:invItemId,available_adjustment:qtyRicevuta})
             });
-            if(fabInventoryCache) fabInventoryCache[sku]=(fabInventoryCache[sku]||0)+qtyRicevuta;
+            var adjData=await adjRes.json();
+            if(adjRes.ok){
+              if(fabInventoryCache) fabInventoryCache[sku]=(fabInventoryCache[sku]||0)+qtyRicevuta;
+            } else {
+              errors.push(p.sku+': errore Shopify '+adjRes.status+' '+JSON.stringify(adjData).substring(0,100));
+            }
           } else { errors.push(p.sku+': nessun inventory_level trovato'); }
         } else { errors.push(p.sku+': variante non trovata su Shopify (SKU: '+sku+')'); }
       }catch(e2){errors.push(p.sku+': '+e2.message);}
