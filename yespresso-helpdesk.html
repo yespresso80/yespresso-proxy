@@ -7758,6 +7758,7 @@ async function openFabbisognoPanel(){
       '<button class="fab-tab" data-tab="fabbisogno" onclick="renderFabTab(\'fabbisogno\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🔮 Piano Fabbisogno</button>'+
     '</div>'+
     '<button onclick="refreshFabInventory()" style="margin-left:auto;background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna inventario</button>'+
+    '<button onclick="fabSyncLocalToServer()" style="background:#fff8f0;border:1px solid #fdba74;border-radius:8px;padding:8px 12px;color:#c2410c;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Carica ordini salvati localmente sul server">☁️ Sync locale→server</button>'+
     '<button onclick="fabClearCache()" style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:8px 12px;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Svuota cache localStorage e ricarica">🗑 Svuota cache</button>';
   page.appendChild(hdr);
 
@@ -7904,6 +7905,33 @@ function fabClearCache(){
   fabInventoryCache={};
   showToast('🗑 Cache svuotata — clicca Aggiorna dati Shopify');
   renderFabTab(_fabCurrentTab);
+}
+
+async function fabSyncLocalToServer(){
+  // Legge ordini e prodotti dal localStorage (vecchio formato) e li carica sul server
+  var localOrdini=localStorage.getItem('fab_ordini');
+  var localProducts=localStorage.getItem('fab_products');
+  var ordiniDaSinc=[];
+  var productsDaSinc=null;
+  try{if(localOrdini)ordiniDaSinc=JSON.parse(localOrdini);}catch(e){}
+  try{if(localProducts)productsDaSinc=JSON.parse(localProducts);}catch(e){}
+
+  if(!ordiniDaSinc.length&&!productsDaSinc){
+    showToast('Nessun dato locale trovato da sincronizzare');
+    return;
+  }
+
+  if(!confirm('Trovati '+ordiniDaSinc.length+' ordini in locale.\nVuoi caricarli sul server? Gli ordini già presenti sul server verranno SOSTITUITI.')){
+    return;
+  }
+
+  // Merge: usa i dati locali come nuovi dati
+  if(ordiniDaSinc.length) fabOrdini=ordiniDaSinc;
+  if(productsDaSinc) fabProducts=productsDaSinc;
+
+  await saveFabState();
+  showToast('✅ Sincronizzazione completata: '+fabOrdini.length+' ordini caricati sul server');
+  renderFabTab('ordini');
 }
 
 
@@ -8659,6 +8687,14 @@ function fabExportVenduto(){
 // TAB 3 — ORDINI FORNITORI
 // ════════════════════════════════════════════════════════════════
 function renderFabOrdini(body){
+  var today=new Date(); today.setHours(0,0,0,0);
+  function parseDataLocale(s){
+    if(!s) return null;
+    var p=s.substring(0,10).split('-');
+    if(p.length<3) return null;
+    return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
+  }
+
   var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
     '<h2 style="margin:0;font-size:16px;font-weight:700;color:#1a1a2e">🛒 Ordini Fornitori</h2>'+
     '<div style="display:flex;gap:8px">'+
@@ -8669,110 +8705,123 @@ function renderFabOrdini(body){
   '</div>';
 
   if(!fabOrdini.length){
-    body.innerHTML=html+'<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">Nessun ordine registrato. Crea il primo ordine fornitore.</div>';
+    body.innerHTML=html+'<div style="text-align:center;padding:60px;color:#aaa;font-size:14px">Nessun ordine registrato.</div>';
     return;
   }
 
-  // ── TABELLA PIVOT: articoli (righe) × date consegna (colonne) ──
-  // Considera solo ordini aperti (attesa/parziale) per la pivot principale
   var openOrds=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
   var closedOrds=fabOrdini.filter(function(o){return o.stato==='ricevuto'||o.stato==='annullato';});
 
   if(openOrds.length){
-    // Raccogli tutte le date di consegna uniche ordinate
-    var datesSet={};
+    // Raggruppa per SETTIMANA di consegna
+    var weekMap={}; // wi → {wi, label, bc, bg, ordini[]}
     openOrds.forEach(function(ord){
-      var d=(ord.data_consegna_prevista||'').substring(0,10);
-      if(d) datesSet[d]=true;
+      var dc=parseDataLocale(ord.data_consegna_prevista);
+      var diff=dc?Math.round((dc-today)/86400000):-1;
+      var wi=diff<0?-1:Math.floor(diff/7);
+      var wkey=String(wi);
+      if(!weekMap[wkey]){
+        var d0=new Date(today.getTime()+Math.max(0,wi)*7*86400000);
+        var d1=new Date(today.getTime()+(Math.max(0,wi)*7+6)*86400000);
+        var fmt=function(d){return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});};
+        var lbl=wi<0?'⚠️ Scaduto — sollecitare subito':
+                wi===0?'🚨 Questa settimana ('+ fmt(d0)+' - '+fmt(d1)+')':
+                'Sett. '+(wi+1)+' — '+fmt(d0)+' / '+fmt(d1);
+        var bc=wi<0?'#dc2626':wi===0?'#e67e22':'#6d28d9';
+        var bg=wi<0?'#fff5f5':wi===0?'#fff8f0':'#faf8ff';
+        weekMap[wkey]={wi:wi,label:lbl,bc:bc,bg:bg,ordini:[]};
+      }
+      weekMap[wkey].ordini.push(ord);
     });
-    var dates=Object.keys(datesSet).sort();
 
-    // Per ogni prodotto in fabProducts, calcola qty per data
-    // prodData[sku_shopify][data] = {qty_ordinata, qty_ricevuta, residuo, ordIds[]}
-    var prodData={};
-    fabProducts.forEach(function(p){ prodData[p.sku_shopify]={}; });
+    var weekKeys=Object.keys(weekMap).map(Number).sort(function(a,b){return a-b;});
 
-    openOrds.forEach(function(ord){
-      var d=(ord.data_consegna_prevista||'').substring(0,10);
-      if(!d) return;
-      ord.righe.forEach(function(r){
-        if(!prodData[r.sku_shopify]) prodData[r.sku_shopify]={};
-        if(!prodData[r.sku_shopify][d]) prodData[r.sku_shopify][d]={ord:0,ric:0,res:0};
-        var cell=prodData[r.sku_shopify][d];
-        cell.ord+=r.qty_ordinata||0;
-        cell.ric+=r.qty_ricevuta||0;
-        cell.res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
+    html+='<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">';
+    weekKeys.forEach(function(wi){
+      var wg=weekMap[String(wi)];
+      // Aggrega articoli di tutti gli ordini del gruppo
+      var aggMap={}; // sku_shopify → {sku, ord, ric, res}
+      wg.ordini.forEach(function(ord){
+        ord.righe.forEach(function(r){
+          if(!aggMap[r.sku_shopify]) aggMap[r.sku_shopify]={sku:r.sku,sku_shopify:r.sku_shopify,ord:0,ric:0,res:0};
+          aggMap[r.sku_shopify].ord+=r.qty_ordinata||0;
+          aggMap[r.sku_shopify].ric+=r.qty_ricevuta||0;
+          aggMap[r.sku_shopify].res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
+        });
       });
-    });
+      var articoli=Object.values(aggMap).filter(function(a){return a.res>0;});
+      if(!articoli.length) return;
 
-    // Filtra prodotti che hanno almeno una data con residuo > 0
-    var prodWithData=fabProducts.filter(function(p){
-      return dates.some(function(d){
-        return prodData[p.sku_shopify]&&prodData[p.sku_shopify][d]&&prodData[p.sku_shopify][d].res>0;
+      html+='<div style="background:'+wg.bg+';border:2px solid '+wg.bc+';border-radius:10px;overflow:hidden">'+
+        '<div style="padding:8px 14px;background:'+wg.bc+';display:flex;align-items:center;justify-content:space-between">'+
+          '<span style="font-size:13px;font-weight:700;color:#fff">'+wg.label+'</span>'+
+          '<span style="font-size:11px;color:rgba(255,255,255,.8)">'+wg.ordini.length+' ordine'+(wg.ordini.length>1?'i':'')+'</span>'+
+        '</div>'+
+        '<div style="overflow-x:auto">'+
+        '<table style="border-collapse:collapse;font-size:12px;width:100%;min-width:500px">'+
+        '<thead><tr style="background:rgba(0,0,0,.04);font-size:10px;color:#888;font-weight:700;text-transform:uppercase">'+
+          '<th style="padding:6px 14px;text-align:left">Articolo</th>'+
+          '<th style="padding:6px 10px;text-align:right">Ordinato</th>'+
+          '<th style="padding:6px 10px;text-align:right">Ricevuto</th>'+
+          '<th style="padding:6px 10px;text-align:right">Residuo</th>'+
+        '</tr></thead><tbody>';
+
+      articoli.forEach(function(a,i){
+        var p=fabProducts.find(function(x){return x.sku_shopify===a.sku_shopify;})||{};
+        var ms=getMasterSize(p);
+        var ordL=ms>1?Math.ceil(a.ord/ms)+'m ('+a.ord+'pz)':a.ord+' pz';
+        var ricL=ms>1?Math.ceil(a.ric/ms)+'m ('+a.ric+'pz)':a.ric+' pz';
+        var resL=ms>1?Math.ceil(a.res/ms)+'m ('+a.res+'pz)':a.res+' pz';
+        html+='<tr style="border-top:1px solid rgba(0,0,0,.06);'+(i%2===1?'background:rgba(0,0,0,.02)':'')+'">'+
+          '<td style="padding:7px 14px;font-weight:600;color:#1a1a2e">'+a.sku+
+            (ms>1?'<br><span style="font-size:10px;color:#7c3aed">×'+ms+' pz/master</span>':'')+
+          '</td>'+
+          '<td style="padding:7px 10px;text-align:right;color:#555">'+ordL+'</td>'+
+          '<td style="padding:7px 10px;text-align:right;color:#16a34a">'+ricL+'</td>'+
+          '<td style="padding:7px 10px;text-align:right;font-weight:700;color:#e67e22">'+resL+'</td>'+
+        '</tr>';
       });
-    });
 
-    html+='<div style="margin-bottom:8px;font-size:12px;color:#888">📋 Ordini aperti — residuo per data consegna (pz). <span style="color:#e67e22">Arancio = residuo</span> · <span style="color:#16a34a">Verde = ricevuto</span></div>';
-    html+='<div style="overflow:auto;border:1px solid #e8eaf0;border-radius:10px;margin-bottom:24px">'+
-      '<table style="border-collapse:collapse;font-size:12px;white-space:nowrap;background:#fff;min-width:100%">'+
-      '<thead><tr style="background:#f5f3ff">'+
-        '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#6d28d9;border-bottom:2px solid #e0d9ff;border-right:2px solid #e0d9ff;position:sticky;left:0;background:#f5f3ff;min-width:190px;z-index:2">Articolo</th>'+
-        dates.map(function(d){
-          return '<th style="padding:10px 10px;text-align:center;font-weight:700;color:#555;border-bottom:2px solid #e8eaf0;border-right:1px solid #f0f2f5;min-width:110px">'+noireFmtDateDisplay(d)+'</th>';
-        }).join('')+
-        '<th style="padding:10px 10px;text-align:right;font-weight:700;color:#1a1a2e;border-bottom:2px solid #e8eaf0;min-width:80px">Totale</th>'+
-      '</tr>'+
-      '<tr style="background:#faf8ff;font-size:10px;color:#aaa">'+
-        '<td style="padding:3px 14px;border-right:2px solid #e0d9ff;position:sticky;left:0;background:#faf8ff"></td>'+
-        dates.map(function(){return '<td style="padding:3px 10px;text-align:center;border-right:1px solid #f0f2f5">ord / res</td>';}).join('')+
-        '<td style="padding:3px 10px;text-align:right">residuo</td>'+
-      '</tr></thead><tbody>';
-
-    prodWithData.forEach(function(p,idx){
-      var ms=getMasterSize(p);
-      var totRes=0;
-      var rowBg=idx%2===1?'#faf8ff':'#fff';
-      var cells=dates.map(function(d){
-        var cell=prodData[p.sku_shopify]&&prodData[p.sku_shopify][d];
-        if(!cell||cell.ord===0) return '<td style="padding:8px 10px;text-align:center;border-right:1px solid #f0f2f5;background:'+rowBg+';color:#ddd">—</td>';
-        totRes+=cell.res;
-        var ordLabel=ms>1?Math.ceil(cell.ord/ms)+'m':cell.ord;
-        var resLabel=ms>1?Math.ceil(cell.res/ms)+'m':cell.res;
-        var resColor=cell.res>0?'#e67e22':'#16a34a';
-        return '<td style="padding:8px 10px;text-align:center;border-right:1px solid #f0f2f5;background:'+(cell.res>0?'#fff8f0':'#f0fdf4')+'">'+
-          '<span style="color:#888;font-size:11px">'+ordLabel+'</span>'+
-          '<span style="color:#ccc;margin:0 3px">/</span>'+
-          '<span style="color:'+resColor+';font-weight:700">'+resLabel+'</span>'+
-          (ms>1?'<br><span style="font-size:10px;color:#aaa">'+(cell.res)+'pz</span>':'')+
-        '</td>';
+      // Riga con bottoni per ogni singolo ordine del gruppo
+      html+='<tr style="border-top:2px solid rgba(0,0,0,.08)">'+
+        '<td colspan="4" style="padding:8px 14px">'+
+          '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'+
+          '<span style="font-size:11px;color:#888;font-weight:600">Ordini:' +'</span>';
+      wg.ordini.forEach(function(ord){
+        var nArt=ord.righe.filter(function(r){return r.qty_ordinata>0;}).length;
+        html+=
+          '<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+
+            ord.fornitore+' · '+nArt+' art. · '+noireFmtDateDisplay(ord.data_consegna_prevista)+
+          '</span>'+
+          '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✏️ Modifica</button>'+
+          '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="font-size:11px;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✕ Elimina</button>';
       });
-      var totLabel=ms>1?Math.ceil(totRes/ms)+'m ('+totRes+'pz)':totRes+'pz';
-      html+='<tr style="border-bottom:1px solid #f4f5f7">'+
-        '<td style="padding:8px 14px;font-weight:600;color:#1a1a2e;border-right:2px solid #e0d9ff;position:sticky;left:0;background:'+rowBg+'">'+p.sku+
-          (ms>1?'<br><span style="font-size:10px;color:#7c3aed">master da '+ms+' pz</span>':'')+
-        '</td>'+
-        cells.join('')+
-        '<td style="padding:8px 10px;text-align:right;font-weight:700;color:'+(totRes>0?'#e67e22':'#16a34a')+'">'+totLabel+'</td>'+
-      '</tr>';
+      html+='</div></td></tr>';
+      html+='</tbody></table></div></div>';
     });
-
-    html+='</tbody></table></div>';
+    html+='</div>';
   }
 
-  // ── ORDINI CHIUSI (sezione collassabile) ──
+  if(!openOrds.length){
+    html+='<div style="text-align:center;padding:40px;color:#aaa;font-size:14px">Nessun ordine aperto.</div>';
+  }
+
   if(closedOrds.length){
-    html+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:#888;padding:8px 0;list-style:none">▸ Ordini chiusi/annullati ('+closedOrds.length+')</summary>'+
-      '<div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">';
+    html+='<details><summary style="cursor:pointer;font-size:13px;font-weight:700;color:#888;padding:6px 0;list-style:none">▸ Ordini chiusi/annullati ('+closedOrds.length+')</summary>'+
+      '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">';
     closedOrds.forEach(function(ord){
-      var statoLabel=ord.stato==='ricevuto'?'✅ Ricevuto':'❌ Annullato';
       var statoColor=ord.stato==='ricevuto'?'#16a34a':'#888';
-      html+='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:10px 14px;font-size:12px">'+
-        '<span style="font-weight:700;color:#1a1a2e">'+ord.fornitore+'</span> '+
-        '<span style="color:'+statoColor+';font-weight:700">'+statoLabel+'</span> '+
-        '<span style="color:#888">📅 '+ord.data_ordine+'</span> '+
-        (ord.data_consegna_prevista?'<span style="color:#6d28d9">🚚 '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span> ':'')+
-        '<span style="color:#aaa">'+ord.righe.length+' prodotti · '+ord.righe.map(function(r){return r.sku+': '+r.qty_ordinata+'pz';}).join(', ')+'</span>'+
-        '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="float:right;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit">✕</button>'+
+      var statoLabel=ord.stato==='ricevuto'?'✅ Ricevuto':'❌ Annullato';
+      html+='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:8px;padding:8px 14px;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+        '<span style="font-weight:700">'+ord.fornitore+'</span>'+
+        '<span style="color:'+statoColor+';font-weight:700">'+statoLabel+'</span>'+
+        '<span style="color:#888">'+ord.data_ordine+'</span>'+
+        (ord.data_consegna_prevista?'<span style="color:#6d28d9">🚚 '+noireFmtDateDisplay(ord.data_consegna_prevista)+'</span>':'')+
+        '<span style="color:#aaa">'+ord.righe.map(function(r){return r.sku+': '+r.qty_ordinata+'pz';}).join(', ')+'</span>'+
+        '<div style="margin-left:auto;display:flex;gap:6px">'+
+          '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:2px 8px;cursor:pointer;font-family:inherit">✏️</button>'+
+          '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="font-size:11px;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:2px 8px;cursor:pointer;font-family:inherit">✕</button>'+
+        '</div>'+
       '</div>';
     });
     html+='</div></details>';
