@@ -8686,6 +8686,9 @@ function fabExportVenduto(){
 // ════════════════════════════════════════════════════════════════
 // TAB 3 — ORDINI FORNITORI
 // ════════════════════════════════════════════════════════════════
+var _fabOrdiniView='lista';
+function fabSetOrdiniView(v){_fabOrdiniView=v;renderFabTab('ordini');}
+
 function renderFabOrdini(body){
   var today=new Date(); today.setHours(0,0,0,0);
   function parseDataLocale(s){
@@ -8695,8 +8698,17 @@ function renderFabOrdini(body){
     return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
   }
 
+  var _vL=_fabOrdiniView==='lista';
+  var _sL='padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;'+(_vL?'background:#fff;color:#6d28d9;box-shadow:0 1px 3px rgba(0,0,0,.1)':'background:transparent;color:#888');
+  var _sT='padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;'+(!_vL?'background:#fff;color:#6d28d9;box-shadow:0 1px 3px rgba(0,0,0,.1)':'background:transparent;color:#888');
   var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
-    '<h2 style="margin:0;font-size:16px;font-weight:700;color:#1a1a2e">🛒 Ordini Fornitori</h2>'+
+    '<div style="display:flex;align-items:center;gap:10px">'+
+      '<h2 style="margin:0;font-size:16px;font-weight:700;color:#1a1a2e">🛒 Ordini Fornitori</h2>'+
+      '<div style="display:flex;background:#f0f2f5;border-radius:8px;padding:3px;gap:2px">'+
+        '<button onclick="fabSetOrdiniView(\'lista\')" style="'+_sL+'">☰ Elenco</button>'+
+        '<button onclick="fabSetOrdiniView(\'tabella\')" style="'+_sT+'">⊞ Tabella</button>'+
+      '</div>'+
+    '</div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="fabImportNoireExcel()" style="background:#e8f0fe;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📊 Importa Excel Noire</button>'+
       '<button onclick="openRicezioneMerce()" style="background:#16a34a;border:none;border-radius:8px;padding:8px 14px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📦 Ricevi Merce</button>'+
