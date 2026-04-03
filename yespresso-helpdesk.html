@@ -8481,9 +8481,9 @@ window.fabSaveOrdine=function(id){
 function fabImportNoireExcel(){
   var modal=document.createElement('div');
   modal.id='fab-noire-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10700;display:flex;align-items:center;justify-content:center';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10700;overflow-y:auto;padding:20px;box-sizing:border-box';
   modal.innerHTML=
-    '<div style="background:#fff;border-radius:14px;width:780px;max-width:97vw;height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)">'+
+    '<div style="background:#fff;border-radius:14px;width:780px;max-width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);margin:auto">'+
       '<div style="flex-shrink:0;padding:16px 22px;border-bottom:1px solid #4a90d9;display:flex;align-items:center;justify-content:space-between;background:#1a73e8;border-radius:14px 14px 0 0">'+
         '<div>'+
           '<div style="font-size:16px;font-weight:700;color:#fff">📊 Importa Ordini Aperti Noire</div>'+
