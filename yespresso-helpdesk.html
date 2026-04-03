@@ -7634,9 +7634,7 @@ window.addEventListener('message',function(e){
     showToast('Listino Molnar salvato!');
   }
 });
-</script>
 
-<script>
 // ── DATI PRODOTTI (da CSV) ─────────────────────────────────────
 const FAB_PRODUCTS_DEFAULT = [
   {id:5, fornitore:"Noire srl",      email:"m.bonaguro@neronobile.com",  codice_forn:"P021120006",        sku:"160 DOLCE GUSTO - CREMOSO",   sku_shopify:"CDGE16CAF004",    ord_min:64,  multiplo:64,  unita_acq:"1 unità"},
@@ -8266,7 +8264,6 @@ function fabExportPiano(){
   var cached=localStorage.getItem('fab_inventory');
   if(cached)try{fabInventoryCache=JSON.parse(cached);}catch(e){}
 })();
-</script>
 
 function fabShowImportModal(){
   var existing=document.getElementById('fab-import-modal');
