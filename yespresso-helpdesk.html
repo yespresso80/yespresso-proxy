@@ -8438,10 +8438,37 @@ function renderFabPiano(body){
   '</div>';
 
   if(critici.length){
-    html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;margin-bottom:10px">'+
-      '<div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:6px">🚨 CRITICI — Scorta finisce prima del prossimo arrivo ('+critici.length+')</div>'+
-      critici.map(function(a){return '<div style="font-size:12px;color:#7f1d1d;padding:1px 0">• <strong>'+a.p.sku+'</strong> — inv: '+a.inv+' pz · consumo: '+a.consumoSett+' pz/sett · finisce tra '+a.runoutDay+' gg</div>';}).join('')+
-    '</div>';
+    var critByForn={};
+    critici.forEach(function(a){var f=a.p.fornitore;if(!critByForn[f])critByForn[f]=[];critByForn[f].push(a);});
+    html+='<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;overflow:hidden;margin-bottom:10px">'+
+      '<div style="padding:10px 16px;background:#dc2626">'+
+        '<span style="font-size:13px;font-weight:700;color:#fff">🚨 CRITICI — Scorta finisce prima del prossimo arrivo ('+critici.length+')</span>'+
+      '</div>';
+    Object.keys(critByForn).forEach(function(forn){
+      var pp=critByForn[forn];
+      var btnId='soll_'+forn.replace(/[^a-z0-9]/gi,'');
+      var righeText=pp.map(function(a){return (a.p.codice_forn?'['+a.p.codice_forn+'] ':'')+a.p.sku;}).join('\n');
+      var oggiStr=new Date().toLocaleDateString('it-IT');
+      var testo='Oggetto: Sollecito consegna urgente\n\nGentile '+forn+',\n\nvi segnaliamo che i seguenti prodotti sono in esaurimento scorte e richiedono consegna urgente:\n\n'+righeText+'\n\nVi chiediamo cortesemente di confermare la data di consegna al più presto.\n\nGrazie,\nYespresso';
+      html+=
+        '<div style="padding:10px 16px;border-bottom:1px solid #fecaca">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+            '<span style="font-size:12px;font-weight:700;color:#dc2626">'+forn+' — '+pp.length+' prodotto'+(pp.length>1?'i':'')+' critic'+(pp.length>1?'i':'o')+'</span>'+
+            '<button id="'+btnId+'" data-testo="'+encodeURIComponent(testo)+'" onclick="fabCopiaSollecito(this)" '+
+              'style="background:#dc2626;border:none;border-radius:6px;padding:4px 12px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">'+
+              '📋 Copia sollecito'+
+            '</button>'+
+          '</div>'+
+          pp.map(function(a){
+            return '<div style="font-size:12px;color:#7f1d1d;padding:1px 0">'+
+              (a.p.codice_forn?'<span style="font-size:10px;color:#7c3aed;font-weight:700;margin-right:4px">['+a.p.codice_forn+']</span>':'')+
+              '<strong>'+a.p.sku+'</strong>'+
+              '<span style="color:#aaa;font-size:10px"> · inv: '+a.inv+' pz · finisce tra '+a.runoutDay+' gg</span>'+
+            '</div>';
+          }).join('')+
+        '</div>';
+    });
+    html+='</div>';
   }
   if(attenzione.length){
     html+='<div style="background:#fff8f0;border:1px solid #fdba74;border-radius:10px;padding:12px 16px;margin-bottom:10px">'+
@@ -9570,6 +9597,24 @@ function fabCreaPianoOrdine(){
   var newOrd={id:'ord_'+Date.now(),numero_ordine:_nextOrdineNum(forn),fornitore:forn,stato:'attesa',data_ordine:new Date().toISOString().substring(0,10),data_consegna_prevista:sel[0].dataConsegna,note:'Da piano fabbisogno',righe:righe};
   fabAnnullaSelezioneCard();
   _openOrdineModal(newOrd);
+}
+
+
+function fabCopiaSollecito(btn){
+  var testo=decodeURIComponent(btn.dataset.testo);
+  var copy=function(){
+    var ta=document.createElement('textarea');
+    ta.value=testo;ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(testo).catch(copy);
+  } else { copy(); }
+  var orig=btn.innerHTML;
+  btn.innerHTML='✅ Copiato!';btn.style.background='#16a34a';
+  setTimeout(function(){btn.innerHTML=orig;btn.style.background='#dc2626';},2000);
 }
 
 
