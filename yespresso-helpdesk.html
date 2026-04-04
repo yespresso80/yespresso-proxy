@@ -8451,7 +8451,17 @@ function renderFabPiano(body){
   }
 
   // ── PIANO ORDINI PER FORNITORE — una card per settimana ────────
-  html+='<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0 0 10px">📅 Ordini da emettere per settimana</h3>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
+    '<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0">📅 Ordini da emettere per settimana</h3>'+
+    '<span style="font-size:11px;color:#888;background:#f5f3ff;border-radius:6px;padding:4px 10px">Clicca le card per selezionarle e creare un ordine</span>'+
+  '</div>'+
+  '<div id="fab-piano-crea-bar" style="display:none;background:#6d28d9;color:#fff;padding:10px 16px;border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 16px rgba(109,40,217,.3)">'+
+    '<span id="fab-piano-crea-label" style="font-size:13px;font-weight:700"></span>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="fabAnnullaSelezioneCard()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;padding:6px 12px;color:#fff;font-size:12px;cursor:pointer;font-family:inherit">Deseleziona tutto</button>'+
+      '<button onclick="fabCreaPianoOrdine()" style="background:#fff;border:none;border-radius:6px;padding:6px 16px;color:#6d28d9;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Crea ordine</button>'+
+    '</div>'+
+  '</div>';
 
   fornitori.forEach(function(forn){
     var prodsForn=prodPlans.filter(function(a){return a.p.fornitore===forn&&a.ordiniDaEmettere.length>0;});
@@ -8490,10 +8500,18 @@ function renderFabPiano(body){
         isOggi?'✅ DA INVIARE OGGI':
         k===1?'📤 Tra 7 giorni':
         '📤 Tra '+(k*7)+' giorni';
-      html+='<div style="border:2px solid '+bc+';border-radius:8px;padding:10px 14px;min-width:200px;max-width:260px;background:'+bg+'">'+
+      // Dati card serializzati
+      var cardId='fc_'+forn.replace(/[^a-z0-9]/gi,'')+'_'+k;
+      var cardRighe=sg.items.map(function(it){return {sku_shopify:it.p.sku_shopify,sku:it.p.sku,qty:it.o.qty,ms:it.plan.ms};});
+      var cardInfo={fornitore:forn,dataOrdine:sg.dataOrdine.toISOString().substring(0,10),dataConsegna:sg.dataConsegna.toISOString().substring(0,10),urgente:hasUrgente,righe:cardRighe};
+      html+='<div id="'+cardId+'" '+
+        'data-card="'+encodeURIComponent(JSON.stringify(cardInfo))+'" '+
+        'onclick="fabTogglePianoCard(this)" '+
+        'style="border:2px solid '+bc+';border-radius:8px;padding:10px 14px;min-width:200px;max-width:260px;background:'+bg+';cursor:pointer;position:relative;user-select:none">'+
+        '<div style="position:absolute;top:8px;right:8px;font-size:16px;color:'+bc+'" id="chk_'+cardId+'">&#9744;</div>'+
         '<div style="font-size:11px;font-weight:700;color:'+bc+';margin-bottom:2px">'+labelTop+'</div>'+
-        '<div style="font-size:11px;color:#555;margin-bottom:2px">📤 Emissione: <strong>'+sg.dataOrdine.toLocaleDateString('it-IT')+'</strong></div>'+
-        '<div style="font-size:11px;color:#6d28d9;margin-bottom:8px">🚚 Consegna: <strong>'+sg.dataConsegna.toLocaleDateString('it-IT')+'</strong>'+
+        '<div style="font-size:11px;color:#555;margin-bottom:2px">&#128228; Emissione: <strong>'+sg.dataOrdine.toLocaleDateString('it-IT')+'</strong></div>'+
+        '<div style="font-size:11px;color:#6d28d9;margin-bottom:8px">&#128666; Consegna: <strong>'+sg.dataConsegna.toLocaleDateString('it-IT')+'</strong>'+
           (hasUrgente?' <span style="color:#dc2626;font-weight:700">(anticipata!)</span>':'')+
         '</div>'+
         sg.items.map(function(item){
@@ -8791,61 +8809,172 @@ function fabShowImportModal(){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10600;display:flex;align-items:center;justify-content:center';
   modal.innerHTML=
     '<div style="background:#fff;border-radius:14px;width:600px;max-width:97vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
-      '<div style="padding:16px 20px;border-bottom:1px solid #e8eaf0;background:#6d28d9;color:#fff">'+
-        '<div style="font-size:16px;font-weight:700">📂 Importa venduto 7 giorni da Shopify</div>'+
-        '<div style="font-size:12px;opacity:.8;margin-top:2px">Shopify → Analytics → Prodotti più venduti → Esporta CSV</div>'+
+      '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;background:#6d28d9;color:#fff">'+
+        '<div style="font-size:16px;font-weight:700">📂 Importa venduto 7 giorni</div>'+
+        '<div style="font-size:12px;margin-top:6px;display:flex;gap:6px">'+
+          '<button onclick="fabSwitchImportTab(\'csv\')" id="imp-tab-csv" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit;background:rgba(255,255,255,.25);color:#fff;font-size:12px">📄 CSV Shopify</button>'+
+          '<button onclick="fabSwitchImportTab(\'xls\')" id="imp-tab-xls" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit;background:rgba(255,255,255,.1);color:rgba(255,255,255,.7);font-size:12px">📊 Excel manuale</button>'+
+        '</div>'+
       '</div>'+
       '<div style="padding:16px 20px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px">'+
-        // Istruzioni
-        '<div style="background:#f5f3ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#6d28d9;line-height:1.6">'+
-          '<strong>Come esportare da Shopify:</strong><br>'+
-          '1. Vai su <strong>Analytics → Report</strong><br>'+
-          '2. Cerca "Articoli venduti per prodotto" oppure "Sales by product"<br>'+
-          '3. Imposta il periodo a <strong>ultimi 7 giorni</strong><br>'+
-          '4. Clicca <strong>Esporta → CSV</strong><br>'+
-          '5. Carica il file qui sotto<br><br>'+
-          'Il CSV deve avere almeno le colonne <strong>SKU</strong> e <strong>Net quantity</strong> (o Quantità netta)'+
+        '<div id="imp-panel-csv">'+
+          '<div style="background:#f5f3ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#6d28d9;line-height:1.6">'+
+            '<strong>Come esportare da Shopify:</strong><br>'+
+            '1. Vai su <strong>Analytics → Report</strong><br>'+
+            '2. Cerca "Articoli venduti per prodotto" oppure "Sales by product"<br>'+
+            '3. Imposta il periodo a <strong>ultimi 7 giorni</strong><br>'+
+            '4. Clicca <strong>Esporta → CSV</strong> e carica il file qui sotto<br><br>'+
+            'Il CSV deve avere le colonne <strong>SKU</strong> e <strong>Net quantity</strong>'+
+          '</div>'+
+          '<div id="fab-drop-zone" style="border:2px dashed #c4b5fd;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#faf8ff" onclick="document.getElementById(\'fab-file-input\').click()">'+
+            '<div style="font-size:32px;margin-bottom:8px">📄</div>'+
+            '<div style="font-size:14px;font-weight:600;color:#6d28d9">Clicca o trascina il CSV qui</div>'+
+            '<div style="font-size:12px;color:#aaa;margin-top:4px">Oppure incolla il testo CSV sotto</div>'+
+            '<input type="file" id="fab-file-input" accept=".csv,.txt" style="display:none">'+
+          '</div>'+
+          '<div>'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Oppure incolla il contenuto CSV:</label>'+
+            '<textarea id="fab-csv-paste" rows="5" placeholder="SKU,Net quantity..." style="width:100%;padding:8px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:monospace;box-sizing:border-box;resize:vertical"></textarea>'+
+          '</div>'+
         '</div>'+
-        // Drop zone
-        '<div id="fab-drop-zone" style="border:2px dashed #c4b5fd;border-radius:10px;padding:30px;text-align:center;cursor:pointer;background:#faf8ff;transition:background .15s" onclick="document.getElementById(\'fab-file-input\').click()">'+
-          '<div style="font-size:32px;margin-bottom:8px">📄</div>'+
-          '<div style="font-size:14px;font-weight:600;color:#6d28d9">Clicca o trascina il CSV qui</div>'+
-          '<div style="font-size:12px;color:#aaa;margin-top:4px">Oppure incolla il testo CSV sotto</div>'+
-          '<input type="file" id="fab-file-input" accept=".csv,.txt" style="display:none">'+
-        '</div>'+
-        // Paste area
-        '<div>'+
-          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Oppure incolla il contenuto CSV:</label>'+
-          '<textarea id="fab-csv-paste" rows="6" placeholder="SKU,Net quantity&#10;CNALLAX10CAF014,32&#10;CNFAX10CAF187,185&#10;..." style="width:100%;padding:8px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:monospace;box-sizing:border-box;resize:vertical"></textarea>'+
+        '<div id="imp-panel-xls" style="display:none;display:flex;flex-direction:column;gap:12px">'+
+          '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;font-size:12px;color:#166534;line-height:1.7">'+
+            '<strong>Come usare il template Excel:</strong><br>'+
+            '1. Scarica il template qui sotto<br>'+
+            '2. Compila la colonna <strong>Venduto 7gg (pz)</strong> con i pezzi venduti<br>'+
+            '3. Salva e carica il file compilato qui sotto<br><br>'+
+            '<button onclick="fabDownloadVendutoTemplate()" style="background:#16a34a;border:none;border-radius:6px;padding:6px 14px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⬇ Scarica template Excel</button>'+
+          '</div>'+
+          '<div id="fab-xls-drop" style="border:2px dashed #bbf7d0;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#f0fdf4" onclick="document.getElementById(\'fab-xls-input\').click()">'+
+            '<div style="font-size:32px;margin-bottom:8px">📊</div>'+
+            '<div style="font-size:14px;font-weight:600;color:#16a34a">Clicca o trascina il file Excel compilato</div>'+
+            '<div style="font-size:12px;color:#aaa;margin-top:4px">File .xlsx con le quantità inserite</div>'+
+            '<input type="file" id="fab-xls-input" accept=".xlsx" style="display:none">'+
+          '</div>'+
         '</div>'+
         '<div id="fab-import-preview" style="display:none"></div>'+
         '<div id="fab-import-error" style="display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:10px;font-size:12px;color:#dc2626"></div>'+
       '</div>'+
       '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;gap:8px;justify-content:flex-end">'+
         '<button onclick="document.getElementById(\'fab-import-modal\').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
-        '<button id="fab-import-btn" onclick="fabConfirmImport()" style="padding:8px 16px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" disabled>💾 Importa</button>'+
+        '<button id="fab-import-btn" onclick="fabConfirmImport()" style="padding:8px 16px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" disabled>Importa</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(modal);
   modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
 
-  // Drag & drop
   var dz=modal.querySelector('#fab-drop-zone');
   dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.background='#ede9fe';});
   dz.addEventListener('dragleave',function(){dz.style.background='#faf8ff';});
   dz.addEventListener('drop',function(e){e.preventDefault();dz.style.background='#faf8ff';var f=e.dataTransfer.files[0];if(f)fabReadCSVFile(f);});
+  modal.querySelector('#fab-file-input').addEventListener('change',function(e){if(e.target.files[0])fabReadCSVFile(e.target.files[0]);});
+  modal.querySelector('#fab-csv-paste').addEventListener('input',function(){if(this.value.trim())fabParseAndPreviewCSV(this.value);});
 
-  // File input
-  modal.querySelector('#fab-file-input').addEventListener('change',function(e){
-    if(e.target.files[0])fabReadCSVFile(e.target.files[0]);
-  });
-
-  // Paste area
-  modal.querySelector('#fab-csv-paste').addEventListener('input',function(){
-    var txt=this.value.trim();
-    if(txt) fabParseAndPreviewCSV(txt);
-  });
+  // XLS tab
+  var xlsInp=modal.querySelector('#fab-xls-input');
+  xlsInp.addEventListener('change',function(e){if(e.target.files[0])fabReadXlsVenduto(e.target.files[0]);});
+  var xlsDz=modal.querySelector('#fab-xls-drop');
+  xlsDz.addEventListener('dragover',function(e){e.preventDefault();xlsDz.style.background='#dcfce7';});
+  xlsDz.addEventListener('dragleave',function(){xlsDz.style.background='#f0fdf4';});
+  xlsDz.addEventListener('drop',function(e){e.preventDefault();xlsDz.style.background='#f0fdf4';var f=e.dataTransfer.files[0];if(f)fabReadXlsVenduto(f);});
 }
+
+function fabSwitchImportTab(tab){
+  var csvP=document.getElementById('imp-panel-csv');
+  var xlsP=document.getElementById('imp-panel-xls');
+  var csvB=document.getElementById('imp-tab-csv');
+  var xlsB=document.getElementById('imp-tab-xls');
+  if(!csvP) return;
+  if(tab==='csv'){
+    csvP.style.display='';xlsP.style.display='none';
+    csvB.style.background='rgba(255,255,255,.25)';csvB.style.color='#fff';
+    xlsB.style.background='rgba(255,255,255,.1)';xlsB.style.color='rgba(255,255,255,.7)';
+  } else {
+    csvP.style.display='none';xlsP.style.display='flex';xlsP.style.flexDirection='column';xlsP.style.gap='12px';
+    xlsB.style.background='rgba(255,255,255,.25)';xlsB.style.color='#fff';
+    csvB.style.background='rgba(255,255,255,.1)';csvB.style.color='rgba(255,255,255,.7)';
+  }
+}
+
+function fabDownloadVendutoTemplate(){
+  showToast('Scarica il template dalla chat di Claude — file "yespresso_venduto_template.xlsx"');
+}
+
+function fabReadXlsVenduto(file){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var data=new Uint8Array(e.target.result);
+      var wb=XLSX.read(data,{type:'uint8array',raw:true});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+      fabParseXlsVenduto(rows);
+    }catch(ex){
+      var err=document.getElementById('fab-import-error');
+      if(err){err.style.display='block';err.textContent='Errore lettura Excel: '+ex.message;}
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function fabParseXlsVenduto(rows){
+  var hdrRow=-1,colProd=-1,colQty=-1;
+  for(var i=0;i<Math.min(6,rows.length);i++){
+    var row=rows[i];
+    for(var j=0;j<row.length;j++){
+      var v=(row[j]||'').toString().toLowerCase();
+      if(v.includes('prodotto')) colProd=j;
+      if(v.includes('venduto')||v.includes('7gg')) colQty=j;
+    }
+    if(colProd>=0&&colQty>=0){hdrRow=i;break;}
+  }
+  if(hdrRow<0||colProd<0||colQty<0){
+    var err=document.getElementById('fab-import-error');
+    if(err){err.style.display='block';err.textContent='Colonne non trovate. Il file deve avere "Prodotto" e "Venduto 7gg (pz)".';}
+    return;
+  }
+  var newCache={};
+  var matched=0,skipped=0;
+  for(var r=hdrRow+1;r<rows.length;r++){
+    var row2=rows[r];
+    var prodName=(row2[colProd]||'').toString().trim();
+    var qty=parseInt(row2[colQty])||0;
+    if(!prodName||qty<=0){skipped++;continue;}
+    var prod=fabProducts.find(function(p){
+      var pn=prodName.toLowerCase(),sk=p.sku.toLowerCase();
+      return sk===pn||sk.includes(pn)||pn.includes(sk);
+    });
+    if(prod){
+      newCache[prod.sku_shopify]=(newCache[prod.sku_shopify]||0)+qty;
+      matched++;
+    } else skipped++;
+  }
+  var errEl=document.getElementById('fab-import-error');
+  if(!matched){
+    if(errEl){errEl.style.display='block';errEl.textContent='Nessun prodotto riconosciuto. Verifica che i nomi corrispondano esattamente al template.';}
+    return;
+  }
+  if(errEl) errEl.style.display='none';
+  window._fabXlsCache=newCache;
+  window._fabImportSource='xls';
+  var prev=document.getElementById('fab-import-preview');
+  var btn=document.getElementById('fab-import-btn');
+  if(prev){
+    prev.style.display='block';
+    var items=Object.keys(newCache).map(function(sku){
+      var p=fabProducts.find(function(x){return x.sku_shopify===sku;})||{sku:sku};
+      return '<div style="display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #f0fdf4;font-size:12px">'+
+        '<span style="font-weight:600;color:#1a1a2e">'+p.sku+'</span>'+
+        '<span style="color:#16a34a;font-weight:700">'+newCache[sku]+' pz</span></div>';
+    }).join('');
+    prev.innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;overflow:hidden">'+
+      '<div style="padding:8px 12px;background:#16a34a;color:#fff;font-size:12px;font-weight:700">'+
+        matched+' prodotti riconosciuti'+(skipped>0?' · '+skipped+' righe ignorate':'')+
+      '</div>'+items+'</div>';
+  }
+  if(btn) btn.disabled=false;
+}
+
 
 function fabReadCSVFile(file){
   var reader=new FileReader();
@@ -8934,6 +9063,17 @@ function fabParseAndPreviewCSV(text){
 }
 
 function fabConfirmImport(){
+  if(window._fabImportSource==='xls'&&window._fabXlsCache){
+    fabSalesCache=window._fabXlsCache;
+    fabSalesCacheDate=new Date().toISOString().substring(0,16);
+    localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
+    localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
+    window._fabImportSource=null;window._fabXlsCache=null;
+    document.getElementById('fab-import-modal').remove();
+    renderFabTab('venduto');
+    showToast('Dati venduto importati da Excel');
+    return;
+  }
   if(!_fabParsedImport||Object.keys(_fabParsedImport).length===0){
     showToast('Nessun dato da importare — ricarica il CSV','error');
     return;
@@ -9368,6 +9508,70 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
   }
   return html;
 }
+
+var _fabPianoSel={};
+
+function fabTogglePianoCard(el){
+  var cardId=el.id;
+  var chk=document.getElementById('chk_'+cardId);
+  var data=JSON.parse(decodeURIComponent(el.dataset.card));
+  if(_fabPianoSel[cardId]){
+    delete _fabPianoSel[cardId];
+    if(chk) chk.innerHTML='&#9744;';
+    el.style.boxShadow='';
+  } else {
+    var existing=Object.values(_fabPianoSel);
+    if(existing.length>0&&existing[0].fornitore!==data.fornitore){
+      showToast('Seleziona solo settimane dello stesso fornitore','error');
+      return;
+    }
+    _fabPianoSel[cardId]=data;
+    if(chk) chk.innerHTML='&#9745;';
+    el.style.boxShadow='0 0 0 3px #6d28d9';
+  }
+  _fabAggiornaBarra();
+}
+
+function _fabAggiornaBarra(){
+  var bar=document.getElementById('fab-piano-crea-bar');
+  var lbl=document.getElementById('fab-piano-crea-label');
+  if(!bar) return;
+  var sel=Object.values(_fabPianoSel);
+  if(!sel.length){bar.style.display='none';return;}
+  bar.style.display='flex';
+  var forn=sel[0].fornitore;
+  var nSett=sel.length;
+  var nProd=sel.reduce(function(s,d){return s+d.righe.length;},0);
+  if(lbl) lbl.textContent=forn+' — '+nSett+' settiman'+(nSett>1?'e selezionate':' selezionata')+' · '+nProd+' righe';
+}
+
+function fabAnnullaSelezioneCard(){
+  Object.keys(_fabPianoSel).forEach(function(id){
+    var el=document.getElementById(id);if(el)el.style.boxShadow='';
+    var chk=document.getElementById('chk_'+id);if(chk)chk.innerHTML='&#9744;';
+  });
+  _fabPianoSel={};
+  _fabAggiornaBarra();
+}
+
+function fabCreaPianoOrdine(){
+  var sel=Object.values(_fabPianoSel);
+  if(!sel.length) return;
+  var forn=sel[0].fornitore;
+  sel.sort(function(a,b){return a.dataConsegna.localeCompare(b.dataConsegna);});
+  var righe=[];
+  sel.forEach(function(card){
+    card.righe.forEach(function(r){
+      var ms=r.ms||1;var isMaster=ms>1;
+      var dk='dk_'+r.sku_shopify+'_'+card.dataConsegna;
+      righe.push({sku_shopify:r.sku_shopify,sku:r.sku,qty_master:isMaster?Math.ceil(r.qty/ms):null,qty_ordinata:r.qty,qty_ricevuta:0,qty_ricevuta_master:0,data_cons_riga:card.dataConsegna,dup_key:dk});
+    });
+  });
+  var newOrd={id:'ord_'+Date.now(),numero_ordine:_nextOrdineNum(forn),fornitore:forn,stato:'attesa',data_ordine:new Date().toISOString().substring(0,10),data_consegna_prevista:sel[0].dataConsegna,note:'Da piano fabbisogno',righe:righe};
+  fabAnnullaSelezioneCard();
+  _openOrdineModal(newOrd);
+}
+
 
 function fabChiudiOrdineModal(){
   var pg=document.getElementById('fab-ordine-page');if(pg)pg.remove();
