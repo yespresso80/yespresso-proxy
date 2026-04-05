@@ -8831,66 +8831,84 @@ function fabExportPiano(){
 
 function fabShowImportModal(){
   var existing=document.getElementById('fab-import-modal');
-  if(existing)existing.remove();
+  if(existing) existing.remove();
   var modal=document.createElement('div');
   modal.id='fab-import-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10600;display:flex;align-items:center;justify-content:center';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10600;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
   modal.innerHTML=
-    '<div style="background:#fff;border-radius:14px;width:600px;max-width:97vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
-      '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;background:#6d28d9;color:#fff">'+
-        '<div style="font-size:16px;font-weight:700">📂 Importa venduto 7 giorni</div>'+
-        '<div style="font-size:12px;margin-top:6px;display:flex;gap:6px">'+
-          '<button onclick="fabSwitchImportTab(\'csv\')" id="imp-tab-csv" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit;background:rgba(255,255,255,.25);color:#fff;font-size:12px">📄 CSV Shopify</button>'+
-          '<button onclick="fabSwitchImportTab(\'xls\')" id="imp-tab-xls" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit;background:rgba(255,255,255,.1);color:rgba(255,255,255,.7);font-size:12px">📊 Excel manuale</button>'+
+    '<div style="background:#fff;border-radius:14px;width:860px;max-width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)">'+
+      // Header con tab
+      '<div style="flex-shrink:0;padding:14px 22px;background:#6d28d9;border-radius:14px 14px 0 0">'+
+        '<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:8px">📂 Importa venduto 7 giorni</div>'+
+        '<div style="display:flex;gap:6px">'+
+          '<button onclick="fabSwitchImportTab(\'csv\')" id="imp-tab-csv" style="padding:5px 14px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit;font-size:12px;background:rgba(255,255,255,.25);color:#fff">📄 CSV Shopify</button>'+
+          '<button onclick="fabSwitchImportTab(\'xls\')" id="imp-tab-xls" style="padding:5px 14px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit;font-size:12px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.7)">📊 Excel manuale</button>'+
         '</div>'+
       '</div>'+
-      '<div style="padding:16px 20px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px">'+
+      // Body
+      '<div style="flex:1;overflow-y:auto;padding:18px 22px;min-height:0">'+
+        // Pannello CSV
         '<div id="imp-panel-csv">'+
-          '<div style="background:#f5f3ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#6d28d9;line-height:1.6">'+
-            '<strong>Come esportare da Shopify:</strong><br>'+
-            '1. Vai su <strong>Analytics → Report</strong><br>'+
-            '2. Cerca "Articoli venduti per prodotto" oppure "Sales by product"<br>'+
-            '3. Imposta il periodo a <strong>ultimi 7 giorni</strong><br>'+
-            '4. Clicca <strong>Esporta → CSV</strong> e carica il file qui sotto<br><br>'+
-            'Il CSV deve avere le colonne <strong>SKU</strong> e <strong>Net quantity</strong>'+
+          '<div style="background:#f5f3ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#6d28d9;line-height:1.7;margin-bottom:12px">'+
+            '<strong>Come esportare da Shopify:</strong> Analytics → Report → "Articoli venduti per prodotto" → periodo 7 giorni → Esporta CSV.<br>'+
+            'Il CSV deve avere le colonne <strong>SKU</strong> e <strong>Net quantity</strong>.'+
           '</div>'+
-          '<div id="fab-drop-zone" style="border:2px dashed #c4b5fd;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#faf8ff" onclick="document.getElementById(\'fab-file-input\').click()">'+
-            '<div style="font-size:32px;margin-bottom:8px">📄</div>'+
+          '<div id="fab-drop-zone" onclick="document.getElementById(\'fab-file-input\').click()" '+
+            'style="border:2px dashed #c4b5fd;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#faf8ff">'+
+            '<div style="font-size:30px;margin-bottom:6px">📄</div>'+
             '<div style="font-size:14px;font-weight:600;color:#6d28d9">Clicca o trascina il CSV qui</div>'+
-            '<div style="font-size:12px;color:#aaa;margin-top:4px">Oppure incolla il testo CSV sotto</div>'+
+            '<div style="font-size:12px;color:#aaa;margin-top:3px">Oppure incolla il testo CSV sotto</div>'+
             '<input type="file" id="fab-file-input" accept=".csv,.txt" style="display:none">'+
           '</div>'+
-          '<div>'+
+          '<div style="margin-top:10px">'+
             '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Oppure incolla il contenuto CSV:</label>'+
-            '<textarea id="fab-csv-paste" rows="5" placeholder="SKU,Net quantity..." style="width:100%;padding:8px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:monospace;box-sizing:border-box;resize:vertical"></textarea>'+
+            '<textarea id="fab-csv-paste" rows="4" placeholder="SKU,Net quantity&#10;CNALLAX10CAF014,32&#10;..." style="width:100%;padding:8px 10px;border:1px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:monospace;box-sizing:border-box;resize:vertical"></textarea>'+
           '</div>'+
         '</div>'+
-        '<div id="imp-panel-xls" style="display:none;display:flex;flex-direction:column;gap:12px">'+
-          '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;font-size:12px;color:#166534;line-height:1.7">'+
-            '<strong>Come usare il template Excel:</strong><br>'+
-            '1. Scarica il template qui sotto<br>'+
-            '2. Compila la colonna <strong>Venduto 7gg (pz)</strong> con i pezzi venduti<br>'+
-            '3. Salva e carica il file compilato qui sotto<br><br>'+
-            '<button onclick="fabDownloadVendutoTemplate()" style="background:#16a34a;border:none;border-radius:6px;padding:6px 14px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⬇ Scarica template Excel</button>'+
-          '</div>'+
-          '<div id="fab-xls-drop" style="border:2px dashed #bbf7d0;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#f0fdf4" onclick="document.getElementById(\'fab-xls-input\').click()">'+
-            '<div style="font-size:32px;margin-bottom:8px">📊</div>'+
-            '<div style="font-size:14px;font-weight:600;color:#16a34a">Clicca o trascina il file Excel compilato</div>'+
-            '<div style="font-size:12px;color:#aaa;margin-top:4px">File .xlsx con le quantità inserite</div>'+
-            '<input type="file" id="fab-xls-input" accept=".xlsx" style="display:none">'+
+        // Pannello Excel — due colonne
+        '<div id="imp-panel-xls" style="display:none">'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">'+
+            // Colonna sinistra: istruzioni + scarica
+            '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px">'+
+              '<div style="font-size:13px;font-weight:700;color:#166534">📋 Come usare il template Excel</div>'+
+              '<ol style="margin:0;padding-left:18px;font-size:12px;color:#166534;line-height:1.8">'+
+                '<li>Scarica il template qui sotto</li>'+
+                '<li>Compila la colonna <strong>Venduto 7gg (pz)</strong> con i pezzi venduti negli ultimi 7 giorni</li>'+
+                '<li>Salva il file e caricalo nel pannello a destra</li>'+
+              '</ol>'+
+              '<button onclick="fabDownloadVendutoTemplate()" '+
+                'style="background:#16a34a;border:none;border-radius:8px;padding:10px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;width:100%">'+
+                '⬇ Scarica template Excel'+
+              '</button>'+
+            '</div>'+
+            // Colonna destra: upload
+            '<div style="display:flex;flex-direction:column;gap:10px">'+
+              '<div id="fab-xls-drop" onclick="document.getElementById(\'fab-xls-input\').click()" '+
+                'style="border:2px dashed #bbf7d0;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#f0fdf4;flex:1">'+
+                '<div style="font-size:30px;margin-bottom:6px">📊</div>'+
+                '<div style="font-size:14px;font-weight:600;color:#16a34a">Clicca o trascina il file Excel compilato</div>'+
+                '<div style="font-size:12px;color:#aaa;margin-top:3px">File .xlsx con le quantità inserite</div>'+
+                '<input type="file" id="fab-xls-input" accept=".xlsx" style="display:none">'+
+              '</div>'+
+            '</div>'+
           '</div>'+
         '</div>'+
-        '<div id="fab-import-preview" style="display:none"></div>'+
-        '<div id="fab-import-error" style="display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:10px;font-size:12px;color:#dc2626"></div>'+
+        // Errore e preview
+        '<div id="fab-import-error" style="display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;font-size:12px;color:#dc2626;margin-top:12px"></div>'+
+        '<div id="fab-import-preview" style="display:none;margin-top:12px"></div>'+
       '</div>'+
-      '<div style="padding:12px 20px;border-top:1px solid #f0f2f5;display:flex;gap:8px;justify-content:flex-end">'+
-        '<button onclick="document.getElementById(\'fab-import-modal\').remove()" style="padding:8px 16px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
-        '<button id="fab-import-btn" onclick="fabConfirmImport()" style="padding:8px 16px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" disabled>Importa</button>'+
+      // Footer sempre visibile
+      '<div style="flex-shrink:0;padding:12px 22px;border-top:2px solid #e8eaf0;background:#f8f9fc;border-radius:0 0 14px 14px;display:flex;justify-content:flex-end;gap:10px">'+
+        '<button onclick="document.getElementById(\'fab-import-modal\').remove()" '+
+          'style="padding:9px 20px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Annulla</button>'+
+        '<button id="fab-import-btn" onclick="fabConfirmImport()" disabled '+
+          'style="padding:9px 20px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;opacity:.5">Importa</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(modal);
   modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
 
+  // CSV handlers
   var dz=modal.querySelector('#fab-drop-zone');
   dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.background='#ede9fe';});
   dz.addEventListener('dragleave',function(){dz.style.background='#faf8ff';});
@@ -8898,14 +8916,21 @@ function fabShowImportModal(){
   modal.querySelector('#fab-file-input').addEventListener('change',function(e){if(e.target.files[0])fabReadCSVFile(e.target.files[0]);});
   modal.querySelector('#fab-csv-paste').addEventListener('input',function(){if(this.value.trim())fabParseAndPreviewCSV(this.value);});
 
-  // XLS tab
+  // XLS handlers
   var xlsInp=modal.querySelector('#fab-xls-input');
   xlsInp.addEventListener('change',function(e){if(e.target.files[0])fabReadXlsVenduto(e.target.files[0]);});
   var xlsDz=modal.querySelector('#fab-xls-drop');
   xlsDz.addEventListener('dragover',function(e){e.preventDefault();xlsDz.style.background='#dcfce7';});
   xlsDz.addEventListener('dragleave',function(){xlsDz.style.background='#f0fdf4';});
   xlsDz.addEventListener('drop',function(e){e.preventDefault();xlsDz.style.background='#f0fdf4';var f=e.dataTransfer.files[0];if(f)fabReadXlsVenduto(f);});
+
+  // Abilita bottone Importa quando c'è qualcosa
+  window._fabEnableImportBtn=function(){
+    var btn=document.getElementById('fab-import-btn');
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+  };
 }
+
 
 function fabSwitchImportTab(tab){
   var csvP=document.getElementById('imp-panel-csv');
@@ -8918,11 +8943,12 @@ function fabSwitchImportTab(tab){
     csvB.style.background='rgba(255,255,255,.25)';csvB.style.color='#fff';
     xlsB.style.background='rgba(255,255,255,.1)';xlsB.style.color='rgba(255,255,255,.7)';
   } else {
-    csvP.style.display='none';xlsP.style.display='flex';xlsP.style.flexDirection='column';xlsP.style.gap='12px';
+    csvP.style.display='none';xlsP.style.display='block';
     xlsB.style.background='rgba(255,255,255,.25)';xlsB.style.color='#fff';
     csvB.style.background='rgba(255,255,255,.1)';csvB.style.color='rgba(255,255,255,.7)';
   }
 }
+
 
 function fabDownloadVendutoTemplate(){
   if(typeof XLSX==='undefined'){showToast('Libreria Excel non ancora caricata, riprova','error');return;}
@@ -8944,8 +8970,7 @@ function fabReadXlsVenduto(file){
   var reader=new FileReader();
   reader.onload=function(e){
     try{
-      var data=new Uint8Array(e.target.result);
-      var wb=XLSX.read(data,{type:'uint8array',raw:true});
+      var wb=XLSX.read(e.target.result,{type:'binary'});
       var ws=wb.Sheets[wb.SheetNames[0]];
       var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
       fabParseXlsVenduto(rows);
@@ -8954,7 +8979,7 @@ function fabReadXlsVenduto(file){
       if(err){err.style.display='block';err.textContent='Errore lettura Excel: '+ex.message;}
     }
   };
-  reader.readAsArrayBuffer(file);
+  reader.readAsBinaryString(file);
 }
 
 function fabParseXlsVenduto(rows){
@@ -9012,7 +9037,7 @@ function fabParseXlsVenduto(rows){
         matched+' prodotti riconosciuti'+(skipped>0?' · '+skipped+' righe ignorate':'')+
       '</div>'+items+'</div>';
   }
-  if(btn) btn.disabled=false;
+  if(btn){btn.disabled=false;btn.style.opacity='1';}
 }
 
 
@@ -9086,7 +9111,7 @@ function fabParseAndPreviewCSV(text){
   if(!matched){errEl.textContent='Nessun SKU corrisponde ai prodotti in anagrafica. Verifica che gli SKU nel CSV coincidano con quelli nella Struttura Prodotti.';errEl.style.display='block';return;}
 
   _fabParsedImport=parsed;
-  if(btn) btn.disabled=false;
+  if(btn){btn.disabled=false;btn.style.opacity='1';}
 
   // Preview
   prevEl.style.display='block';
@@ -10129,8 +10154,7 @@ function noireReadExcel(file){
   var reader=new FileReader();
   reader.onload=function(e){
     try{
-      var data=new Uint8Array(e.target.result);
-      var wb=XLSX.read(data,{type:'uint8array',raw:true});
+      var wb=XLSX.read(e.target.result,{type:'binary'});
       var ws=wb.Sheets[wb.SheetNames[0]];
       var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
       noireParseXLSX(rows);
