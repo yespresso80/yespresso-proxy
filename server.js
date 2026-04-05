@@ -670,6 +670,74 @@ async function brtRestPost(path, body) {
   }
 
   // ── FAB DATA: salvataggio/lettura ordini fornitori su GitHub ────
+  // ── FAB VENDUTO: salvataggio venduto 7gg su GitHub ───────────────
+  const GH_VEND_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/fab-venduto.json';
+
+  async function ghVendGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: {fabSalesCache:{},fabSalesCacheDate:''}, sha: null };
+    const r = await fetch(GH_VEND_URL, {
+      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (r.status === 404) return { data: {fabSalesCache:{},fabSalesCacheDate:''}, sha: null };
+    const j = await r.json();
+    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
+    return { data, sha: j.sha };
+  }
+
+  async function ghVendSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update fab-venduto', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_VEND_URL, {
+      method: 'PUT',
+      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  if (req.url === '/fab-venduto') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    if (req.method === 'GET') {
+      try {
+        const { data } = await ghVendGet();
+        res.writeHead(200, CORS);
+        res.end(JSON.stringify(data));
+      } catch(e) {
+        console.error('[FAB VENDUTO GET]', e.message);
+        res.writeHead(200, CORS);
+        res.end(JSON.stringify({fabSalesCache:{},fabSalesCacheDate:''}));
+      }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = [];
+      req.on('data', function(c){ chunks.push(c); });
+      req.on('end', async function(){
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString());
+          const { sha } = await ghVendGet();
+          await ghVendSave(parsed, sha);
+          const nProd = Object.keys(parsed.fabSalesCache||{}).length;
+          console.log('[FAB VENDUTO] Salvato su GitHub: ' + nProd + ' prodotti');
+          res.writeHead(200, CORS);
+          res.end(JSON.stringify({ok:true,prodotti:nProd}));
+        } catch(e) {
+          console.error('[FAB VENDUTO POST]', e.message);
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({ok:false,error:e.message}));
+        }
+      });
+      return;
+    }
+  }
+
+
   const GH_FAB_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/fab-data.json';
 
   async function ghFabGet() {

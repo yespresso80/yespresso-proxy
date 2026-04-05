@@ -4639,13 +4639,17 @@ function insertQRFromModal(id){
 
 let _qrLoaded = false;
 async function openQRModal(){
-  document.getElementById("qr-modal").style.display="flex";
+  const modal = document.getElementById("qr-modal");
+  modal.style.display="flex";
+  // Nasconde la lista ticket per dare spazio pieno
+  const ticketMain = document.getElementById("main-content") || document.querySelector(".main-content") || document.querySelector(".content-area");
+  if(ticketMain) ticketMain.style.display="none";
   if(!_qrLoaded){
     _qrLoaded = true;
     const statusEl = document.getElementById("qr-save-status");
-    if(statusEl){ statusEl.textContent="☁️ Caricamento cloud..."; statusEl.style.color="#f59e0b"; }
+    if(statusEl){ statusEl.textContent="☁️ Caricamento..."; statusEl.style.color="#f59e0b"; statusEl.style.background="#fffbeb"; }
     await loadQRFromRemote();
-    if(statusEl){ statusEl.textContent=""; }
+    if(statusEl){ statusEl.textContent=""; statusEl.style.background=""; }
   }
   renderQRCatButtons();
   refreshQREditCatSelect();
@@ -4653,8 +4657,27 @@ async function openQRModal(){
   setTimeout(()=>{const s=document.getElementById("qr-search");if(s){s.value="";s.focus();}},50);
 }
 
+function closeQRModal(){
+  document.getElementById("qr-modal").style.display="none";
+  const ticketMain = document.getElementById("main-content") || document.querySelector(".main-content") || document.querySelector(".content-area");
+  if(ticketMain) ticketMain.style.display="";
+}
+
 function filterQRCat(btn,cat){document.getElementById("qr-search").value=cat;document.querySelectorAll(".qrcat-btn").forEach(b=>b.classList.remove("qrcat-active"));btn.classList.add("qrcat-active");renderQRList();}
-function closeQRModal(){ document.getElementById("qr-modal").style.display="none"; }
+
+async function syncQRToServer(){
+  const statusEl = document.getElementById("qr-save-status");
+  const logEl = document.getElementById("qr-sync-log");
+  if(statusEl){ statusEl.textContent="☁️ Sincronizzazione..."; statusEl.style.color="#f59e0b"; statusEl.style.background="#fffbeb"; }
+  if(logEl) logEl.style.display="none";
+  try{
+    await proxyFetch(PROXY+"/quick-replies",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({replies:quickReplies,cats:qrCategories})});
+    if(statusEl){ statusEl.textContent="✅ Sincronizzato!"; statusEl.style.color="#16a34a"; statusEl.style.background="#f0fdf4"; setTimeout(()=>{ if(statusEl){statusEl.textContent="";statusEl.style.background="";} },3000); }
+  }catch(e){
+    if(statusEl){ statusEl.textContent="⚠️ Errore"; statusEl.style.color="#dc2626"; statusEl.style.background="#fff5f5"; setTimeout(()=>{ if(statusEl){statusEl.textContent="";statusEl.style.background="";} },5000); }
+    if(logEl){ logEl.style.display="block"; logEl.textContent="Errore sincronizzazione: "+e.message; }
+  }
+}
 
 // ── SETTINGS ──
 const SETTINGS_KEY = "yespresso_settings";
@@ -7577,24 +7600,43 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
 </script>
 
 <!-- QUICK REPLIES MODAL -->
-<div class="modal-overlay" id="qr-modal" style="display:none" onclick="if(event.target===this)closeQRModal()">
-  <div class="modal" style="width:1100px;max-width:98vw">
-    <div class="modal-header">
-      <span class="modal-title">⚡ Risposte Rapide</span>
-      <button class="modal-close" onclick="closeQRModal()">×</button>
+<div id="qr-modal" style="display:none;position:fixed;inset:0;z-index:9500;background:#f5f7fa;flex-direction:column;font-family:inherit">
+  <!-- HEADER fisso -->
+  <div style="flex-shrink:0;background:#fff;border-bottom:2px solid #e8eaf0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+    <!-- Riga 1: navigazione + titolo + sync -->
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 20px;gap:12px">
+      <!-- Sinistra: torna indietro -->
+      <div>
+        <button onclick="closeQRModal()" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#555;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px">
+          ← Torna alla lista ticket
+        </button>
+      </div>
+      <!-- Centro: titolo -->
+      <div style="text-align:center;font-size:18px;font-weight:700;color:#1a1a2e;white-space:nowrap">
+        ⚡ Risposte Rapide
+      </div>
+      <!-- Destra: sync + status -->
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px">
+        <span id="qr-save-status" style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px"></span>
+        <button onclick="syncQRToServer()" style="background:#6d28d9;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px">
+          ☁️ Sincronizza
+        </button>
+      </div>
     </div>
-    <div style="padding:10px 16px;border-bottom:1px solid #e8eaf0;background:#fff">
-      <input type="text" id="qr-search" placeholder="🔍 Cerca per nome, categoria o testo..." oninput="renderQRList()" style="width:100%;padding:10px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:15px;font-family:inherit;box-sizing:border-box;outline:none">
-      <div id="qr-cat-filter" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
+    <!-- Riga 2: ricerca + categorie -->
+    <div style="padding:0 20px 12px">
+      <input type="text" id="qr-search" placeholder="🔍 Cerca per nome, categoria o testo..." oninput="renderQRList()" style="width:100%;padding:10px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;outline:none;margin-bottom:8px">
+      <div id="qr-cat-filter" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
-    <div class="modal-body" id="qr-modal-body" style="font-size:15px"></div>
-    <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
-      <button class="btn-sm btn-primary" onclick="showAddQR()">+ Aggiungi risposta</button>
-      <button class="btn-sm" onclick="openCatManager()" style="background:#f0f4ff;border-color:#c7d7fc;color:#1a73e8">🗂️ Categorie</button>
-      <button class="btn-sm" onclick="downloadQR()" style="background:#f0fdf4;border-color:#bbf7d0;color:#16a34a">📄 Scarica Word</button>
-      <span id="qr-save-status" style="font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;align-self:center"></span>
-      <button class="btn-sm" onclick="closeQRModal()" style="margin-left:auto">Chiudi</button>
-    </div>
+  </div>
+  <!-- BODY scrollabile -->
+  <div id="qr-modal-body" style="flex:1;overflow-y:auto;padding:16px 20px;font-size:15px;min-height:0"></div>
+  <!-- FOOTER fisso -->
+  <div style="flex-shrink:0;padding:10px 20px;border-top:2px solid #e8eaf0;background:#f8f9fc;display:flex;align-items:center;gap:8px">
+    <button class="btn-sm btn-primary" onclick="showAddQR()">+ Aggiungi risposta</button>
+    <button class="btn-sm" onclick="openCatManager()" style="background:#f0f4ff;border-color:#c7d7fc;color:#1a73e8">🗂️ Categorie</button>
+    <button class="btn-sm" onclick="downloadQR()" style="background:#f0fdf4;border-color:#bbf7d0;color:#16a34a">📄 Scarica Word</button>
+    <div id="qr-sync-log" style="margin-left:8px;font-size:11px;color:#dc2626;display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:6px;padding:4px 10px;max-width:400px"></div>
   </div>
 </div>
 <!-- ADD/EDIT QR MODAL -->
@@ -7715,6 +7757,8 @@ async function saveFabState(){
 async function loadFabState(){
   if(_fabDataLoaded) return;
   _fabDataLoaded=true;
+  // Carica anche il venduto dal server
+  await loadFabVenduto();
   try{
     var res=await fetch(PROXY+'/fab-data');
     if(!res.ok) throw new Error('HTTP '+res.status);
@@ -8108,30 +8152,65 @@ function fabVendAdjust(btn){
   var increase=btn.dataset.inc==='1';
   if(!fabSalesCache||!sku) return;
   var current=fabSalesCache[sku]||0;
-  var step=Math.max(1,Math.round(current*0.05)||1);
-  var newVal=increase?current+step:Math.max(0,current-step);
+  var newVal=increase?current+1:Math.max(0,current-1);
   fabSalesCache[sku]=newVal;
-  localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
 
+  // Aggiorna UI
   var daily=newVal/7;
   var inv=fabInventoryCache&&fabInventoryCache[sku]!=null?fabInventoryCache[sku]:null;
   var copertura=daily>0&&inv!=null?Math.round(inv/daily):null;
   var copColor=copertura==null?'#aaa':copertura<14?'#dc2626':copertura<30?'#e67e22':'#16a34a';
-
   var el7=document.getElementById('v7_'+sku);
-  if(el7){
-    el7.textContent=newVal;
-    el7.style.transform='scale(1.25)';
-    setTimeout(function(){el7.style.transform='';},150);
-  }
-  var eld=document.getElementById('vd_'+sku);
-  if(eld) eld.textContent=daily.toFixed(1);
+  if(el7){el7.textContent=newVal;el7.style.transform='scale(1.25)';setTimeout(function(){el7.style.transform='';},150);}
+  var eld=document.getElementById('vd_'+sku);if(eld) eld.textContent=daily.toFixed(1);
   var elc=document.getElementById('vc_'+sku);
   if(elc){elc.textContent=copertura!=null?copertura+' gg':'—';elc.style.color=copColor;}
   [14,21,28,35,45,60,90,120].forEach(function(d){
     var elp=document.getElementById('vp_'+sku+'_'+d);
     if(elp) elp.textContent=Math.round(daily*d);
   });
+
+  // Salva localmente
+  localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
+  localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate||new Date().toISOString().substring(0,16));
+
+  // Salva sul server (debounced 1.5s per non sovraccaricare con click rapidi)
+  clearTimeout(window._fabVendSaveTimer);
+  window._fabVendSaveTimer=setTimeout(function(){
+    saveFabVenduto();
+  },1500);
+}
+
+async function saveFabVenduto(){
+  try{
+    var payload=JSON.stringify({fabSalesCache:fabSalesCache,fabSalesCacheDate:fabSalesCacheDate||new Date().toISOString().substring(0,16)});
+    var res=await fetch(PROXY+'/fab-venduto',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:payload
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    console.log('[FAB VENDUTO] Salvato sul server');
+  }catch(e){
+    console.warn('[FAB VENDUTO] Errore salvataggio server:',e.message);
+  }
+}
+
+async function loadFabVenduto(){
+  try{
+    var res=await fetch(PROXY+'/fab-venduto');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    var data=await res.json();
+    if(data.fabSalesCache&&Object.keys(data.fabSalesCache).length>0){
+      fabSalesCache=data.fabSalesCache;
+      fabSalesCacheDate=data.fabSalesCacheDate||'';
+      localStorage.setItem('fab_sales_cache',JSON.stringify(fabSalesCache));
+      localStorage.setItem('fab_sales_cache_date',fabSalesCacheDate);
+      console.log('[FAB VENDUTO] Caricato dal server: '+Object.keys(fabSalesCache).length+' prodotti');
+    }
+  }catch(e){
+    console.warn('[FAB VENDUTO] Errore caricamento server:',e.message);
+  }
 }
 
 
