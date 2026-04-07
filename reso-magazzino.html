@@ -149,6 +149,25 @@
 <script>
 const PROXY = "https://yespresso-proxy.onrender.com";
 
+// ── Prompt OCR configurabile — caricato da Strumenti → Reso Magazzino — Prompt AI ──
+const OCR_PROMPT_DEFAULT = 'Analizza questa immagine (etichetta spedizione, DDT o documento). Estrai:\n1. Numero ordine Shopify (formato #XXXXXXXXX o solo cifre es. #2024123456)\n2. Numero ordine Amazon (formato XXX-XXXXXXX-XXXXXXX es. 402-1234567-1234567)\n3. Numero ordine Temu (formato PO-XXX-XXXXXXXXXX es. PO-211-12345678901)\n4. Nome mittente o destinatario (persona fisica o azienda cliente)\n\nIgnora completamente: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e altri nomi di piattaforme o corrieri.\nIl nome deve essere quello del cliente finale.\n\nRispondi SOLO in formato JSON (nessun testo prima o dopo):\n{"ordine":"...","amazon_order":"...","temu_order":"...","nome":"..."}\nUsa "" per i campi non trovati.';
+
+let _ocrPrompt = OCR_PROMPT_DEFAULT;
+(async function loadOCRPrompt() {
+  try {
+    const r = await fetch(PROXY + '/reso-ai-prompt');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data && Array.isArray(data.sections) && data.sections.length) {
+      const text = data.sections
+        .filter(s => !s.disabled && s.text && s.text.trim())
+        .map(s => s.text.trim())
+        .join('\n\n');
+      if (text) _ocrPrompt = text;
+    }
+  } catch(e) { /* usa default */ }
+})();
+
 // ── Storage per resi — sincronizzato via server ──
 const RESI_PROXY = "https://yespresso-proxy.onrender.com";
 
@@ -237,22 +256,26 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente le parole: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e simili nomi di piattaforme o corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+                { type: 'text', text: _ocrPrompt }
               ]
             }]
           })
         });
         const data = await res.json();
         const text = data.content?.[0]?.text || '';
-        const match = text.match(/\{[^}]+\}/);
+        const match = text.match(/\{[\s\S]*?\}/);
         if (match) {
-          const parsed = JSON.parse(match[0]);
-          resolve(parsed);
+          try {
+            const parsed = JSON.parse(match[0]);
+            resolve(parsed);
+          } catch(e) {
+            resolve({ ordine: '', nome: '', amazon_order: '', temu_order: '' });
+          }
         } else {
-          resolve({ ordine: '', nome: '' });
+          resolve({ ordine: '', nome: '', amazon_order: '', temu_order: '' });
         }
       } catch(e) {
-        resolve({ ordine: '', nome: '' });
+        resolve({ ordine: '', nome: '', amazon_order: '', temu_order: '' });
       }
     };
     reader.readAsDataURL(file);
@@ -670,7 +693,7 @@ document.getElementById('camera-input').addEventListener('change', async functio
   document.getElementById('order-area').style.display = 'none';
   try {
     const ocr = await ocrImage(file);
-    const query = ocr.ordine || ocr.nome || '';
+    const query = ocr.ordine || ocr.amazon_order || ocr.temu_order || ocr.nome || '';
     if (!query) {
       status.className = 'ocr-status err';
       status.textContent = '⚠️ Nessun numero ordine o nome trovato nell\'immagine';
