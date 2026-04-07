@@ -5936,7 +5936,7 @@ function openRichiesteResoPanel(){
     var itemsHtml=(reso.items||[]).map(function(it){
       return '<div style="padding:5px 0;border-bottom:1px solid #f0f2f5;font-size:13px;display:flex;align-items:flex-start;gap:8px">'+
         '<div style="flex:1">'+
-          '<span style="font-weight:600">'+it.name+'</span>'+
+          '<span style="font-weight:600">'+shortName(it.name||'')+'</span>'+
           (it.note?'<div style="color:#e67e22;font-size:12px">&#9888; '+it.note+'</div>':'')+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
@@ -6178,7 +6178,7 @@ function mostraDettaglioReso(reso,container,onBack){
   var shopifyOrderUrl=reso.orderId?('https://admin.shopify.com/store/40f758-3/orders/'+reso.orderId):'';
   var itemsHtml=(reso.items||[]).map(function(it){
     return '<div style="padding:8px 0;border-bottom:1px solid #f0f2f5;font-size:14px;display:flex;align-items:flex-start;gap:8px">'+
-      '<div style="flex:1"><strong>'+it.name+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:13px">'+it.note+'</div>':'')+' </div>'+
+      '<div style="flex:1"><strong>'+shortName(it.name||'')+'</strong>'+(it.note?'<div style="color:#e67e22;font-size:13px">'+it.note+'</div>':'')+' </div>'+
       '<div style="text-align:right">'+(it.qty?'<div style="font-size:12px;color:#555">Qtà: <strong>'+it.qty+'</strong></div>':'')+(it.price?'<div style="font-size:12px;color:#555">€'+parseFloat(it.price).toFixed(2)+'</div>':'')+' </div>'+
     '</div>';
   }).join('');
