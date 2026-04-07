@@ -448,6 +448,7 @@ textarea.field{min-height:80px;resize:vertical}
             <div onclick="openRichiesteResoPanel()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;font-weight:600;color:#e53e3e" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background=''"><span>📦 Richieste Reso</span><span id="reso-badge-menu" style="background:#e53e3e;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">0</span></div>
             <div onclick="openFabbisognoPanel()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#6d28d9;border-top:2px solid #ede9fe" onmouseover="this.style.background='#f5f3ff'" onmouseout="this.style.background=''">📊 Fabbisogno</div>
             <div onclick="openAIPromptPanel()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#1a73e8;border-top:2px solid #e8f0fe" onmouseover="this.style.background='#e8f0fe'" onmouseout="this.style.background=''">🤖 Risposta AI — Impostazioni</div>
+            <div onclick="openResoAIPromptPanel()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#e53e3e;border-top:2px solid #fff5f5" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background=''">↩️ Reso Magazzino — Prompt AI</div>
           </div>
         </div>
       </div>
@@ -5119,6 +5120,146 @@ async function loadAIPromptFromServer(){
 async function saveAIPromptToServer(sections){
   try{var res=await proxyFetch(PROXY+'/ai-prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sections:sections})});return res.ok;}catch(e){return false;}
 }
+// ── RESO MAGAZZINO AI PROMPT SETTINGS ─────────────────────────
+var RESO_AI_PROMPT_KEY='yespresso_reso_ai_prompt_sections';
+var RESO_AI_PROMPT_DEFAULT=[
+  {id:'base',label:'🧠 Base — Identità e compito',locked:true,text:"Sei un assistente del magazzino di Yespresso. Il tuo compito e analizzare il testo o le foto di un messaggio/email del cliente per identificare l'ordine Shopify da collegare alla richiesta di reso.\n\nRispondi SEMPRE in formato JSON con questa struttura:\n{\"ordine\": \"#XXXXX o null\", \"amazon_order\": \"XXX-XXXXXXX-XXXXXXX o null\", \"temu_order\": \"PO-XXX-XXXXX o null\", \"cliente\": \"nome cliente o null\", \"email\": \"email o null\", \"prodotti\": [\"lista prodotti menzionati\"], \"motivo_reso\": \"acquisto errato|non gradito|difettoso|altro\", \"confidence\": \"alta|media|bassa\", \"note\": \"eventuali note\"}\n\nNon aggiungere testo prima o dopo il JSON."},
+  {id:'ordine_shopify',label:'🛒 Ricerca numero ordine Shopify',locked:false,text:"Il numero ordine Shopify puo apparire in questi formati:\n- Con cancelletto: #2024123456, #12345\n- Senza cancelletto: 2024123456\n- Nell'oggetto email: 'Ordine #XXXXX', 'Order #XXXXX'\n- Nell'URL di conferma ordine\n\nSe trovi un numero che inizia con # seguito da cifre, e quasi certamente il numero ordine Shopify."},
+  {id:'ordine_amazon',label:'📦 Ricerca numero ordine Amazon',locked:false,text:"Il numero ordine Amazon ha sempre il formato: XXX-XXXXXXX-XXXXXXX (es. 402-5945067-0120315)\nTre gruppi di numeri separati da trattini (3-7-7 cifre).\nPuo apparire nell'oggetto email, nel corpo del messaggio, o nei riferimenti Amazon.\nSe il mittente e @marketplace.amazon.it, cerca questo formato in tutto il testo."},
+  {id:'ordine_temu',label:'🟠 Ricerca numero ordine Temu',locked:false,text:"Il numero ordine Temu ha il formato: PO-XXX-XXXXXXXXXX (es. PO-211-12345678901)\nPuo anche apparire come numero di riferimento post-vendita: PO-XXX-XXXXXXXXXX-D01\nSe il mittente e seller@orders.temu.com, cerca questo formato in tutto il testo.\nIn alternativa l'ID ordine puo essere solo numerico lungo."},
+  {id:'ordine_tiktok',label:'🎵 Ricerca numero ordine TikTok',locked:false,text:"Il numero ordine TikTok e un numero lungo tutto numerico (es. 576462819438842332).\nPuo apparire nell'oggetto o nel corpo del messaggio come 'Order ID' o 'Numero ordine'.\nSe il mittente e correlato a TikTok Shop, cerca sequenze numeriche lunghe 18-20 cifre."},
+  {id:'prodotti',label:'📋 Identificazione prodotti',locked:false,text:"Cerca nel testo riferimenti a prodotti Yespresso:\n- Capsule compatibili (Nespresso, Dolce Gusto, A Modo Mio, Bialetti, Caffitaly)\n- Cialde carta ESE 44mm\n- Capsule Fior Lui, Linea S\n- Quantita (es. '100 capsule', '240 pezzi', '16 capsule')\n- Gusto/miscela (cremoso, granbar, orzo, ginseng, deca, cappuccino, ecc.)\n\nElenca i prodotti trovati nell'array 'prodotti'."},
+  {id:'motivo',label:'💬 Identificazione motivo reso',locked:false,text:"Identifica il motivo del reso tra:\n- 'acquisto errato': il cliente dice che ha acquistato capsule sbagliate, non compatibili con la sua macchina, ha sbagliato prodotto\n- 'non gradito': il cliente non e soddisfatto del gusto, della qualita, non gli piace\n- 'difettoso': il cliente segnala capsule danneggiate, rotte, difettose\n- 'altro': qualsiasi altro motivo\n\nUsa la categoria piu appropriata per il campo 'motivo_reso'."},
+  {id:'foto',label:'📸 Analisi foto',locked:false,text:"Se vengono fornite foto, analizza:\n- Etichette sui pacchi o scatole: cerca numeri ordine, codici prodotto, indirizzi\n- Scontrini o ricevute: cerca numero ordine, data acquisto, prodotti\n- Screenshot di email o conferme d'ordine: estrai il numero ordine\n- Foto delle capsule/prodotti: identifica il tipo di prodotto\n\nDa ogni foto estrai tutte le informazioni utili per identificare l'ordine."},
+  {id:'custom',label:'➕ Regole personalizzate',locked:false,custom:true,text:''}
+];
+
+function getResoAIPromptSections(){
+  try{var s=JSON.parse(localStorage.getItem(RESO_AI_PROMPT_KEY)||'null');if(s&&Array.isArray(s)&&s.length)return s;}catch(e){}
+  return JSON.parse(JSON.stringify(RESO_AI_PROMPT_DEFAULT));
+}
+function saveResoAIPromptSections(sections){localStorage.setItem(RESO_AI_PROMPT_KEY,JSON.stringify(sections));}
+function getResoAISystemPrompt(){
+  return getResoAIPromptSections().filter(function(s){return !s.disabled&&s.text&&s.text.trim();}).map(function(s){return s.text.trim();}).join('\n\n');
+}
+async function loadResoAIPromptFromServer(){
+  try{
+    var res=await proxyFetch(PROXY+'/reso-ai-prompt');
+    if(!res.ok)return false;
+    var data=await res.json();
+    if(data&&Array.isArray(data.sections)&&data.sections.length){localStorage.setItem(RESO_AI_PROMPT_KEY,JSON.stringify(data.sections));return true;}
+  }catch(e){}
+  return false;
+}
+async function saveResoAIPromptToServer(sections){
+  try{var res=await proxyFetch(PROXY+'/reso-ai-prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sections:sections})});return res.ok;}catch(e){return false;}
+}
+
+function openResoAIPromptPanel(){
+  document.getElementById('tools-menu-dropdown').style.display='none';
+  var ex=document.getElementById('reso-ai-prompt-panel');if(ex)ex.remove();
+  var page=document.createElement('div');
+  page.id='reso-ai-prompt-panel';
+  page.style.cssText='position:fixed;inset:0;background:#f5f7fa;z-index:9500;display:flex;flex-direction:column;font-family:inherit;overflow:hidden';
+  document.body.appendChild(page);
+
+  function renderPanel(){
+    var sections=getResoAIPromptSections();
+    var hdr=document.createElement('div');
+    hdr.style.cssText='flex-shrink:0;background:#fff;border-bottom:2px solid #e8eaf0;box-shadow:0 1px 4px rgba(0,0,0,.06)';
+    hdr.innerHTML=
+      '<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:12px 20px;gap:12px">'+
+        '<div><button id="reso-ai-back-btn" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#555;cursor:pointer;font-family:inherit">&#8592; Lista Ticket</button></div>'+
+        '<div style="text-align:center;font-size:17px;font-weight:700;color:#1a1a2e">&#8617;&#65039; Reso Magazzino &#8212; Prompt AI</div>'+
+        '<div style="display:flex;justify-content:flex-end;gap:8px">'+
+          '<button id="reso-ai-reset-btn" style="background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:700;color:#dc2626;cursor:pointer;font-family:inherit">&#8635; Default</button>'+
+          '<button id="reso-ai-save-btn" style="background:#e53e3e;border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit">&#9729; Salva su cloud</button>'+
+        '</div>'+
+      '</div>';
+    var body=document.createElement('div');
+    body.style.cssText='flex:1;overflow-y:auto;padding:20px;min-height:0';
+    var secHtml=sections.map(function(s,i){
+      var dis=!!s.disabled;
+      var isCustom=!s.locked&&(s.custom===true||s.id==='custom'||String(s.id).indexOf('custom_')===0);
+      return '<div style="background:#fff;border:1.5px solid '+(dis?'#e0e4ea':'#fca5a5')+';border-radius:10px;overflow:hidden;opacity:'+(dis?'0.55':'1')+';margin-bottom:14px">'+
+        '<div style="padding:10px 16px;background:'+(dis?'#f8f9fc':'#fff5f5')+';display:flex;align-items:center;gap:8px;border-bottom:1px solid #e8eaf0">'+
+          '<input type="checkbox" '+(dis?'':'checked')+' data-idx="'+i+'" class="reso-sec-toggle" style="width:16px;height:16px;accent-color:#e53e3e;cursor:pointer;flex-shrink:0">'+
+          (isCustom?
+            '<input type="text" class="reso-sec-label" data-idx="'+i+'" value="'+s.label.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')+'" placeholder="Titolo sezione..." style="flex:1;font-size:13px;font-weight:700;color:'+(dis?'#aaa':'#1a1a2e')+';border:1px solid #fca5a5;border-radius:6px;background:#fff;outline:none;font-family:inherit;padding:4px 8px">':
+            '<span style="flex:1;font-size:13px;font-weight:700;color:'+(dis?'#aaa':'#1a1a2e')+'">'+s.label+(s.locked?'<span style="font-size:10px;background:#e0e4ea;color:#888;border-radius:4px;padding:1px 6px;margin-left:6px">base</span>':'')+'</span>'
+          )+
+          (isCustom?'<button class="reso-sec-del" data-idx="'+i+'" style="background:#fff5f5;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-size:13px;cursor:pointer;padding:3px 8px;font-family:inherit">&#x2715;</button>':'')+
+        '</div>'+
+        '<textarea class="reso-sec-ta" data-idx="'+i+'" rows="5" '+(dis?'disabled':'')+
+          ' style="width:100%;padding:12px 16px;border:none;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;background:'+(dis?'#f8f9fc':'#fff')+';outline:none;min-height:80px">'+
+          (s.text||'')+
+        '</textarea>'+
+      '</div>';
+    }).join('');
+    body.innerHTML=
+      '<div style="max-width:900px;margin:0 auto">'+
+        '<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;font-size:13px;color:#c04040;line-height:1.6;margin-bottom:14px">'+
+          '<strong>Come funziona:</strong> questo prompt viene usato quando l\'AI analizza il testo o le foto di un ticket per identificare l\'ordine da collegare al reso. '+
+          'Ogni sezione viene inviata all\'AI come parte delle istruzioni. Modifica il testo, disabilita sezioni con il toggle, o aggiungi regole personalizzate.'+
+        '</div>'+
+        secHtml+
+        '<button id="reso-ai-add-btn" style="width:100%;padding:12px;border:2px dashed #fca5a5;border-radius:10px;background:#fff9f9;color:#e53e3e;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">&#10133; Aggiungi sezione personalizzata</button>'+
+      '</div>';
+    var ftr=document.createElement('div');
+    ftr.style.cssText='flex-shrink:0;padding:10px 20px;border-top:2px solid #e8eaf0;background:#f8f9fc;display:flex;align-items:center;justify-content:space-between';
+    ftr.innerHTML='<div id="reso-ai-save-status" style="font-size:12px;color:#888"></div>'+
+      '<button id="reso-ai-save-btn2" style="background:#e53e3e;border:none;border-radius:8px;padding:9px 24px;font-size:14px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit">&#9729; Salva su cloud</button>';
+    page.innerHTML='';page.appendChild(hdr);page.appendChild(body);page.appendChild(ftr);
+
+    function collectSections(){
+      var secs=getResoAIPromptSections();
+      page.querySelectorAll('.reso-sec-ta').forEach(function(ta){secs[parseInt(ta.dataset.idx)].text=ta.value;});
+      page.querySelectorAll('.reso-sec-label').forEach(function(inp){secs[parseInt(inp.dataset.idx)].label=inp.value||'Sezione personalizzata';});
+      return secs;
+    }
+    function doSave(){
+      var secs=collectSections();saveResoAIPromptSections(secs);
+      var st=page.querySelector('#reso-ai-save-status');
+      if(st){st.textContent='Salvataggio...';st.style.color='#f59e0b';}
+      saveResoAIPromptToServer(secs).then(function(ok){
+        if(st){st.textContent=ok?'Salvato su cloud':'Solo locale';st.style.color=ok?'#16a34a':'#dc2626';setTimeout(function(){st.textContent='';},3000);}
+        showToast(ok?'Prompt reso AI salvato su cloud':'Salvato solo in locale');
+      });
+    }
+    page.querySelector('#reso-ai-back-btn').onclick=function(){page.remove();};
+    page.querySelector('#reso-ai-save-btn').onclick=doSave;
+    page.querySelector('#reso-ai-save-btn2').onclick=doSave;
+    page.querySelector('#reso-ai-reset-btn').onclick=function(){
+      if(!confirm('Ripristinare tutte le sezioni al testo originale?'))return;
+      var def=JSON.parse(JSON.stringify(RESO_AI_PROMPT_DEFAULT));
+      localStorage.setItem(RESO_AI_PROMPT_KEY,JSON.stringify(def));
+      saveResoAIPromptToServer(def);renderPanel();
+      showToast('Ripristinato ai valori di default');
+    };
+    page.querySelectorAll('.reso-sec-toggle').forEach(function(cb){
+      cb.onchange=function(){
+        var secs=collectSections();secs[parseInt(this.dataset.idx)].disabled=!this.checked;
+        saveResoAIPromptSections(secs);renderPanel();
+      };
+    });
+    page.querySelectorAll('.reso-sec-del').forEach(function(btn){
+      btn.onclick=function(){
+        if(!confirm('Eliminare questa sezione?'))return;
+        var secs=collectSections();secs.splice(parseInt(this.dataset.idx),1);
+        saveResoAIPromptSections(secs);renderPanel();
+      };
+    });
+    page.querySelector('#reso-ai-add-btn').onclick=function(){
+      var secs=collectSections();
+      secs.push({id:'custom_'+Date.now(),label:'Nuova sezione personalizzata',locked:false,custom:true,text:''});
+      saveResoAIPromptSections(secs);renderPanel();
+      setTimeout(function(){var tas=page.querySelectorAll('.reso-sec-ta');if(tas.length)tas[tas.length-1].focus();},100);
+    };
+  }
+  loadResoAIPromptFromServer().then(function(){renderPanel();});
+}
+
+
 function openAIPromptPanel(){
   document.getElementById('tools-menu-dropdown').style.display='none';
   var ex=document.getElementById('ai-prompt-panel');if(ex)ex.remove();
