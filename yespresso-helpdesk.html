@@ -5849,7 +5849,7 @@ function openRichiesteResoPanel(){
   searchBar.style.cssText='padding:10px 24px;border-bottom:1px solid #e8eaf0;flex-shrink:0;background:#fff;display:flex;align-items:center;gap:8px';
   searchBar.innerHTML=
     '<div style="position:relative;flex:1;max-width:600px">'+
-      '<input id="rc-search" placeholder="&#128269; Cerca per ordine, cliente, prodotto..." style="width:100%;padding:9px 36px 9px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#f8f9fc;box-sizing:border-box">'+
+      '<input id="rc-search" placeholder="&#128269; Cerca per ordine, cliente, prodotto, tracking, ordine Amazon/Temu/TikTok..." style="width:100%;padding:9px 36px 9px 14px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#f8f9fc;box-sizing:border-box">'+
       '<button id="rc-search-clear" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:16px;cursor:pointer;color:#aaa;display:none;padding:0;line-height:1">&#215;</button>'+
     '</div>';
   page.appendChild(searchBar);
@@ -5880,7 +5880,16 @@ function openRichiesteResoPanel(){
     else if(tab==='pendenti') f=all.filter(function(r){return !r.risolto&&!r.sospeso;});
     else if(tab==='sospesi') f=all.filter(function(r){return !!r.sospeso&&!r.risolto;});
     else f=all.filter(function(r){return !!r.risolto;});
-    if(q){var ql=q.toLowerCase();f=f.filter(function(r){return (r.orderName||'').toLowerCase().includes(ql)||(r.customerName||'').toLowerCase().includes(ql)||(r.items||[]).some(function(i){return (i.name||'').toLowerCase().includes(ql);});});}
+    if(q){var ql=q.toLowerCase();f=f.filter(function(r){
+      return (r.orderName||'').toLowerCase().includes(ql)||
+             (r.customerName||'').toLowerCase().includes(ql)||
+             (r.items||[]).some(function(i){return (i.name||'').toLowerCase().includes(ql);})||
+             (r.trackingNumber||'').toLowerCase().includes(ql)||
+             (r.amazonOrderId||'').toLowerCase().includes(ql)||
+             (r.temuOrderId||'').toLowerCase().includes(ql)||
+             (r.tiktokOrderId||'').toLowerCase().includes(ql)||
+             (r.email||'').toLowerCase().includes(ql);
+    });}
     return f;
   }
 
