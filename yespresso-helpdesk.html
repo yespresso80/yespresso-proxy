@@ -8710,8 +8710,8 @@ var SCATOLE_LEAD_DAYS = 30;
 var SCATOLE_ORIZZONTE_DAYS = 45;
 
 function scatoleLoadData(){
-  try{ return JSON.parse(localStorage.getItem(SCATOLE_KEY)||'null') || {inventari:[],arrivi:[],inv_item_ids:{}}; }
-  catch(e){ return {inventari:[],arrivi:[],inv_item_ids:{}}; }
+  try{ return JSON.parse(localStorage.getItem(SCATOLE_KEY)||'null') || {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
+  catch(e){ return {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
 }
 function scatoleSaveData(d){ localStorage.setItem(SCATOLE_KEY, JSON.stringify(d)); }
 
@@ -8830,6 +8830,7 @@ function renderScatoleMagazzino(body){
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button onclick="scatoleCaricaShopify()" style="background:#e8f0fe;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Carica da Shopify</button>' +
+        '<button onclick="scatoleApriOrdiniTielle()" style="background:#fff8f0;border:1.5px solid #f59e0b;color:#92400e;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🧾 Ordini Tielle</button>' +
         '<button onclick="scatoleApriRegistraArrivi()" style="background:#f0fdf4;border:1.5px solid #16a34a;color:#16a34a;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📥 Registra Arrivi</button>' +
         '<button onclick="scatoleApriInserimentoInventario()" style="background:#6d28d9;border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo conteggio</button>' +
       '</div>' +
@@ -8840,6 +8841,10 @@ function renderScatoleMagazzino(body){
       '<div style="text-align:center;padding:30px;color:#aaa;font-size:13px">Caricamento inventario Shopify...</div>' +
     '</div>' +
 
+    // Ordini Tielle aperti
+    '<div style="margin-top:24px" id="scatole-ordini-tielle-section">' +
+      renderScatoleOrdiniTielleSection(data) +
+    '</div>' +
     // Storico
     '<div style="margin-top:24px">' +
       '<div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:12px">📋 Storico conteggi e arrivi</div>' +
@@ -8871,10 +8876,14 @@ function renderScatoleTabella(data, invShopify){
     // Ultimo conteggio manuale
     var ultCont = (data.inventari||[]).filter(function(i){return i.sku===p.sku;})
                                        .sort(function(a,b){return b.data.localeCompare(a.data);})[0];
-    // Arrivi non ancora coperti da un conteggio successivo
-    var arriviAttesi = (data.arrivi||[]).filter(function(a){
-      return a.sku===p.sku && a.data>=oggi.toISOString().split('T')[0];
-    }).reduce(function(s,a){return s+a.qty;},0);
+    // Arrivi attesi = ordini Tielle aperti (non ancora ricevuti) con data consegna futura o oggi
+    var oggiStr = oggi.toISOString().split('T')[0];
+    var arriviAttesi = (data.ordini_tielle||[]).filter(function(o){
+      return o.righe && o.stato !== 'ricevuto' && o.stato !== 'annullato';
+    }).reduce(function(s,ord){
+      var rigaSku = (ord.righe||[]).find(function(r){return r.sku===p.sku;});
+      return s + (rigaSku ? (rigaSku.qty - (rigaSku.qty_ricevuta||0)) : 0);
+    }, 0);
 
     var consumoGg = scatoleGetConsumoGgEffettivo(p.sku, data);
     var consumoMese = consumoGg*30;
@@ -9123,6 +9132,219 @@ window.scatoleApriRegistraArrivi = function(){
     else showToast('✅ Arrivi registrati e Shopify aggiornato');
     renderFabTab('scatole');
   };
+};
+
+// ── ORDINI TIELLE ──────────────────────────────────────────────
+function renderScatoleOrdiniTielleSection(data){
+  var ordini = (data.ordini_tielle||[]).filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
+  var statoColor = {attesa:'#1a73e8',parziale:'#e67e22',ricevuto:'#16a34a',annullato:'#888'};
+  var statoLabel = {attesa:'⏳ In attesa',parziale:'📦 Parziale',ricevuto:'✅ Ricevuto',annullato:'❌ Annullato'};
+
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+    '<div style="font-size:14px;font-weight:700;color:#92400e">🧾 Ordini Tielle aperti</div>' +
+    '<button onclick="scatoleNuovoOrdineTielle()" style="background:#f59e0b;border:none;color:#fff;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo ordine</button>' +
+  '</div>';
+
+  if(!ordini.length){
+    html += '<div style="color:#aaa;font-size:13px;padding:10px 0">Nessun ordine aperto. Clicca "+ Nuovo ordine" per creare un ordine a Tielle.</div>';
+    return html;
+  }
+
+  html += '<div style="display:flex;flex-direction:column;gap:8px">';
+  ordini.forEach(function(ord){
+    var sc = statoColor[ord.stato]||'#888';
+    var sl = statoLabel[ord.stato]||ord.stato;
+    html += '<div style="background:#fff;border:1px solid #fde68a;border-radius:10px;overflow:hidden">' +
+      '<div style="background:#fff8f0;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span style="font-weight:700;color:#92400e;font-size:13px">Ordine del '+ord.data_ordine+'</span>' +
+        (ord.data_consegna?'<span style="font-size:12px;color:#6d28d9">Consegna prev: '+_fmtDataOrd(ord.data_consegna)+'</span>':'') +
+        '<span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">'+sl+'</span>' +
+        '<div style="margin-left:auto;display:flex;gap:6px">' +
+          '<button onclick="scatoleRiceviOrdineTielle(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📥 Ricevi</button>' +
+          '<button onclick="scatoleAnnullaOrdineTielle(\''+ord.id+'\')" style="background:#fff5f5;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕ Annulla</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="padding:8px 14px;display:flex;flex-wrap:wrap;gap:16px">' +
+        (ord.righe||[]).filter(function(r){return r.qty>0;}).map(function(r){
+          var p = SCATOLE_PRODOTTI.find(function(x){return x.sku===r.sku;})||{nome:r.sku};
+          var res = r.qty - (r.qty_ricevuta||0);
+          return '<div style="font-size:12px;color:#555">' +
+            '<span style="font-weight:600;color:#1a1a2e">'+p.nome+'</span> ' +
+            '<span style="color:#6d28d9;font-weight:700">'+r.qty+' pz</span>' +
+            (r.qty_ricevuta?'<span style="color:#16a34a"> (ricevuti: '+r.qty_ricevuta+')</span>':'') +
+            (res>0&&r.qty_ricevuta?'<span style="color:#e67e22"> res: '+res+'</span>':'') +
+          '</div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+window.scatoleApriOrdiniTielle = function(){
+  renderFabTab('scatole');
+};
+
+window.scatoleNuovoOrdineTielle = function(){
+  var today = new Date().toISOString().split('T')[0];
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  var campi = SCATOLE_PRODOTTI.map(function(p){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f5">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;font-size:13px">'+p.nome+'</div>' +
+        '<div style="font-size:11px;color:#888">Cod: '+p.cod_forn+'</div>' +
+      '</div>' +
+      '<input type="number" id="sc-ord-'+p.sku+'" min="0" placeholder="0" style="width:110px;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:14px;font-weight:700;text-align:right;font-family:inherit;outline:none">' +
+      '<span style="font-size:12px;color:#888;width:20px">pz</span>' +
+    '</div>';
+  }).join('');
+
+  modal.innerHTML = '<div style="background:#fff;border-radius:12px;width:520px;max-width:98vw;box-shadow:0 8px 40px rgba(0,0,0,.25)">' +
+    '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#92400e">🧾 Nuovo ordine Tielle</div>' +
+    '<div style="padding:16px 20px">' +
+      '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
+        '<div style="flex:1">' +
+          '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Data ordine</label>' +
+          '<input type="date" id="sc-ord-data" value="'+today+'" style="width:100%;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box">' +
+        '</div>' +
+        '<div style="flex:1">' +
+          '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Data consegna prevista</label>' +
+          '<input type="date" id="sc-ord-consegna" style="width:100%;padding:7px 10px;border:1.5px solid #c5d8fa;border-radius:7px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box">' +
+        '</div>' +
+      '</div>' +
+      campi +
+      '<div style="margin-top:12px">' +
+        '<label style="font-size:12px;color:#888">Note (opzionale)</label>' +
+        '<input type="text" id="sc-ord-note" placeholder="es. Ordine urgente" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e0e4ea;border-radius:7px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box">' +
+      '</div>' +
+    '</div>' +
+    '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button id="sc-ord-cancel" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>' +
+      '<button id="sc-ord-save" style="padding:8px 20px;border:none;border-radius:8px;background:#f59e0b;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🧾 Crea ordine</button>' +
+    '</div>' +
+  '</div>';
+
+  document.body.appendChild(modal);
+  modal.querySelector('#sc-ord-cancel').onclick = function(){modal.remove();};
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#sc-ord-save').onclick = function(){
+    var data_ord = document.getElementById('sc-ord-data').value;
+    var data_cons = document.getElementById('sc-ord-consegna').value;
+    var note = document.getElementById('sc-ord-note').value.trim();
+    if(!data_ord){showToast('Inserisci la data ordine','error');return;}
+    var righe = [];
+    SCATOLE_PRODOTTI.forEach(function(p){
+      var val = parseInt(document.getElementById('sc-ord-'+p.sku).value||'');
+      if(!isNaN(val)&&val>0) righe.push({sku:p.sku, qty:val, qty_ricevuta:0});
+    });
+    if(!righe.length){showToast('Inserisci almeno una quantità','error');return;}
+    var data2 = scatoleLoadData();
+    data2.ordini_tielle = data2.ordini_tielle||[];
+    data2.ordini_tielle.push({
+      id:'tielle_'+Date.now(),
+      data_ordine:data_ord,
+      data_consegna:data_cons||'',
+      stato:'attesa',
+      righe:righe,
+      note:note
+    });
+    scatoleSaveData(data2);
+    modal.remove();
+    showToast('✅ Ordine Tielle creato');
+    renderFabTab('scatole');
+  };
+};
+
+window.scatoleRiceviOrdineTielle = function(ordId){
+  var data2 = scatoleLoadData();
+  var ord = (data2.ordini_tielle||[]).find(function(o){return o.id===ordId;});
+  if(!ord) return;
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  var righeHtml = (ord.righe||[]).filter(function(r){return r.qty>0;}).map(function(r){
+    var p = SCATOLE_PRODOTTI.find(function(x){return x.sku===r.sku;})||{nome:r.sku};
+    var res = r.qty - (r.qty_ricevuta||0);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f5">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;font-size:13px">'+p.nome+'</div>' +
+        '<div style="font-size:11px;color:#888">Ordinato: '+r.qty+' pz · Già ricevuto: '+(r.qty_ricevuta||0)+' · Residuo: '+res+'</div>' +
+      '</div>' +
+      '<input type="number" id="sc-rcv-'+r.sku+'" min="0" max="'+res+'" value="'+res+'" style="width:100px;padding:7px 10px;border:1.5px solid #d1fae5;border-radius:7px;font-size:14px;font-weight:700;text-align:right;font-family:inherit;outline:none">' +
+      '<span style="font-size:12px;color:#888">pz</span>' +
+    '</div>';
+  }).join('');
+
+  modal.innerHTML = '<div style="background:#fff;border-radius:12px;width:520px;max-width:98vw;box-shadow:0 8px 40px rgba(0,0,0,.25)">' +
+    '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#16a34a">📥 Ricevi merce — Ordine del '+ord.data_ordine+'</div>' +
+    '<div style="padding:16px 20px">'+righeHtml+'</div>' +
+    '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button id="sc-rcv-cancel" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>' +
+      '<button id="sc-rcv-save" style="padding:8px 20px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Conferma ricezione e aggiorna Shopify</button>' +
+    '</div>' +
+  '</div>';
+
+  document.body.appendChild(modal);
+  modal.querySelector('#sc-rcv-cancel').onclick = function(){modal.remove();};
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+
+  modal.querySelector('#sc-rcv-save').onclick = async function(){
+    var btn=this; btn.disabled=true; btn.textContent='Aggiornamento...';
+    var todayStr = new Date().toISOString().split('T')[0];
+    var errori = [];
+    var aggiornati = 0;
+
+    for(var i=0;i<ord.righe.length;i++){
+      var r = ord.righe[i];
+      var val = parseInt(document.getElementById('sc-rcv-'+r.sku)||{value:'0'}.value||'0')||0;
+      if(val<=0) continue;
+      // Aggiorna qty_ricevuta nell'ordine
+      r.qty_ricevuta = (r.qty_ricevuta||0) + val;
+      // Registra arrivo nello storico
+      var data3 = scatoleLoadData();
+      data3.arrivi = data3.arrivi||[];
+      data3.arrivi.push({sku:r.sku, qty:val, data:todayStr, note:'Da ordine Tielle del '+ord.data_ordine});
+      scatoleSaveData(data3);
+      // Aggiorna Shopify
+      var data4 = scatoleLoadData();
+      var loc = data4.location_ids && data4.location_ids[r.sku];
+      if(loc){
+        try{
+          await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({location_id:loc.location_id,inventory_item_id:loc.inv_item_id,available_adjustment:val})
+          });
+          aggiornati++;
+        }catch(e){ errori.push(r.sku+': '+e.message); }
+      } else { errori.push(r.sku+': IDs non trovati, fai prima "Carica da Shopify"'); }
+    }
+
+    // Aggiorna stato ordine
+    var allRicevuto = ord.righe.every(function(r){return r.qty_ricevuta>=r.qty;});
+    var someRicevuto = ord.righe.some(function(r){return (r.qty_ricevuta||0)>0;});
+    ord.stato = allRicevuto ? 'ricevuto' : (someRicevuto ? 'parziale' : 'attesa');
+
+    var data5 = scatoleLoadData();
+    data5.ordini_tielle = (data5.ordini_tielle||[]).map(function(o){return o.id===ordId?ord:o;});
+    scatoleSaveData(data5);
+    modal.remove();
+    if(errori.length) showToast('⚠️ '+aggiornati+' aggiornati, errori: '+errori.join(', '),'error');
+    else showToast('✅ Merce ricevuta e Shopify aggiornato');
+    renderFabTab('scatole');
+  };
+};
+
+window.scatoleAnnullaOrdineTielle = function(ordId){
+  if(!confirm('Annullare questo ordine Tielle?')) return;
+  var data2 = scatoleLoadData();
+  data2.ordini_tielle = (data2.ordini_tielle||[]).map(function(o){
+    return o.id===ordId ? Object.assign({},o,{stato:'annullato'}) : o;
+  });
+  scatoleSaveData(data2);
+  showToast('Ordine annullato');
+  renderFabTab('scatole');
 };
 
 window.scatoleEliminaEvento = function(tipo, sku, data_ev, qty){
