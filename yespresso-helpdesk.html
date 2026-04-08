@@ -8720,11 +8720,11 @@ var MATPROD_MATERIALI = [
 ];
 
 var MATPROD_BOM = {
-  'CNX5CAF872-240': [{sku:'IMBCYESPRESSO18', qty:1},   {sku:'BOBINA10', qty:1.2}],
-  'CBLX10CAF010':   [{sku:'IMBCYESPRESSO18', qty:1},   {sku:'BOBINA10', qty:1.2}],
-  'CCX10CAF144':    [{sku:'IMBCYESPRESSO18', qty:1},   {sku:'BOBINA10', qty:1.2}],
-  'CBLX10CAF058':   [{sku:'IMBCMASTER48',    qty:1},   {sku:'BOBINA10', qty:0.5}],
-  'CCX10CAF205':    [{sku:'IMBCMASTER48',    qty:1},   {sku:'BOBINA10', qty:0.4}]
+  'CNX5CAF872-240': [{sku:'IMBCYESPRESSO18', qty:1},   {sku:'BOBINA10', qty:0.12}],
+  'CBLX10CAF010':   [{sku:'IMBCYESPRESSO18', qty:1},   {sku:'BOBINA10', qty:0.12}],
+  'CCX10CAF144':    [{sku:'IMBCYESPRESSO18', qty:1},   {sku:'BOBINA10', qty:0.12}],
+  'CBLX10CAF058':   [{sku:'IMBCMASTER48',    qty:1},   {sku:'BOBINA10', qty:0.05}],
+  'CCX10CAF205':    [{sku:'IMBCMASTER48',    qty:1},   {sku:'BOBINA10', qty:0.04}]
 };
 
 function matprodLoadData(){
@@ -8769,57 +8769,78 @@ async function matprodGetInventarioBestEspresso(){
   var inv = {};
   var invIds = data.inv_ids || {};
 
-  // 1. Trova inventory_item_id per ogni SKU materiale
+  // 1. Trova inventory_item_id per ogni SKU — forza sempre refresh se mancanti
   var needFetch = MATPROD_MATERIALI.filter(function(m){ return !invIds[m.sku]; });
   if(needFetch.length){
     try{
-      var page = 'variants.json?limit=250';
-      while(page){
-        var d = await shopifyGet(page);
-        var variants = d && d.variants ? d.variants : [];
-        variants.forEach(function(v){
-          var m = MATPROD_MATERIALI.find(function(x){ return x.sku === v.sku; });
-          if(m) invIds[m.sku] = v.inventory_item_id;
-        });
-        page = d._nextPageInfo ? 'variants.json?limit=250&page_info='+d._nextPageInfo : null;
+      // Cerca per SKU direttamente
+      for(var ni=0; ni<needFetch.length; ni++){
+        var mat = needFetch[ni];
+        try{
+          var vd = await shopifyGet('variants.json?sku='+encodeURIComponent(mat.sku)+'&limit=5');
+          if(vd && vd.variants && vd.variants.length){
+            invIds[mat.sku] = vd.variants[0].inventory_item_id;
+          }
+        }catch(e2){}
+      }
+      // Fallback: scansione paginata se ancora mancanti
+      var stillMissing = MATPROD_MATERIALI.filter(function(m){ return !invIds[m.sku]; });
+      if(stillMissing.length){
+        var page = 'variants.json?limit=250';
+        var maxPages = 20;
+        while(page && maxPages-- > 0){
+          var d = await shopifyGet(page);
+          var variants = d && d.variants ? d.variants : [];
+          variants.forEach(function(v){
+            var m = MATPROD_MATERIALI.find(function(x){ return x.sku === v.sku; });
+            if(m && !invIds[m.sku]) invIds[m.sku] = v.inventory_item_id;
+          });
+          page = d._nextPageInfo ? 'variants.json?limit=250&page_info='+d._nextPageInfo : null;
+          if(MATPROD_MATERIALI.every(function(m){return invIds[m.sku];})) break;
+        }
       }
     }catch(e){ console.warn('MatProd variants:', e.message); }
   }
 
-  // 2. Trova l'ID della location BEST ESPRESSO dall'elenco locations
-  var bestLocId = data.best_location_id || null;
-  if(!bestLocId){
-    try{
-      var locs = await shopifyGet('locations.json');
-      if(locs && locs.locations){
-        var bestLoc = locs.locations.find(function(l){
-          return l.name && l.name.toUpperCase().includes('BEST');
-        });
-        if(bestLoc) bestLocId = bestLoc.id;
+  // 2. Trova SEMPRE l'ID della location BEST ESPRESSO (non usare cache per evitare ID sbagliati)
+  var bestLocId = null;
+  try{
+    var locs = await shopifyGet('locations.json');
+    if(locs && locs.locations){
+      console.log('[MatProd] Locations:', locs.locations.map(function(l){return l.id+':'+l.name;}));
+      var bestLoc = locs.locations.find(function(l){
+        return l.name && l.name.toUpperCase().includes('BEST');
+      });
+      if(bestLoc){
+        bestLocId = bestLoc.id;
+        console.log('[MatProd] Best Espresso location ID:', bestLocId, bestLoc.name);
+      } else {
+        console.warn('[MatProd] Nessuna location con nome contenente BEST trovata');
       }
-    }catch(e){ console.warn('MatProd locations:', e.message); }
-  }
+    }
+  }catch(e){ console.warn('MatProd locations:', e.message); }
 
-  // 3. Leggi inventory_levels filtrando per location BEST ESPRESSO
-  var ids = MATPROD_MATERIALI.map(function(m){ return invIds[m.sku]; }).filter(Boolean);
-  var locationIds = data.location_ids || {};
-  if(ids.length){
+  // 3. Leggi inventory_levels per ogni materiale singolarmente sulla location BEST ESPRESSO
+  var locationIds = {};
+  for(var mi=0; mi<MATPROD_MATERIALI.length; mi++){
+    var mat2 = MATPROD_MATERIALI[mi];
+    var invItemId = invIds[mat2.sku];
+    if(!invItemId){ console.warn('[MatProd] inventory_item_id non trovato per', mat2.sku); continue; }
     try{
-      var url = 'inventory_levels.json?inventory_item_ids='+ids.join(',');
+      var url = 'inventory_levels.json?inventory_item_ids='+invItemId;
       if(bestLocId) url += '&location_ids='+bestLocId;
       var lv = await shopifyGet(url);
-      if(lv && lv.inventory_levels){
-        lv.inventory_levels.forEach(function(l){
-          var m = MATPROD_MATERIALI.find(function(x){ return invIds[x.sku] === l.inventory_item_id; });
-          if(!m) return;
-          // Se abbiamo il bestLocId usa solo quello, altrimenti prendi il primo
-          if(!bestLocId || l.location_id === bestLocId){
-            inv[m.sku] = {qty: l.available||0, location_id: l.location_id, inv_item_id: l.inventory_item_id};
-            locationIds[m.sku] = {location_id: l.location_id, inv_item_id: l.inventory_item_id};
-          }
-        });
+      console.log('[MatProd]', mat2.sku, 'levels:', JSON.stringify(lv&&lv.inventory_levels));
+      if(lv && lv.inventory_levels && lv.inventory_levels.length){
+        var level = bestLocId
+          ? lv.inventory_levels.find(function(l){ return l.location_id === bestLocId; })
+          : lv.inventory_levels[0];
+        if(level){
+          inv[mat2.sku] = {qty: level.available||0, location_id: level.location_id, inv_item_id: invItemId};
+          locationIds[mat2.sku] = {location_id: level.location_id, inv_item_id: invItemId};
+        }
       }
-    }catch(e){ console.warn('MatProd levels:', e.message); }
+    }catch(e){ console.warn('MatProd level', mat2.sku, e.message); }
   }
 
   data.inv_ids = invIds;
@@ -8857,6 +8878,7 @@ async function renderMatProd(body){
     '</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button onclick="matprodCaricaInv()" style="background:#e8f0fe;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna inventario</button>' +
+      '<button onclick="matprodSvuotaCache()" style="background:#fff5f5;border:1.5px solid #fca5a5;color:#dc2626;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🗑 Svuota cache IDs</button>' +
       '<button onclick="matprodNuovoOrdine()" style="background:#6d28d9;border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo ordine materiali</button>' +
     '</div>' +
   '</div>' +
@@ -8982,6 +9004,13 @@ function renderMatProdOrdiniSection(data){
   html += '</div>';
   return html;
 }
+
+window.matprodSvuotaCache = function(){
+  var d = matprodLoadData();
+  d.inv_ids = {}; d.location_ids = {}; d.best_location_id = null;
+  matprodSaveData(d);
+  showToast('Cache IDs svuotata — clicca Aggiorna inventario');
+};
 
 window.matprodCaricaInv = async function(){
   showToast('Aggiornamento inventario BEST ESPRESSO...');
