@@ -8785,25 +8785,14 @@ async function matprodGetInventarioBestEspresso(){
       page = d._nextPageInfo ? 'variants.json?limit=250&page_info='+d._nextPageInfo : null;
     }
     console.log('[MatProd] inventory_item_ids trovati:', JSON.stringify(invIds));
+    // Log SKU non trovati per debug
+    MATPROD_MATERIALI.forEach(function(m){
+      if(!invIds[m.sku]) console.warn('[MatProd] SKU non trovato nella scansione variants:', m.sku, '— verifica che lo SKU su Shopify corrisponda esattamente');
+    });
   }catch(e){ console.warn('MatProd variants:', e.message); }
 
-  // 2. Trova SEMPRE l'ID della location BEST ESPRESSO (non usare cache per evitare ID sbagliati)
-  var bestLocId = null;
-  try{
-    var locs = await shopifyGet('locations.json');
-    if(locs && locs.locations){
-      console.log('[MatProd] Locations:', locs.locations.map(function(l){return l.id+':'+l.name;}));
-      var bestLoc = locs.locations.find(function(l){
-        return l.name && l.name.toUpperCase().includes('BEST');
-      });
-      if(bestLoc){
-        bestLocId = bestLoc.id;
-        console.log('[MatProd] Best Espresso location ID:', bestLocId, bestLoc.name);
-      } else {
-        console.warn('[MatProd] Nessuna location con nome contenente BEST trovata');
-      }
-    }
-  }catch(e){ console.warn('MatProd locations:', e.message); }
+  // 2. Location BEST ESPRESSO — ID hardcodato (locations.json non accessibile via proxy)
+  var bestLocId = 97020543241;
 
   // 3. Leggi inventory_levels per ogni materiale singolarmente sulla location BEST ESPRESSO
   var locationIds = {};
