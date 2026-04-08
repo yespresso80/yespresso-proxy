@@ -184,13 +184,88 @@ async function getShopifyToken() {
   return SHOPIFY_TOKEN;
 }
 
-const server = http.createServer(async function(req, res) {
+const SITE_PASSWORD = process.env.SITE_PASSWORD || "";
+
+// ── Autenticazione pagina reso-magazzino ──
+function checkAuth(req) {
+  if (!SITE_PASSWORD) return true;
+  const cookies = req.headers.cookie || "";
+  const match = cookies.match(/(?:^|;\s*)hd_auth=([^;]+)/);
+  return match && match[1] === SITE_PASSWORD;
+}
+
+const LOGIN_PAGE = `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Accesso — Yespresso HelpDesk</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+  .card{background:#1a1d27;border:1px solid #2e3347;border-radius:16px;padding:36px 32px;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+  .logo{font-size:32px;text-align:center;margin-bottom:8px}
+  h1{color:#f0f2f8;font-size:20px;font-weight:700;text-align:center;margin-bottom:4px}
+  .sub{color:#8891a8;font-size:13px;text-align:center;margin-bottom:28px}
+  label{color:#8891a8;font-size:12px;font-weight:600;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+  input{width:100%;background:#22263a;border:1px solid #2e3347;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f2f8;font-family:inherit;outline:none;transition:.2s}
+  input:focus{border-color:#e53e3e}
+  button{width:100%;margin-top:16px;background:#e53e3e;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;transition:.15s}
+  button:active{background:#c53030}
+  .err{color:#ff6b6b;font-size:13px;text-align:center;margin-top:12px;display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">⚡</div>
+  <h1>Yespresso HelpDesk</h1>
+  <p class="sub">Inserisci la password per accedere</p>
+  <form method="POST" action="/hd-login">
+    <label>Password</label>
+    <input type="password" name="pwd" placeholder="••••••••" autofocus autocomplete="current-password">
+    <button type="submit">Accedi</button>
+  </form>
+  <div class="err" id="err">Password non corretta</div>
+</div>
+<script>
+  const u = new URLSearchParams(location.search);
+  if(u.get('err')) document.getElementById('err').style.display='block';
+</script>
+</body>
+</html>`;
+
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
+
+  // ── Login reso-magazzino ──
+  if (req.url === "/hd-login" && req.method === "POST") {
+    let body = "";
+    req.on("data", c => body += c);
+    req.on("end", () => {
+      const params = new URLSearchParams(body);
+      const pwd = params.get("pwd") || "";
+      if (pwd === SITE_PASSWORD) {
+        res.writeHead(302, {
+          "Set-Cookie": "hd_auth=" + SITE_PASSWORD + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400",
+          "Location": "/"
+        });
+      } else {
+        res.writeHead(302, { "Location": "/hd-login?err=1" });
+      }
+      res.end();
+    });
+    return;
+  }
+  if (req.url === "/hd-login") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(LOGIN_PAGE);
+    return;
+  }
 
   // Endpoint allegati IMAP
   if (req.url.startsWith("/imap/attachments")) {
@@ -241,6 +316,11 @@ const server = http.createServer(async function(req, res) {
   }
 
   if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
+    if (!checkAuth(req)) {
+      res.writeHead(302, { "Location": "/hd-login" });
+      res.end();
+      return;
+    }
     const filePath = path.join(__dirname, "yespresso-helpdesk.html");
     fs.readFile(filePath, function(err, data) {
       if (err) { res.writeHead(404); res.end("File non trovato"); return; }
