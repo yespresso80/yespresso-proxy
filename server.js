@@ -234,8 +234,7 @@ const LOGIN_PAGE = `<!DOCTYPE html>
 </body>
 </html>`;
 
-
-  res.setHeader("Access-Control-Allow-Origin", "*");
+const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
 
