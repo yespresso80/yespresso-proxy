@@ -76,6 +76,13 @@ const PROXY = "https://yespresso-proxy.onrender.com";
 const TAG = "Fattura Amazon";
 let ordersToTag = [];
 
+function detectDelimiter(line) {
+  const commas = (line.match(/,/g) || []).length;
+  const semis  = (line.match(/;/g) || []).length;
+  return semis > commas ? ';' : ',';
+}
+let _csvDelimiter = ',';
+
 function parseCsvLine(line) {
   const result = [];
   let cur = '', inQuotes = false;
@@ -84,7 +91,7 @@ function parseCsvLine(line) {
     if (ch === '"') {
       if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
       else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
+    } else if (ch === _csvDelimiter && !inQuotes) {
       result.push(cur.trim());
       cur = '';
     } else {
@@ -97,6 +104,7 @@ function parseCsvLine(line) {
 
 function parseCsv(text) {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  _csvDelimiter = detectDelimiter(lines[0]);
   const headers = parseCsvLine(lines[0]);
 
   const orderIdIdx = headers.findIndex(h => h === 'Order ID');
