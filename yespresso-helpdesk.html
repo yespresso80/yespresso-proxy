@@ -9232,22 +9232,45 @@ async function renderScatoleBevande(body){
     return;
   }
 
-  // Calcola totali per IMBCMASTER48
+  // Carica inventario IMBCMASTER48 da Shopify (sede YESPRESSO SEDE — location 80402120969)
+  var invMat = null;
+  try{
+    // Usa inventory_item_id dalla cache matprod se disponibile
+    var matData = matprodLoadData();
+    var invItemId = matData.inv_ids && matData.inv_ids['IMBCMASTER48'];
+    if(!invItemId){
+      // Cerca tramite products
+      var pd = await shopifyGet('products.json?limit=250&fields=id,variants');
+      if(pd && pd.products){
+        pd.products.forEach(function(prod){
+          (prod.variants||[]).forEach(function(v){
+            if((v.sku||'').trim().toUpperCase()==='IMBCMASTER48') invItemId = v.inventory_item_id;
+          });
+        });
+      }
+    }
+    if(invItemId){
+      var lv = await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId+'&location_ids=80402120969');
+      if(lv && lv.inventory_levels && lv.inventory_levels.length){
+        invMat = lv.inventory_levels[0].available || 0;
+      }
+    }
+  }catch(e){ console.warn('[SCATBEV] Errore caricamento inv IMBCMASTER48:', e.message); }
+
+  // Calcola scatole IMBCMASTER48 necessarie = venduto30gg / ratio
   var totFab30 = 0, totFab60 = 0;
   var righe = SCATBEV_PRODOTTI.map(function(p){
     var avgDay = fabDailyAvg(p.sku_shopify, 7);
+    var vend7 = fabSalesCache && fabSalesCache[p.sku_shopify] ? fabSalesCache[p.sku_shopify] : 0;
     var vend30 = Math.round(avgDay * 30);
     var inv = fabInventoryCache && fabInventoryCache[p.sku_shopify] != null ? fabInventoryCache[p.sku_shopify] : null;
+    // Scatole necessarie = pezzi venduti / ratio (ogni 4 pezzi = 1 scatola)
     var fab30 = Math.ceil(vend30 / p.ratio);
     var fab60 = Math.ceil(avgDay * 60 / p.ratio);
     totFab30 += fab30;
     totFab60 += fab60;
-    return {p:p, avgDay:avgDay, vend30:vend30, inv:inv, fab30:fab30, fab60:fab60};
+    return {p:p, vend7:vend7, avgDay:avgDay, vend30:vend30, inv:inv, fab30:fab30, fab60:fab60};
   });
-
-  // Inventario IMBCMASTER48 in YESPRESSO SEDE
-  var invMat = fabInventoryCache && fabInventoryCache[SCATBEV_MATERIALE.sku] != null
-    ? fabInventoryCache[SCATBEV_MATERIALE.sku] : null;
 
   // Arrivi attesi da ordini aperti
   var arriviAttesi = (data.ordini||[]).filter(function(o){return o.stato==='attesa'||o.stato==='parziale';})
@@ -9423,15 +9446,34 @@ window.scatbevRiceviOrdine = function(ordId){
   document.body.appendChild(modal);
   modal.querySelector('#sb-rcv-cancel').onclick = function(){modal.remove();};
   modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
-  modal.querySelector('#sb-rcv-save').onclick = function(){
+  modal.querySelector('#sb-rcv-save').onclick = async function(){
+    var btn=this; btn.disabled=true; btn.textContent='Salvataggio...';
     var val = parseInt(document.getElementById('sb-rcv-qty').value||'0')||0;
-    if(val<=0){showToast('Inserisci una quantità','error');return;}
+    if(val<=0){showToast('Inserisci una quantità','error');btn.disabled=false;btn.textContent='✅ Conferma';return;}
     ord.qty_ricevuta = (ord.qty_ricevuta||0)+val;
     ord.stato = ord.qty_ricevuta>=ord.qty?'ricevuto':'parziale';
     d.ordini = (d.ordini||[]).map(function(o){return o.id===ordId?ord:o;});
     scatbevSaveData(d);
+    // Aggiorna inventario Shopify — sede YESPRESSO SEDE
+    // Recupera inventory_item_id di IMBCMASTER48 dalla cache matprod (già caricato)
+    var matData = matprodLoadData();
+    var invItemId = matData.inv_ids && matData.inv_ids['IMBCMASTER48'];
+    // Location YESPRESSO SEDE ID: 80402120969
+    var yespressoLocId = 80402120969;
+    if(invItemId){
+      try{
+        await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({location_id:yespressoLocId, inventory_item_id:invItemId, available_adjustment:val})
+        });
+        showToast('✅ Ricezione registrata e Shopify aggiornato (YESPRESSO SEDE)');
+      }catch(e){
+        showToast('⚠️ Registrato localmente ma errore Shopify: '+e.message,'error');
+      }
+    } else {
+      showToast('⚠️ Registrato ma inventory_item_id non trovato — apri Materiali Produzione e clicca Aggiorna inventario','error');
+    }
     modal.remove();
-    showToast('✅ Ricezione registrata');
     renderFabTab('scatbev');
   };
 };
