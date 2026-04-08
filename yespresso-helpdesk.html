@@ -8105,6 +8105,7 @@ async function loadFabState(){
     if(serverHasData){
       if(data.fabOrdini&&Array.isArray(data.fabOrdini)) fabOrdini=data.fabOrdini;
       if(data.fabProducts&&Array.isArray(data.fabProducts)) fabProducts=data.fabProducts;
+      if(data.fabSettings&&data.fabSettings.scortaSicGiorni) _fabScortaSicGiorni=data.fabSettings.scortaSicGiorni;
       console.log('[FAB] Caricato dal server: '+fabOrdini.length+' ordini');
     } else {
       // Server vuoto (es. dopo restart) — ripristina da localStorage e ri-salva sul server
@@ -8118,7 +8119,7 @@ async function loadFabState(){
         // Ri-salva automaticamente sul server
         setTimeout(async function(){
           try{
-            var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts});
+            var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts,fabSettings:{scortaSicGiorni:_fabScortaSicGiorni}});
             await fetch(PROXY+'/fab-data',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
             console.log('[FAB] Dati locali ripristinati sul server');
             showToast('☁️ Dati ripristinati sul server da cache locale');
@@ -8731,11 +8732,15 @@ function matprodLoadData(){
   try{ return JSON.parse(localStorage.getItem(MATPROD_KEY)||'null') || {ordini_materiali:[], inv_ids:{}}; }
   catch(e){ return {ordini_materiali:[], inv_ids:{}}; }
 }
+var _matprodSaveQueue=Promise.resolve();
 function matprodSaveData(d){
-  localStorage.setItem(MATPROD_KEY, JSON.stringify(d));
-  // Salva su server in background
-  fetch(PROXY+'/matprod-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
-    .catch(function(e){console.warn('[MATPROD] Errore salvataggio server:',e.message);});
+  localStorage.setItem(MATPROD_KEY,JSON.stringify(d));
+  var snapshot=JSON.stringify(d);
+  _matprodSaveQueue=_matprodSaveQueue.then(function(){
+    return fetch(PROXY+'/matprod-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
+      .catch(function(e){console.warn('[MATPROD] Errore salvataggio server:',e.message);});
+  });
 }
 async function matprodLoadFromServer(){
   try{
@@ -9193,11 +9198,15 @@ function scatoleLoadData(){
   try{ return JSON.parse(localStorage.getItem(SCATOLE_KEY)||'null') || {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
   catch(e){ return {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
 }
+var _scatoleSaveQueue=Promise.resolve();
 function scatoleSaveData(d){
-  localStorage.setItem(SCATOLE_KEY, JSON.stringify(d));
-  // Salva su server in background
-  fetch(PROXY+'/scatole-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
-    .catch(function(e){console.warn('[SCATOLE] Errore salvataggio server:',e.message);});
+  localStorage.setItem(SCATOLE_KEY,JSON.stringify(d));
+  var snapshot=JSON.stringify(d);
+  _scatoleSaveQueue=_scatoleSaveQueue.then(function(){
+    return fetch(PROXY+'/scatole-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
+      .catch(function(e){console.warn('[SCATOLE] Errore salvataggio server:',e.message);});
+  });
 }
 async function scatoleLoadFromServer(){
   try{
@@ -10051,7 +10060,7 @@ function renderFabPiano(body){
   var _ssB='';
   [7,14,21,28].forEach(function(d){
     var act=d===SAFETY_DAYS;
-    _ssB+='<button onclick="_fabScortaSicGiorni='+d+';renderFabTab(\'fabbisogno\')" style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:'+(act?'#6d28d9':'transparent')+';color:'+(act?'#fff':'#888')+(act?';box-shadow:0 1px 3px rgba(0,0,0,.15)':'')+'">' +d+'gg</button>';
+    _ssB+='<button onclick="_fabScortaSicGiorni='+d+';saveFabState();renderFabTab(\'fabbisogno\')" style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:'+(act?'#6d28d9':'transparent')+';color:'+(act?'#fff':'#888')+(act?';box-shadow:0 1px 3px rgba(0,0,0,.15)':'')+'">' +d+'gg</button>';
   });
   var html='<div style="margin-bottom:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
     '<div>'+

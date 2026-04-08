@@ -897,14 +897,25 @@ async function brtRestPost(path, body) {
       req.on('end', async function(){
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString());
-          const { sha } = await ghScatoleGet();
-          await ghScatoleSave(parsed, sha);
+          let retries = 3;
+          while (retries-- > 0) {
+            try {
+              const { sha } = await ghScatoleGet();
+              await ghScatoleSave(parsed, sha);
+              break;
+            } catch(e2) {
+              if (retries === 0) throw e2;
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
           console.log('[SCATOLE] Salvato su GitHub');
           res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
         } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
       }); return;
     }
   }
+
+  // ── MATERIALI PRODUZIONE
 
   // ── MATERIALI PRODUZIONE ───────────────────────────────────────
   const GH_MATPROD_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/matprod-data.json';
@@ -936,8 +947,17 @@ async function brtRestPost(path, body) {
       req.on('end', async function(){
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString());
-          const { sha } = await ghMatprodGet();
-          await ghMatprodSave(parsed, sha);
+          let retries = 3;
+          while (retries-- > 0) {
+            try {
+              const { sha } = await ghMatprodGet();
+              await ghMatprodSave(parsed, sha);
+              break;
+            } catch(e2) {
+              if (retries === 0) throw e2;
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
           console.log('[MATPROD] Salvato su GitHub');
           res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
         } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
