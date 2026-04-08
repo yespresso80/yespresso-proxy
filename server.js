@@ -185,6 +185,12 @@ async function getShopifyToken() {
 }
 
 const SITE_PASSWORD = process.env.SITE_PASSWORD || "";
+const PROXY_TOKEN = process.env.PROXY_TOKEN || "";
+
+function checkProxyToken(req) {
+  if (!PROXY_TOKEN) return true; // non configurato = aperto (backward compatible)
+  return req.headers["x-app-token"] === PROXY_TOKEN;
+}
 
 // ── Autenticazione pagina reso-magazzino ──
 function checkAuth(req) {
@@ -381,6 +387,16 @@ async function brtRestPost(path, body) {
 
 
   // BRT test connessione - usa parcelID di esempio
+  // ── Verifica token su endpoint sensibili ──
+  const sensitiveEndpoints = ["/brt/", "/shopify", "/anthropic", "/creditsyard/"];
+  if (sensitiveEndpoints.some(function(e){ return req.url.startsWith(e); })) {
+    if (!checkProxyToken(req)) {
+      res.writeHead(401, {"Content-Type":"application/json","Access-Control-Allow-Origin":"*"});
+      res.end(JSON.stringify({error:"Unauthorized"}));
+      return;
+    }
+  }
+
   if (req.url.startsWith("/brt/test")) {
     try {
       // Prova con un parcelID di test (numero spedizione)

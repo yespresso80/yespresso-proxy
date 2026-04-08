@@ -508,7 +508,7 @@ textarea.field{min-height:80px;resize:vertical}
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 const HD_TOKEN = "OWU2Yzk0NjItMGM4YS00MmQ2LWJjZjMtODEwZGE5MWNmZDk5OnVzLXNvdXRoMTpQeXN0dE1oQzZUZnhvWXRrTS1VTHVORnpLelE=";
 const PROXY = "https://yespresso-proxy.onrender.com";
-const APP_TOKEN = "";
+const APP_TOKEN = "INSERISCI_QUI_PROXY_TOKEN";
 
 // ── Nomi prodotti short ──
 var _shortNameMap = [
@@ -6102,7 +6102,7 @@ function createCreditReso(email,orderName,customerName){
     var doNotify=modal.querySelector('#crd-notifica').checked;
     confirmBtn.disabled=true;confirmBtn.textContent='⏳ Invio...';errEl.style.display='none';
     try{
-      var r=await fetch(PROXY+'/creditsyard/adjust',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:email,amount:amount,reason:'Credito reso '+orderName,send_email_notification:0})});
+      var r=await proxyFetch(PROXY+'/creditsyard/adjust',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:email,amount:amount,reason:'Credito reso '+orderName,send_email_notification:0})});
       var j=await r.json();
       if(j.message==='success'){
         modal.remove();
@@ -6438,7 +6438,7 @@ function openRichiesteResoPanel(){
         ov.querySelector('#sto-close').addEventListener('click',function(){ov.remove();});
         // Carica ordini
         var stoBody=ov.querySelector('#sto-body');
-        fetch(PROXY+'/shopify/orders.json?email='+encodeURIComponent(email)+'&status=any&limit=20')
+        proxyFetch(PROXY+'/shopify/orders.json?email='+encodeURIComponent(email)+'&status=any&limit=20')
           .then(function(r){return r.json();})
           .then(function(d){
             var orders=(d&&d.orders)||[];
@@ -6631,7 +6631,7 @@ async function openCreditLink(el, btnId){
   el.textContent="🎁 Cerco cliente...";
   try{
     // Cerca customer ID Creditsyard tramite proxy
-    const res=await fetch(PROXY+"/creditsyard/customer?email="+encodeURIComponent(customerEmail));
+    const res=await proxyFetch(PROXY+"/creditsyard/customer?email="+encodeURIComponent(customerEmail));
     const data=await res.json();
     const csyardId=data&&data.id;
     if(csyardId){
@@ -6655,7 +6655,7 @@ async function fetchBrtPodAuto(btnId){
   const btn=document.getElementById(btnId);
   if(btn){btn.textContent="⏳ Scarico POD...";btn.style.pointerEvents="none";}
   try{
-    const res=await fetch(PROXY+"/brt/pod-auto?nspediz="+encodeURIComponent(tn));
+    const res=await proxyFetch(PROXY+"/brt/pod-auto?nspediz="+encodeURIComponent(tn));
     const data=await res.json();
     if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
     if(!data.ok){
@@ -6738,7 +6738,7 @@ async function loadBrtPod(btnId){
   const btn=document.getElementById(btnId);
   if(btn){btn.textContent="⏳ Caricamento...";btn.style.pointerEvents="none";}
   try{
-    const res=await fetch(PROXY+"/brt/pod?nspediz="+encodeURIComponent(tn));
+    const res=await proxyFetch(PROXY+"/brt/pod?nspediz="+encodeURIComponent(tn));
     const data=await res.json();
     if(btn){btn.textContent="📸 POD";btn.style.pointerEvents="auto";}
     if(!data.ok){
@@ -6837,7 +6837,7 @@ async function downloadAndShowPod(btnId){
         var imgSrc=img.src;
         podWin.close();
         // Manda l'URL al proxy che scarica l'immagine (no CORS sul proxy)
-        fetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(imgSrc))
+        proxyFetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(imgSrc))
           .then(function(r){return r.json();})
           .then(function(j){
             if(btn){btn.textContent='⬇️ Scarica';btn.style.pointerEvents='auto';}
@@ -6940,7 +6940,7 @@ async function createCredit(inputId){
   if(chkEl)chkEl.disabled=true;
   inp.nextElementSibling.textContent='\u23f3';
   try{
-    const res=await fetch(PROXY+'/creditsyard/adjust',{
+    const res=await proxyFetch(PROXY+'/creditsyard/adjust',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({customer_email:data.email,customer_id:data.customerId,amount:amount,reason:'Credito da helpdesk',send_email_notification:0})
@@ -8078,7 +8078,7 @@ async function saveFabState(){
   // Poi salva sul server
   try{
     var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts});
-    var res=await fetch(PROXY+'/fab-data',{
+    var res=await proxyFetch(PROXY+'/fab-data',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:payload
@@ -8098,7 +8098,7 @@ async function loadFabState(){
   // Carica anche il venduto dal server
   await loadFabVenduto();
   try{
-    var res=await fetch(PROXY+'/fab-data');
+    var res=await proxyFetch(PROXY+'/fab-data');
     if(!res.ok) throw new Error('HTTP '+res.status);
     var data=await res.json();
     var serverHasData=(data.fabOrdini&&data.fabOrdini.length>0)||(data.fabProducts&&data.fabProducts.length>0);
@@ -8120,7 +8120,7 @@ async function loadFabState(){
         setTimeout(async function(){
           try{
             var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts,fabSettings:{scortaSicGiorni:_fabScortaSicGiorni}});
-            await fetch(PROXY+'/fab-data',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
+            await proxyFetch(PROXY+'/fab-data',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
             console.log('[FAB] Dati locali ripristinati sul server');
             showToast('☁️ Dati ripristinati sul server da cache locale');
           }catch(e3){}
@@ -8529,7 +8529,7 @@ function fabVendAdjust(btn){
 async function saveFabVenduto(){
   try{
     var payload=JSON.stringify({fabSalesCache:fabSalesCache,fabSalesCacheDate:fabSalesCacheDate||new Date().toISOString().substring(0,16)});
-    var res=await fetch(PROXY+'/fab-venduto',{
+    var res=await proxyFetch(PROXY+'/fab-venduto',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:payload
@@ -8543,7 +8543,7 @@ async function saveFabVenduto(){
 
 async function loadFabVenduto(){
   try{
-    var res=await fetch(PROXY+'/fab-venduto');
+    var res=await proxyFetch(PROXY+'/fab-venduto');
     if(!res.ok) throw new Error('HTTP '+res.status);
     var data=await res.json();
     if(data.fabSalesCache&&Object.keys(data.fabSalesCache).length>0){
@@ -8739,14 +8739,14 @@ function matprodSaveData(d){
   localStorage.setItem(MATPROD_KEY,JSON.stringify(d));
   var snapshot=JSON.stringify(d);
   _matprodSaveQueue=_matprodSaveQueue.then(function(){
-    return fetch(PROXY+'/matprod-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
+    return proxyFetch(PROXY+'/matprod-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
       .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
       .catch(function(e){console.warn('[MATPROD] Errore salvataggio server:',e.message);});
   });
 }
 async function matprodLoadFromServer(){
   try{
-    var r=await fetch(PROXY+'/matprod-data');
+    var r=await proxyFetch(PROXY+'/matprod-data');
     if(!r.ok)return false;
     var data=await r.json();
     if(data&&(data.ordini_materiali||data.inv_ids)){
@@ -9208,13 +9208,13 @@ function scatbevSaveData(d){
   localStorage.setItem(SCATBEV_KEY, JSON.stringify(d));
   var snap = JSON.stringify(d);
   _scatbevSaveQueue = _scatbevSaveQueue.then(function(){
-    return fetch(PROXY+'/scatbev-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snap})
+    return proxyFetch(PROXY+'/scatbev-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snap})
       .catch(function(e){ console.warn('[SCATBEV] Errore server:',e.message); });
   });
 }
 async function scatbevLoadFromServer(){
   try{
-    var r = await fetch(PROXY+'/scatbev-data');
+    var r = await proxyFetch(PROXY+'/scatbev-data');
     if(!r.ok) return false;
     var data = await r.json();
     if(data && data.ordini){ localStorage.setItem(SCATBEV_KEY, JSON.stringify(data)); return true; }
@@ -9509,14 +9509,14 @@ function scatoleSaveData(d){
   localStorage.setItem(SCATOLE_KEY,JSON.stringify(d));
   var snapshot=JSON.stringify(d);
   _scatoleSaveQueue=_scatoleSaveQueue.then(function(){
-    return fetch(PROXY+'/scatole-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
+    return proxyFetch(PROXY+'/scatole-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
       .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
       .catch(function(e){console.warn('[SCATOLE] Errore salvataggio server:',e.message);});
   });
 }
 async function scatoleLoadFromServer(){
   try{
-    var r=await fetch(PROXY+'/scatole-data');
+    var r=await proxyFetch(PROXY+'/scatole-data');
     if(!r.ok)return false;
     var data=await r.json();
     if(data&&(data.inventari||data.arrivi||data.ordini_tielle)){
