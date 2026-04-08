@@ -866,6 +866,85 @@ async function brtRestPost(path, body) {
     });
   }
 
+
+  // ── SCATOLE MAGAZZINO ─────────────────────────────────────────
+  const GH_SCATOLE_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/scatole-data.json';
+  async function ghScatoleGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: null, sha: null };
+    const r = await fetch(GH_SCATOLE_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (r.status === 404) return { data: null, sha: null };
+    const j = await r.json();
+    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+  }
+  async function ghScatoleSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update scatole-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_SCATOLE_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  if (req.url === '/scatole-data') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(); return; }
+    if (req.method === 'GET') {
+      try { const { data } = await ghScatoleGet(); res.writeHead(200,CORS); res.end(JSON.stringify(data||null)); }
+      catch(e) { res.writeHead(200,CORS); res.end(JSON.stringify(null)); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data',c=>chunks.push(c));
+      req.on('end', async function(){
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString());
+          const { sha } = await ghScatoleGet();
+          await ghScatoleSave(parsed, sha);
+          console.log('[SCATOLE] Salvato su GitHub');
+          res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
+        } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+      }); return;
+    }
+  }
+
+  // ── MATERIALI PRODUZIONE ───────────────────────────────────────
+  const GH_MATPROD_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/matprod-data.json';
+  async function ghMatprodGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: null, sha: null };
+    const r = await fetch(GH_MATPROD_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (r.status === 404) return { data: null, sha: null };
+    const j = await r.json();
+    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+  }
+  async function ghMatprodSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update matprod-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_MATPROD_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  if (req.url === '/matprod-data') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(); return; }
+    if (req.method === 'GET') {
+      try { const { data } = await ghMatprodGet(); res.writeHead(200,CORS); res.end(JSON.stringify(data||null)); }
+      catch(e) { res.writeHead(200,CORS); res.end(JSON.stringify(null)); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data',c=>chunks.push(c));
+      req.on('end', async function(){
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString());
+          const { sha } = await ghMatprodGet();
+          await ghMatprodSave(parsed, sha);
+          console.log('[MATPROD] Salvato su GitHub');
+          res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
+        } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+      }); return;
+    }
+  }
+
   if (req.url === '/fab-data') {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') {

@@ -8731,7 +8731,25 @@ function matprodLoadData(){
   try{ return JSON.parse(localStorage.getItem(MATPROD_KEY)||'null') || {ordini_materiali:[], inv_ids:{}}; }
   catch(e){ return {ordini_materiali:[], inv_ids:{}}; }
 }
-function matprodSaveData(d){ localStorage.setItem(MATPROD_KEY, JSON.stringify(d)); }
+function matprodSaveData(d){
+  localStorage.setItem(MATPROD_KEY, JSON.stringify(d));
+  // Salva su server in background
+  fetch(PROXY+'/matprod-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+    .catch(function(e){console.warn('[MATPROD] Errore salvataggio server:',e.message);});
+}
+async function matprodLoadFromServer(){
+  try{
+    var r=await fetch(PROXY+'/matprod-data');
+    if(!r.ok)return false;
+    var data=await r.json();
+    if(data&&(data.ordini_materiali||data.inv_ids)){
+      localStorage.setItem(MATPROD_KEY,JSON.stringify(data));
+      console.log('[MATPROD] Caricato dal server');
+      return true;
+    }
+  }catch(e){console.warn('[MATPROD] Errore caricamento server:',e.message);}
+  return false;
+}
 
 // Calcola pezzi ordinati a Best Espresso non ancora ricevuti per ogni SKU
 function matprodGetOrdinatiABest(){
@@ -8826,6 +8844,7 @@ async function matprodGetInventarioBestEspresso(){
 
 async function renderMatProd(body){
   body.innerHTML = '<div style="max-width:1100px;margin:0 auto"><div style="text-align:center;padding:30px;color:#aaa">Caricamento...</div></div>';
+  await matprodLoadFromServer();
   var data = matprodLoadData();
   var ordinatiBest = matprodGetOrdinatiABest();
   var fabbisogno = matprodCalcolaFabbisogno(ordinatiBest);
@@ -9174,7 +9193,25 @@ function scatoleLoadData(){
   try{ return JSON.parse(localStorage.getItem(SCATOLE_KEY)||'null') || {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
   catch(e){ return {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
 }
-function scatoleSaveData(d){ localStorage.setItem(SCATOLE_KEY, JSON.stringify(d)); }
+function scatoleSaveData(d){
+  localStorage.setItem(SCATOLE_KEY, JSON.stringify(d));
+  // Salva su server in background
+  fetch(PROXY+'/scatole-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+    .catch(function(e){console.warn('[SCATOLE] Errore salvataggio server:',e.message);});
+}
+async function scatoleLoadFromServer(){
+  try{
+    var r=await fetch(PROXY+'/scatole-data');
+    if(!r.ok)return false;
+    var data=await r.json();
+    if(data&&(data.inventari||data.arrivi||data.ordini_tielle)){
+      localStorage.setItem(SCATOLE_KEY,JSON.stringify(data));
+      console.log('[SCATOLE] Caricato dal server');
+      return true;
+    }
+  }catch(e){console.warn('[SCATOLE] Errore caricamento server:',e.message);}
+  return false;
+}
 
 function scatoleConsumoGiornaliero(sku){
   var p = SCATOLE_PRODOTTI.find(function(x){return x.sku===sku;});
@@ -9277,7 +9314,13 @@ async function scatoleAggiornaShopify(sku, nuovaQty){
 }
 
 function renderScatoleMagazzino(body){
-  var data = scatoleLoadData();
+  // Carica dal server se disponibile, poi renderizza
+  scatoleLoadFromServer().then(function(){
+    var data = scatoleLoadData();
+    _renderScatoleMagazzinoInner(body, data);
+  });
+}
+function _renderScatoleMagazzinoInner(body, data){
   var today = new Date().toISOString().split('T')[0];
 
   body.innerHTML =
