@@ -8169,6 +8169,7 @@ async function openFabbisognoPanel(){
       '<button class="fab-tab" data-tab="fabbisogno" onclick="renderFabTab(\'fabbisogno\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🔮 Piano Fabbisogno</button>'+
       '<button class="fab-tab" data-tab="matprod" onclick="renderFabTab(\'matprod\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🏭 Materiali Produzione</button>'+
       '<button class="fab-tab" data-tab="scatole" onclick="renderFabTab(\'scatole\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">📦 Scatole Magazzino</button>'+
+      '<button class="fab-tab" data-tab="scatbev" onclick="renderFabTab(\'scatbev\')" style="padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:transparent;color:#888">🥤 Scatole Bevande</button>'+
     '</div>'+
     '<button onclick="refreshFabInventory()" style="margin-left:auto;background:#6d28d9;border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna inventario</button>'+
     '<button onclick="fabSyncLocalToServer()" style="background:#fff8f0;border:1px solid #fdba74;border-radius:8px;padding:8px 12px;color:#c2410c;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Carica ordini salvati localmente sul server">☁️ Sync locale→server</button>'+
@@ -8209,6 +8210,7 @@ function renderFabTab(tab){
   else if(tab==='fabbisogno') renderFabPiano(body);
   else if(tab==='matprod') renderMatProd(body);
   else if(tab==='scatole') renderScatoleMagazzino(body);
+  else if(tab==='scatbev') renderScatoleBevande(body);
 }
 
 function renderFabStruttura(body){
@@ -9179,6 +9181,267 @@ window.matprodAnnullaOrdine = function(ordId){
   matprodSaveData(data);
   showToast('Ordine annullato');
   renderFabTab('matprod');
+};
+
+// ══════════════════════════════════════════════════════
+// SCATOLE BEVANDE
+// ══════════════════════════════════════════════════════
+var SCATBEV_PRODOTTI = [
+  {sku_shopify:'CDGE16CAF010', nome:'16 DOLCE GUSTO - DECA',       ratio:4},
+  {sku_shopify:'CDG16SOL229',  nome:'16 DOLCE GUSTO - ORZO',        ratio:4},
+  {sku_shopify:'CDG16SOL230',  nome:'16 DOLCE GUSTO - CAPPUCCINO',  ratio:4},
+  {sku_shopify:'CDG16SOL231',  nome:'16 DOLCE GUSTO - CORTADO',     ratio:4},
+  {sku_shopify:'CDG16SOL232',  nome:'16 DOLCE GUSTO - CIOCCOLATA',  ratio:4},
+  {sku_shopify:'CDG16SOL234',  nome:'16 DOLCE GUSTO - NOCCIOLINO',  ratio:4},
+  {sku_shopify:'CDG16SOL235',  nome:'16 DOLCE GUSTO - LIMONE',      ratio:4},
+  {sku_shopify:'CDG16SOL241',  nome:'16 DOLCE GUSTO - GRANGINSENG', ratio:4}
+];
+var SCATBEV_MATERIALE = {sku:'IMBCMASTER48', nome:'Imballo Master 48'};
+var SCATBEV_KEY = 'yespresso_scatbev_v1';
+
+function scatbevLoadData(){
+  try{ return JSON.parse(localStorage.getItem(SCATBEV_KEY)||'null')||{ordini:[]}; }
+  catch(e){ return {ordini:[]}; }
+}
+var _scatbevSaveQueue = Promise.resolve();
+function scatbevSaveData(d){
+  localStorage.setItem(SCATBEV_KEY, JSON.stringify(d));
+  var snap = JSON.stringify(d);
+  _scatbevSaveQueue = _scatbevSaveQueue.then(function(){
+    return fetch(PROXY+'/scatbev-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snap})
+      .catch(function(e){ console.warn('[SCATBEV] Errore server:',e.message); });
+  });
+}
+async function scatbevLoadFromServer(){
+  try{
+    var r = await fetch(PROXY+'/scatbev-data');
+    if(!r.ok) return false;
+    var data = await r.json();
+    if(data && data.ordini){ localStorage.setItem(SCATBEV_KEY, JSON.stringify(data)); return true; }
+  }catch(e){}
+  return false;
+}
+
+async function renderScatoleBevande(body){
+  body.innerHTML = '<div style="max-width:1100px;margin:0 auto"><div style="text-align:center;padding:30px;color:#aaa">Caricamento...</div></div>';
+  await scatbevLoadFromServer();
+  var data = scatbevLoadData();
+
+  if(!fabSalesCache){
+    body.innerHTML = '<div style="max-width:1100px;margin:0 auto"><div style="text-align:center;padding:60px;color:#aaa;font-size:14px">📊 Prima importa il venduto dalla tab <strong>Analisi Venduto</strong></div></div>';
+    return;
+  }
+
+  // Calcola totali per IMBCMASTER48
+  var totFab30 = 0, totFab60 = 0;
+  var righe = SCATBEV_PRODOTTI.map(function(p){
+    var avgDay = fabDailyAvg(p.sku_shopify, 7);
+    var vend30 = Math.round(avgDay * 30);
+    var inv = fabInventoryCache && fabInventoryCache[p.sku_shopify] != null ? fabInventoryCache[p.sku_shopify] : null;
+    var fab30 = Math.ceil(vend30 / p.ratio);
+    var fab60 = Math.ceil(avgDay * 60 / p.ratio);
+    totFab30 += fab30;
+    totFab60 += fab60;
+    return {p:p, avgDay:avgDay, vend30:vend30, inv:inv, fab30:fab30, fab60:fab60};
+  });
+
+  // Inventario IMBCMASTER48 in YESPRESSO SEDE
+  var invMat = fabInventoryCache && fabInventoryCache[SCATBEV_MATERIALE.sku] != null
+    ? fabInventoryCache[SCATBEV_MATERIALE.sku] : null;
+
+  // Arrivi attesi da ordini aperti
+  var arriviAttesi = (data.ordini||[]).filter(function(o){return o.stato==='attesa'||o.stato==='parziale';})
+    .reduce(function(s,o){ return s + ((o.qty||0) - (o.qty_ricevuta||0)); }, 0);
+
+  var disp30 = invMat != null ? invMat + arriviAttesi - totFab30 : null;
+  var disp60 = invMat != null ? invMat + arriviAttesi - totFab60 : null;
+
+  body.innerHTML = '<div style="max-width:1100px;margin:0 auto">' +
+
+  // Header
+  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">' +
+    '<div>' +
+      '<h2 style="margin:0;font-size:16px;font-weight:700;color:#1a1a2e">🥤 Scatole Bevande — IMBCMASTER48</h2>' +
+      '<div style="font-size:12px;color:#888;margin-top:3px">Fabbisogno calcolato su venduto 7gg proiettato · Inventario sede: YESPRESSO SEDE</div>' +
+    '</div>' +
+    '<button onclick="scatbevNuovoOrdine()" style="background:#0ea5e9;border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Ordine IMBCMASTER48</button>' +
+  '</div>' +
+
+  // Riepilogo materiale
+  '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' +
+    '<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;padding:14px;text-align:center">' +
+      '<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px">Inv. IMBCMASTER48</div>' +
+      '<div style="font-size:24px;font-weight:700;color:#1a73e8">'+(invMat!=null?invMat:'—')+'</div>' +
+    '</div>' +
+    '<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;padding:14px;text-align:center">' +
+      '<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px">Arrivi attesi</div>' +
+      '<div style="font-size:24px;font-weight:700;color:#16a34a">'+(arriviAttesi>0?'+'+arriviAttesi:'—')+'</div>' +
+    '</div>' +
+    '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px;text-align:center">' +
+      '<div style="font-size:11px;font-weight:700;color:#6d28d9;text-transform:uppercase;margin-bottom:6px">Fabbisogno 30gg</div>' +
+      '<div style="font-size:24px;font-weight:700;color:#6d28d9">'+totFab30+'</div>' +
+      (disp30!=null?'<div style="font-size:11px;font-weight:700;color:'+(disp30>=0?'#16a34a':'#e53e3e')+'">disp: '+(disp30>=0?'+':'')+disp30+'</div>':'') +
+    '</div>' +
+    '<div style="background:#fff8f0;border:1px solid #fde68a;border-radius:10px;padding:14px;text-align:center">' +
+      '<div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px">Fabbisogno 60gg</div>' +
+      '<div style="font-size:24px;font-weight:700;color:#92400e">'+totFab60+'</div>' +
+      (disp60!=null?'<div style="font-size:11px;font-weight:700;color:'+(disp60>=0?'#16a34a':'#e53e3e')+'">disp: '+(disp60>=0?'+':'')+disp60+'</div>':'') +
+    '</div>' +
+  '</div>' +
+
+  // Tabella prodotti
+  '<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;overflow:hidden;margin-bottom:20px">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+    '<thead><tr style="background:#f0f9ff;font-size:10px;font-weight:700;color:#0369a1;text-transform:uppercase">' +
+      '<th style="padding:10px 14px;text-align:left">Prodotto</th>' +
+      '<th style="padding:10px 12px;text-align:right">Venduto 7gg</th>' +
+      '<th style="padding:10px 12px;text-align:right">Venduto 30gg (proj.)</th>' +
+      '<th style="padding:10px 12px;text-align:right">Inv. Shopify</th>' +
+      '<th style="padding:10px 12px;text-align:right">IMBCMASTER48 × 30gg</th>' +
+      '<th style="padding:10px 12px;text-align:right">IMBCMASTER48 × 60gg</th>' +
+    '</tr></thead><tbody>' +
+    righe.map(function(r,i){
+      var vend7 = fabSalesCache && fabSalesCache[r.p.sku_shopify] ? fabSalesCache[r.p.sku_shopify] : 0;
+      return '<tr style="border-top:1px solid #f4f5f7;'+(i%2===1?'background:#fafbff':'')+'">' +
+        '<td style="padding:9px 14px;font-weight:600;color:#1a1a2e">'+r.p.nome+
+          '<div style="font-size:10px;color:#888">'+r.p.sku_shopify+' · ogni '+r.p.ratio+' → 1 scatola</div></td>' +
+        '<td style="padding:9px 12px;text-align:right;color:#1a73e8;font-weight:700">'+vend7+'</td>' +
+        '<td style="padding:9px 12px;text-align:right;color:#555;font-weight:600">~'+r.vend30+'</td>' +
+        '<td style="padding:9px 12px;text-align:right;color:'+(r.inv!=null?(r.inv<10?'#e53e3e':'#16a34a'):'#aaa')+';font-weight:700">'+(r.inv!=null?r.inv:'—')+'</td>' +
+        '<td style="padding:9px 12px;text-align:right;font-weight:700;color:#6d28d9">'+r.fab30+'</td>' +
+        '<td style="padding:9px 12px;text-align:right;font-weight:700;color:#92400e">'+r.fab60+'</td>' +
+      '</tr>';
+    }).join('') +
+    // Totale
+    '<tr style="border-top:2px solid #e8eaf0;background:#f8f9fc;font-weight:700">' +
+      '<td style="padding:9px 14px;color:#1a1a2e">TOTALE IMBCMASTER48</td>' +
+      '<td colspan="3"></td>' +
+      '<td style="padding:9px 12px;text-align:right;font-size:15px;color:#6d28d9">'+totFab30+'</td>' +
+      '<td style="padding:9px 12px;text-align:right;font-size:15px;color:#92400e">'+totFab60+'</td>' +
+    '</tr>' +
+    '</tbody></table>' +
+  '</div>' +
+
+  // Ordini aperti
+  '<div id="scatbev-ordini-section">'+renderScatbevOrdiniSection(data)+'</div>' +
+
+  '</div>';
+}
+
+function renderScatbevOrdiniSection(data){
+  var ordini = (data.ordini||[]).filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+    '<div style="font-size:14px;font-weight:700;color:#1a1a2e">📋 Ordini IMBCMASTER48 aperti</div>' +
+    '<button onclick="scatbevNuovoOrdine()" style="background:#0ea5e9;border:none;color:#fff;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuovo ordine</button>' +
+  '</div>';
+  if(!ordini.length){
+    return html + '<div style="color:#aaa;font-size:13px;padding:10px 0">Nessun ordine aperto.</div>';
+  }
+  var statoC={attesa:'#1a73e8',parziale:'#e67e22'};
+  var statoL={attesa:'⏳ In attesa',parziale:'📦 Parziale'};
+  html += '<div style="display:flex;flex-direction:column;gap:8px">';
+  ordini.forEach(function(ord){
+    var res = (ord.qty||0) - (ord.qty_ricevuta||0);
+    html += '<div style="background:#fff;border:1px solid #bae6fd;border-radius:10px;padding:10px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:12px">' +
+      '<span style="font-weight:700;color:#0369a1">'+SCATBEV_MATERIALE.nome+'</span>' +
+      '<span style="font-size:13px;color:#6d28d9;font-weight:700">'+ord.qty+' pz</span>' +
+      (ord.qty_ricevuta?'<span style="font-size:12px;color:#16a34a">ric: '+ord.qty_ricevuta+'</span>':'') +
+      '<span style="font-size:12px;color:#888">del '+ord.data_ordine+'</span>' +
+      (ord.data_consegna?'<span style="font-size:12px;color:#6d28d9">cons: '+_fmtDataOrd(ord.data_consegna)+'</span>':'') +
+      '<span style="background:'+(statoC[ord.stato]||'#888')+'22;color:'+(statoC[ord.stato]||'#888')+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">'+(statoL[ord.stato]||ord.stato)+'</span>' +
+      '<div style="margin-left:auto;display:flex;gap:6px">' +
+        '<button onclick="scatbevRiceviOrdine(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📥 Ricevi</button>' +
+        '<button onclick="scatbevAnnullaOrdine(\''+ord.id+'\')" style="background:#fff5f5;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕</button>' +
+      '</div>' +
+    '</div>';
+  });
+  return html + '</div>';
+}
+
+window.scatbevNuovoOrdine = function(){
+  var today = new Date().toISOString().split('T')[0];
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  modal.innerHTML = '<div style="background:#fff;border-radius:12px;width:440px;max-width:98vw;box-shadow:0 8px 40px rgba(0,0,0,.25)">' +
+    '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#0369a1">+ Ordine IMBCMASTER48</div>' +
+    '<div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">' +
+      '<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Quantità (pz)</label>' +
+        '<input type="number" id="scatbev-qty" min="1" placeholder="es. 500" style="width:100%;padding:9px 12px;border:1.5px solid #bae6fd;border-radius:8px;font-size:15px;font-weight:700;font-family:inherit;outline:none;box-sizing:border-box"></div>' +
+      '<div style="display:flex;gap:12px">' +
+        '<div style="flex:1"><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Data ordine</label>' +
+          '<input type="date" id="scatbev-data" value="'+today+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box"></div>' +
+        '<div style="flex:1"><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Consegna prevista</label>' +
+          '<input type="date" id="scatbev-cons" style="width:100%;padding:8px 10px;border:1.5px solid #bae6fd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box"></div>' +
+      '</div>' +
+      '<div><label style="font-size:12px;color:#888">Note</label>' +
+        '<input type="text" id="scatbev-note" placeholder="opzionale" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e0e4ea;border-radius:7px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box"></div>' +
+    '</div>' +
+    '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button id="sb-cancel" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>' +
+      '<button id="sb-save" style="padding:8px 20px;border:none;border-radius:8px;background:#0ea5e9;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Crea ordine</button>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(modal);
+  modal.querySelector('#sb-cancel').onclick = function(){modal.remove();};
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#sb-save').onclick = function(){
+    var qty = parseInt(document.getElementById('scatbev-qty').value||'');
+    var data_ord = document.getElementById('scatbev-data').value;
+    var data_cons = document.getElementById('scatbev-cons').value;
+    var note = document.getElementById('scatbev-note').value.trim();
+    if(!qty||qty<=0){showToast('Inserisci una quantità','error');return;}
+    if(!data_ord){showToast('Inserisci la data ordine','error');return;}
+    var d = scatbevLoadData();
+    d.ordini = d.ordini||[];
+    d.ordini.push({id:'sb_'+Date.now(), qty:qty, qty_ricevuta:0, data_ordine:data_ord, data_consegna:data_cons, stato:'attesa', note:note});
+    scatbevSaveData(d);
+    modal.remove();
+    showToast('✅ Ordine IMBCMASTER48 creato');
+    renderFabTab('scatbev');
+  };
+};
+
+window.scatbevRiceviOrdine = function(ordId){
+  var d = scatbevLoadData();
+  var ord = (d.ordini||[]).find(function(o){return o.id===ordId;});
+  if(!ord) return;
+  var res = (ord.qty||0)-(ord.qty_ricevuta||0);
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  modal.innerHTML = '<div style="background:#fff;border-radius:12px;width:400px;max-width:98vw;box-shadow:0 8px 40px rgba(0,0,0,.25)">' +
+    '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;font-size:15px;font-weight:700;color:#16a34a">📥 Ricevi IMBCMASTER48</div>' +
+    '<div style="padding:16px 20px">' +
+      '<div style="font-size:13px;color:#555;margin-bottom:12px">Ordinato: <strong>'+ord.qty+'</strong> · Già ricevuto: <strong>'+(ord.qty_ricevuta||0)+'</strong> · Residuo: <strong>'+res+'</strong></div>' +
+      '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Quantità ricevuta</label>' +
+      '<input type="number" id="sb-rcv-qty" min="1" max="'+res+'" value="'+res+'" style="width:100%;padding:9px 12px;border:1.5px solid #d1fae5;border-radius:8px;font-size:15px;font-weight:700;font-family:inherit;outline:none;box-sizing:border-box">' +
+    '</div>' +
+    '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button id="sb-rcv-cancel" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>' +
+      '<button id="sb-rcv-save" style="padding:8px 20px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Conferma</button>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(modal);
+  modal.querySelector('#sb-rcv-cancel').onclick = function(){modal.remove();};
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#sb-rcv-save').onclick = function(){
+    var val = parseInt(document.getElementById('sb-rcv-qty').value||'0')||0;
+    if(val<=0){showToast('Inserisci una quantità','error');return;}
+    ord.qty_ricevuta = (ord.qty_ricevuta||0)+val;
+    ord.stato = ord.qty_ricevuta>=ord.qty?'ricevuto':'parziale';
+    d.ordini = (d.ordini||[]).map(function(o){return o.id===ordId?ord:o;});
+    scatbevSaveData(d);
+    modal.remove();
+    showToast('✅ Ricezione registrata');
+    renderFabTab('scatbev');
+  };
+};
+
+window.scatbevAnnullaOrdine = function(ordId){
+  if(!confirm('Annullare questo ordine?')) return;
+  var d = scatbevLoadData();
+  d.ordini = (d.ordini||[]).map(function(o){return o.id===ordId?Object.assign({},o,{stato:'annullato'}):o;});
+  scatbevSaveData(d);
+  renderFabTab('scatbev');
 };
 
 // ══════════════════════════════════════════════════════

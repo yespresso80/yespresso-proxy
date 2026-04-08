@@ -867,6 +867,48 @@ async function brtRestPost(path, body) {
   }
 
 
+
+  // ── SCATOLE BEVANDE ──────────────────────────────────────────
+  const GH_SCATBEV_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/scatbev-data.json';
+  async function ghScatbevGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: null, sha: null };
+    const r = await fetch(GH_SCATBEV_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (r.status === 404) return { data: null, sha: null };
+    const j = await r.json();
+    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+  }
+  async function ghScatbevSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update scatbev-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_SCATBEV_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  if (req.url === '/scatbev-data') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(); return; }
+    if (req.method === 'GET') {
+      try { const { data } = await ghScatbevGet(); res.writeHead(200,CORS); res.end(JSON.stringify(data||null)); }
+      catch(e) { res.writeHead(200,CORS); res.end(JSON.stringify(null)); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data',c=>chunks.push(c));
+      req.on('end', async function(){
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString());
+          let retries = 3;
+          while (retries-- > 0) {
+            try { const { sha } = await ghScatbevGet(); await ghScatbevSave(parsed, sha); break; }
+            catch(e2) { if (retries===0) throw e2; await new Promise(r=>setTimeout(r,300)); }
+          }
+          res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
+        } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+      }); return;
+    }
+  }
+
   // ── SCATOLE MAGAZZINO ─────────────────────────────────────────
   const GH_SCATOLE_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/scatole-data.json';
   async function ghScatoleGet() {
