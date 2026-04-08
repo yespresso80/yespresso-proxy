@@ -8769,38 +8769,23 @@ async function matprodGetInventarioBestEspresso(){
   var inv = {};
   var invIds = data.inv_ids || {};
 
-  // 1. Trova inventory_item_id per ogni SKU — forza sempre refresh se mancanti
-  var needFetch = MATPROD_MATERIALI.filter(function(m){ return !invIds[m.sku]; });
-  if(needFetch.length){
-    try{
-      // Cerca per SKU direttamente
-      for(var ni=0; ni<needFetch.length; ni++){
-        var mat = needFetch[ni];
-        try{
-          var vd = await shopifyGet('variants.json?sku='+encodeURIComponent(mat.sku)+'&limit=5');
-          if(vd && vd.variants && vd.variants.length){
-            invIds[mat.sku] = vd.variants[0].inventory_item_id;
-          }
-        }catch(e2){}
-      }
-      // Fallback: scansione paginata se ancora mancanti
-      var stillMissing = MATPROD_MATERIALI.filter(function(m){ return !invIds[m.sku]; });
-      if(stillMissing.length){
-        var page = 'variants.json?limit=250';
-        var maxPages = 20;
-        while(page && maxPages-- > 0){
-          var d = await shopifyGet(page);
-          var variants = d && d.variants ? d.variants : [];
-          variants.forEach(function(v){
-            var m = MATPROD_MATERIALI.find(function(x){ return x.sku === v.sku; });
-            if(m && !invIds[m.sku]) invIds[m.sku] = v.inventory_item_id;
-          });
-          page = d._nextPageInfo ? 'variants.json?limit=250&page_info='+d._nextPageInfo : null;
-          if(MATPROD_MATERIALI.every(function(m){return invIds[m.sku];})) break;
-        }
-      }
-    }catch(e){ console.warn('MatProd variants:', e.message); }
-  }
+  // 1. Trova inventory_item_id per ogni SKU — scansione paginata completa (non usare cache corrotta)
+  invIds = {}; // forza sempre re-fetch per evitare ID sbagliati in cache
+  try{
+    var page = 'variants.json?limit=250';
+    var maxPages = 30;
+    while(page && maxPages-- > 0){
+      var d = await shopifyGet(page);
+      var variants = d && d.variants ? d.variants : [];
+      variants.forEach(function(v){
+        var m = MATPROD_MATERIALI.find(function(x){ return x.sku === v.sku; });
+        if(m) invIds[m.sku] = v.inventory_item_id;
+      });
+      if(MATPROD_MATERIALI.every(function(m){return invIds[m.sku];})) break;
+      page = d._nextPageInfo ? 'variants.json?limit=250&page_info='+d._nextPageInfo : null;
+    }
+    console.log('[MatProd] inventory_item_ids trovati:', JSON.stringify(invIds));
+  }catch(e){ console.warn('MatProd variants:', e.message); }
 
   // 2. Trova SEMPRE l'ID della location BEST ESPRESSO (non usare cache per evitare ID sbagliati)
   var bestLocId = null;
