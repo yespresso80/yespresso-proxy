@@ -11515,41 +11515,45 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
   var html='';
   if(openOrds.length){
     var weekMap={};
+    var fmt=function(d){return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});};
+    // Raggruppa per settimana usando data_cons_riga per ogni riga
     openOrds.forEach(function(ord){
-      var dc=parseDataLocale(ord.data_consegna_prevista);
-      var diff=dc?Math.round((dc-today)/86400000):-1;
-      var wi=diff<0?-1:Math.floor(diff/7);
-      var wk=String(wi);
-      if(!weekMap[wk]){
-        var d0=new Date(today.getTime()+Math.max(0,wi)*7*86400000);
-        var d1=new Date(today.getTime()+(Math.max(0,wi)*7+6)*86400000);
-        var fmt=function(d){return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});};
-        weekMap[wk]={wi:wi,ordini:[],
-          label:wi<0?'⚠️ Scaduto — sollecitare subito':wi===0?'🚨 Questa settimana ('+fmt(d0)+' - '+fmt(d1)+')':'Sett. '+(wi+1)+' — '+fmt(d0)+' / '+fmt(d1),
-          bc:wi<0?'#dc2626':wi===0?'#e67e22':'#6d28d9',
-          bg:wi<0?'#fff5f5':wi===0?'#fff8f0':'#faf8ff'};
-      }
-      weekMap[wk].ordini.push(ord);
+      ord.righe.forEach(function(r){
+        var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+        var dc=dcStr?parseDataLocale(dcStr):null;
+        var diff=dc?Math.round((dc-today)/86400000):-1;
+        var wi=diff<0?-1:Math.floor(diff/7);
+        var wk=String(wi);
+        if(!weekMap[wk]){
+          var d0=new Date(today.getTime()+Math.max(0,wi)*7*86400000);
+          var d1=new Date(today.getTime()+(Math.max(0,wi)*7+6)*86400000);
+          weekMap[wk]={wi:wi,ordiniSet:[],righe:[],
+            label:wi<0?'⚠️ Scaduto — sollecitare subito':wi===0?'🚨 Questa settimana ('+fmt(d0)+' - '+fmt(d1)+')':'Sett. '+(wi+1)+' — '+fmt(d0)+' / '+fmt(d1),
+            bc:wi<0?'#dc2626':wi===0?'#e67e22':'#6d28d9',
+            bg:wi<0?'#fff5f5':wi===0?'#fff8f0':'#faf8ff'};
+        }
+        weekMap[wk].righe.push({r:r,ord:ord});
+        if(weekMap[wk].ordiniSet.indexOf(ord.id)<0) weekMap[wk].ordiniSet.push(ord.id);
+      });
     });
     var wks=Object.keys(weekMap).map(Number).sort(function(a,b){return a-b;});
     html+='<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">';
     wks.forEach(function(wi){
       var wg=weekMap[String(wi)];
       var agg={};
-      wg.ordini.forEach(function(ord){
-        ord.righe.forEach(function(r){
-          if(!agg[r.sku_shopify]) agg[r.sku_shopify]={sku:r.sku,sku_shopify:r.sku_shopify,ord:0,ric:0,res:0};
-          agg[r.sku_shopify].ord+=r.qty_ordinata||0;
-          agg[r.sku_shopify].ric+=r.qty_ricevuta||0;
-          agg[r.sku_shopify].res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
-        });
+      wg.righe.forEach(function(item){
+        var r=item.r;
+        if(!agg[r.sku_shopify]) agg[r.sku_shopify]={sku:r.sku,sku_shopify:r.sku_shopify,ord:0,ric:0,res:0};
+        agg[r.sku_shopify].ord+=r.qty_ordinata||0;
+        agg[r.sku_shopify].ric+=r.qty_ricevuta||0;
+        agg[r.sku_shopify].res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
       });
       var arts=Object.values(agg).filter(function(a){return a.res>0;});
       if(!arts.length) return;
       html+='<div style="background:'+wg.bg+';border:2px solid '+wg.bc+';border-radius:10px;overflow:hidden">'+
         '<div style="padding:8px 14px;background:'+wg.bc+';display:flex;align-items:center;justify-content:space-between">'+
           '<span style="font-size:13px;font-weight:700;color:#fff">'+wg.label+'</span>'+
-          '<span style="font-size:11px;color:rgba(255,255,255,.8)">'+wg.ordini.length+' ordine'+(wg.ordini.length>1?'i':'')+'</span>'+
+          '<span style="font-size:11px;color:rgba(255,255,255,.8)">'+wg.ordiniSet.length+' ordine'+(wg.ordiniSet.length>1?'i':'')+'</span>'+
         '</div>'+
         '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px;width:100%;min-width:500px">'+
         '<thead><tr style="background:rgba(0,0,0,.04);font-size:10px;color:#888;font-weight:700;text-transform:uppercase">'+
@@ -11568,9 +11572,13 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
       });
       html+='<tr style="border-top:2px solid rgba(0,0,0,.08)"><td colspan="4" style="padding:8px 14px">'+
         '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:11px;color:#888;font-weight:600">Ordini:</span>';
-      wg.ordini.forEach(function(ord){
+      wg.ordiniSet.forEach(function(ordId){
+        var ord=fabOrdini.find(function(o){return o.id===ordId;}); if(!ord) return;
         var nArt=ord.righe.filter(function(r){return r.qty_ordinata>0;}).length;
-        html+='<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+ord.fornitore+' · '+nArt+' art. · '+_fmtDataOrd(ord.data_consegna_prevista)+'</span>'+
+        // Mostra date distinte per riga
+        var dateRighe=[...new Set(ord.righe.filter(function(r){return r.qty_ordinata>0;}).map(function(r){return r.data_cons_riga||ord.data_consegna_prevista;}))].filter(Boolean).sort();
+        var dataLabel=dateRighe.map(function(d){return _fmtDataOrd(d);}).join(', ')||'—';
+        html+='<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+ord.fornitore+' · '+nArt+' art. · '+dataLabel+'</span>'+
           '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✏️ Modifica</button>'+
           '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="font-size:11px;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✕ Elimina</button>';
       });
@@ -12043,41 +12051,45 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
   var html='';
   if(openOrds.length){
     var weekMap={};
+    var fmt=function(d){return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});};
+    // Raggruppa per settimana usando data_cons_riga per ogni riga
     openOrds.forEach(function(ord){
-      var dc=parseDataLocale(ord.data_consegna_prevista);
-      var diff=dc?Math.round((dc-today)/86400000):-1;
-      var wi=diff<0?-1:Math.floor(diff/7);
-      var wk=String(wi);
-      if(!weekMap[wk]){
-        var d0=new Date(today.getTime()+Math.max(0,wi)*7*86400000);
-        var d1=new Date(today.getTime()+(Math.max(0,wi)*7+6)*86400000);
-        var fmt=function(d){return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});};
-        weekMap[wk]={wi:wi,ordini:[],
-          label:wi<0?'⚠️ Scaduto — sollecitare subito':wi===0?'🚨 Questa settimana ('+fmt(d0)+' - '+fmt(d1)+')':'Sett. '+(wi+1)+' — '+fmt(d0)+' / '+fmt(d1),
-          bc:wi<0?'#dc2626':wi===0?'#e67e22':'#6d28d9',
-          bg:wi<0?'#fff5f5':wi===0?'#fff8f0':'#faf8ff'};
-      }
-      weekMap[wk].ordini.push(ord);
+      ord.righe.forEach(function(r){
+        var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+        var dc=dcStr?parseDataLocale(dcStr):null;
+        var diff=dc?Math.round((dc-today)/86400000):-1;
+        var wi=diff<0?-1:Math.floor(diff/7);
+        var wk=String(wi);
+        if(!weekMap[wk]){
+          var d0=new Date(today.getTime()+Math.max(0,wi)*7*86400000);
+          var d1=new Date(today.getTime()+(Math.max(0,wi)*7+6)*86400000);
+          weekMap[wk]={wi:wi,ordiniSet:[],righe:[],
+            label:wi<0?'⚠️ Scaduto — sollecitare subito':wi===0?'🚨 Questa settimana ('+fmt(d0)+' - '+fmt(d1)+')':'Sett. '+(wi+1)+' — '+fmt(d0)+' / '+fmt(d1),
+            bc:wi<0?'#dc2626':wi===0?'#e67e22':'#6d28d9',
+            bg:wi<0?'#fff5f5':wi===0?'#fff8f0':'#faf8ff'};
+        }
+        weekMap[wk].righe.push({r:r,ord:ord});
+        if(weekMap[wk].ordiniSet.indexOf(ord.id)<0) weekMap[wk].ordiniSet.push(ord.id);
+      });
     });
     var wks=Object.keys(weekMap).map(Number).sort(function(a,b){return a-b;});
     html+='<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">';
     wks.forEach(function(wi){
       var wg=weekMap[String(wi)];
       var agg={};
-      wg.ordini.forEach(function(ord){
-        ord.righe.forEach(function(r){
-          if(!agg[r.sku_shopify]) agg[r.sku_shopify]={sku:r.sku,sku_shopify:r.sku_shopify,ord:0,ric:0,res:0};
-          agg[r.sku_shopify].ord+=r.qty_ordinata||0;
-          agg[r.sku_shopify].ric+=r.qty_ricevuta||0;
-          agg[r.sku_shopify].res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
-        });
+      wg.righe.forEach(function(item){
+        var r=item.r;
+        if(!agg[r.sku_shopify]) agg[r.sku_shopify]={sku:r.sku,sku_shopify:r.sku_shopify,ord:0,ric:0,res:0};
+        agg[r.sku_shopify].ord+=r.qty_ordinata||0;
+        agg[r.sku_shopify].ric+=r.qty_ricevuta||0;
+        agg[r.sku_shopify].res+=(r.qty_ordinata||0)-(r.qty_ricevuta||0);
       });
       var arts=Object.values(agg).filter(function(a){return a.res>0;});
       if(!arts.length) return;
       html+='<div style="background:'+wg.bg+';border:2px solid '+wg.bc+';border-radius:10px;overflow:hidden">'+
         '<div style="padding:8px 14px;background:'+wg.bc+';display:flex;align-items:center;justify-content:space-between">'+
           '<span style="font-size:13px;font-weight:700;color:#fff">'+wg.label+'</span>'+
-          '<span style="font-size:11px;color:rgba(255,255,255,.8)">'+wg.ordini.length+' ordine'+(wg.ordini.length>1?'i':'')+'</span>'+
+          '<span style="font-size:11px;color:rgba(255,255,255,.8)">'+wg.ordiniSet.length+' ordine'+(wg.ordiniSet.length>1?'i':'')+'</span>'+
         '</div>'+
         '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px;width:100%;min-width:500px">'+
         '<thead><tr style="background:rgba(0,0,0,.04);font-size:10px;color:#888;font-weight:700;text-transform:uppercase">'+
@@ -12096,9 +12108,13 @@ function _renderOrdFornLista(openOrds,closedOrds,today,parseDataLocale){
       });
       html+='<tr style="border-top:2px solid rgba(0,0,0,.08)"><td colspan="4" style="padding:8px 14px">'+
         '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:11px;color:#888;font-weight:600">Ordini:</span>';
-      wg.ordini.forEach(function(ord){
+      wg.ordiniSet.forEach(function(ordId){
+        var ord=fabOrdini.find(function(o){return o.id===ordId;}); if(!ord) return;
         var nArt=ord.righe.filter(function(r){return r.qty_ordinata>0;}).length;
-        html+='<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+ord.fornitore+' · '+nArt+' art. · '+_fmtDataOrd(ord.data_consegna_prevista)+'</span>'+
+        // Mostra date distinte per riga
+        var dateRighe=[...new Set(ord.righe.filter(function(r){return r.qty_ordinata>0;}).map(function(r){return r.data_cons_riga||ord.data_consegna_prevista;}))].filter(Boolean).sort();
+        var dataLabel=dateRighe.map(function(d){return _fmtDataOrd(d);}).join(', ')||'—';
+        html+='<span style="font-size:11px;color:#555;background:#fff;border:1px solid #e0e4ea;border-radius:4px;padding:3px 8px">'+ord.fornitore+' · '+nArt+' art. · '+dataLabel+'</span>'+
           '<button onclick="fabEditOrdine(\''+ord.id+'\')" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✏️ Modifica</button>'+
           '<button onclick="fabDeleteOrdine(\''+ord.id+'\')" style="font-size:11px;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:600">✕ Elimina</button>';
       });
