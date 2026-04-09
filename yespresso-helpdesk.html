@@ -11431,18 +11431,22 @@ function _renderOrdFornTabella(openOrds,today,parseDataLocale){
   if(!openOrds.length) return '<div style="text-align:center;padding:40px;color:#aaa">Nessun ordine aperto.</div>';
   var weekSet={};
   openOrds.forEach(function(ord){
-    var dc=parseDataLocale(ord.data_consegna_prevista);
-    var diff=dc?Math.round((dc-today)/86400000):0;
-    weekSet[Math.max(0,Math.floor(diff/7))]=true;
+    ord.righe.forEach(function(r){
+      var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+      var dc=dcStr?parseDataLocale(dcStr):null;
+      var diff=dc?Math.round((dc-today)/86400000):0;
+      weekSet[Math.max(0,Math.floor(diff/7))]=true;
+    });
   });
   var weeks=Object.keys(weekSet).map(Number).sort(function(a,b){return a-b;});
   var prodData={};
   fabProducts.forEach(function(p){prodData[p.sku_shopify]={};});
   openOrds.forEach(function(ord){
-    var dc=parseDataLocale(ord.data_consegna_prevista);
-    var diff=dc?Math.round((dc-today)/86400000):0;
-    var wi=Math.max(0,Math.floor(diff/7));
     ord.righe.forEach(function(r){
+      var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+      var dc=dcStr?parseDataLocale(dcStr):null;
+      var diff=dc?Math.round((dc-today)/86400000):0;
+      var wi=Math.max(0,Math.floor(diff/7));
       if(!prodData[r.sku_shopify]) prodData[r.sku_shopify]={};
       if(!prodData[r.sku_shopify][wi]) prodData[r.sku_shopify][wi]={ord:0,ric:0,res:0};
       prodData[r.sku_shopify][wi].ord+=r.qty_ordinata||0;
@@ -11955,18 +11959,22 @@ function _renderOrdFornTabella(openOrds,today,parseDataLocale){
   if(!openOrds.length) return '<div style="text-align:center;padding:40px;color:#aaa">Nessun ordine aperto.</div>';
   var weekSet={};
   openOrds.forEach(function(ord){
-    var dc=parseDataLocale(ord.data_consegna_prevista);
-    var diff=dc?Math.round((dc-today)/86400000):0;
-    weekSet[Math.max(0,Math.floor(diff/7))]=true;
+    ord.righe.forEach(function(r){
+      var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+      var dc=dcStr?parseDataLocale(dcStr):null;
+      var diff=dc?Math.round((dc-today)/86400000):0;
+      weekSet[Math.max(0,Math.floor(diff/7))]=true;
+    });
   });
   var weeks=Object.keys(weekSet).map(Number).sort(function(a,b){return a-b;});
   var prodData={};
   fabProducts.forEach(function(p){prodData[p.sku_shopify]={};});
   openOrds.forEach(function(ord){
-    var dc=parseDataLocale(ord.data_consegna_prevista);
-    var diff=dc?Math.round((dc-today)/86400000):0;
-    var wi=Math.max(0,Math.floor(diff/7));
     ord.righe.forEach(function(r){
+      var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+      var dc=dcStr?parseDataLocale(dcStr):null;
+      var diff=dc?Math.round((dc-today)/86400000):0;
+      var wi=Math.max(0,Math.floor(diff/7));
       if(!prodData[r.sku_shopify]) prodData[r.sku_shopify]={};
       if(!prodData[r.sku_shopify][wi]) prodData[r.sku_shopify][wi]={ord:0,ric:0,res:0};
       prodData[r.sku_shopify][wi].ord+=r.qty_ordinata||0;
