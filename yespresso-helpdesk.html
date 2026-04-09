@@ -7218,7 +7218,7 @@ function openBrtPickup(orderId){
           payerType:"Ordering",
           collectionTime:"14:00",
           weightKG:1,
-          requestRef:data.orderName||String(orderId),
+          requestRef:(data.orderName||String(orderId)).slice(0,35),
           alerts:[{type:"CONFIRM",mail:alertEmail}]
         }
       }];
