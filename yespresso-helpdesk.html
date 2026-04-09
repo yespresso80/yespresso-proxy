@@ -10221,16 +10221,20 @@ function renderFabPiano(body){
     var arriviGia={};
     fabOrdini.forEach(function(ord){
       if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
-      var dc=parseDataLocale(ord.data_consegna_prevista);
-      if(!dc) return;
-      var diffDays=Math.round((dc-today)/86400000); // giorni esatti in locale
-      if(diffDays<0) diffDays=0; // già scaduto → conta questa settimana
-      var wi=Math.floor(diffDays/7); // settimana 0=entro 7gg, 1=entro 14gg, ecc.
-      if(wi>HORIZON_WEEKS+LEAD_WEEKS) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
-        if(res>0) arriviGia[wi]=(arriviGia[wi]||0)+res;
+        if(res<=0) return;
+        // Usa data_cons_riga se presente, altrimenti data_consegna_prevista dell'ordine
+        var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+        if(!dcStr) return;
+        var dc=parseDataLocale(dcStr);
+        if(!dc) return;
+        var diffDays=Math.round((dc-today)/86400000);
+        if(diffDays<0) diffDays=0;
+        var wi=Math.floor(diffDays/7);
+        if(wi>HORIZON_WEEKS+LEAD_WEEKS) return;
+        arriviGia[wi]=(arriviGia[wi]||0)+res;
       });
     });
 
@@ -10635,16 +10639,18 @@ function fabDebugRun(skuShopify){
   var nOrd=0;
   fabOrdini.forEach(function(ord){
     if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
-    var dc=parseDataLocale(ord.data_consegna_prevista);
-    if(!dc) return;
-    var diff=Math.round((dc-today)/86400000);
-    if(diff<0) diff=0;
-    var wi=Math.floor(diff/7);
-    if(wi>HORIZON_WEEKS+LEAD_WEEKS) return;
     ord.righe.forEach(function(r){
       if(r.sku_shopify!==p.sku_shopify) return;
       var res=r.qty_ordinata-(r.qty_ricevuta||0);
       if(res<=0) return;
+      var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+      if(!dcStr) return;
+      var dc=parseDataLocale(dcStr);
+      if(!dc) return;
+      var diff=Math.round((dc-today)/86400000);
+      if(diff<0) diff=0;
+      var wi=Math.floor(diff/7);
+      if(wi>HORIZON_WEEKS+LEAD_WEEKS) return;
       arriviGia[wi]=(arriviGia[wi]||0)+res;
       lines.push('  S.'+wi+' ('+fmtD(dc)+'): +'+res+' pz  ['+ord.fornitore+' del '+ord.data_ordine+']');
       nOrd++;
