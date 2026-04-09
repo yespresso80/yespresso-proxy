@@ -7154,9 +7154,9 @@ function openBrtPickup(orderId){
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">TELEFONO</div>'+
         '<input id="brt-telefono" value="'+(data.phone||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
-      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
-        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">EMAIL AVVISO</div>'+
-        '<div style="font-size:13px;font-weight:600;color:#1a1a2e">'+alertEmail+'</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">EMAIL AVVISO</div>'+
+        '<input id="brt-email" value="'+alertEmail.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
@@ -7201,6 +7201,7 @@ function openBrtPickup(orderId){
       var phoneVal=modal.querySelector('#brt-telefono').value.trim()||data.phone||"0200000000";
       var ordineVal=modal.querySelector('#brt-ordine').value.trim()||(data.orderName||String(orderId));
       var indirizzoVal=modal.querySelector('#brt-indirizzo').value.trim()||addrStr;
+      var emailVal=modal.querySelector('#brt-email').value.trim()||alertEmail;
       var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
       var payload=[{
         requestInfos:{parcelCount:1,collectionDate:collDate},
@@ -7222,7 +7223,7 @@ function openBrtPickup(orderId){
           collectionTime:"14:00",
           weightKG:1,
           requestRef:ordineVal.slice(0,35),
-          alerts:[{type:"CONFIRM",mail:alertEmail}]
+          alerts:[{type:"CONFIRM",mail:emailVal}]
         }
       }];
       var res=await proxyFetch(PROXY+"/brt-orm/api/geodata/v410/colreqs",{
