@@ -7136,23 +7136,23 @@ function openBrtPickup(orderId){
   '</div>'+
   '<div style="overflow-y:auto;padding:0 24px;flex:1;display:flex;flex-direction:column;gap:10px;margin-bottom:12px">'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
-        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">NOMINATIVO</div>'+
-        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.name||"N/D")+'</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">NOMINATIVO</div>'+
+        '<input id="brt-nominativo" value="'+(data.name||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
       '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">DATA RITIRO</div>'+
         '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+collDate+'</div>'+
       '</div>'+
     '</div>'+
-    '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
-      '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">INDIRIZZO RITIRO</div>'+
-      '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+addrStr+'</div>'+
+    '<div>'+
+      '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">INDIRIZZO RITIRO</div>'+
+      '<input id="brt-indirizzo" value="'+addrStr.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
-        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">TELEFONO</div>'+
-        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.phone||"N/D")+'</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">TELEFONO</div>'+
+        '<input id="brt-telefono" value="'+(data.phone||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
       '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">EMAIL AVVISO</div>'+
@@ -7164,9 +7164,9 @@ function openBrtPickup(orderId){
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">ORA RITIRO</div>'+
         '<div style="font-size:14px;font-weight:600;color:#1a1a2e">14:00</div>'+
       '</div>'+
-      '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
-        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">ORDINE</div>'+
-        '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+(data.orderName||orderId)+'</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">ORDINE</div>'+
+        '<input id="brt-ordine" value="'+(data.orderName||String(orderId)).replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
     '</div>'+
     '<div style="margin-top:10px">'+
@@ -7197,7 +7197,10 @@ function openBrtPickup(orderId){
       if(!motivo){showToast("Seleziona una motivazione","error");this.disabled=false;this.textContent="&#128230; Prenota Ritiro";return;}
     statusEl.textContent="Invio richiesta a BRT...";
     try{
-      var fullName=data.name||"Cliente";
+      var fullName=modal.querySelector('#brt-nominativo').value.trim()||data.name||"Cliente";
+      var phoneVal=modal.querySelector('#brt-telefono').value.trim()||data.phone||"0200000000";
+      var ordineVal=modal.querySelector('#brt-ordine').value.trim()||(data.orderName||String(orderId));
+      var indirizzoVal=modal.querySelector('#brt-indirizzo').value.trim()||addrStr;
       var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
       var payload=[{
         requestInfos:{parcelCount:1,collectionDate:collDate},
@@ -7207,8 +7210,8 @@ function openBrtPickup(orderId){
           {type:"RQ",customerInfos:{custAccNumber:"1791201000"}},
           {
             type:"SE",
-            address:{compName:fullName,state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:data.addr||""},
-            contact:{contactDetails:{contactPerson:fullName,phone:data.phone||"0200000000"}}
+            address:{compName:fullName,state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:indirizzoVal},
+            contact:{contactDetails:{contactPerson:fullName,phone:phoneVal}}
           },
           {type:"RE",customerInfos:{custAccNumber:"1791201000"}}
         ],
@@ -7218,7 +7221,7 @@ function openBrtPickup(orderId){
           payerType:"Ordering",
           collectionTime:"14:00",
           weightKG:1,
-          requestRef:(data.orderName||String(orderId)).slice(0,35),
+          requestRef:ordineVal.slice(0,35),
           alerts:[{type:"CONFIRM",mail:alertEmail}]
         }
       }];
@@ -7233,7 +7236,7 @@ function openBrtPickup(orderId){
       if(result&&result.ormReservationNumber){
         statusEl.style.color="#2a9d60";
         statusEl.textContent="Ritiro prenotato! N. prenotazione: "+result.ormReservationNumber+" - Data: "+(result.collectionDate||collDate);
-        // Aggiungi nota sull'ordine Shopify
+        // Nota Shopify — usa numero ordine originale completo
         var notaRitiro="Effettuato ritiro il "+collDate+" per "+motivo;
         try{
           await proxyFetch(PROXY+"/shopify/orders/"+orderId+".json",{
