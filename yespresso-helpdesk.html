@@ -11177,8 +11177,16 @@ function renderOrdiniInviati(){
       var sl=statoLabel[ord.stato]||ord.stato;
       html+='<tr style="border-top:1px solid #f4f5f7;'+(i%2===1?'background:#faf8ff':'')+'">'+
         '<td style="padding:8px 14px;font-weight:600;color:#1a1a2e">'+ord.data_ordine+'</td>'+
-        '<td style="padding:8px 12px;color:'+(ord.data_consegna_prevista?'#6d28d9':'#aaa')+'">'+
-          (ord.data_consegna_prevista?_fmtDataOrd(ord.data_consegna_prevista):'—')+
+        '<td style="padding:8px 12px;color:#6d28d9">'+
+          (function(){
+            // Mostra date consegna distinte per riga
+            var date = ord.righe.filter(function(r){return r.qty_ordinata>0&&r.data_cons_riga;})
+                                .map(function(r){return r.data_cons_riga;});
+            var uniche = date.filter(function(d,i){return date.indexOf(d)===i;}).sort();
+            if(!uniche.length) return ord.data_consegna_prevista?_fmtDataOrd(ord.data_consegna_prevista):'—';
+            if(uniche.length===1) return _fmtDataOrd(uniche[0]);
+            return uniche.map(function(d){return _fmtDataOrd(d);}).join('<br>');
+          })()+
         '</td>'+
         '<td style="padding:8px 12px"><span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px">'+sl+'</span></td>'+
         '<td style="padding:8px 12px;color:#555">'+nProd+' art.</td>'+
@@ -11207,11 +11215,13 @@ function apriDettaglioOrdine(id){
     var ordL=ms>1?Math.ceil(r.qty_ordinata/ms)+'m ('+r.qty_ordinata+'pz)':r.qty_ordinata+' pz';
     var ricL=ms>1?Math.ceil((r.qty_ricevuta||0)/ms)+'m (':''+(r.qty_ricevuta||0)+(ms>1?'pz)':' pz');
     var res=r.qty_ordinata-(r.qty_ricevuta||0);
+    var dataCons=r.data_cons_riga?_fmtDataOrd(r.data_cons_riga):(ord.data_consegna_prevista?_fmtDataOrd(ord.data_consegna_prevista):'—');
     return '<tr style="border-bottom:1px solid #f4f5f7">'+
       '<td style="padding:8px 12px;font-weight:600;color:#1a1a2e">'+r.sku+'</td>'+
       '<td style="padding:8px 10px;text-align:right">'+ordL+'</td>'+
       '<td style="padding:8px 10px;text-align:right;color:#16a34a">'+ricL+'</td>'+
       '<td style="padding:8px 10px;text-align:right;font-weight:700;color:'+(res>0?'#e67e22':'#16a34a')+'">'+res+' pz</td>'+
+      '<td style="padding:8px 10px;text-align:right;color:#6d28d9;font-weight:600">'+dataCons+'</td>'+
     '</tr>';
   }).join('');
   var totPz=ord.righe.reduce(function(s,r){return s+(r.qty_ordinata||0);},0);
@@ -11237,6 +11247,7 @@ function apriDettaglioOrdine(id){
         '<th style="padding:8px 10px;text-align:right">Ordinato</th>'+
         '<th style="padding:8px 10px;text-align:right">Ricevuto</th>'+
         '<th style="padding:8px 10px;text-align:right">Residuo</th>'+
+        '<th style="padding:8px 10px;text-align:right">Cons. richiesta</th>'+
       '</tr></thead><tbody>'+righeHtml+'</tbody>'+
       '</table>'+
     '</div>'+
