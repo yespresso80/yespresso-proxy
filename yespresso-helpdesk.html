@@ -2522,8 +2522,11 @@ async function openTicketPreview(tid){
   // Carica allegati IMAP per il ticket in anteprima
   const previewEmail=(t.requester&&t.requester.email)||"";
   const previewSubj=t.subject||"";
+  // Estrai numero ordine Amazon dal subject (formato 402-1234567-1234567)
+  const amzOrderMatch=previewSubj.match(/(\d{3}-\d{7}-\d{7})/);
+  const amzOrderNum=amzOrderMatch?amzOrderMatch[1]:"";
   if(previewEmail){
-    proxyFetch(PROXY+"/imap/attachments?email="+encodeURIComponent(previewEmail)+"&subject="+encodeURIComponent(previewSubj))
+    proxyFetch(PROXY+"/imap/attachments?email="+encodeURIComponent(previewEmail)+"&subject="+encodeURIComponent(previewSubj)+"&ordernum="+encodeURIComponent(amzOrderNum))
       .then(r=>r.json()).then(data=>{
         const atts=data.attachments||[];
         if(!atts.length)return;

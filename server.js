@@ -128,7 +128,14 @@ async function syncImapAttachments() {
         }
 
         if (attachments.length > 0) {
-          attachmentsCache.set(messageId, { from: fromEmail, subject, date, attachments });
+          // Estrai testo body per ricerca numero ordine
+          let bodyText = "";
+          try {
+            const textPartMatch = raw.match(/Content-Type:\s*text\/plain[^\r\n]*\r?\n(?:[^\r\n]+\r?\n)*\r?\n([\s\S]*?)(?=--|\r\n--)/i);
+            if (textPartMatch) bodyText = textPartMatch[1].replace(/=\r?\n/g,"").substring(0,2000);
+            else bodyText = raw.replace(/<[^>]+>/g," ").substring(0,2000);
+          } catch(e3) {}
+          attachmentsCache.set(messageId, { from: fromEmail, subject, date, attachments, bodyText });
           console.log("[IMAP] Allegati salvati:", fromEmail, "|", subject.substring(0,40), "| n:", attachments.length);
         }
       } catch(e2) { console.log("[IMAP] Errore msg:", e2.message); }
@@ -141,20 +148,41 @@ async function syncImapAttachments() {
   }
 }
 
-function findAttachmentsForTicket(requesterEmail, subject) {
+function findAttachmentsForTicket(requesterEmail, subject, orderNum) {
   const results = [];
   const emailLow = (requesterEmail||"").toLowerCase();
-  const subjLow = (subject||"").toLowerCase().substring(0,50);
+  const subjLow = (subject||"").toLowerCase();
+  const orderNumLow = (orderNum||"").toLowerCase();
+
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
     const dataSubjLow = (data.subject||"").toLowerCase();
-    const emailMatch = emailLow && fromLow && (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
-    const subjMatch = subjLow && dataSubjLow && (dataSubjLow.includes(subjLow.substring(0,20)) || subjLow.includes(dataSubjLow.substring(0,20)));
-    if (emailMatch || subjMatch) {
-      results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date })));
+
+    // 1. Match per email esatta (escludi email anonime Amazon/Temu)
+    const isAnonEmail = emailLow.includes("amazon") || emailLow.includes("temu") ||
+                        emailLow.includes("marketplace") || emailLow.includes("bounce-");
+    const emailMatch = !isAnonEmail && emailLow && fromLow &&
+      (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
+
+    // 2. Match per numero ordine Amazon nel subject O nel body dell'email ricevuta
+    const bodyTextLow = (data.bodyText||"").toLowerCase();
+    const orderMatch = orderNumLow.length > 5 && (
+      dataSubjLow.includes(orderNumLow) ||
+      bodyTextLow.includes(orderNumLow)
+    );
+
+    // 3. Match per subject (solo se non Amazon/marketplace)
+    const subjClean = subjLow.replace(/^(re:|fwd:|fw:)\s*/gi,"").trim().substring(0,30);
+    const subjMatch = !isAnonEmail && subjClean.length > 5 &&
+      (data.subject||"").toLowerCase().includes(subjClean.substring(0,20));
+
+    if (emailMatch || orderMatch || subjMatch) {
+      results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date, subject: data.subject })));
     }
   }
-  return results;
+  // Deduplicazione per URL
+  const seen = new Set();
+  return results.filter(a => { if(seen.has(a.url)) return false; seen.add(a.url); return true; });
 }
 
 setTimeout(syncImapAttachments, 8000);
@@ -278,8 +306,9 @@ const server = http.createServer(async function(req, res) {
     const params = new URLSearchParams(qs);
     const email = params.get("email") || "";
     const subject = params.get("subject") || "";
+    const orderNum = params.get("ordernum") || "";
     await syncImapAttachments();
-    const attachments = findAttachmentsForTicket(email, subject);
+    const attachments = findAttachmentsForTicket(email, subject, orderNum);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ attachments, cached: attachmentsCache.size }));
     return;
