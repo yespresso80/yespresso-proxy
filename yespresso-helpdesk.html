@@ -6614,7 +6614,39 @@ function openRichiesteResoPanel(){
         btn.addEventListener('click',function(){
           var id=parseInt(this.getAttribute('data-id'));
           var reso=(_resiCache||[]).find(function(r){return r.id===id;});
-          if(reso){body.scrollTop=0;body.innerHTML='';mostraDettaglioReso(reso,body,function(){render();});}
+          if(!reso) return;
+          body.scrollTop=0;
+          // Mostra la card completa con bottone Indietro
+          body.innerHTML=
+            '<button onclick="render()" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit;margin-bottom:14px">← Indietro</button>'+
+            renderCard(reso);
+          // Carica note Shopify
+          if(reso.orderId){
+            var el=document.getElementById('shopify-note-'+reso.id);
+            if(el){
+              shopifyGet('orders/'+reso.orderId+'.json?fields=note').then(function(d){
+                if(!el) return;
+                var note=(d&&d.order&&d.order.note)||'';
+                el.innerHTML=note?note.replace(/\n/g,'<br>'):'<em style="color:#aaa">Nessuna nota</em>';
+              }).catch(function(){if(el)el.innerHTML='<em style="color:#aaa">Errore</em>';});
+            }
+          }
+          // Event listeners
+          body.querySelectorAll('._rc-risolto').forEach(function(b){b.addEventListener('click',function(){setStatus(parseInt(b.getAttribute('data-id')),'risolto').then(function(){showToast('Reso risolto');render();});});});
+          body.querySelectorAll('._rc-sospendi').forEach(function(b){b.addEventListener('click',function(){setStatus(parseInt(b.getAttribute('data-id')),'sospeso').then(function(){showToast('Reso sospeso');render();});});});
+          body.querySelectorAll('._rc-elimina').forEach(function(b){b.addEventListener('click',function(){eliminaReso(parseInt(b.getAttribute('data-id')));});});
+          body.querySelectorAll('._rc-credito').forEach(function(b){b.addEventListener('click',function(){apriCreditoResoModal(b.getAttribute('data-oid'),b);});});
+          body.querySelectorAll('._rc-storico').forEach(function(b){b.addEventListener('click',function(){openStoricoOrdini(b.getAttribute('data-email'),b.getAttribute('data-name'));});});
+          body.querySelectorAll('._rc-vediticket').forEach(function(b){
+            b.addEventListener('click',function(){
+              var em=b.getAttribute('data-email'), nm=b.getAttribute('data-name');
+              var ct=tickets.filter(function(t){return (t.requester&&t.requester.email)===em;});
+              if(!ct.length){showToast('Nessun ticket trovato','error');return;}
+              ct.sort(function(a,c){return new Date(c.lastMessageAt||c.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0);});
+              document.getElementById('resi-fullpage').remove();
+              selectTicket(ct[0].ID||ct[0].id);
+            });
+          });
         });
       });
     } else {
