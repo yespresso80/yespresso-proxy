@@ -5014,9 +5014,9 @@ function renderCorrispettivi(ignored,panel,ignored2){
       '<table style="border-collapse:collapse;width:100%;max-width:550px">'+
       '<thead><tr>'+
         '<th style="'+thS+';text-align:left">METODO</th>'+
-        '<th style="'+thS+';text-align:right">LORDO (€)</th>'+
+        '<th style="'+thS+';text-align:right">INIZIALE (€)</th>'+
         '<th style="'+thS+';text-align:right">RIMBORSO (€)</th>'+
-        '<th style="'+thS+';text-align:right">NETTO (€)</th>'+
+        '<th style="'+thS+';text-align:right">FINALE (€)</th>'+
       '</tr></thead><tbody>'+pag_html+'</tbody>'+
       '<tfoot><tr>'+
         '<td style="'+ttdLS+'">TOTALE</td>'+
@@ -5154,7 +5154,7 @@ window.corrStampaPDF=function(){
   var righe2=cats.map(function(cat){
     var v=_corrData.pag[cat]||0,r=storno_map[cat]||0;
     tpL+=v;tpR+=r;tpN+=(v-r);
-    return '<tr><td class="l">'+cat+'</td><td>'+eur(v)+'</td><td style="color:#c00000">'+(r>0?'- '+eur(r):'—')+'</td><td>'+eur(v-r)+'</td></tr>';
+    return '<tr><td class="l">'+cat+'</td><td>'+eur(v-r)+'</td></tr>';
   }).join('');
 
   var notaStorno=storno_tot>0?'<p class="note">Storni applicati: Amazon €'+eur(r_amz)+' | Temu €'+eur(r_temu)+' | TikTok €'+eur(r_tik)+' &rarr; €'+eur(storno_gg)+'/giorno</p>':'';
@@ -5166,9 +5166,9 @@ window.corrStampaPDF=function(){
     '<tfoot><tr class="tot"><td class="l">TOTALE MESE</td><td>'+eur(tot22)+'</td><td>'+eur(tot10)+'</td><td>'+eur(totLordo)+'</td></tr></tfoot></table>'+
     '<div style="page-break-before:always"></div>'+
     '<h2>Metodi di pagamento &mdash; '+_corrData.mese+'</h2>'+
-    '<table><thead><tr><th class="l">METODO</th><th>LORDO (&euro;)</th><th>RIMBORSO (&euro;)</th><th>NETTO (&euro;)</th></tr></thead>'+
+    '<table><thead><tr><th class="l">METODO</th><th>FINALE (&euro;)</th></tr></thead>'+
     '<tbody>'+righe2+'</tbody>'+
-    '<tfoot><tr class="tot"><td class="l">TOTALE</td><td>'+eur(tpL)+'</td><td style="color:#c00000">'+(storno_tot>0?'- '+eur(tpR):'&mdash;')+'</td><td>'+eur(tpN)+'</td></tr></tfoot></table>'+
+    '<tfoot><tr class="tot"><td class="l">TOTALE</td><td>'+eur(tpN)+'</td></tr></tfoot></table>'+
     '</body></html>';
 
   var w=window.open('','_blank','width=800,height=700');
