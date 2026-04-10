@@ -222,26 +222,85 @@ async function searchOrder(q) {
   console.log('[RM] searchOrder:', q);
   const results = [];
   const num = q.replace(/[^0-9]/g, '');
-  // Per numero
-  if (num.length >= 6) {
-    const d1 = await shopifyGet('orders.json?name=%23' + num + '&status=any').catch(e => { console.error('[RM] d1 err:', e.message); return null; });
+  const qUp = q.trim().toUpperCase();
+
+  // ── Amazon (formato 402-1234567-1234567) ──
+  const amzMatch = q.match(/\d{3}-\d{7}-\d{7}/);
+  if (amzMatch) {
+    console.log('[RM] Ricerca Amazon order:', amzMatch[0]);
+    const dAmz = await shopifyGet('orders.json?status=any&limit=10&query=' + encodeURIComponent(amzMatch[0])).catch(() => null);
+    if (dAmz?.orders?.length) results.push(...dAmz.orders);
+  }
+
+  // ── Temu (formato PO-XXX-XXXXXXXXXX) ──
+  const temuMatch = q.match(/PO-\d+-\d+/i);
+  if (!results.length && temuMatch) {
+    console.log('[RM] Ricerca Temu order:', temuMatch[0]);
+    const dTemu = await shopifyGet('orders.json?status=any&limit=10&query=' + encodeURIComponent(temuMatch[0])).catch(() => null);
+    if (dTemu?.orders?.length) results.push(...dTemu.orders);
+  }
+
+  // ── Shopify standard (numero 6-13 cifre, con o senza #) ──
+  if (!results.length && num.length >= 6 && num.length <= 13) {
+    const d1 = await shopifyGet('orders.json?name=%23' + num + '&status=any').catch(() => null);
     if (d1?.orders?.length) results.push(...d1.orders);
+    if (!results.length) {
+      const d1b = await shopifyGet('orders.json?name=' + num + '&status=any').catch(() => null);
+      if (d1b?.orders?.length) results.push(...d1b.orders);
+    }
     if (!results.length) {
       const d2 = await shopifyGet('orders/' + num + '.json').catch(e => { console.error('[RM] d2 err:', e.message); return null; });
       if (d2?.order) results.push(d2.order);
     }
   }
-  // Per testo (nome, email)
+
+  // ── TikTok (numero lungo ≥15 cifre, inizia con 5) ──
+  if (!results.length && num.length >= 15) {
+    console.log('[RM] Ricerca TikTok long number:', num);
+    // Prova come nome ordine diretto
+    const dTikName = await shopifyGet('orders.json?name=' + num + '&status=any').catch(() => null);
+    if (dTikName?.orders?.length) results.push(...dTikName.orders);
+    if (!results.length) {
+      const dTikHash = await shopifyGet('orders.json?name=%23' + num + '&status=any').catch(() => null);
+      if (dTikHash?.orders?.length) results.push(...dTikHash.orders);
+    }
+    // Shopify full-text query cerca anche nei note_attributes
+    if (!results.length) {
+      const dTikQ = await shopifyGet('orders.json?status=any&limit=10&query=' + encodeURIComponent(num)).catch(() => null);
+      if (dTikQ?.orders?.length) results.push(...dTikQ.orders);
+    }
+  }
+
+  // ── Query generica (nome cliente, email) ──
   if (!results.length) {
-    const d3 = await shopifyGet('orders.json?status=any&limit=5&query=' + encodeURIComponent(q)).catch(e => { console.error('[RM] d3 err:', e.message); return null; });
+    const d3 = await shopifyGet('orders.json?status=any&limit=10&query=' + encodeURIComponent(q)).catch(e => { console.error('[RM] d3 err:', e.message); return null; });
     if (d3?.orders?.length) results.push(...d3.orders);
   }
+
   console.log('[RM] risultati trovati:', results.length);
   const seen = new Set();
   return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
 }
 
 // ── OCR con Anthropic ──
+// ── Prompt OCR dal server ──
+var _ocrPromptText = null;
+async function getOcrPrompt() {
+  if (_ocrPromptText) return _ocrPromptText;
+  try {
+    const r = await fetch(PROXY + '/reso-ai-prompt');
+    if (r.ok) {
+      const data = await r.json();
+      const sections = data.sections || data;
+      const base = Array.isArray(sections) ? sections.find(s => s.id === 'base') : null;
+      if (base && base.text) { _ocrPromptText = base.text; return _ocrPromptText; }
+    }
+  } catch(e) { console.warn('Prompt OCR non caricato dal server, uso default:', e.message); }
+  // Fallback hardcoded
+  _ocrPromptText = 'Analizza questa immagine (etichetta spedizione BRT, DDT o documento ordine). Estrai con precisione:\n1. Numero ordine Shopify (formato #XXXXXXXXX es. #2024123456)\n2. Numero ordine Amazon (formato XXX-XXXXXXX-XXXXXXX es. 402-1234567-1234567)\n3. Numero ordine TikTok (numero lungo 18-19 cifre es. 576123456789012345)\n4. Numero ordine Temu (formato PO-XXX-XXXXXXXXXX es. PO-098-12345678901)\n5. Nome e cognome del DESTINATARIO (persona fisica cliente, NON mittente). Ignora: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL, corrieri, piattaforme. Normalizza il nome in formato "Nome Cognome" anche se nell\'immagine è tutto maiuscolo.\nRispondi SOLO in formato JSON senza testo aggiuntivo: {"ordine":"","amazon":"","tiktok":"","temu":"","nome":""}';
+  return _ocrPromptText;
+}
+
 async function ocrImage(file) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -249,6 +308,7 @@ async function ocrImage(file) {
       const b64 = e.target.result.split(',')[1];
       const mime = file.type || 'image/jpeg';
       try {
+        const promptText = await getOcrPrompt();
         const res = await fetch(PROXY + '/anthropic/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -259,17 +319,26 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente le parole: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e simili nomi di piattaforme o corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
+                { type: 'text', text: promptText }
               ]
             }]
           })
         });
         const data = await res.json();
         const text = data.content?.[0]?.text || '';
-        const match = text.match(/\{[^}]+\}/);
+        const match = text.match(/\{[\s\S]*?\}/);
         if (match) {
-          const parsed = JSON.parse(match[0]);
-          resolve(parsed);
+          try {
+            const parsed = JSON.parse(match[0]);
+            // Priorità: numeri specifici marketplace > numero Shopify > nome
+            const query = parsed.tiktok || parsed.amazon || parsed.temu || parsed.ordine || parsed.nome || '';
+            const display = parsed.tiktok ? 'TikTok ' + parsed.tiktok
+              : parsed.amazon ? 'Amazon ' + parsed.amazon
+              : parsed.temu ? 'Temu ' + parsed.temu
+              : parsed.ordine ? 'Ordine ' + parsed.ordine
+              : parsed.nome ? 'Cliente ' + parsed.nome : '';
+            resolve({ ordine: query, nome: parsed.nome || '', display });
+          } catch(pe) { resolve({ ordine: '', nome: '' }); }
         } else {
           resolve({ ordine: '', nome: '' });
         }
@@ -705,7 +774,7 @@ document.getElementById('camera-input').addEventListener('change', async functio
       return;
     }
     status.className = 'ocr-status ok';
-    status.textContent = '✅ Trovato: ' + (ocr.ordine ? 'Ordine ' + ocr.ordine : 'Nome ' + ocr.nome);
+    status.textContent = '✅ Trovato: ' + (ocr.display || (ocr.ordine ? 'Ordine ' + ocr.ordine : 'Nome ' + ocr.nome));
     document.getElementById('search-input').value = query;
     const orders = await searchOrder(query);
     if (!orders.length) {

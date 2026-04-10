@@ -5157,7 +5157,7 @@ window.corrStampaPDF=function(){
     return '<tr><td class="l">'+cat+'</td><td>'+eur(v-r)+'</td></tr>';
   }).join('');
 
-  var notaStorno=storno_tot>0?'<p class="note">Storni applicati: Amazon €'+eur(r_amz)+' | Temu €'+eur(r_temu)+' | TikTok €'+eur(r_tik)+' &rarr; €'+eur(storno_gg)+'/giorno</p>':'';
+  var notaStorno='';
 
   var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'+css+'</style></head><body>'+
     '<h2>Corrispettivi giornalieri &mdash; '+_corrData.mese+'</h2>'+notaStorno+
@@ -5830,7 +5830,7 @@ async function saveAIPromptToServer(sections){
 // ── RESO MAGAZZINO AI PROMPT SETTINGS ─────────────────────────
 var RESO_AI_PROMPT_KEY='yespresso_reso_ai_prompt_sections';
 var RESO_AI_PROMPT_DEFAULT=[
-  {id:'base',label:'🧠 Prompt OCR — Ricerca ordine da immagine',locked:false,text:'Analizza questa immagine (etichetta spedizione, DDT o documento). Estrai:\n1. Numero ordine Shopify (formato #XXXXXXXXX es. #2024123456)\n2. Numero ordine Amazon (formato XXX-XXXXXXX-XXXXXXX es. 402-1234567-1234567)\n3. Numero ordine Temu (formato PO-XXX-XXXXXXXXXX es. PO-211-12345678901)\n4. Nome mittente o destinatario (persona fisica o azienda cliente)\n\nIgnora completamente: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e altri nomi di piattaforme o corrieri.\nIl nome deve essere quello del cliente finale.\n\nRispondi SOLO in formato JSON (nessun testo prima o dopo):\n{\"ordine\":\"...\",\"amazon_order\":\"...\",\"temu_order\":\"...\",\"nome\":\"...\"}\nUsa \"\" per i campi non trovati.'},
+  {id:'base',label:'🧠 Prompt OCR — Ricerca ordine da immagine',locked:false,text:'Analizza questa immagine (etichetta spedizione BRT, DDT o documento ordine). Estrai con precisione:\n1. Numero ordine Shopify (formato #XXXXXXXXX es. #2024123456)\n2. Numero ordine Amazon (formato XXX-XXXXXXX-XXXXXXX es. 402-1234567-1234567)\n3. Numero ordine Temu (formato PO-XXX-XXXXXXXXXX es. PO-211-12345678901)\n4. Numero ordine TikTok (numero lungo 18-19 cifre es. 576123456789012345)\n5. Nome e cognome del DESTINATARIO (persona fisica cliente, NON mittente). Ignora: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL, corrieri, piattaforme. Normalizza il nome in formato "Nome Cognome" anche se nell\'immagine è tutto maiuscolo.\n\nRispondi SOLO in formato JSON (nessun testo prima o dopo):\n{"ordine":"","amazon_order":"","temu_order":"","tiktok_order":"","nome":""}\nUsa "" per i campi non trovati.'},
   {id:'custom',label:'➕ Regole personalizzate',locked:false,custom:true,text:''}
 ];
 
@@ -7914,6 +7914,10 @@ function openBrtPickup(orderId){
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">NOMINATIVO</div>'+
         '<input id="brt-nominativo" value="'+(data.name||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">N° COLLI</div>'+
+        '<input id="brt-colli" type="number" min="1" max="99" value="1" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
+      '</div>'+
       '<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:3px">DATA RITIRO</div>'+
         '<div style="font-size:14px;font-weight:600;color:#1a1a2e">'+collDate+'</div>'+
@@ -7977,8 +7981,9 @@ function openBrtPickup(orderId){
       var indirizzoVal=modal.querySelector('#brt-indirizzo').value.trim()||addrStr;
       var emailVal=modal.querySelector('#brt-email').value.trim()||alertEmail;
       var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
+      var colliVal=parseInt(modal.querySelector('#brt-colli').value)||1;
       var payload=[{
-        requestInfos:{parcelCount:1,collectionDate:collDate},
+        requestInfos:{parcelCount:colliVal,collectionDate:collDate},
         requestingDepot:"179",
         customerInfos:{custAccNumber:"1791201"},
         stakeholders:[
