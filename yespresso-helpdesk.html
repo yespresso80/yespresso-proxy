@@ -353,7 +353,7 @@ textarea.field{min-height:80px;resize:vertical}
       <span class="sidebar-badge">0</span>
     </div>
 
-    <div class="sidebar-item" onclick="setView('richieste-reso')" id="view-richieste-reso">
+    <div class="sidebar-item" onclick="openRichiesteResoPanel()" id="view-richieste-reso" style="cursor:pointer">
       <div class="sidebar-item-left">📦 RICHIESTE RESO</div>
       <span class="sidebar-badge" id="badge-richieste-reso">0</span>
     </div>
@@ -387,6 +387,7 @@ textarea.field{min-height:80px;resize:vertical}
       <span class="ticket-panel-title" id="panel-title">Tickets to handle</span>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="filter-btn" onclick="openQRModal()" style="display:flex;align-items:center;gap:4px;background:#FFD700;border-color:#e6c000;font-weight:700" title="Risposte rapide">⚡</button>
+        <button class="filter-btn" onclick="openElenaPanel()" style="display:flex;align-items:center;gap:4px;background:#e0f2fe;border-color:#7dd3fc;color:#0369a1;font-weight:700" title="Promemoria Elena">👩 ELENA</button>
         <button class="filter-btn" onclick="openTikTokResiModal()" style="background:#000;border-color:#000;color:#fff;font-weight:700" title="TikTok Resi">🎵 TIK TOK RESI</button>
         <button class="filter-btn" onclick="openAutorizzaResoModal()" style="background:#e53e3e;border-color:#c53030;color:#fff;font-weight:700" title="Autorizza Reso">↩️ Autorizza Reso</button>
         <button class="filter-btn" onclick="openRitiroOrdineModal()" style="background:#c0392b;border-color:#a93226;color:#fff;font-weight:700" title="Ritiro Ordine">📦 Ritiro</button>
@@ -1214,7 +1215,7 @@ function updateBadges(){
   // Badge richieste reso
   try{
     var resiList=_resiCache||[];
-    var resiPendenti=resiList.filter(function(r){return !r.risolto;}).length;
+    var resiPendenti=resiList.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
     var badgeResi=document.getElementById('badge-richieste-reso');
     if(badgeResi){badgeResi.textContent=resiPendenti>0?resiPendenti:'0';}
   }catch(e){}
@@ -1976,44 +1977,13 @@ async function selectTicket(tid){
       }
 
       if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid3){console.log("BRT IIFE: ticket cambiato, skip");return;}
-      if(brtOrder&&oArea){
-        // Popola order-info-area direttamente come per gli altri ticket
-        const f=brtOrder.fulfillments&&brtOrder.fulfillments[0];
-        const sS={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",failure:"❌ Problema"};
-        const fS={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
-        const displayStatus=(f&&f.shipment_status)?(sS[f.shipment_status]||("📦 "+f.shipment_status)):(fS[brtOrder.fulfillment_status]||"⏳ Non spedito");
-        const shopifyUrl="https://40f758-3.myshopify.com/admin/orders/"+brtOrder.id;
-        let html='<strong>🛍️ <a href="'+shopifyUrl+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(brtOrder.name||("#"+brtOrder.order_number))+' ↗</a></strong>';
-        html+='<br>'+displayStatus;
-        if(f){
-          const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
-          if(tn){const tnPodBrt=tn.startsWith('26')?tn:'26'+tn;const brtTrackUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn;const brtUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPodBrt+'&PODChkCde=348365243';html+='<br>📦 BRT: <strong>'+tn+'</strong> — <a href="'+brtTrackUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';}
-          if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
-        }
-        // Link modifica indirizzo se non spedito
-        const notShipped2=!brtOrder.fulfillment_status||brtOrder.fulfillment_status==="unfulfilled";
-        if(notShipped2){const cloudUrl2='https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','');html+='<br>📍 <a href="'+cloudUrl2+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';}
-        // Detect source
-        const brtSource=detectOrderSource(brtOrder);
-        const amzBrt=(brtOrder.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
-        if(amzBrt){html+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3/order/'+amzBrt.value+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';}
-        const temuBrt=(brtOrder.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id"].includes(a.name));
-        if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
-        if(brtSource==="sito"){
-          html+='<br>📍 <a href="'+'https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','')+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';
-        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
-        }
-        if(brtOrder&&brtOrder.shipping_address){
-          var _saBrt=brtOrder.shipping_address;
-          window._brtPickupData=window._brtPickupData||{};
-          window._brtPickupData[brtOrder.id]={tn:(brtOrder.fulfillments&&brtOrder.fulfillments[0]&&brtOrder.fulfillments[0].tracking_number)||'',orderName:brtOrder.name||'',name:_saBrt.name||'',addr:_saBrt.address1||'',zip:_saBrt.zip||'',city:_saBrt.city||'',prov:_saBrt.province_code||''};
-          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
-          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
-        }
-        oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(order){window._lastShopifyOrder=order;}
-        var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
-        if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
+      if(brtOrder){
+        console.log("✅ BRT ordine trovato, popolo sidebar completa:",brtOrder.name);
+        window._brtPrefetchedOrder=brtOrder;
+        const allMsgsBrt=(t.events||[]).map(ev=>(ev.message&&(ev.message.text||ev.message.richTextHtml))||"").filter(Boolean);
+        const lastMsgBrt=allMsgsBrt[allMsgsBrt.length-1]||"";
+        const fullThreadBrt=allMsgsBrt.join("\n---\n");
+        await generateReply(lastMsgBrt, email||"", fullThreadBrt, true);
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
       }
@@ -2293,44 +2263,13 @@ function renderMessageHtml(text, attachments){
       }
 
       if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid3){console.log("BRT IIFE: ticket cambiato, skip");return;}
-      if(brtOrder&&oArea){
-        // Popola order-info-area direttamente come per gli altri ticket
-        const f=brtOrder.fulfillments&&brtOrder.fulfillments[0];
-        const sS={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",failure:"❌ Problema"};
-        const fS={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
-        const displayStatus=(f&&f.shipment_status)?(sS[f.shipment_status]||("📦 "+f.shipment_status)):(fS[brtOrder.fulfillment_status]||"⏳ Non spedito");
-        const shopifyUrl="https://40f758-3.myshopify.com/admin/orders/"+brtOrder.id;
-        let html='<strong>🛍️ <a href="'+shopifyUrl+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(brtOrder.name||("#"+brtOrder.order_number))+' ↗</a></strong>';
-        html+='<br>'+displayStatus;
-        if(f){
-          const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
-          if(tn){const tnPodBrt=tn.startsWith('26')?tn:'26'+tn;const brtTrackUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn;const brtUrl='https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnPodBrt+'&PODChkCde=348365243';html+='<br>📦 BRT: <strong>'+tn+'</strong> — <a href="'+brtTrackUrl+'" target="_blank" style="color:#2a7a50;font-weight:600">Traccia su BRT ↗</a>';}
-          if(f.created_at)html+='<br>📅 Spedito il '+new Date(f.created_at).toLocaleDateString("it-IT");
-        }
-        // Link modifica indirizzo se non spedito
-        const notShipped2=!brtOrder.fulfillment_status||brtOrder.fulfillment_status==="unfulfilled";
-        if(notShipped2){const cloudUrl2='https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','');html+='<br>📍 <a href="'+cloudUrl2+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';}
-        // Detect source
-        const brtSource=detectOrderSource(brtOrder);
-        const amzBrt=(brtOrder.note_attributes||[]).find(a=>a.name==="Amazon Order Id");
-        if(amzBrt){html+='<br>🔗 <a href="https://sellercentral.amazon.it/orders-v3/order/'+amzBrt.value+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';}
-        const temuBrt=(brtOrder.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id"].includes(a.name));
-        if(temuBrt){html+='<br>🟠 <a href="https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuBrt.value)+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';}
-        if(brtSource==="sito"){
-          html+='<br>📍 <a href="'+'https://yespresso.cloud/?searchOrderId='+(brtOrder.name||'').replace('#','')+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Mod. Ind. su YesClo ↗</a>';
-        const isTemuOrAmazon2=(email||'').includes('temu')||(email||'').includes('seller@orders')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok');if(order.customer&&order.customer.id&&!isTemuOrAmazon2){const credInpId2='cred-inp2-'+order.id;window._credMap=window._credMap||{};window._credMap[credInpId2]={email:order.email,customerId:order.customer.id,orderId:order.id,orderName:order.name||order.order_number||'',customerName:(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()};html+='<br>🎁 Credito: <input id="'+credInpId2+'" type="number" min="0.01" step="0.01" placeholder="€" style="width:60px;padding:2px 4px;border:1px solid #d4b8ff;border-radius:4px;font-size:12px"> <span onclick="createCredit(\''+credInpId2+'\')" style="color:#7b2d8b;font-weight:700;cursor:pointer;font-size:12px">✓ Invia</span>';}
-        }
-        if(brtOrder&&brtOrder.shipping_address){
-          var _saBrt=brtOrder.shipping_address;
-          window._brtPickupData=window._brtPickupData||{};
-          window._brtPickupData[brtOrder.id]={tn:(brtOrder.fulfillments&&brtOrder.fulfillments[0]&&brtOrder.fulfillments[0].tracking_number)||'',orderName:brtOrder.name||'',name:_saBrt.name||'',addr:_saBrt.address1||'',zip:_saBrt.zip||'',city:_saBrt.city||'',prov:_saBrt.province_code||''};
-          html+='<br>\U0001f4e6 <span onclick="openBrtPickup(\''+brtOrder.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
-          html+='<br>\U0001f4de <span onclick="openBrtContact(\''+brtOrder.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
-        }
-        oArea.innerHTML='<div class="order-info-box">'+html+'</div>';
-        if(order){window._lastShopifyOrder=order;}
-        var _on=order||brtOrder;if(_on&&_on.note){window._shopifyOrderNote=_on.note;setTimeout(function(){aggiornaBoxNoteOrdine(_on.note);},100);}
-        if(order&&order.customer&&order.customer.id){var _isMarket2=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket2)showMarketplaceOrders(order.customer.id);}
+      if(brtOrder){
+        console.log("✅ BRT ordine trovato, popolo sidebar completa:",brtOrder.name);
+        window._brtPrefetchedOrder=brtOrder;
+        const allMsgsBrt=(t.events||[]).map(ev=>(ev.message&&(ev.message.text||ev.message.richTextHtml))||"").filter(Boolean);
+        const lastMsgBrt=allMsgsBrt[allMsgsBrt.length-1]||"";
+        const fullThreadBrt=allMsgsBrt.join("\n---\n");
+        await generateReply(lastMsgBrt, email||"", fullThreadBrt, true);
       } else if(oArea){
         oArea.innerHTML='<div style="font-size:11px;color:#999;padding:4px 0;font-style:italic">ℹ️ Nessun ordine trovato per questa giacenza</div>';
       }
@@ -4789,6 +4728,105 @@ function insertQRFromModal(id){
 }
 
 let _qrLoaded = false;
+function openElenaPanel(){
+  // Stato flags: localStorage con chiavi giornaliera/settimanale/mensile
+  var today=new Date();
+  var todayStr=today.toISOString().slice(0,10); // YYYY-MM-DD
+  var weekStr=(function(){var d=new Date(today);d.setDate(d.getDate()-d.getDay()+1);return d.toISOString().slice(0,10);})(); // Lunedì della settimana
+  var monthStr=today.getFullYear()+'-'+(today.getMonth()+1); // YYYY-M
+
+  function getFlag(key){return localStorage.getItem('elena_flag_'+key)||'';}
+  function setFlag(key){localStorage.setItem('elena_flag_'+key,todayStr);}
+  function isDone(key,period){
+    var val=getFlag(key);
+    if(period==='day') return val===todayStr;
+    if(period==='week') return val>=weekStr;
+    if(period==='month'){var vm=val.slice(0,7);return vm===today.getFullYear()+'-'+(today.getMonth()+1<10?'0':'')+(today.getMonth()+1);}
+    return false;
+  }
+
+  var modal=document.createElement('div');
+  modal.id='elena-panel';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9800;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+
+  function renderPanel(){
+    var isMercoledi=today.getDay()===3;
+    var isGiorno4=today.getDate()===4;
+
+    function row(key,period,emoji,label,linkHtml,extraClass){
+      var done=isDone(key,period);
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;margin-bottom:8px;background:'+(done?'#f0fdf4':'#fff')+';border:1.5px solid '+(done?'#86efac':'#e8eaf0')+'">' +
+        '<span style="font-size:20px">'+emoji+'</span>'+
+        '<div style="flex:1">'+
+          '<div style="font-size:13px;font-weight:700;color:'+(done?'#16a34a':'#1a1a2e')+'">'+label+'</div>'+
+          (linkHtml?'<div style="margin-top:3px">'+linkHtml+'</div>':'')+
+        '</div>'+
+        (period!=='always'?
+          '<button onclick="elenaSetFlag(\''+key+'\',\''+period+'\')" style="background:'+(done?'#dcfce7':'#f0f2f5')+';border:none;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:'+(done?'#16a34a':'#555')+'">'+
+            (done?'✅ Fatto':'☐ Segna')+'</button>':'')+
+      '</div>';
+    }
+
+    function link(url,label,color){
+      return '<a href="'+url+'" target="_blank" style="color:'+(color||'#0369a1')+';font-weight:600;font-size:12px;text-decoration:none">'+label+' ↗</a>';
+    }
+
+    modal.innerHTML='<div style="background:#f8faff;border-radius:16px;width:560px;max-width:98vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.2);overflow:hidden">'+
+      '<div style="padding:16px 20px;background:linear-gradient(135deg,#0369a1,#0ea5e9);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
+        '<div style="display:flex;align-items:center;gap:10px">'+
+          '<span style="font-size:28px">👩</span>'+
+          '<div>'+
+            '<div style="font-size:16px;font-weight:700;color:#fff">Promemoria Elena</div>'+
+            '<div style="font-size:12px;color:rgba(255,255,255,.8)">'+today.toLocaleDateString('it-IT',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<button id="elena-close" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px;font-weight:700">✕</button>'+
+      '</div>'+
+      '<div style="flex:1;overflow-y:auto;padding:16px 20px">'+
+
+      // Giornaliere continue
+      '<div style="font-size:11px;font-weight:700;color:#0369a1;text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px">📅 Attività Giornaliere Continue</div>'+
+      row('','always','🎫','Gestione Ticket Helpdesk','','always')+
+      row('','always','🟠','Messaggi Temu',link('https://seller-eu.temu.com/chat.html?refer_page_name=home&refer_page_id=20406_1775814537293_x298aqefye&refer_page_sn=20406&_x_sessn_id=st0i61wa2s','Apri Temu Chat','#ff6600'),'always')+
+      row('','always','🎵','Messaggi TikTok',link('https://seller-it.tiktok.com/chat?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT','Apri TikTok Chat','#000'),'always')+
+
+      // Giornaliere una volta
+      '<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">⏰ Attività Giornaliere (1 volta al giorno)</div>'+
+      row('resi_tiktok','day','↩️','Resi TikTok','<span onclick="document.getElementById(\'elena-panel\').remove();openTikTokResiModal&&openTikTokResiModal()" style="color:#7c3aed;font-weight:600;font-size:12px;cursor:pointer">Vai a TIK TOK RESI ↗</span>','')+
+
+      // Settimanali
+      '<div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">📆 Attività Settimanali (ogni mercoledì)'+(!isMercoledi?' <span style="font-size:10px;font-weight:600;color:#aaa;text-transform:none">— oggi non è mercoledì</span>':'')+'</div>'+
+      row('contrassegni','week','💰','Contrassegni Auto-Pagato','<span onclick="document.getElementById(\'elena-panel\').remove();openToolModal(\'contrassegno\')" style="color:#b45309;font-weight:600;font-size:12px;cursor:pointer">Vai a Contrassegno Auto-Pagato ↗</span>','')+
+
+      // Mensili
+      '<div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">📅 Attività Mensili (ogni 4 del mese)'+(!isGiorno4?' <span style="font-size:10px;font-weight:600;color:#aaa;text-transform:none">— oggi non è il 4</span>':'')+'</div>'+
+      row('iva_amazon','month','🧾','Calcolo IVA Amazon',
+        link('https://sellercentral.amazon.it/tax/vatreports/bulkdownload','Scarica file IVA su Amazon','#e8a000')+
+        ' &nbsp;·&nbsp; '+
+        '<span onclick="document.getElementById(\'elena-panel\').remove();openToolModal(\'fattura\')" style="color:#e8a000;font-weight:600;font-size:12px;cursor:pointer">Vai ad Amazon Fattura Tagger ↗</span>'+
+        '<div style="font-size:11px;color:#888;margin-top:2px">Scarica dal giorno 1 alla fine del mese precedente, poi carica nel tagger</div>',
+        '')+
+
+      '</div>'+
+      '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;text-align:center;flex-shrink:0">'+
+        '<span style="font-size:11px;color:#aaa">I flag si rinnovano automaticamente ogni giorno / settimana / mese</span>'+
+      '</div>'+
+    '</div>';
+
+    modal.querySelector('#elena-close').onclick=function(){modal.remove();};
+    modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  }
+
+  window.elenaSetFlag=function(key,period){
+    setFlag(key);
+    renderPanel();
+    showToast('✅ Attività segnata come completata');
+  };
+
+  document.body.appendChild(modal);
+  renderPanel();
+}
+
 async function openQRModal(){
   const modal = document.getElementById("qr-modal");
   modal.style.display="flex";
@@ -6873,6 +6911,8 @@ function aggiornaResoBadge(){
     var pendenti=list.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
     var badge=document.getElementById('reso-badge-menu');
     if(badge)badge.textContent=pendenti>0?pendenti:'0';
+    var badgeSidebar=document.getElementById('badge-richieste-reso');
+    if(badgeSidebar)badgeSidebar.textContent=pendenti>0?pendenti:'0';
   }).catch(function(){});
 }
 setTimeout(aggiornaResoBadge, 1000);
