@@ -3262,6 +3262,22 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         }
       }
     }
+    // ═══ PROBLEMA SPEDIZIONE: 4 pulsanti messaggio ═══
+    if(f&&f.shipment_status==='failure'){
+      const sa=order.shipping_address||{};
+      const indirizzo=[sa.address1,sa.city,sa.zip,sa.province_code].filter(Boolean).join(', ');
+      const nomeCliente=(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()||(t.requester&&t.requester.name)||'';
+      window._brtFailureData=window._brtFailureData||{};
+      window._brtFailureData[order.id]={indirizzo,nomeCliente,orderName:order.name||'',tn:(f&&f.tracking_number)||''};
+      html+='<br><div style="margin-top:8px;padding:8px 10px;background:#fff3cd;border:1.5px solid #ffc107;border-radius:8px">';
+      html+='<div style="font-size:11px;font-weight:700;color:#856404;margin-bottom:6px">⚠️ PROBLEMA SPEDIZIONE — Scegli il tipo:</div>';
+      html+='<div style="display:flex;flex-direction:column;gap:5px">';
+      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'indirizzo\')" style="background:#dc3545;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">📍 Indirizzo inesistente/sconosciuto</button>';
+      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'assente\')" style="background:#fd7e14;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">🔔 Assente dopo lasciato avviso</button>';
+      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'rifiuto\')" style="background:#6f42c1;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">❌ Rifiuto senza motivazione</button>';
+      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'fermopoint\')" style="background:#0d6efd;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">📦 Verso punto di ritiro</button>';
+      html+='</div></div>';
+    }
     const fromEmail2=(t.requester&&t.requester.email)||"";
     const hideActions=fromEmail2.includes("donotreply@amazon")&&(t.subject||"").toLowerCase().includes("annullamento");
     const isMarketplaceAmazon=fromEmail2.includes("marketplace.amazon");
@@ -4838,6 +4854,56 @@ function openElenaPanel(){
 
   document.body.appendChild(modal);
   renderPanel();
+}
+
+function inviaMessaggioProblemaSpedizione(orderId, tipo){
+  var d=(window._brtFailureData||{})[orderId]||{};
+  var ind=d.indirizzo||'';
+  var nome=d.nomeCliente||'';
+  var saluto=nome?'Gentile '+nome+',':' Gentile Cliente,';
+  var testo='';
+  if(tipo==='indirizzo'){
+    testo=saluto+'\n'+
+    'la informiamo che la sua spedizione è attualmente in giacenza presso il corriere in quanto l\'indirizzo di consegna risulta sconosciuto o incompleto.\n\n'+
+    'L\'indirizzo in nostro possesso è:\n'+ind+'\n\n'+
+    'La preghiamo di verificare quanto segue:\n'+
+    '- L\'indirizzo indicato è corretto?\n'+
+    '- È presente il numero civico?\n'+
+    '- Sul citofono risulta il suo nome?\n'+
+    '- La consegna è presso un\'azienda o altro nominativo?\n\n'+
+    'Qualsiasi informazione aggiuntiva ci aiuterà a sbloccare la giacenza e completare la consegna.\n'+
+    'La ringraziamo per la collaborazione.\n\nCordiali saluti,\nIl Team Yespresso';
+  } else if(tipo==='assente'){
+    testo=saluto+'\n'+
+    'la informiamo che il corriere BRT ha tentato più volte la consegna al suo indirizzo senza riuscire a trovarla.\n\n'+
+    'L\'indirizzo di consegna in nostro possesso è:\n'+ind+'\n\n'+
+    'Può indicarci come procedere scegliendo una delle seguenti opzioni:\n'+
+    '1. Confermare che l\'indirizzo è corretto e indicarci un orario o giorno preferito per il ritentativo\n'+
+    '2. Fornirci un indirizzo alternativo per la consegna\n'+
+    '3. Richiedere la consegna presso il punto di ritiro BRT più vicino a casa sua — in questo caso le arriverà direttamente dal corriere la comunicazione con l\'indirizzo del punto di ritiro\n\n'+
+    'Ci faccia sapere come preferisce procedere.\n\nCordiali saluti,\nIl Team Yespresso';
+  } else if(tipo==='rifiuto'){
+    testo=saluto+'\n'+
+    'il corriere ci comunica che il pacco è stato rifiutato al momento della consegna senza motivazione.\n\n'+
+    'Se non è stato lei a rifiutare il pacco o se si è trattato di un malinteso, la preghiamo di scriverci e provvederemo immediatamente a rimetterlo in consegna.\n\n'+
+    'Cordiali saluti,\nIl Team Yespresso';
+  } else if(tipo==='fermopoint'){
+    testo=saluto+'\n'+
+    'la informiamo che il corriere non è riuscito a completare la consegna presso il suo indirizzo e sta depositando il suo pacco presso un punto di ritiro BRT nelle vicinanze.\n\n'+
+    'A breve riceverà una comunicazione diretta da parte del corriere con l\'indirizzo esatto del punto di ritiro.\n\n'+
+    'Cordiali saluti,\nIl Team Yespresso';
+  }
+  // Inserisci nel campo risposta e mostra action area
+  const genBox=document.getElementById('gen-box');
+  const actionArea=document.getElementById('action-area');
+  const replyText=document.getElementById('reply-text');
+  const aiLabel=document.getElementById('ai-label');
+  if(genBox)genBox.style.display='none';
+  if(actionArea)actionArea.style.display='block';
+  if(replyText)replyText.value=testo;
+  if(aiLabel)aiLabel.textContent='📍 Messaggio problema spedizione';
+  // Scroll al box risposta
+  setTimeout(function(){var ab=document.querySelector('.ai-reply-box');if(ab)ab.scrollIntoView({behavior:'smooth',block:'nearest'});},200);
 }
 
 async function openQRModal(){
