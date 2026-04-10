@@ -1908,16 +1908,73 @@ async function selectTicket(tid){
     });
   }
   loadCustomerHistory(email, name, tid2);
-  // Per ticket BRT: cerca ordine usando il body completo dei messaggi
+  // Per ticket BRT: cerca ordine con logica specifica per tipo email
   const isBrtTicketSelect=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
   if(isBrtTicketSelect){
     setTimeout(async()=>{
       const oArea=document.getElementById("order-info-area");
       if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">🔍 Ricerca ordine BRT...</div>';
-      const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
-      const brtSearchText=(t.subject||"")+" "+brtFullText;
       const _guardTid3=t.ID||t.id;
-      const brtOrder=await fetchShopifyOrder(brtSearchText,email||"",name||"");
+      var brtOrder=null;
+      const subj=t.subject||"";
+
+      if((email||"").includes("vasnoreply@brt")){
+        // vasnoreply@brt.it — cerca per nome e cognome nel titolo
+        // es. "Giacenza Nr. 158-4133 10-04-2026 Cli: 1791201 GIOVANNI SAWIRES -MI (ID4162542)"
+        const cliMatch=subj.match(/Cli[:\s]+\d+\s+([A-Z][A-Z\s]+?)\s*[-–(]/);
+        if(cliMatch){
+          const clienteName=cliMatch[1].trim();
+          console.log("BRT vasnoreply: ricerca per nome",clienteName);
+          const parts=clienteName.split(/\s+/);
+          if(parts.length>=2){
+            const dName=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(clienteName));
+            if(dName&&dName.orders&&dName.orders.length){brtOrder=dName.orders[0];}
+            if(!brtOrder){
+              const dName2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(parts[0]+" "+parts[1]));
+              if(dName2&&dName2.orders&&dName2.orders.length){brtOrder=dName2.orders[0];}
+            }
+          }
+        }
+        // Fallback generico
+        if(!brtOrder){
+          const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+          brtOrder=await fetchShopifyOrder(subj+" "+brtFullText,email||"",name||"");
+        }
+
+      } else if((email||"").includes("servizioclienti@brt")){
+        // servizioclienti@brt.it — cerca numero spedizione nel titolo togliendo il prefisso 26
+        // es. "RE: [Ticket] 29487320 - Spedizioni 26179010717133" → cerca 179010717133
+        const spedMatch=subj.match(/26(\d{12,})/);
+        if(spedMatch){
+          const trackNum=spedMatch[1]; // es. 179010717133
+          console.log("BRT servizioclienti: ricerca per tracking",trackNum);
+          // Cerca negli ordini per numero tracking
+          const dTrack=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,fulfillments,customer,shipping_address,phone,email,fulfillment_status,created_at,line_items,total_price,note_attributes");
+          if(dTrack&&dTrack.orders){
+            brtOrder=dTrack.orders.find(function(o){
+              return (o.fulfillments||[]).some(function(f){
+                const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+                return tn.includes(trackNum)||trackNum.includes(tn.replace(/^26/,""));
+              });
+            })||null;
+          }
+          // Fallback: cerca con query generica
+          if(!brtOrder){
+            const dq=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(trackNum));
+            if(dq&&dq.orders&&dq.orders.length)brtOrder=dq.orders[0];
+          }
+        }
+        if(!brtOrder){
+          const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+          brtOrder=await fetchShopifyOrder(subj+" "+brtFullText,email||"",name||"");
+        }
+
+      } else {
+        // Altri BRT — ricerca generica
+        const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+        brtOrder=await fetchShopifyOrder(subj+" "+brtFullText,email||"",name||"");
+      }
+
       if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid3){console.log("BRT IIFE: ticket cambiato, skip");return;}
       if(brtOrder&&oArea){
         // Popola order-info-area direttamente come per gli altri ticket
@@ -2184,10 +2241,57 @@ function renderMessageHtml(text, attachments){
     setTimeout(async()=>{
       const oArea=document.getElementById("order-info-area");
       if(oArea)oArea.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">🔍 Ricerca ordine BRT...</div>';
-      const brtFullText=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
-      const brtSearchText=(t.subject||"")+" "+brtFullText;
       const _guardTid3=t.ID||t.id;
-      const brtOrder=await fetchShopifyOrder(brtSearchText,email||"",name||"");
+      var brtOrder=null;
+      const subj2=t.subject||"";
+
+      if((email||"").includes("vasnoreply@brt")){
+        const cliMatch2=subj2.match(/Cli[:\s]+\d+\s+([A-Z][A-Z\s]+?)\s*[-–(]/);
+        if(cliMatch2){
+          const clienteName2=cliMatch2[1].trim();
+          console.log("BRT vasnoreply: ricerca per nome",clienteName2);
+          const dName=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(clienteName2));
+          if(dName&&dName.orders&&dName.orders.length){brtOrder=dName.orders[0];}
+          if(!brtOrder){
+            const parts2=clienteName2.split(/\s+/);
+            if(parts2.length>=2){
+              const dName2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(parts2[0]+" "+parts2[1]));
+              if(dName2&&dName2.orders&&dName2.orders.length){brtOrder=dName2.orders[0];}
+            }
+          }
+        }
+        if(!brtOrder){
+          const brtFT2=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+          brtOrder=await fetchShopifyOrder(subj2+" "+brtFT2,email||"",name||"");
+        }
+      } else if((email||"").includes("servizioclienti@brt")){
+        const spedMatch2=subj2.match(/26(\d{12,})/);
+        if(spedMatch2){
+          const trackNum2=spedMatch2[1];
+          console.log("BRT servizioclienti: ricerca per tracking",trackNum2);
+          const dTrack2=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,fulfillments,customer,shipping_address,phone,email,fulfillment_status,created_at,line_items,total_price,note_attributes");
+          if(dTrack2&&dTrack2.orders){
+            brtOrder=dTrack2.orders.find(function(o){
+              return (o.fulfillments||[]).some(function(f){
+                const tn=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
+                return tn.includes(trackNum2)||trackNum2.includes(tn.replace(/^26/,""));
+              });
+            })||null;
+          }
+          if(!brtOrder){
+            const dq2=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(trackNum2));
+            if(dq2&&dq2.orders&&dq2.orders.length)brtOrder=dq2.orders[0];
+          }
+        }
+        if(!brtOrder){
+          const brtFT3=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+          brtOrder=await fetchShopifyOrder(subj2+" "+brtFT3,email||"",name||"");
+        }
+      } else {
+        const brtFT4=(t.events||[]).map(ev=>ev.message&&(ev.message.text||"")).join(" ");
+        brtOrder=await fetchShopifyOrder(subj2+" "+brtFT4,email||"",name||"");
+      }
+
       if((selectedTicket?.ID||selectedTicket?.id)!==_guardTid3){console.log("BRT IIFE: ticket cambiato, skip");return;}
       if(brtOrder&&oArea){
         // Popola order-info-area direttamente come per gli altri ticket
