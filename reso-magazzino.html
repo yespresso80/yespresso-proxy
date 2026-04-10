@@ -148,24 +148,19 @@
 
 <script>
 const PROXY = "https://yespresso-proxy.onrender.com";
+const APP_TOKEN = "{{PROXY_TOKEN}}";
 
-// ── Prompt OCR configurabile — caricato da Strumenti → Reso Magazzino — Prompt AI ──
-const OCR_PROMPT_DEFAULT = 'Analizza questa immagine (etichetta spedizione, DDT o documento). Estrai:\n1. Numero ordine Shopify (formato #XXXXXXXXX o solo cifre es. #2024123456)\n2. Numero ordine Amazon (formato XXX-XXXXXXX-XXXXXXX es. 402-1234567-1234567)\n3. Numero ordine Temu (formato PO-XXX-XXXXXXXXXX es. PO-211-12345678901)\n4. Nome mittente o destinatario (persona fisica o azienda cliente)\n\nIgnora completamente: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e altri nomi di piattaforme o corrieri.\nIl nome deve essere quello del cliente finale.\n\nRispondi SOLO in formato JSON (nessun testo prima o dopo):\n{"ordine":"...","amazon_order":"...","temu_order":"...","nome":"..."}\nUsa "" per i campi non trovati.';
-
-let _ocrPrompt = OCR_PROMPT_DEFAULT;
-(async function loadOCRPrompt() {
-  try {
-    const r = await fetch(PROXY + '/reso-ai-prompt');
-    if (!r.ok) return;
-    const data = await r.json();
-    if (data && Array.isArray(data.sections) && data.sections.length) {
-      const text = data.sections
-        .filter(s => !s.disabled && s.text && s.text.trim())
-        .map(s => s.text.trim())
-        .join('\n\n');
-      if (text) _ocrPrompt = text;
+// ── Inietta x-app-token su tutte le chiamate al proxy ──
+(function(){
+  const _origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    opts = opts || {};
+    if (typeof url === 'string' && url.includes('yespresso-proxy')) {
+      opts.headers = opts.headers || {};
+      opts.headers['x-app-token'] = APP_TOKEN;
     }
-  } catch(e) { /* usa default */ }
+    return _origFetch(url, opts);
+  };
 })();
 
 // ── Storage per resi — sincronizzato via server ──
@@ -203,8 +198,14 @@ function showToast(msg, type = 'ok') {
 }
 
 async function shopifyGet(path) {
+  console.log('[RM] shopifyGet:', path, '| token:', APP_TOKEN ? APP_TOKEN.substring(0,8)+'...' : 'MANCANTE');
   const r = await fetch(PROXY + '/shopify/' + path);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  console.log('[RM] risposta:', r.status, r.statusText);
+  if (!r.ok) {
+    const errText = await r.text().catch(()=>'');
+    console.error('[RM] errore body:', errText.substring(0,200));
+    throw new Error('HTTP ' + r.status + ' — ' + errText.substring(0,100));
+  }
   return r.json();
 }
 
@@ -218,22 +219,24 @@ function pickBestOrder(orders, byName) {
 }
 
 async function searchOrder(q) {
+  console.log('[RM] searchOrder:', q);
   const results = [];
   const num = q.replace(/[^0-9]/g, '');
   // Per numero
   if (num.length >= 6) {
-    const d1 = await shopifyGet('orders.json?name=%23' + num + '&status=any').catch(() => null);
+    const d1 = await shopifyGet('orders.json?name=%23' + num + '&status=any').catch(e => { console.error('[RM] d1 err:', e.message); return null; });
     if (d1?.orders?.length) results.push(...d1.orders);
     if (!results.length) {
-      const d2 = await shopifyGet('orders/' + num + '.json').catch(() => null);
+      const d2 = await shopifyGet('orders/' + num + '.json').catch(e => { console.error('[RM] d2 err:', e.message); return null; });
       if (d2?.order) results.push(d2.order);
     }
   }
   // Per testo (nome, email)
   if (!results.length) {
-    const d3 = await shopifyGet('orders.json?status=any&limit=5&query=' + encodeURIComponent(q)).catch(() => null);
+    const d3 = await shopifyGet('orders.json?status=any&limit=5&query=' + encodeURIComponent(q)).catch(e => { console.error('[RM] d3 err:', e.message); return null; });
     if (d3?.orders?.length) results.push(...d3.orders);
   }
+  console.log('[RM] risultati trovati:', results.length);
   const seen = new Set();
   return results.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
 }
@@ -256,26 +259,22 @@ async function ocrImage(file) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-                { type: 'text', text: _ocrPrompt }
+                { type: 'text', text: 'Analizza questa immagine (etichetta spedizione o DDT). Estrai: numero ordine (formato #XXXXXXXXX o XXX-XXXXXXX-XXXXXXX per Amazon) e nome mittente/destinatario. Ignora completamente le parole: YESPRESSO, BRT, Amazon, Shopify, TikTok, Temu, Poste, GLS, DHL e simili nomi di piattaforme o corrieri. Il nome deve essere quello di una persona fisica o azienda cliente. Rispondi SOLO in formato JSON: {"ordine":"...","nome":"..."} con i valori trovati o "" se non trovati.' }
               ]
             }]
           })
         });
         const data = await res.json();
         const text = data.content?.[0]?.text || '';
-        const match = text.match(/\{[\s\S]*?\}/);
+        const match = text.match(/\{[^}]+\}/);
         if (match) {
-          try {
-            const parsed = JSON.parse(match[0]);
-            resolve(parsed);
-          } catch(e) {
-            resolve({ ordine: '', nome: '', amazon_order: '', temu_order: '' });
-          }
+          const parsed = JSON.parse(match[0]);
+          resolve(parsed);
         } else {
-          resolve({ ordine: '', nome: '', amazon_order: '', temu_order: '' });
+          resolve({ ordine: '', nome: '' });
         }
       } catch(e) {
-        resolve({ ordine: '', nome: '', amazon_order: '', temu_order: '' });
+        resolve({ ordine: '', nome: '' });
       }
     };
     reader.readAsDataURL(file);
@@ -666,6 +665,11 @@ document.getElementById('search-input').addEventListener('keydown', e => { if (e
 async function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
+  // Verifica token
+  if (!APP_TOKEN || APP_TOKEN === '{{PROXY_TOKEN}}') {
+    showToast('Errore: token non configurato. Ricarica la pagina dal server.', 'err');
+    return;
+  }
   document.getElementById('loading-area').style.display = 'block';
   document.getElementById('order-area').style.display = 'none';
   try {
@@ -693,7 +697,7 @@ document.getElementById('camera-input').addEventListener('change', async functio
   document.getElementById('order-area').style.display = 'none';
   try {
     const ocr = await ocrImage(file);
-    const query = ocr.ordine || ocr.amazon_order || ocr.temu_order || ocr.nome || '';
+    const query = ocr.ordine || ocr.nome || '';
     if (!query) {
       status.className = 'ocr-status err';
       status.textContent = '⚠️ Nessun numero ordine o nome trovato nell\'immagine';
