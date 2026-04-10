@@ -1617,6 +1617,15 @@ async function selectTicket(tid){
             '<span id="private-toggle-label">Privato</span>'+
           '</button>'+
           '<button class="qr-btn" onclick="openQRModal()" style="height:28px;font-size:11px;background:#FFFAAA;border-color:#e0d800;color:#000"># Risposte rapide</button>'+
+          '<div id="failure-msg-btn-wrap" style="display:none;position:relative">'+
+            '<button onclick="toggleFailureDropdown()" style="height:28px;font-size:11px;background:#fff3cd;border:1.5px solid #ffc107;color:#856404;border-radius:6px;padding:0 10px;cursor:pointer;font-weight:700;font-family:inherit">⚠️ Genera msg per ▾</button>'+
+            '<div id="failure-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;min-width:240px;overflow:hidden">'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'indirizzo\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#dc3545;border-bottom:1px solid #f0f2f5">📍 Indirizzo inesistente/sconosciuto</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'assente\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#fd7e14;border-bottom:1px solid #f0f2f5">🔔 Assente dopo lasciato avviso</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rifiuto\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6f42c1;border-bottom:1px solid #f0f2f5">❌ Rifiuto senza motivazione</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'fermopoint\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#0d6efd">📦 Verso punto di ritiro</div>'+
+            '</div>'+
+          '</div>'+
           '<div style="flex:1"></div>'+
           '<span style="font-size:11px;color:#888;margin-right:4px">Stato:</span>'+
           '<select class="status-change-select" id="reply-status-select">'+
@@ -3263,20 +3272,17 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       }
     }
     // ═══ PROBLEMA SPEDIZIONE: 4 pulsanti messaggio ═══
-    if(f&&f.shipment_status==='failure'){
+    const _fromEmail4=(t.requester&&t.requester.email)||"";
+    const _isBrtSender=_fromEmail4.includes("vasnoreply@brt")||_fromEmail4.includes("servizioclienti@brt");
+    if(f&&f.shipment_status==='failure'&&!_isBrtSender){
       const sa=order.shipping_address||{};
       const indirizzo=[sa.address1,sa.city,sa.zip,sa.province_code].filter(Boolean).join(', ');
       const nomeCliente=(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()||(t.requester&&t.requester.name)||'';
       window._brtFailureData=window._brtFailureData||{};
       window._brtFailureData[order.id]={indirizzo,nomeCliente,orderName:order.name||'',tn:(f&&f.tracking_number)||''};
-      html+='<br><div style="margin-top:8px;padding:8px 10px;background:#fff3cd;border:1.5px solid #ffc107;border-radius:8px">';
-      html+='<div style="font-size:11px;font-weight:700;color:#856404;margin-bottom:6px">⚠️ PROBLEMA SPEDIZIONE — Scegli il tipo:</div>';
-      html+='<div style="display:flex;flex-direction:column;gap:5px">';
-      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'indirizzo\')" style="background:#dc3545;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">📍 Indirizzo inesistente/sconosciuto</button>';
-      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'assente\')" style="background:#fd7e14;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">🔔 Assente dopo lasciato avviso</button>';
-      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'rifiuto\')" style="background:#6f42c1;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">❌ Rifiuto senza motivazione</button>';
-      html+='<button onclick="inviaMessaggioProblemaSpedizione(\''+order.id+'\',\'fermopoint\')" style="background:#0d6efd;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:left">📦 Verso punto di ritiro</button>';
-      html+='</div></div>';
+      window._failureOrderId=order.id;
+      html+='<br><span style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#856404">⚠️ Problema spedizione</span>';
+      setTimeout(function(){var w=document.getElementById('failure-msg-btn-wrap');if(w)w.style.display='block';},400);
     }
     const fromEmail2=(t.requester&&t.requester.email)||"";
     const hideActions=fromEmail2.includes("donotreply@amazon")&&(t.subject||"").toLowerCase().includes("annullamento");
@@ -4854,6 +4860,22 @@ function openElenaPanel(){
 
   document.body.appendChild(modal);
   renderPanel();
+}
+
+function toggleFailureDropdown(){
+  var dd=document.getElementById('failure-dropdown');
+  if(dd)dd.style.display=dd.style.display==='none'?'block':'none';
+  // Chiudi cliccando fuori
+  setTimeout(function(){
+    document.addEventListener('click',function closeDD(e){
+      var wrap=document.getElementById('failure-msg-btn-wrap');
+      if(wrap&&!wrap.contains(e.target)){
+        var dd2=document.getElementById('failure-dropdown');
+        if(dd2)dd2.style.display='none';
+        document.removeEventListener('click',closeDD);
+      }
+    });
+  },10);
 }
 
 function inviaMessaggioProblemaSpedizione(orderId, tipo){
