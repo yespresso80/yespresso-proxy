@@ -2991,6 +2991,13 @@ function formatOrderInfo(order){
   // Se il pacco ha flag fermopoint (impostato dal check BRT), usa quello
   const shipSt=order._brtFermopoint?"IN ATTESA DI RITIRO AL BRT-FERMOPOINT":(fship&&fship.shipment_status?(sS2[fship.shipment_status]||fship.shipment_status):null);
   let info="Ordine "+(order.name||"#"+order.order_number)+(amz?" (Amazon: "+amz.value+")":(temu?" (Temu: "+temu.value+")":""))+" | Stato: "+(shipSt||(fS[order.fulfillment_status]||"Non spedito"))+" | €"+order.total_price+(items?" | "+items:"");
+  // Aggiungi data ordine e giorni trascorsi — necessario per regola 45 giorni
+  if(order.created_at){
+    const orderDate=new Date(order.created_at);
+    const oggi=new Date();
+    const giorniTrascorsi=Math.floor((oggi-orderDate)/(1000*60*60*24));
+    info+=" | Data ordine: "+orderDate.toLocaleDateString("it-IT")+" ("+giorniTrascorsi+" giorni fa)"+(giorniTrascorsi>45?" ⚠️ ORDINE OLTRE 45 GIORNI — NON GESTIBILE":"");
+  }
   if(f){
     if(f.shipment_status)info+=" | "+(sS[f.shipment_status]||f.shipment_status);
     if(f.tracking_company)info+=" | "+f.tracking_company;
