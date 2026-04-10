@@ -4793,6 +4793,7 @@ function openElenaPanel(){
       // Giornaliere una volta
       '<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">⏰ Attività Giornaliere (1 volta al giorno)</div>'+
       row('resi_tiktok','day','↩️','Resi TikTok','<span onclick="document.getElementById(\'elena-panel\').remove();openTikTokResiModal&&openTikTokResiModal()" style="color:#7c3aed;font-weight:600;font-size:12px;cursor:pointer">Vai a TIK TOK RESI ↗</span>','')+
+      row('resi_magazzino','day','📦','Resi Magazzino','<span onclick="document.getElementById(\'elena-panel\').remove();openRichiesteResoPanel&&openRichiesteResoPanel()" style="color:#e53e3e;font-weight:600;font-size:12px;cursor:pointer">Vai a Richieste Reso (In attesa) ↗</span>','')+
 
       // Settimanali
       '<div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">📆 Attività Settimanali (ogni mercoledì)'+(!isMercoledi?' <span style="font-size:10px;font-weight:600;color:#aaa;text-transform:none">— oggi non è mercoledì</span>':'')+'</div>'+
@@ -6177,6 +6178,14 @@ function openToolModal(tool){
   var b64=_toolB64[tool];
   if(!b64)return;
   var html=decodeURIComponent(escape(atob(b64)));
+  // Inietta il token nelle pagine tool per autenticare le chiamate Shopify
+  if(typeof APP_TOKEN!=='undefined'&&APP_TOKEN){
+    html=html.replace(
+      'const PROXY = "https://yespresso-proxy.onrender.com";',
+      'const PROXY = "https://yespresso-proxy.onrender.com";\nconst APP_TOKEN_INJECTED = "'+APP_TOKEN+'";\n'+
+      'const _origFetch=window.fetch;window.fetch=function(url,opts){opts=opts||{};if(typeof url==="string"&&url.includes("yespresso-proxy")){opts.headers=opts.headers||{};opts.headers["x-app-token"]=APP_TOKEN_INJECTED;}return _origFetch(url,opts);};'
+    );
+  }
   var titles={molnar:'&#128230; Ordini Molnar',fabio:'&#128230; Ordini Fabio',fatture:'&#129518; Pagamento Fatture Shopify',contrassegno:'&#128176; Contrassegno Auto-Pagato',fattura:'&#127991;&#65039; Amazon Fattura Tagger',resi:'&#128230; Richieste Reso'};
   // Pagina a tutta schermata
   var page=document.createElement('div');
