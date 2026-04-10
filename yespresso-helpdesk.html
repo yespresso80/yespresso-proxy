@@ -1950,7 +1950,7 @@ async function selectTicket(tid){
           const trackNum=spedMatch[1]; // es. 179010717133
           console.log("BRT servizioclienti: ricerca per tracking",trackNum);
           // Cerca negli ordini per numero tracking
-          const dTrack=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,fulfillments,customer,shipping_address,phone,email,fulfillment_status,created_at,line_items,total_price,note_attributes");
+          const dTrack=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,fulfillments,customer,shipping_address,phone,email,fulfillment_status,financial_status,cancelled_at,cancel_reason,created_at,line_items,total_price,note_attributes");
           if(dTrack&&dTrack.orders){
             brtOrder=dTrack.orders.find(function(o){
               return (o.fulfillments||[]).some(function(f){
@@ -2239,7 +2239,7 @@ function renderMessageHtml(text, attachments){
         if(spedMatch2){
           const trackNum2=spedMatch2[1];
           console.log("BRT servizioclienti: ricerca per tracking",trackNum2);
-          const dTrack2=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,fulfillments,customer,shipping_address,phone,email,fulfillment_status,created_at,line_items,total_price,note_attributes");
+          const dTrack2=await shopifyGet("orders.json?status=any&limit=50&fields=id,name,fulfillments,customer,shipping_address,phone,email,fulfillment_status,financial_status,cancelled_at,cancel_reason,created_at,line_items,total_price,note_attributes");
           if(dTrack2&&dTrack2.orders){
             brtOrder=dTrack2.orders.find(function(o){
               return (o.fulfillments||[]).some(function(f){
@@ -2764,7 +2764,7 @@ async function fetchShopifyOrder(message,email,requesterName){
       // 1c. Scan Amazon PARALLELO per finestre temporali (max 3 pagine/finestra)
       // Scan Amazon in PARALLELO su tutte le finestre temporali
       console.log('→ Scan Amazon parallelo per finestre (parallel)');
-      const amzFlds='id,name,order_number,note_attributes,fulfillment_status,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
+      const amzFlds='id,name,order_number,note_attributes,fulfillment_status,financial_status,cancelled_at,cancel_reason,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
       const amzWins=[
         ['2026-02-16T12:46:17.863Z','2026-03-18T12:46:17.863Z'],
         ['2025-11-18T12:46:17.863Z','2026-02-16T12:46:17.863Z'],
@@ -2912,7 +2912,7 @@ async function fetchShopifyOrder(message,email,requesterName){
     if(alphaConfMatch){
       for(const code of alphaConfMatch.slice(0,3)){
         try{
-          const dConf=await shopifyGet('orders.json?status=any&limit=250&fields=id,name,confirmation_number,email,shipping_address,phone,fulfillment_status,created_at,line_items,total_price,fulfillments,note_attributes,customer');
+          const dConf=await shopifyGet('orders.json?status=any&limit=250&fields=id,name,confirmation_number,email,shipping_address,phone,fulfillment_status,financial_status,cancelled_at,cancel_reason,created_at,line_items,total_price,fulfillments,note_attributes,customer');
           if(dConf&&dConf.orders){
             const hit=dConf.orders.find(function(o){return (o.confirmation_number||'').toUpperCase()===code.toUpperCase();});
             if(hit){console.log("✅ confirmation_number "+code);if(hit.customer)window._lastShopifyCustomerId=hit.customer.id;window._lastShopifyOrder=hit;return hit;}
@@ -3049,6 +3049,17 @@ function formatOrderInfo(order){
   // Se il pacco ha flag fermopoint (impostato dal check BRT), usa quello
   const shipSt=order._brtFermopoint?"IN ATTESA DI RITIRO AL BRT-FERMOPOINT":(fship&&fship.shipment_status?(sS2[fship.shipment_status]||fship.shipment_status):null);
   let info="Ordine "+(order.name||"#"+order.order_number)+(amz?" (Amazon: "+amz.value+")":(temu?" (Temu: "+temu.value+")":""))+" | Stato: "+(shipSt||(fS[order.fulfillment_status]||"Non spedito"))+" | €"+order.total_price+(items?" | "+items:"");
+  // Stato annullamento — fondamentale per l'AI
+  if(order.cancelled_at){
+    const cancelDate=new Date(order.cancelled_at).toLocaleDateString("it-IT");
+    const cancelReason={customer:"richiesta cliente",inventory:"mancanza scorte",fraud:"frode",declined:"pagamento rifiutato",other:"altro"}[order.cancel_reason]||order.cancel_reason||"";
+    info+=" | ⚠️ ORDINE ANNULLATO il "+cancelDate+(cancelReason?" — Motivo: "+cancelReason:"");
+  }
+  // Stato pagamento
+  if(order.financial_status){
+    const fPay={paid:"Pagato",pending:"In attesa pagamento",refunded:"Rimborsato",partially_refunded:"Parzialmente rimborsato",voided:"Annullato",partially_paid:"Parzialmente pagato"};
+    info+=" | Pagamento: "+(fPay[order.financial_status]||order.financial_status);
+  }
   // Aggiungi data ordine e giorni trascorsi — necessario per regola 45 giorni
   if(order.created_at){
     const orderDate=new Date(order.created_at);
