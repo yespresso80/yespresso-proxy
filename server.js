@@ -333,18 +333,14 @@ const server = http.createServer(async function(req, res) {
   }
 
   if (req.url === "/reso-magazzino.html") {
-    const rpFile = path.join(__dirname, "reso-magazzino.html");
-    fs.readFile(rpFile, function(err, data) {
-      if (err) { res.writeHead(404); res.end("File non trovato"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
-    });
-    return;
-  }
-  if (req.url === "/reso-magazzino.html") {
     const resoFile = path.join(__dirname, "reso-magazzino.html");
     fs.readFile(resoFile, function(err, data) {
       if (err) { res.writeHead(404); res.end("File non trovato"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(data);
+      let html = data.toString('utf8');
+      html = html.replace('{{PROXY_TOKEN}}', PROXY_TOKEN);
+      html = html.replace('{{HD_TOKEN}}', HD_TOKEN);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
     });
     return;
   }
