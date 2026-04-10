@@ -4878,195 +4878,307 @@ function openFilippoPanel(){
   renderPanel();
 }
 // ═══ CORRISPETTIVI ITALIA ═══
-var _corrData={
-  mese:'MARZO 2026',
-  giorni:[{"data":"Mar 1, 2026","iva22":8041.26,"iva10":1248.28},{"data":"Mar 2, 2026","iva22":9388.3,"iva10":1963.72},{"data":"Mar 3, 2026","iva22":9015.71,"iva10":759.22},{"data":"Mar 4, 2026","iva22":9480.73,"iva10":1296.79},{"data":"Mar 5, 2026","iva22":9171.84,"iva10":1176.45},{"data":"Mar 6, 2026","iva22":9071.66,"iva10":1092.19},{"data":"Mar 7, 2026","iva22":6163.78,"iva10":1000.67},{"data":"Mar 8, 2026","iva22":8454.55,"iva10":1161.16},{"data":"Mar 9, 2026","iva22":10137.87,"iva10":517.22},{"data":"Mar 10, 2026","iva22":18367.57,"iva10":800.36},{"data":"Mar 11, 2026","iva22":15802.0,"iva10":522.06},{"data":"Mar 12, 2026","iva22":14634.89,"iva10":496.21},{"data":"Mar 13, 2026","iva22":12865.9,"iva10":474.32},{"data":"Mar 14, 2026","iva22":12712.83,"iva10":605.55},{"data":"Mar 15, 2026","iva22":13947.61,"iva10":952.6},{"data":"Mar 16, 2026","iva22":14343.24,"iva10":599.17},{"data":"Mar 17, 2026","iva22":11336.76,"iva10":1012.33},{"data":"Mar 18, 2026","iva22":10935.68,"iva10":923.78},{"data":"Mar 19, 2026","iva22":9050.26,"iva10":578.27},{"data":"Mar 20, 2026","iva22":10352.76,"iva10":683.43},{"data":"Mar 21, 2026","iva22":7967.8,"iva10":424.71},{"data":"Mar 22, 2026","iva22":8748.55,"iva10":798.6},{"data":"Mar 23, 2026","iva22":11269.76,"iva10":1422.19},{"data":"Mar 24, 2026","iva22":13505.28,"iva10":829.4},{"data":"Mar 25, 2026","iva22":12652.1,"iva10":1054.46},{"data":"Mar 26, 2026","iva22":11392.25,"iva10":379.72},{"data":"Mar 27, 2026","iva22":12715.78,"iva10":1080.75},{"data":"Mar 28, 2026","iva22":9821.15,"iva10":189.53},{"data":"Mar 29, 2026","iva22":9494.56,"iva10":297.44},{"data":"Mar 30, 2026","iva22":12020.55,"iva10":798.49},{"data":"Mar 31, 2026","iva22":12636.01,"iva10":1118.81}],
-  pag:{"TIK TOK":65058.06,"CONTANTI ALLA CONSEGNA":5692.13,"AMAZON":164807.4,"PAYPAL":30949.37,"SHOPIFY PAYMENTS":38560.86,"TEMU":66689.05}
-};
+var _corrData=null;
 var _corrRimborsi={amazon:0,temu:0,tiktok:0};
 
 function eur(v){return parseFloat(v||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function parseNum(s){return parseFloat(String(s||'').replace(',','.'))||0;}
 
-function renderCorrispettivi(htmlIgnored, panel, wsIgnored){
-  var ngg=_corrData.giorni.length;
-  var rimb_amz=_corrRimborsi.amazon||0;
-  var rimb_temu=_corrRimborsi.temu||0;
-  var rimb_tik=_corrRimborsi.tiktok||0;
-  var storno_tot=rimb_amz+rimb_temu+rimb_tik;
-  var storno_gg=ngg>0?storno_tot/ngg:0;
-
-  var totIva22=_corrData.giorni.reduce(function(s,g){return s+g.iva22;},0);
-  var totIva10=_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0);
-  var totLordo=totIva22+totIva10;
-  var totNetto22=totIva22-storno_tot;
-  var totNetto=totNetto22+totIva10;
-
-  var cats=['AMAZON','TEMU','TIK TOK','SHOPIFY PAYMENTS','PAYPAL','CONTANTI ALLA CONSEGNA'];
-  var storno_map={AMAZON:rimb_amz,TEMU:rimb_temu,'TIK TOK':rimb_tik};
-
-  var contentArea=panel.querySelector('#filippo-content');
-  if(!contentArea)return;
-
-  var th='style="background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:7px 10px;text-align:right;border:1px solid #2E75B6"';
-  var thL='style="background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:7px 10px;text-align:left;border:1px solid #2E75B6"';
-  var td='style="font-size:12px;padding:6px 10px;text-align:right;border:1px solid #e0e4ea"';
-  var tdL='style="font-size:12px;padding:6px 10px;text-align:left;border:1px solid #e0e4ea"';
-  var tdT='style="font-size:12px;font-weight:700;padding:7px 10px;text-align:right;border:1px solid #e0e4ea;background:#FFF2CC"';
-  var tdTL='style="font-size:12px;font-weight:700;padding:7px 10px;text-align:left;border:1px solid #e0e4ea;background:#FFF2CC"';
-
-  var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
-    '<div style="font-size:18px;font-weight:700;color:#1F3864">📊 Corrispettivi Italia — '+_corrData.mese+'</div>'+
-    '<button onclick="scaricaExcelCorrispettivi()" style="background:#166534;border:none;color:#fff;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">⬇️ Scarica Excel</button>'+
-  '</div>'+
-  // Tabella giorni
-  '<div style="overflow-x:auto;margin-bottom:20px"><table style="border-collapse:collapse;width:100%;min-width:500px">'+
-  '<thead><tr>'+
-    '<th '+thL+'>GG</th><th '+thL+'>DATA</th>'+
-    '<th '+th+'>IVA 22% (€)</th><th '+th+'>IVA 10% (€)</th><th '+th+'>TOTALE (€)</th>'+
-  '</tr></thead><tbody>';
-
-  _corrData.giorni.forEach(function(g,i){
-    var bg=i%2===0?'#fff':'#f8f9fc';
-    var storno_gg_i=storno_gg;
-    var iva22n=g.iva22-storno_gg_i;
-    html+='<tr style="background:'+bg+'">'+
-      '<td '+tdL+'>'+( i+1)+'</td>'+
-      '<td '+tdL+'>'+g.data+'</td>'+
-      '<td '+td+'>'+eur(g.iva22)+'</td>'+
-      '<td '+td+'>'+eur(g.iva10)+'</td>'+
-      '<td '+td+'>'+eur(g.iva22+g.iva10)+'</td>'+
-    '</tr>';
+function corrParsePag(rows){
+  var pag={};
+  rows.forEach(function(row){
+    var gw=String(row[0]||'').trim();
+    var amt=parseFloat(String(row[1]||'').replace(',','.'))||0;
+    var src=String(row[2]||'').trim();
+    if(!amt)return;
+    var cat;
+    if(src.toUpperCase()==='TIKTOK') cat='TIK TOK';
+    else if(gw.toLowerCase()==='amazon') cat='AMAZON';
+    else if(src.toUpperCase()==='TEMU') cat='TEMU';
+    else if(gw.toLowerCase().indexOf('cash on delivery')>=0) cat='CONTANTI ALLA CONSEGNA';
+    else if(gw.toLowerCase()==='shopify_payments') cat='SHOPIFY PAYMENTS';
+    else if(gw.toLowerCase()==='paypal') cat='PAYPAL';
+    else return;
+    pag[cat]=(pag[cat]||0)+amt;
   });
-
-  html+='<tr>'+
-    '<td colspan="2" '+tdTL+'>TOTALE MESE</td>'+
-    '<td '+tdT+'>'+eur(totIva22)+'</td>'+
-    '<td '+tdT+'>'+eur(totIva10)+'</td>'+
-    '<td '+tdT+'>'+eur(totLordo)+'</td>'+
-  '</tr></tbody></table></div>'+
-
-  // Metodi pagamento
-  '<div style="font-size:14px;font-weight:700;color:#1F3864;margin-bottom:8px">Metodi di Pagamento</div>'+
-  '<div style="overflow-x:auto;margin-bottom:24px"><table style="border-collapse:collapse;width:100%;max-width:600px">'+
-  '<thead><tr>'+
-    '<th '+thL+'>METODO</th><th '+th+'>LORDO (€)</th><th '+th+'>RIMBORSO (€)</th><th '+th+'>NETTO (€)</th>'+
-  '</tr></thead><tbody>';
-
-  var totPagLordo=0, totPagRimb=0, totPagNetto=0;
-  cats.forEach(function(cat,i){
-    var bg=i%2===0?'#fff':'#f8f9fc';
-    var val=_corrData.pag[cat]||0;
-    var rimb=storno_map[cat]||0;
-    var netto=val-rimb;
-    totPagLordo+=val; totPagRimb+=rimb; totPagNetto+=netto;
-    html+='<tr style="background:'+bg+'">'+
-      '<td '+tdL+'>'+cat+'</td>'+
-      '<td '+td+'>'+eur(val)+'</td>'+
-      '<td '+td+'>'+eur(rimb)+'</td>'+
-      '<td '+td+'>'+eur(netto)+'</td>'+
-    '</tr>';
-  });
-  html+='<tr>'+
-    '<td '+tdTL+'>TOTALE</td>'+
-    '<td '+tdT+'>'+eur(totPagLordo)+'</td>'+
-    '<td '+tdT+'>'+eur(totPagRimb)+'</td>'+
-    '<td '+tdT+'>'+eur(totPagNetto)+'</td>'+
-  '</tr></tbody></table></div>'+
-
-  // Caselle rimborso
-  '<div style="background:#fff3cd;border:1.5px solid #ffc107;border-radius:12px;padding:16px 20px;max-width:600px">'+
-    '<div style="font-size:13px;font-weight:700;color:#856404;margin-bottom:12px">⚠️ Storno rimborsi marketplace — riduci IVA 22% (distribuito su '+ngg+' giorni)</div>'+
-    '<div style="display:flex;gap:12px;flex-wrap:wrap">'+
-    ['amazon','temu','tiktok'].map(function(k){
-      var lbl=k==='tiktok'?'TIK TOK':k.toUpperCase();
-      return '<div style="flex:1;min-width:140px">'+
-        '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">'+lbl+'</label>'+
-        '<input id="rimb-'+k+'" type="number" min="0" step="0.01" value="'+(_corrRimborsi[k]||0)+'" '+
-          'oninput="corrAggiorna()" '+
-          'style="width:100%;padding:7px 10px;border:1.5px solid #ffc107;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
-        '<div style="font-size:10px;color:#888;margin-top:3px">÷'+ngg+' gg = €'+eur((_corrRimborsi[k]||0)/ngg)+'/gg</div>'+
-      '</div>';
-    }).join('')+
-    '</div>'+
-    '<div style="margin-top:12px;font-size:12px;color:#856404">'+
-      'Storno totale: <strong>€'+eur(storno_tot)+'</strong> → '+
-      'IVA 22% netta: <strong>€'+eur(totNetto22)+'</strong> | '+
-      'Totale netto: <strong>€'+eur(totNetto)+'</strong>'+
-    '</div>'+
-    '<div style="margin-top:4px;font-size:12px;color:'+(Math.abs(totNetto-totPagNetto)<0.05?'#166534':'#dc2626')+'">'+
-      'Riconciliazione: corr. netti <strong>€'+eur(totNetto)+'</strong> vs metodi pag. netti <strong>€'+eur(totPagNetto)+'</strong> '+
-      (Math.abs(totNetto-totPagNetto)<0.05?'✅ OK':'⚠️ diff. €'+eur(Math.abs(totNetto-totPagNetto)))+
-    '</div>'+
-  '</div>';
-
-  contentArea.innerHTML=html;
+  return pag;
 }
 
-window.corrAggiorna=function(){
-  ['amazon','temu','tiktok'].forEach(function(k){
-    var el=document.getElementById('rimb-'+k);
-    if(el) _corrRimborsi[k]=parseFloat(el.value)||0;
+function corrParseGiorni(rows){
+  return rows.filter(function(r){
+    var v=String(r[0]||'').trim();
+    return v&&v!=='nan'&&v!=='undefined';
+  }).map(function(r){
+    return {data:String(r[0]).trim(),iva22:parseFloat(String(r[1]||'').replace(',','.'))||0,iva10:parseFloat(String(r[2]||'').replace(',','.'))||0};
   });
-  var panel=document.getElementById('filippo-panel');
-  if(panel){
-    var ca=panel.querySelector('#filippo-content');
-    if(ca) renderCorrispettivi(null,panel,null);
-  }
-};
+}
 
-window.scaricaExcelCorrispettivi=function(){
-  // Genera CSV invece di xlsx (nessuna dipendenza)
+function renderCorrispettivi(ignored,panel,ignored2){
+  var ca=panel.querySelector('#filippo-content');
+  if(!ca)return;
+
+  if(!_corrData){
+    ca.innerHTML=
+      '<div style="font-size:18px;font-weight:700;color:#1F3864;margin-bottom:20px">'+String.fromCodePoint(128202)+' Corrispettivi Italia</div>'+
+      '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:32px;max-width:560px">'+
+        '<div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:6px">'+String.fromCodePoint(128194)+' Carica i file del mese</div>'+
+        '<div style="font-size:12px;color:#888;margin-bottom:20px">Carica entrambi i file Excel o CSV per generare la tabella</div>'+
+        '<div style="display:flex;flex-direction:column;gap:14px">'+
+          '<div><label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:5px">1. Corrispettivi giornalieri</label>'+
+            '<input type="file" id="corr-file-giorni" accept=".csv,.xlsx,.xls" style="font-size:12px;font-family:inherit;width:100%">'+
+            '<div style="font-size:10px;color:#aaa;margin-top:3px">Colonne: data, IVA 22%, IVA 10%, totale</div></div>'+
+          '<div><label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:5px">2. Metodi di pagamento</label>'+
+            '<input type="file" id="corr-file-pag" accept=".csv,.xlsx,.xls" style="font-size:12px;font-family:inherit;width:100%">'+
+            '<div style="font-size:10px;color:#aaa;margin-top:3px">Colonne: gateway, totale, source</div></div>'+
+          '<button onclick="corrCaricaFile()" style="background:#1F3864;border:none;color:#fff;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;align-self:flex-start">'+String.fromCodePoint(9654)+' Genera tabella</button>'+
+        '</div>'+
+      '</div>';
+    return;
+  }
+
   var ngg=_corrData.giorni.length;
-  var rimb_amz=_corrRimborsi.amazon||0;
-  var rimb_temu=_corrRimborsi.temu||0;
-  var rimb_tik=_corrRimborsi.tiktok||0;
-  var storno_tot=rimb_amz+rimb_temu+rimb_tik;
+  var r_amz=_corrRimborsi.amazon||0,r_temu=_corrRimborsi.temu||0,r_tik=_corrRimborsi.tiktok||0;
+  var storno_tot=r_amz+r_temu+r_tik;
   var storno_gg=ngg>0?storno_tot/ngg:0;
   var cats=['AMAZON','TEMU','TIK TOK','SHOPIFY PAYMENTS','PAYPAL','CONTANTI ALLA CONSEGNA'];
-  var storno_map={AMAZON:rimb_amz,TEMU:rimb_temu,'TIK TOK':rimb_tik};
+  var storno_map={'AMAZON':r_amz,'TEMU':r_temu,'TIK TOK':r_tik};
 
-  var c=function(v){return '"'+String(v||'').replace(/"/g,'""')+'"';};
-  var n=function(v){return String(parseFloat(v||0).toFixed(2)).replace('.',',');};
+  var thS='background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:7px 10px;border:1px solid #2E75B6;white-space:nowrap';
+  var tdS='font-size:12px;padding:5px 8px;border:1px solid #e0e4ea;text-align:right';
+  var tdLS='font-size:12px;padding:5px 8px;border:1px solid #e0e4ea;text-align:left';
+  var ttdS='font-size:12px;font-weight:700;padding:6px 8px;border:1px solid #e0e4ea;text-align:right;background:#FFF2CC';
+  var ttdLS='font-size:12px;font-weight:700;padding:6px 8px;border:1px solid #e0e4ea;text-align:left;background:#FFF2CC';
 
-  var rows=[];
-  rows.push(['CORRISPETTIVI ITALIA — '+_corrData.mese]);
-  rows.push([]);
-  rows.push(['CORRISPETTIVI GIORNALIERI']);
-  rows.push(['GG','DATA','IVA 22% (€)','IVA 10% (€)','TOTALE (€)','IVA 22% NETTO (€)','TOTALE NETTO (€)']);
+  var rows_html='';
   _corrData.giorni.forEach(function(g,i){
-    var iva22n=g.iva22-storno_gg;
-    rows.push([i+1,g.data,n(g.iva22),n(g.iva10),n(g.iva22+g.iva10),n(iva22n),n(iva22n+g.iva10)]);
+    var bg=i%2===0?'#fff':'#f8f9fc';
+    rows_html+='<tr style="background:'+bg+'">'+
+      '<td style="'+tdLS+'">'+g.data+'</td>'+
+      '<td id="cr22-'+i+'" style="'+tdS+'"></td>'+
+      '<td style="'+tdS+'">'+eur(g.iva10)+'</td>'+
+      '<td id="crtot-'+i+'" style="'+tdS+';font-weight:600"></td>'+
+    '</tr>';
   });
-  var t22=_corrData.giorni.reduce(function(s,g){return s+g.iva22;},0);
-  var t10=_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0);
-  rows.push(['TOTALE','',n(t22),n(t10),n(t22+t10),n(t22-storno_tot),n(t22-storno_tot+t10)]);
-  rows.push([]);
-  rows.push(['STORNO RIMBORSI']);
-  rows.push(['MARKETPLACE','RIMBORSO TOTALE (€)','STORNO/GIORNO (€)']);
-  rows.push(['AMAZON',n(rimb_amz),n(rimb_amz/ngg)]);
-  rows.push(['TEMU',n(rimb_temu),n(rimb_temu/ngg)]);
-  rows.push(['TIK TOK',n(rimb_tik),n(rimb_tik/ngg)]);
-  rows.push(['TOTALE',n(storno_tot),n(storno_gg)]);
-  rows.push([]);
-  rows.push(['METODI DI PAGAMENTO']);
-  rows.push(['METODO','LORDO (€)','RIMBORSO (€)','NETTO (€)']);
-  cats.forEach(function(cat){
-    var v=_corrData.pag[cat]||0;
-    var r=storno_map[cat]||0;
-    rows.push([cat,n(v),n(r),n(v-r)]);
-  });
-  var tl=cats.reduce(function(s,c){return s+(_corrData.pag[c]||0);},0);
-  var tr2=cats.reduce(function(s,c){return s+(storno_map[c]||0);},0);
-  rows.push(['TOTALE',n(tl),n(tr2),n(tl-tr2)]);
 
-  var csv=rows.map(function(r){return r.map(function(v){return c(v);}).join(';');}).join('\r\n');
-  var bom='\uFEFF';
-  var blob=new Blob([bom+csv],{type:'text/csv;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url; a.download='Corrispettivi_Italia_'+_corrData.mese.replace(/ /g,'_')+'.csv';
-  a.click(); URL.revokeObjectURL(url);
+  var pag_html='';
+  cats.forEach(function(cat,i){
+    var bg=i%2===0?'#fff':'#f8f9fc';
+    pag_html+='<tr style="background:'+bg+'">'+
+      '<td style="'+tdLS+';font-weight:600">'+cat+'</td>'+
+      '<td style="'+tdS+'">'+eur(_corrData.pag[cat]||0)+'</td>'+
+      '<td id="pr-'+cat.replace(/ /g,'_')+'" style="'+tdS+';color:#c00000"></td>'+
+      '<td id="pn-'+cat.replace(/ /g,'_')+'" style="'+tdS+';font-weight:700"></td>'+
+    '</tr>';
+  });
+
+  ca.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
+      '<div style="font-size:18px;font-weight:700;color:#1F3864">'+String.fromCodePoint(128202)+' Corrispettivi — '+_corrData.mese+'</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button onclick="corrStampaPDF()" style="background:#1F3864;border:none;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">'+String.fromCodePoint(128424)+' Stampa / Salva PDF</button>'+
+        '<button onclick="corrReset()" style="background:#dc2626;border:none;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">'+String.fromCodePoint(128465)+' Cancella e ricarica</button>'+
+      '</div>'+
+    '</div>'+
+    '<div id="corr-storni" style="background:#fff3cd;border:1.5px solid #ffc107;border-radius:10px;padding:14px 16px;max-width:600px;margin-bottom:20px">'+
+      '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">Storno rimborsi marketplace — detrai da IVA 22% diviso per '+ngg+' giorni</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
+        ['amazon','temu','tiktok'].map(function(k){
+          var lbl=k==='tiktok'?'TIK TOK':k.toUpperCase();
+          var val=_corrRimborsi[k]||0;
+          return '<div style="flex:1;min-width:120px">'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:3px">'+lbl+' (€)</label>'+
+            '<input id="rimb-'+k+'" type="text" inputmode="decimal" value="'+(val>0?String(val).replace('.',','):'')+'\" placeholder="0,00" '+
+            'style="width:100%;padding:7px 9px;border:1.5px solid #ffc107;border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;background:#fff">'+
+          '</div>';
+        }).join('')+
+      '</div>'+
+      '<div id="corr-ric" style="font-size:11px;color:#856404"></div>'+
+    '</div>'+
+    '<div id="corr-tab1" style="overflow-x:auto;margin-bottom:20px">'+
+      '<div style="font-size:13px;font-weight:700;color:#1F3864;margin-bottom:6px">Corrispettivi giornalieri</div>'+
+      '<table style="border-collapse:collapse;width:100%;max-width:550px">'+
+      '<thead><tr>'+
+        '<th style="'+thS+';text-align:left">DATA</th>'+
+        '<th style="'+thS+';text-align:right">IVA 22% (€)</th>'+
+        '<th style="'+thS+';text-align:right">IVA 10% (€)</th>'+
+        '<th style="'+thS+';text-align:right">TOTALE (€)</th>'+
+      '</tr></thead><tbody>'+rows_html+'</tbody>'+
+      '<tfoot><tr>'+
+        '<td style="'+ttdLS+'">TOTALE MESE</td>'+
+        '<td id="ctot22" style="'+ttdS+'"></td>'+
+        '<td id="ctot10" style="'+ttdS+'">'+eur(_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0))+'</td>'+
+        '<td id="ctotlordo" style="'+ttdS+'"></td>'+
+      '</tr></tfoot></table></div>'+
+    '<div id="corr-tab2" style="overflow-x:auto;margin-bottom:20px">'+
+      '<div style="font-size:13px;font-weight:700;color:#1F3864;margin-bottom:6px">Metodi di pagamento</div>'+
+      '<table style="border-collapse:collapse;width:100%;max-width:550px">'+
+      '<thead><tr>'+
+        '<th style="'+thS+';text-align:left">METODO</th>'+
+        '<th style="'+thS+';text-align:right">LORDO (€)</th>'+
+        '<th style="'+thS+';text-align:right">RIMBORSO (€)</th>'+
+        '<th style="'+thS+';text-align:right">NETTO (€)</th>'+
+      '</tr></thead><tbody>'+pag_html+'</tbody>'+
+      '<tfoot><tr>'+
+        '<td style="'+ttdLS+'">TOTALE</td>'+
+        '<td id="ptotlordo" style="'+ttdS+'"></td>'+
+        '<td id="ptotrimb" style="'+ttdS+';color:#c00000"></td>'+
+        '<td id="ptotnetto" style="'+ttdS+'"></td>'+
+      '</tr></tfoot></table></div>';
+
+  ['amazon','temu','tiktok'].forEach(function(k){
+    var el=document.getElementById('rimb-'+k);
+    if(el) el.addEventListener('input',function(){
+      _corrRimborsi[k]=parseNum(this.value);
+      corrRicalcola();
+    });
+  });
+  corrRicalcola();
+}
+
+function corrRicalcola(){
+  if(!_corrData)return;
+  var ngg=_corrData.giorni.length;
+  var r_amz=_corrRimborsi.amazon||0,r_temu=_corrRimborsi.temu||0,r_tik=_corrRimborsi.tiktok||0;
+  var storno_tot=r_amz+r_temu+r_tik;
+  var storno_gg=ngg>0?storno_tot/ngg:0;
+  var cats=['AMAZON','TEMU','TIK TOK','SHOPIFY PAYMENTS','PAYPAL','CONTANTI ALLA CONSEGNA'];
+  var storno_map={'AMAZON':r_amz,'TEMU':r_temu,'TIK TOK':r_tik};
+  var tot22=0,totLordo=0;
+  _corrData.giorni.forEach(function(g,i){
+    var v22=g.iva22-storno_gg,vtot=v22+g.iva10;
+    tot22+=v22; totLordo+=vtot;
+    var e22=document.getElementById('cr22-'+i);
+    var etot=document.getElementById('crtot-'+i);
+    if(e22)e22.textContent=eur(v22);
+    if(etot)etot.textContent=eur(vtot);
+  });
+  var tot10=_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0);
+  function se(id,v){var el=document.getElementById(id);if(el)el.textContent=v;}
+  se('ctot22',eur(tot22)); se('ctotlordo',eur(totLordo));
+  var tpL=0,tpR=0,tpN=0;
+  cats.forEach(function(cat){
+    var v=_corrData.pag[cat]||0,r=storno_map[cat]||0;
+    tpL+=v;tpR+=r;tpN+=(v-r);
+    var k=cat.replace(/ /g,'_');
+    se('pr-'+k,r>0?'- '+eur(r):'—');
+    se('pn-'+k,eur(v-r));
+  });
+  se('ptotlordo',eur(tpL));
+  se('ptotrimb',storno_tot>0?'- '+eur(storno_tot):'—');
+  se('ptotnetto',eur(tpN));
+  var diff=Math.abs(totLordo-tpN);
+  var ric=document.getElementById('corr-ric');
+  if(ric)ric.innerHTML='Storno/giorno: <strong>€'+eur(storno_gg)+'</strong> | IVA 22% netta: <strong>€'+eur(tot22)+'</strong> | Totale netto: <strong>€'+eur(totLordo)+'</strong> &mdash; '+
+    '<span style="color:'+(diff<0.05?'#166534':'#dc2626')+';font-weight:700">'+(diff<0.05?'OK':'Diff. €'+eur(diff))+'</span>';
+}
+
+window.corrReset=function(){
+  if(!confirm('Cancellare i dati e ricominciare con nuovi file?'))return;
+  _corrData=null; _corrRimborsi={amazon:0,temu:0,tiktok:0};
+  var panel=document.getElementById('filippo-panel');
+  if(panel) renderCorrispettivi(null,panel,null);
 };
+
+window.corrCaricaFile=function(){
+  var f1=document.getElementById('corr-file-giorni');
+  var f2=document.getElementById('corr-file-pag');
+  if(!f1||!f1.files[0]||!f2||!f2.files[0]){alert('Carica entrambi i file');return;}
+  var risultati={};var done=0;
+  function check(){
+    if(done<2)return;
+    _corrData={mese:'',giorni:[],pag:{}};
+    _corrData.giorni=corrParseGiorni(risultati.giorni);
+    _corrData.pag=corrParsePag(risultati.pag);
+    if(_corrData.giorni.length>0){
+      var d=_corrData.giorni[0].data;
+      // Estrai mese e anno dalla data
+      var parts=d.split(' ');
+      _corrData.mese=parts.length>=2?parts[0]+' '+parts[parts.length-1]:d;
+    }
+    var panel=document.getElementById('filippo-panel');
+    if(panel) renderCorrispettivi(null,panel,null);
+  }
+  function leggiFile(file,key){
+    var ext=file.name.split('.').pop().toLowerCase();
+    if(ext==='csv'){
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var text=e.target.result;
+        var lines=text.split(/\r?\n/).filter(function(l){return l.trim();});
+        var delim=lines[0].indexOf(';')>lines[0].indexOf(',')?';':',';
+        risultati[key]=lines.slice(1).map(function(l){
+          return l.split(delim).map(function(v){return v.replace(/^"|"$/g,'').trim();});
+        });
+        done++; check();
+      };
+      reader.readAsText(file,'UTF-8');
+    } else {
+      var reader=new FileReader();
+      reader.onload=function(e){
+        try{
+          var data=new Uint8Array(e.target.result);
+          var wb=XLSX.read(data,{type:'array'});
+          var ws=wb.Sheets[wb.SheetNames[0]];
+          var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          risultati[key]=rows.slice(1).map(function(r){return r.map(function(v){return String(v===null||v===undefined?'':v).trim();});});
+          done++; check();
+        }catch(err){alert('Errore lettura '+file.name+': '+err.message);}
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  }
+  leggiFile(f1.files[0],'giorni');
+  leggiFile(f2.files[0],'pag');
+};
+
+window.corrStampaPDF=function(){
+  if(!_corrData)return;
+  var ngg=_corrData.giorni.length;
+  var r_amz=_corrRimborsi.amazon||0,r_temu=_corrRimborsi.temu||0,r_tik=_corrRimborsi.tiktok||0;
+  var storno_tot=r_amz+r_temu+r_tik;
+  var storno_gg=ngg>0?storno_tot/ngg:0;
+  var cats=['AMAZON','TEMU','TIK TOK','SHOPIFY PAYMENTS','PAYPAL','CONTANTI ALLA CONSEGNA'];
+  var storno_map={'AMAZON':r_amz,'TEMU':r_temu,'TIK TOK':r_tik};
+
+  var css='body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:20px}h2{font-size:14px;color:#1F3864;margin:0 0 10px}p.note{font-size:10px;color:#856404;margin:0 0 10px}table{border-collapse:collapse;width:100%}th{background:#1F3864;color:#fff;font-size:10px;padding:6px 8px;text-align:right;border:1px solid #2E75B6}th.l{text-align:left}td{font-size:11px;padding:5px 8px;border:1px solid #ccc;text-align:right}td.l{text-align:left}tr:nth-child(even) td{background:#f5f7fa}.tot td{font-weight:700;background:#FFF2CC!important}@page{size:A4;margin:15mm}';
+
+  var tot22=0,totLordo=0;
+  var righe1=_corrData.giorni.map(function(g,i){
+    var v22=g.iva22-storno_gg,vtot=v22+g.iva10;
+    tot22+=v22; totLordo+=vtot;
+    return '<tr><td class="l">'+g.data+'</td><td>'+eur(v22)+'</td><td>'+eur(g.iva10)+'</td><td>'+eur(vtot)+'</td></tr>';
+  }).join('');
+  var tot10=_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0);
+
+  var tpL=0,tpR=0,tpN=0;
+  var righe2=cats.map(function(cat){
+    var v=_corrData.pag[cat]||0,r=storno_map[cat]||0;
+    tpL+=v;tpR+=r;tpN+=(v-r);
+    return '<tr><td class="l">'+cat+'</td><td>'+eur(v)+'</td><td style="color:#c00000">'+(r>0?'- '+eur(r):'—')+'</td><td>'+eur(v-r)+'</td></tr>';
+  }).join('');
+
+  var notaStorno=storno_tot>0?'<p class="note">Storni applicati: Amazon €'+eur(r_amz)+' | Temu €'+eur(r_temu)+' | TikTok €'+eur(r_tik)+' &rarr; €'+eur(storno_gg)+'/giorno</p>':'';
+
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'+css+'</style></head><body>'+
+    '<h2>Corrispettivi giornalieri &mdash; '+_corrData.mese+'</h2>'+notaStorno+
+    '<table><thead><tr><th class="l">DATA</th><th>IVA 22% (&euro;)</th><th>IVA 10% (&euro;)</th><th>TOTALE (&euro;)</th></tr></thead>'+
+    '<tbody>'+righe1+'</tbody>'+
+    '<tfoot><tr class="tot"><td class="l">TOTALE MESE</td><td>'+eur(tot22)+'</td><td>'+eur(tot10)+'</td><td>'+eur(totLordo)+'</td></tr></tfoot></table>'+
+    '<div style="page-break-before:always"></div>'+
+    '<h2>Metodi di pagamento &mdash; '+_corrData.mese+'</h2>'+
+    '<table><thead><tr><th class="l">METODO</th><th>LORDO (&euro;)</th><th>RIMBORSO (&euro;)</th><th>NETTO (&euro;)</th></tr></thead>'+
+    '<tbody>'+righe2+'</tbody>'+
+    '<tfoot><tr class="tot"><td class="l">TOTALE</td><td>'+eur(tpL)+'</td><td style="color:#c00000">'+(storno_tot>0?'- '+eur(tpR):'&mdash;')+'</td><td>'+eur(tpN)+'</td></tr></tfoot></table>'+
+    '</body></html>';
+
+  var w=window.open('','_blank','width=800,height=700');
+  if(!w){alert('Abilita i popup per la stampa PDF');return;}
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(function(){w.print();},500);
+};
+
 
 function openElenaPanel(){
   // Stato flags: localStorage con chiavi giornaliera/settimanale/mensile
