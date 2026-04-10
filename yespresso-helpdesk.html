@@ -1884,14 +1884,15 @@ async function selectTicket(tid){
       generateReplyNotaInterna(allMsgs, email, fullThread);
     });
   } else if(isNoAiEmail(email)) {
-    // Per BRT: lascia fare solo a isBrtTicketSelect sotto. Per altri: generateReply senza AI
-    const _isBrt=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt");
+    // Per email in lista no-AI: aggiorna sidebar ma non genera risposta AI
+    const _isBrt=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt")||(email||"").includes("servizioclienti@brt");
     if(!_isBrt){
       loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{}).then(()=>{
         generateReply(allMsgs, email, fullThread, true);
       });
     } else {
-      // Solo mostra box vuoto senza spinner
+      // BRT: carica allegati e aggiorna sidebar, blocca solo generazione AI
+      loadImapAttachments(email, t.subject||"", tid2, (t.events&&t.events[0]&&t.events[0].message&&(t.events[0].message.text||t.events[0].message.richTextHtml))||'').catch(()=>{});
       const genBox=document.getElementById("gen-box");
       const actionArea=document.getElementById("action-area");
       if(genBox)genBox.style.display="none";
