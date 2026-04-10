@@ -4792,6 +4792,8 @@ function openFilippoPanel(){
         {key:'rimanenze',label:'Rimanenze finali'}
       ]}
     ]
+  },{
+    id:'corrispettivi_it',label:'📊 Corrispettivi Italia',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -4816,9 +4818,10 @@ function openFilippoPanel(){
         '<span style="font-size:11px;background:'+(done===items.length&&items.length>0?'#dcfce7':'#f0f2f5')+';color:'+(done===items.length&&items.length>0?'#166534':'#888')+';border-radius:10px;padding:1px 7px;font-weight:700">'+done+'/'+items.length+'</span>'+
       '</div>';
     });
-    html+='</div><div style="flex:1;overflow-y:auto;padding:24px">';
+    html+='</div><div id="filippo-content" style="flex:1;overflow-y:auto;padding:24px">';
     SECTIONS.forEach(function(sec){
       if(sec.id!==activeSection)return;
+      if(sec.custom){return;} // custom sections rendered after panel.innerHTML
       html+='<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:4px">'+sec.label+'</div>'+
         '<div style="font-size:12px;color:#888;margin-bottom:20px">🗓️ '+sec.periodo+'</div>';
       sec.groups.forEach(function(group){
@@ -4849,6 +4852,9 @@ function openFilippoPanel(){
     html+='</div></div>';
     panel.innerHTML=html;
     panel.querySelector('#fpc').onclick=function(){panel.remove();};
+    // Render sezioni custom dopo che il panel è nel DOM
+    var activeSec=SECTIONS.find(function(s){return s.id===activeSection;});
+    if(activeSec&&activeSec.custom) renderCorrispettivi(null,panel,null);
   }
   window.filippoSetSection=function(id){activeSection=id;renderPanel();};
   window.filippoToggle=function(key){
@@ -4871,6 +4877,197 @@ function openFilippoPanel(){
   document.body.appendChild(panel);
   renderPanel();
 }
+// ═══ CORRISPETTIVI ITALIA ═══
+var _corrData={
+  mese:'MARZO 2026',
+  giorni:[{"data":"Mar 1, 2026","iva22":8041.26,"iva10":1248.28},{"data":"Mar 2, 2026","iva22":9388.3,"iva10":1963.72},{"data":"Mar 3, 2026","iva22":9015.71,"iva10":759.22},{"data":"Mar 4, 2026","iva22":9480.73,"iva10":1296.79},{"data":"Mar 5, 2026","iva22":9171.84,"iva10":1176.45},{"data":"Mar 6, 2026","iva22":9071.66,"iva10":1092.19},{"data":"Mar 7, 2026","iva22":6163.78,"iva10":1000.67},{"data":"Mar 8, 2026","iva22":8454.55,"iva10":1161.16},{"data":"Mar 9, 2026","iva22":10137.87,"iva10":517.22},{"data":"Mar 10, 2026","iva22":18367.57,"iva10":800.36},{"data":"Mar 11, 2026","iva22":15802.0,"iva10":522.06},{"data":"Mar 12, 2026","iva22":14634.89,"iva10":496.21},{"data":"Mar 13, 2026","iva22":12865.9,"iva10":474.32},{"data":"Mar 14, 2026","iva22":12712.83,"iva10":605.55},{"data":"Mar 15, 2026","iva22":13947.61,"iva10":952.6},{"data":"Mar 16, 2026","iva22":14343.24,"iva10":599.17},{"data":"Mar 17, 2026","iva22":11336.76,"iva10":1012.33},{"data":"Mar 18, 2026","iva22":10935.68,"iva10":923.78},{"data":"Mar 19, 2026","iva22":9050.26,"iva10":578.27},{"data":"Mar 20, 2026","iva22":10352.76,"iva10":683.43},{"data":"Mar 21, 2026","iva22":7967.8,"iva10":424.71},{"data":"Mar 22, 2026","iva22":8748.55,"iva10":798.6},{"data":"Mar 23, 2026","iva22":11269.76,"iva10":1422.19},{"data":"Mar 24, 2026","iva22":13505.28,"iva10":829.4},{"data":"Mar 25, 2026","iva22":12652.1,"iva10":1054.46},{"data":"Mar 26, 2026","iva22":11392.25,"iva10":379.72},{"data":"Mar 27, 2026","iva22":12715.78,"iva10":1080.75},{"data":"Mar 28, 2026","iva22":9821.15,"iva10":189.53},{"data":"Mar 29, 2026","iva22":9494.56,"iva10":297.44},{"data":"Mar 30, 2026","iva22":12020.55,"iva10":798.49},{"data":"Mar 31, 2026","iva22":12636.01,"iva10":1118.81}],
+  pag:{"TIK TOK":65058.06,"CONTANTI ALLA CONSEGNA":5692.13,"AMAZON":164807.4,"PAYPAL":30949.37,"SHOPIFY PAYMENTS":38560.86,"TEMU":66689.05}
+};
+var _corrRimborsi={amazon:0,temu:0,tiktok:0};
+
+function eur(v){return parseFloat(v||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+function renderCorrispettivi(htmlIgnored, panel, wsIgnored){
+  var ngg=_corrData.giorni.length;
+  var rimb_amz=_corrRimborsi.amazon||0;
+  var rimb_temu=_corrRimborsi.temu||0;
+  var rimb_tik=_corrRimborsi.tiktok||0;
+  var storno_tot=rimb_amz+rimb_temu+rimb_tik;
+  var storno_gg=ngg>0?storno_tot/ngg:0;
+
+  var totIva22=_corrData.giorni.reduce(function(s,g){return s+g.iva22;},0);
+  var totIva10=_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0);
+  var totLordo=totIva22+totIva10;
+  var totNetto22=totIva22-storno_tot;
+  var totNetto=totNetto22+totIva10;
+
+  var cats=['AMAZON','TEMU','TIK TOK','SHOPIFY PAYMENTS','PAYPAL','CONTANTI ALLA CONSEGNA'];
+  var storno_map={AMAZON:rimb_amz,TEMU:rimb_temu,'TIK TOK':rimb_tik};
+
+  var contentArea=panel.querySelector('#filippo-content');
+  if(!contentArea)return;
+
+  var th='style="background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:7px 10px;text-align:right;border:1px solid #2E75B6"';
+  var thL='style="background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:7px 10px;text-align:left;border:1px solid #2E75B6"';
+  var td='style="font-size:12px;padding:6px 10px;text-align:right;border:1px solid #e0e4ea"';
+  var tdL='style="font-size:12px;padding:6px 10px;text-align:left;border:1px solid #e0e4ea"';
+  var tdT='style="font-size:12px;font-weight:700;padding:7px 10px;text-align:right;border:1px solid #e0e4ea;background:#FFF2CC"';
+  var tdTL='style="font-size:12px;font-weight:700;padding:7px 10px;text-align:left;border:1px solid #e0e4ea;background:#FFF2CC"';
+
+  var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
+    '<div style="font-size:18px;font-weight:700;color:#1F3864">📊 Corrispettivi Italia — '+_corrData.mese+'</div>'+
+    '<button onclick="scaricaExcelCorrispettivi()" style="background:#166534;border:none;color:#fff;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">⬇️ Scarica Excel</button>'+
+  '</div>'+
+  // Tabella giorni
+  '<div style="overflow-x:auto;margin-bottom:20px"><table style="border-collapse:collapse;width:100%;min-width:500px">'+
+  '<thead><tr>'+
+    '<th '+thL+'>GG</th><th '+thL+'>DATA</th>'+
+    '<th '+th+'>IVA 22% (€)</th><th '+th+'>IVA 10% (€)</th><th '+th+'>TOTALE (€)</th>'+
+  '</tr></thead><tbody>';
+
+  _corrData.giorni.forEach(function(g,i){
+    var bg=i%2===0?'#fff':'#f8f9fc';
+    var storno_gg_i=storno_gg;
+    var iva22n=g.iva22-storno_gg_i;
+    html+='<tr style="background:'+bg+'">'+
+      '<td '+tdL+'>'+( i+1)+'</td>'+
+      '<td '+tdL+'>'+g.data+'</td>'+
+      '<td '+td+'>'+eur(g.iva22)+'</td>'+
+      '<td '+td+'>'+eur(g.iva10)+'</td>'+
+      '<td '+td+'>'+eur(g.iva22+g.iva10)+'</td>'+
+    '</tr>';
+  });
+
+  html+='<tr>'+
+    '<td colspan="2" '+tdTL+'>TOTALE MESE</td>'+
+    '<td '+tdT+'>'+eur(totIva22)+'</td>'+
+    '<td '+tdT+'>'+eur(totIva10)+'</td>'+
+    '<td '+tdT+'>'+eur(totLordo)+'</td>'+
+  '</tr></tbody></table></div>'+
+
+  // Metodi pagamento
+  '<div style="font-size:14px;font-weight:700;color:#1F3864;margin-bottom:8px">Metodi di Pagamento</div>'+
+  '<div style="overflow-x:auto;margin-bottom:24px"><table style="border-collapse:collapse;width:100%;max-width:600px">'+
+  '<thead><tr>'+
+    '<th '+thL+'>METODO</th><th '+th+'>LORDO (€)</th><th '+th+'>RIMBORSO (€)</th><th '+th+'>NETTO (€)</th>'+
+  '</tr></thead><tbody>';
+
+  var totPagLordo=0, totPagRimb=0, totPagNetto=0;
+  cats.forEach(function(cat,i){
+    var bg=i%2===0?'#fff':'#f8f9fc';
+    var val=_corrData.pag[cat]||0;
+    var rimb=storno_map[cat]||0;
+    var netto=val-rimb;
+    totPagLordo+=val; totPagRimb+=rimb; totPagNetto+=netto;
+    html+='<tr style="background:'+bg+'">'+
+      '<td '+tdL+'>'+cat+'</td>'+
+      '<td '+td+'>'+eur(val)+'</td>'+
+      '<td '+td+'>'+eur(rimb)+'</td>'+
+      '<td '+td+'>'+eur(netto)+'</td>'+
+    '</tr>';
+  });
+  html+='<tr>'+
+    '<td '+tdTL+'>TOTALE</td>'+
+    '<td '+tdT+'>'+eur(totPagLordo)+'</td>'+
+    '<td '+tdT+'>'+eur(totPagRimb)+'</td>'+
+    '<td '+tdT+'>'+eur(totPagNetto)+'</td>'+
+  '</tr></tbody></table></div>'+
+
+  // Caselle rimborso
+  '<div style="background:#fff3cd;border:1.5px solid #ffc107;border-radius:12px;padding:16px 20px;max-width:600px">'+
+    '<div style="font-size:13px;font-weight:700;color:#856404;margin-bottom:12px">⚠️ Storno rimborsi marketplace — riduci IVA 22% (distribuito su '+ngg+' giorni)</div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">'+
+    ['amazon','temu','tiktok'].map(function(k){
+      var lbl=k==='tiktok'?'TIK TOK':k.toUpperCase();
+      return '<div style="flex:1;min-width:140px">'+
+        '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">'+lbl+'</label>'+
+        '<input id="rimb-'+k+'" type="number" min="0" step="0.01" value="'+(_corrRimborsi[k]||0)+'" '+
+          'oninput="corrAggiorna()" '+
+          'style="width:100%;padding:7px 10px;border:1.5px solid #ffc107;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+        '<div style="font-size:10px;color:#888;margin-top:3px">÷'+ngg+' gg = €'+eur((_corrRimborsi[k]||0)/ngg)+'/gg</div>'+
+      '</div>';
+    }).join('')+
+    '</div>'+
+    '<div style="margin-top:12px;font-size:12px;color:#856404">'+
+      'Storno totale: <strong>€'+eur(storno_tot)+'</strong> → '+
+      'IVA 22% netta: <strong>€'+eur(totNetto22)+'</strong> | '+
+      'Totale netto: <strong>€'+eur(totNetto)+'</strong>'+
+    '</div>'+
+    '<div style="margin-top:4px;font-size:12px;color:'+(Math.abs(totNetto-totPagNetto)<0.05?'#166534':'#dc2626')+'">'+
+      'Riconciliazione: corr. netti <strong>€'+eur(totNetto)+'</strong> vs metodi pag. netti <strong>€'+eur(totPagNetto)+'</strong> '+
+      (Math.abs(totNetto-totPagNetto)<0.05?'✅ OK':'⚠️ diff. €'+eur(Math.abs(totNetto-totPagNetto)))+
+    '</div>'+
+  '</div>';
+
+  contentArea.innerHTML=html;
+}
+
+window.corrAggiorna=function(){
+  ['amazon','temu','tiktok'].forEach(function(k){
+    var el=document.getElementById('rimb-'+k);
+    if(el) _corrRimborsi[k]=parseFloat(el.value)||0;
+  });
+  var panel=document.getElementById('filippo-panel');
+  if(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(ca) renderCorrispettivi(null,panel,null);
+  }
+};
+
+window.scaricaExcelCorrispettivi=function(){
+  // Genera CSV invece di xlsx (nessuna dipendenza)
+  var ngg=_corrData.giorni.length;
+  var rimb_amz=_corrRimborsi.amazon||0;
+  var rimb_temu=_corrRimborsi.temu||0;
+  var rimb_tik=_corrRimborsi.tiktok||0;
+  var storno_tot=rimb_amz+rimb_temu+rimb_tik;
+  var storno_gg=ngg>0?storno_tot/ngg:0;
+  var cats=['AMAZON','TEMU','TIK TOK','SHOPIFY PAYMENTS','PAYPAL','CONTANTI ALLA CONSEGNA'];
+  var storno_map={AMAZON:rimb_amz,TEMU:rimb_temu,'TIK TOK':rimb_tik};
+
+  var c=function(v){return '"'+String(v||'').replace(/"/g,'""')+'"';};
+  var n=function(v){return String(parseFloat(v||0).toFixed(2)).replace('.',',');};
+
+  var rows=[];
+  rows.push(['CORRISPETTIVI ITALIA — '+_corrData.mese]);
+  rows.push([]);
+  rows.push(['CORRISPETTIVI GIORNALIERI']);
+  rows.push(['GG','DATA','IVA 22% (€)','IVA 10% (€)','TOTALE (€)','IVA 22% NETTO (€)','TOTALE NETTO (€)']);
+  _corrData.giorni.forEach(function(g,i){
+    var iva22n=g.iva22-storno_gg;
+    rows.push([i+1,g.data,n(g.iva22),n(g.iva10),n(g.iva22+g.iva10),n(iva22n),n(iva22n+g.iva10)]);
+  });
+  var t22=_corrData.giorni.reduce(function(s,g){return s+g.iva22;},0);
+  var t10=_corrData.giorni.reduce(function(s,g){return s+g.iva10;},0);
+  rows.push(['TOTALE','',n(t22),n(t10),n(t22+t10),n(t22-storno_tot),n(t22-storno_tot+t10)]);
+  rows.push([]);
+  rows.push(['STORNO RIMBORSI']);
+  rows.push(['MARKETPLACE','RIMBORSO TOTALE (€)','STORNO/GIORNO (€)']);
+  rows.push(['AMAZON',n(rimb_amz),n(rimb_amz/ngg)]);
+  rows.push(['TEMU',n(rimb_temu),n(rimb_temu/ngg)]);
+  rows.push(['TIK TOK',n(rimb_tik),n(rimb_tik/ngg)]);
+  rows.push(['TOTALE',n(storno_tot),n(storno_gg)]);
+  rows.push([]);
+  rows.push(['METODI DI PAGAMENTO']);
+  rows.push(['METODO','LORDO (€)','RIMBORSO (€)','NETTO (€)']);
+  cats.forEach(function(cat){
+    var v=_corrData.pag[cat]||0;
+    var r=storno_map[cat]||0;
+    rows.push([cat,n(v),n(r),n(v-r)]);
+  });
+  var tl=cats.reduce(function(s,c){return s+(_corrData.pag[c]||0);},0);
+  var tr2=cats.reduce(function(s,c){return s+(storno_map[c]||0);},0);
+  rows.push(['TOTALE',n(tl),n(tr2),n(tl-tr2)]);
+
+  var csv=rows.map(function(r){return r.map(function(v){return c(v);}).join(';');}).join('\r\n');
+  var bom='\uFEFF';
+  var blob=new Blob([bom+csv],{type:'text/csv;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url; a.download='Corrispettivi_Italia_'+_corrData.mese.replace(/ /g,'_')+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+};
+
 function openElenaPanel(){
   // Stato flags: localStorage con chiavi giornaliera/settimanale/mensile
   var today=new Date();
