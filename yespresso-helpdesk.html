@@ -3320,6 +3320,18 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     const effectiveIsAmazon=isMarketplaceAmazon||(isBrtEmail&&orderSource==="amazon");
     const effectiveIsTemu=fromEmail2.includes("temu")||(isBrtEmail&&orderSource==="temu");
     const effectiveIsTiktok=fromEmail2.includes("tiktok")||(isBrtEmail&&orderSource==="tiktok");
+    // Link TikTok Seller
+    const tiktokAttr=(order.note_attributes||[]).find(a=>["TikTok Order Id","tiktok_order_id","order_id"].includes(a.name)&&a.value&&a.value.length>10);
+    if(effectiveIsTiktok||tiktokAttr){
+      const ttId=tiktokAttr?tiktokAttr.value:((order.note_attributes||[]).find(a=>a.value&&/^\d{18,}$/.test(a.value))||{}).value||'';
+      if(ttId){
+        const ttUrl='https://seller-it.tiktok.com/order/detail?order_no='+encodeURIComponent(ttId)+'&shop_region=IT';
+        html+='<br><span style="display:inline-flex;align-items:center;gap:5px;background:#f5f5f5;border:1px solid #d1d5db;border-radius:7px;padding:2px 9px;font-size:12px;font-weight:700;color:#111">🎵 '+ttId+' <span onclick="navigator.clipboard.writeText(\''+ttId+'\');this.textContent=\'✅\';setTimeout(function(){this.textContent=\'📋\'},1500)" style="cursor:pointer;font-size:13px;line-height:1" title="Copia">📋</span></span>';
+        html+='<br>🎵 <a href="'+ttUrl+'" target="_blank" style="color:#000;font-weight:600;text-decoration:none">Vedi su TikTok ↗</a>';
+      }
+      const ttMsgUrl='https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT';
+      html+='<br>💬 <a href="'+ttMsgUrl+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">Vedi Msg TikTok ↗</a>';
+    }
     if(amz&&amz.value||(isBrtEmail&&orderSource==="amazon")){
       const amzOrderId=amz?amz.value:((order.note_attributes||[]).find(a=>a.name==="Amazon Order Id")||{}).value||"";
       const scUrl='https://sellercentral.amazon.it/orders-v3/order/'+amzOrderId;
@@ -3335,6 +3347,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         html+='<br>❌ <a href="'+cancelUrl+'" target="_blank" style="color:#e67e22;font-weight:700;text-decoration:none;font-size:13px">Annulla Ordine su Amazon ↗</a>';
       } else {
         html+='<br>💶 <a href="'+refundUrl+'" target="_blank" style="color:#c0392b;font-weight:600;text-decoration:none">Rimborsa su Amazon ↗</a>';
+        const amzMsgUrl2=amzOrderId?'https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+amzOrderId:'https://sellercentral.amazon.it/messaging/inbox';
+        html+='<br>💬 <a href="'+amzMsgUrl2+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">Messaggi Amazon ↗</a>';
         html+='<br>❌ <a href="'+cancelUrl+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Annulla Ordine ↗</a>';
         html+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
       }
@@ -3344,6 +3358,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       const temuUrl='https://seller-eu.temu.com/order-detail.html?parent_order_sn='+encodeURIComponent(temuAttr.value);
       html+='<br><span style="display:inline-flex;align-items:center;gap:5px;background:#fff4f0;border:1px solid #fdba74;border-radius:7px;padding:2px 9px;font-size:12px;font-weight:700;color:#c2410c">🟠 '+temuAttr.value+' <span onclick="navigator.clipboard.writeText(\''+temuAttr.value+'\');this.textContent=\'✅\';setTimeout(function(){this.textContent=\'📋\'},1500)" style="cursor:pointer;font-size:13px;line-height:1" title="Copia">📋</span></span>';
       html+='<br>🟠 <a href="'+temuUrl+'" target="_blank" style="color:#ff6600;font-weight:600;text-decoration:none">Vedi su Temu ↗</a>';
+      const temuMsgUrl='https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei';
+      html+='<br>💬 <a href="'+temuMsgUrl+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">Vedi Msg Temu ↗</a>';
     }
     // Crea Credito e Duplica — nascosti per ticket annullamento Amazon
     if(!hideActions){
@@ -3405,6 +3421,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         amzHtml='<strong>🟡 Amazon Ordine '+amzOrderId+'</strong>';
         amzHtml+='<br>🔗 <a href="'+scUrl+'" target="_blank" style="color:#e8a000;font-weight:600;text-decoration:none">Vedi su Amazon ↗</a>';
         amzHtml+='<br>💶 <a href="'+refundUrl+'" target="_blank" style="color:#c0392b;font-weight:600;text-decoration:none">Rimborsa su Amazon ↗</a>';
+        const amzMsgUrlNoOrd='https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+amzOrderId;
+        amzHtml+='<br>💬 <a href="'+amzMsgUrlNoOrd+'" target="_blank" style="color:#1a73e8;font-weight:600;text-decoration:none">Messaggi Amazon ↗</a>';
         amzHtml+='<br>❌ <a href="'+cancelUrl+'" target="_blank" style="color:#e67e22;font-weight:600;text-decoration:none">Annulla Ordine ↗</a>';
         amzHtml+='<br>🛡️ <a href="'+atozUrl+'" target="_blank" style="color:#8e44ad;font-weight:600;text-decoration:none">Garanzia A-Z ↗</a>';
       } else {
@@ -6578,6 +6596,7 @@ function openRichiesteResoPanel(){
     '</div>';
   }
 
+  window._resiRender=function(){ render(); };
   function render(){
     badges();
     var data=getList(),total=data.length,tp=Math.max(1,Math.ceil(total/PG));
@@ -6618,7 +6637,7 @@ function openRichiesteResoPanel(){
           body.scrollTop=0;
           // Mostra la card completa con bottone Indietro
           body.innerHTML=
-            '<button onclick="render()" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit;margin-bottom:14px">← Indietro</button>'+
+            '<button onclick="window._resiRender&&window._resiRender()" style="background:#f0f2f5;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit;margin-bottom:14px">← Indietro</button>'+
             renderCard(reso);
           // Carica note Shopify
           if(reso.orderId){
