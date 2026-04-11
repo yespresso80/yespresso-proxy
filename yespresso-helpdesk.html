@@ -1763,6 +1763,7 @@ async function selectTicket(tid){
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
         html2+='<br>'+displayStatus2;
+        if(order.cancelled_at){html2+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';}
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
           const tc2=f.tracking_company||"BRT";
@@ -1876,6 +1877,7 @@ async function selectTicket(tid){
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
         html2+='<br>'+displayStatus2;
+        if(order.cancelled_at){html2+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';}
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
           const tc2=f.tracking_company||"BRT";
@@ -2149,6 +2151,7 @@ function renderMessageHtml(text, attachments){
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
         html2+='<br>'+displayStatus2;
+        if(order.cancelled_at){html2+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';}
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
           const tc2=f.tracking_company||"BRT";
@@ -3262,12 +3265,16 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     const sS={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema spedizione"};
     const fS={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
     const shipStatus=f&&f.shipment_status;
-    const displayStatus=shipStatus?(sS[shipStatus]||("📦 "+shipStatus)):(fS[order.fulfillment_status]||"⏳ Non spedito");
+    const displayStatus=order.cancelled_at?("❌ ANNULLATO il "+new Date(order.cancelled_at).toLocaleDateString("it-IT")+({customer:" — richiesta cliente",inventory:" — mancanza scorte",fraud:" — frode",declined:" — pagamento rifiutato",other:" — altro"}[order.cancel_reason]||"")):shipStatus?(sS[shipStatus]||("📦 "+shipStatus)):(fS[order.fulfillment_status]||"⏳ Non spedito");
     const shopifyOrderUrl='https://40f758-3.myshopify.com/admin/orders/'+order.id;
     let html='<strong>🛍️ <a href="'+shopifyOrderUrl+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
     const temuAttr=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
 
     html+='<br>'+displayStatus;
+    // Banner visivo annullamento
+    if(order.cancelled_at){
+      html+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';
+    }
     // Link modifica indirizzo su Yespresso Cloud — solo se ordine non ancora spedito
     const notShipped=!order.fulfillment_status||order.fulfillment_status==="unfulfilled"||order.fulfillment_status==="partial";
     if(notShipped){
