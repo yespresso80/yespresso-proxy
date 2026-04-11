@@ -3781,8 +3781,15 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
   if(firstMsgText&&firstMsgText.includes('Conversation transcript'))return;
   if(firstMsgText&&firstMsgText.includes('cca_platform'))return;
   try{
-    // Cerca per EMAIL ESATTA — il subject non viene passato per evitare falsi positivi
-    const imapRes0=await proxyFetch(PROXY+"/imap/attachments?email="+encodeURIComponent(email));
+    // Estrai numero ordine Amazon dal subject (es. 404-3157788-4736302)
+    var orderNumMatch = (subject||'').match(/(\d{3}-\d{7}-\d{7})/);
+    var orderNum = orderNumMatch ? orderNumMatch[1] : '';
+    // Per email Amazon anonime cerca solo per numero ordine
+    var isAmazonEmail = email.includes('marketplace.amazon') || email.includes('bounce-') || email.includes('atoz-guarantee');
+    var url = PROXY+"/imap/attachments?email="+encodeURIComponent(email);
+    if(orderNum) url += "&ordernum="+encodeURIComponent(orderNum);
+    if(subject&&!isAmazonEmail) url += "&subject="+encodeURIComponent(subject);
+    const imapRes0=await proxyFetch(url);
     const imapData0=await imapRes0.json();
     const imapAtts0=imapData0.attachments||[];
     if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
