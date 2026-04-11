@@ -6131,7 +6131,7 @@ function saveSettings(){
   showToast("✅ Impostazioni salvate");
   closeSettingsModal();
 }
-const NO_AI_DEFAULTS=["vasnoreply@brt.it","ecommerce@yespresso.it","servizioclienti@brt.it","assistenza@paypal.it"];
+const NO_AI_DEFAULTS=["vasnoreply@brt.it","ecommerce@yespresso.it","commerciale@yespresso.it","@yespresso.it","servizioclienti@brt.it","assistenza@paypal.it","seller@orders.temu.com"];
 
 // ── AUTO-RISPOSTA ──
 function isAutoReplyEnabled(){
@@ -6157,11 +6157,12 @@ async function autoProcessTickets(freshTickets){
     // Prendi solo ticket open non ancora processati, non spam, AI non bloccata
     var toProcess = (freshTickets||[]).filter(function(t){
       var tid = String(t.ID||t.id);
-      if(_autoProcessedIds.has(tid)) return false;           // già processato
-      if(t.status !== 'open') return false;                  // solo open
+      if(_autoProcessedIds.has(tid)) return false;
+      if(t.status !== 'open') return false;
       var email = (t.requester&&t.requester.email)||'';
-      if(isNoAiEmail(email)) return false;                   // AI disabilitata
-      if(isSpamTicket(t)) return false;                      // spam
+      if(isNoAiEmail(email)) return false;
+      if(email.includes('yespresso.it')) return false;  // mai rispondere a email interne
+      if(isSpamTicket(t)) return false;
       return true;
     });
 
@@ -6187,6 +6188,11 @@ async function autoProcessTickets(freshTickets){
         // Carica il ticket completo con messaggi
         var fullTicket = await hdFetch('/v1/tickets/'+tid).catch(function(){ return null; });
         if(!fullTicket) continue;
+        // Verifica che il ticket sia ancora open — potrebbe essere già stato risolto
+        if(fullTicket.status && fullTicket.status !== 'open') {
+          console.log('[AUTO-REPLY] Skip ticket '+tid+' — stato: '+fullTicket.status);
+          continue;
+        }
         var email = (fullTicket.requester&&fullTicket.requester.email)||'';
         if(isSpamTicket(fullTicket)||isNoAiEmail(email)) continue;
 
@@ -6208,15 +6214,24 @@ async function autoProcessTickets(freshTickets){
           lastMsg = lastMsg.replace(/<[^>]+>/g,' ').trim().substring(0,800);
         }
 
-        // Cerca ordine Shopify
+        // Cerca ordine Shopify — per numero ordine nel subject, oppure per email cliente
+        // MAI cercare per email interna yespresso (Shopify fa match su parole nell'indirizzo)
         var order = null;
         try{
           var subj = fullTicket.subject||'';
           var amzMatch = subj.match(/\d{3}-\d{7}-\d{7}/);
           var shopMatch = subj.match(/#?(\d{8,13})/);
-          var orderQ = amzMatch ? ('query='+encodeURIComponent(amzMatch[0])) : (shopMatch ? ('name=%23'+shopMatch[1]) : null);
-          if(!orderQ && email && !email.includes('amazon') && !email.includes('marketplace')){
-            orderQ = 'query='+encodeURIComponent(email);
+          var temuMatch = subj.match(/PO-\d+-\d+/i);
+          var tiktokMatch = subj.match(/\b5\d{17,18}\b/);
+          var orderQ = null;
+          if(amzMatch) orderQ = 'query='+encodeURIComponent(amzMatch[0]);
+          else if(temuMatch) orderQ = 'query='+encodeURIComponent(temuMatch[0]);
+          else if(tiktokMatch) orderQ = 'name='+tiktokMatch[0];
+          else if(shopMatch) orderQ = 'name=%23'+shopMatch[1];
+          // Cerca per email con parametro esatto email= (non query= che fa full-text)
+          var isMarketplaceEmail = email.includes('marketplace.amazon') || email.includes('orders.temu') || email.includes('tiktok') || email.includes('bounce-');
+          if(!orderQ && email && !isMarketplaceEmail){
+            orderQ = 'email='+encodeURIComponent(email);
           }
           if(orderQ){
             var od = await shopifyGet('orders.json?status=any&limit=3&'+orderQ).catch(function(){ return null; });
@@ -6276,12 +6291,20 @@ async function autoProcessTickets(freshTickets){
           continue;
         }
 
-        // Chiudi ticket
-        await hdFetch('/v1/tickets/'+tid,{method:'PUT',body:JSON.stringify({status:'resolved'})}).catch(function(){});
+        // Chiudi ticket — prova PUT poi PATCH, usa 'solved' come sendReply normale
+        var statusOk = false;
+        for(var meth of ['PUT','PATCH']){
+          try{
+            var stRes = await hdFetch('/v1/tickets/'+tid,{method:meth,body:JSON.stringify({status:'solved'})});
+            statusOk = true;
+            console.log('[AUTO-REPLY] Stato → solved via '+meth);
+            break;
+          }catch(se){ console.log('[AUTO-REPLY] Status '+meth+' fallito:', se.message); }
+        }
 
         // Aggiorna stato locale
         var ix = tickets.findIndex(function(x){ return String(x.ID||x.id)===tid; });
-        if(ix>=0) tickets[ix].status='resolved';
+        if(ix>=0) tickets[ix].status = statusOk ? 'solved' : tickets[ix].status;
 
         showToast('🤖 Auto-risposta inviata: ticket #'+tid, 'success');
         console.log('[AUTO-REPLY] ✅ Ticket '+tid+' risposto e chiuso');
@@ -6396,17 +6419,19 @@ async function tryAutoReply(replyText, order){
     });
     if(!msgRes.ok) return false;
 
-    // Chiudi ticket
-    await hdFetch("/v1/tickets/"+tid,{method:"PUT",body:JSON.stringify({status:"resolved"})}).catch(function(){});
+    // Chiudi ticket — prova PUT poi PATCH, usa 'solved'
+    for(var _m of ['PUT','PATCH']){
+      try{ await hdFetch("/v1/tickets/"+tid,{method:_m,body:JSON.stringify({status:"solved"})}); break; }catch(se){}
+    }
 
     showToast("✅ Auto-risposta inviata e ticket chiuso","success");
     var lbl=document.getElementById("ai-label");
     if(lbl) lbl.textContent="✅ Auto-risposta inviata automaticamente";
 
     // Aggiorna stato locale
-    selectedTicket.status="resolved";
+    selectedTicket.status="solved";
     var idx=tickets.findIndex(function(t){return (t.ID||t.id)===tid;});
-    if(idx>=0) tickets[idx].status="resolved";
+    if(idx>=0) tickets[idx].status="solved";
 
     return true;
   }catch(e){
@@ -6476,13 +6501,13 @@ window.vaiAuto=async function(){
   var btn=document.getElementById("vai-auto-btn");
   if(btn){ btn.disabled=true; btn.textContent="🤖 In corso..."; }
   try{
-    // Prendi TUTTI i ticket open — non solo quelli freschi
     var allOpen=tickets.filter(function(t){ return t.status==="open"; });
     if(!allOpen.length){ showToast("Nessun ticket Open da processare","error"); return; }
-    showToast("🤖 Avvio auto-risposta su "+allOpen.length+" ticket Open...","success");
-    // Resetta i processati così li riprova tutti
-    _autoProcessedIds.clear();
-    await autoProcessTickets(allOpen);
+    // NON resetta _autoProcessedIds — evita doppi invii nella stessa sessione
+    var daProcessare=allOpen.filter(function(t){ return !_autoProcessedIds.has(String(t.ID||t.id)); });
+    if(!daProcessare.length){ showToast("Tutti i ticket Open già processati in questa sessione","error"); return; }
+    showToast("🤖 Avvio auto-risposta su "+daProcessare.length+" ticket Open...","success");
+    await autoProcessTickets(daProcessare);
     showToast("🤖 Auto-risposta completata","success");
   }finally{
     if(btn){ btn.disabled=false; btn.textContent="🤖 VAI AUTO"; }
