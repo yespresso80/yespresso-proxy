@@ -1758,7 +1758,7 @@ async function selectTicket(tid){
         const sS2={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema spedizione"};
         const fS2={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
         const shipStatus2=f&&f.shipment_status;
-        const displayStatus2=shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
+        const displayStatus2=order.cancelled_at?"❌ ANNULLATO il "+new Date(order.cancelled_at).toLocaleDateString("it-IT")+(order.cancel_reason?" — "+({customer:"richiesta cliente",inventory:"mancanza scorte",fraud:"frode",declined:"pagamento rifiutato",other:"altro"}[order.cancel_reason]||order.cancel_reason):""):shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
         const shopifyOrderUrl2="https://40f758-3.myshopify.com/admin/orders/"+order.id;
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
@@ -1871,7 +1871,7 @@ async function selectTicket(tid){
         const sS2={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema spedizione"};
         const fS2={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
         const shipStatus2=f&&f.shipment_status;
-        const displayStatus2=shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
+        const displayStatus2=order.cancelled_at?"❌ ANNULLATO il "+new Date(order.cancelled_at).toLocaleDateString("it-IT")+(order.cancel_reason?" — "+({customer:"richiesta cliente",inventory:"mancanza scorte",fraud:"frode",declined:"pagamento rifiutato",other:"altro"}[order.cancel_reason]||order.cancel_reason):""):shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
         const shopifyOrderUrl2="https://40f758-3.myshopify.com/admin/orders/"+order.id;
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
@@ -2144,7 +2144,7 @@ function renderMessageHtml(text, attachments){
         const sS2={delivered:"✅ Consegnato",in_transit:"🚚 In transito",out_for_delivery:"🛵 In consegna oggi",attempted_delivery:"⚠️ Tentativo fallito",ready_for_pickup:"📬 Pronto al ritiro",confirmed:"📋 Confermato",failure:"❌ Problema spedizione"};
         const fS2={fulfilled:"📦 Spedito",unfulfilled:"⏳ Non spedito",partial:"🔄 Parz. spedito",pending:"⏳ In attesa"};
         const shipStatus2=f&&f.shipment_status;
-        const displayStatus2=shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
+        const displayStatus2=order.cancelled_at?"❌ ANNULLATO il "+new Date(order.cancelled_at).toLocaleDateString("it-IT")+(order.cancel_reason?" — "+({customer:"richiesta cliente",inventory:"mancanza scorte",fraud:"frode",declined:"pagamento rifiutato",other:"altro"}[order.cancel_reason]||order.cancel_reason):""):shipStatus2?(sS2[shipStatus2]||("📦 "+shipStatus2)):(fS2[order.fulfillment_status]||"⏳ Non spedito");
         const shopifyOrderUrl2="https://40f758-3.myshopify.com/admin/orders/"+order.id;
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
