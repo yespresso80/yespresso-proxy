@@ -964,6 +964,47 @@ async function brtRestPost(path, body) {
   }
 
 
+  // ── FILIPPO DATA (merce inserita + attività) ──
+  const GH_FILIPPO_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/filippo-data.json';
+  async function ghFilippoGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: null, sha: null };
+    const r = await fetch(GH_FILIPPO_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (r.status === 404) return { data: null, sha: null };
+    const j = await r.json();
+    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+  }
+  async function ghFilippoSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update filippo-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    await fetch(GH_FILIPPO_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  if (req.url === '/filippo-data') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,x-app-token'}); res.end(); return; }
+    if (req.method === 'GET') {
+      try { const { data } = await ghFilippoGet(); res.writeHead(200,CORS); res.end(JSON.stringify(data||{})); }
+      catch(e) { res.writeHead(200,CORS); res.end(JSON.stringify({})); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data',c=>chunks.push(c));
+      req.on('end', async function(){
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString());
+          let retries = 3;
+          while (retries-- > 0) {
+            try { const { sha } = await ghFilippoGet(); await ghFilippoSave(parsed, sha); break; }
+            catch(e2) { if (retries === 0) throw e2; await new Promise(r => setTimeout(r, 300)); }
+          }
+          res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
+        } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+      }); return;
+    }
+  }
+
   const GH_FAB_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/fab-data.json';
 
   async function ghFabGet() {

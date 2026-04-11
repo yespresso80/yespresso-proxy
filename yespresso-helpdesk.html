@@ -4799,6 +4799,8 @@ function openFilippoPanel(){
     id:'merce_inserita',label:'📦 Merce Inserita',periodo:'',custom:true,groups:[]
   },{
     id:'ordini_ritardo',label:'⏰ Ordini in Ritardo',periodo:'',custom:true,groups:[]
+  },{
+    id:'attivita',label:'✅ Attività da Fare',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -4830,6 +4832,7 @@ function openFilippoPanel(){
         if(sec.id==='corrispettivi_it') setTimeout(function(){renderCorrispettivi(null,panel,null);},0);
         else if(sec.id==='merce_inserita') setTimeout(function(){renderMerceInserita(null,panel,null);},0);
         else if(sec.id==='ordini_ritardo') setTimeout(function(){renderOrdiniRitardo(null,panel,null);},0);
+        else if(sec.id==='attivita') setTimeout(function(){renderAttivita(null,panel,null);},0);
         return;
       }
       html+='<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:4px">'+sec.label+'</div>'+
@@ -4867,6 +4870,7 @@ function openFilippoPanel(){
     if(activeSec&&activeSec.custom){
       if(activeSec.id==='merce_inserita') renderMerceInserita(null,panel,null);
       else if(activeSec.id==='ordini_ritardo') renderOrdiniRitardo(null,panel,null);
+      else if(activeSec.id==='attivita') renderAttivita(null,panel,null);
       else renderCorrispettivi(null,panel,null);
     }
   }
@@ -4889,16 +4893,51 @@ function openFilippoPanel(){
     renderPanel();
   };
   document.body.appendChild(panel);
-  renderPanel();
+  // Carica dati dal server poi renderizza
+  _loadFilippoData().then(function(){ renderPanel(); });
 }
 // ═══ MERCE INSERITA ═══
-var _merceInseritaKey = 'filippo_merce_inserita';
+var _filippoDataCache = null;
+var _filippoSaveQueue = Promise.resolve();
+
+async function _loadFilippoData() {
+  if (_filippoDataCache) return _filippoDataCache;
+  try {
+    var r = await proxyFetch(PROXY + '/filippo-data');
+    if (r.ok) { var d = await r.json(); _filippoDataCache = d || {}; return _filippoDataCache; }
+  } catch(e) {}
+  // fallback localStorage
+  try { _filippoDataCache = JSON.parse(localStorage.getItem('filippo_server_data') || '{}'); } catch(e) { _filippoDataCache = {}; }
+  return _filippoDataCache;
+}
+
+function _saveFilippoData() {
+  _filippoSaveQueue = _filippoSaveQueue.then(async function() {
+    if (!_filippoDataCache) return;
+    try {
+      localStorage.setItem('filippo_server_data', JSON.stringify(_filippoDataCache));
+      await proxyFetch(PROXY + '/filippo-data', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(_filippoDataCache) });
+    } catch(e) { console.warn('filippo-data save err:', e.message); }
+  });
+}
 
 function getMerceInserita() {
-  try { return JSON.parse(localStorage.getItem(_merceInseritaKey) || '[]'); } catch(e) { return []; }
+  if (_filippoDataCache && _filippoDataCache.merceInserita) return _filippoDataCache.merceInserita;
+  try { return JSON.parse(localStorage.getItem('filippo_merce_inserita') || '[]'); } catch(e) { return []; }
 }
 function saveMerceInserita(list) {
-  localStorage.setItem(_merceInseritaKey, JSON.stringify(list));
+  if (!_filippoDataCache) _filippoDataCache = {};
+  _filippoDataCache.merceInserita = list;
+  _saveFilippoData();
+}
+function getAttivita() {
+  if (_filippoDataCache && _filippoDataCache.attivita) return _filippoDataCache.attivita;
+  try { return JSON.parse(localStorage.getItem('filippo_attivita') || '[]'); } catch(e) { return []; }
+}
+function saveAttivita(list) {
+  if (!_filippoDataCache) _filippoDataCache = {};
+  _filippoDataCache.attivita = list;
+  _saveFilippoData();
 }
 
 function renderMerceInserita(ignored, panel, ignored2) {
@@ -5516,6 +5555,173 @@ function renderMerceInserita(ignored, panel, ignored2){
 
   render();
 }
+
+// ═══ ATTIVITÀ DA FARE ═══
+function renderAttivita(ignored, panel, ignored2) {
+  var ca = panel.querySelector('#filippo-content');
+  if (!ca) return;
+  var list = getAttivita();
+
+  var oggi = new Date(); oggi.setHours(0,0,0,0);
+  var fmt = function(s) { if(!s) return ''; var p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+  var scadColor = function(s) {
+    if (!s) return '#888';
+    var d = new Date(s); d.setHours(0,0,0,0);
+    var diff = Math.floor((d-oggi)/86400000);
+    if (diff < 0) return '#dc2626';   // scaduta
+    if (diff === 0) return '#ea580c'; // oggi
+    if (diff <= 3) return '#d97706';  // entro 3 giorni
+    return '#166534';
+  };
+  var scadLabel = function(s) {
+    if (!s) return '';
+    var d = new Date(s); d.setHours(0,0,0,0);
+    var diff = Math.floor((d-oggi)/86400000);
+    if (diff < 0) return ' ⚠️ Scaduta da '+Math.abs(diff)+' gg';
+    if (diff === 0) return ' 🔔 Oggi!';
+    if (diff <= 3) return ' ⏰ Tra '+diff+' gg';
+    return '';
+  };
+
+  var tipiLabel = {task:'📋 Attività',appuntamento:'📅 Appuntamento',scadenza:'⏰ Scadenza',promemoria:'🔔 Promemoria'};
+
+  // Ordina: non completate prima (per scadenza), poi completate
+  var nonFatte = list.filter(function(a){return !a.completata;}).sort(function(a,b){
+    if (!a.scadenza && !b.scadenza) return 0;
+    if (!a.scadenza) return 1;
+    if (!b.scadenza) return -1;
+    return a.scadenza.localeCompare(b.scadenza);
+  });
+  var fatte = list.filter(function(a){return a.completata;}).sort(function(a,b){
+    return (b.data_completata||'').localeCompare(a.data_completata||'');
+  });
+
+  var thS = 'background:#1F3864;color:#fff;font-weight:700;font-size:10px;padding:6px 8px;border:1px solid #2E75B6;white-space:nowrap';
+  var tdS = 'font-size:12px;padding:6px 8px;border:1px solid #e0e4ea;vertical-align:middle';
+
+  var rowsNF = nonFatte.map(function(a, i) {
+    var bg = i%2===0?'#fff':'#f8f9fc';
+    var sc = a.scadenza ? scadColor(a.scadenza) : '#888';
+    var sl = a.scadenza ? scadLabel(a.scadenza) : '';
+    return '<tr style="background:'+bg+'">' +
+      '<td style="'+tdS+';text-align:center">'+( tipiLabel[a.tipo]||'📋')+'</td>'+
+      '<td style="'+tdS+';font-weight:600">'+escHtml(a.titolo)+'</td>'+
+      '<td style="'+tdS+';color:#555;font-size:11px">'+escHtml(a.note||'')+'</td>'+
+      '<td style="'+tdS+';color:'+sc+';font-weight:700;white-space:nowrap">'+(a.scadenza?fmt(a.scadenza)+sl:'—')+'</td>'+
+      '<td style="'+tdS+';text-align:center;white-space:nowrap">'+
+        '<button onclick="attivitaCompleta(\''+a.id+'\')" style="background:#166534;border:none;color:#fff;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;margin-right:4px">✓ Fatto</button>'+
+        '<button onclick="attivitaElimina(\''+a.id+'\')" style="background:#fff;border:1px solid #e0e4ea;color:#dc2626;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">✕</button>'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  var rowsF = fatte.slice(0,10).map(function(a,i) {
+    var bg = i%2===0?'#f0fdf4':'#f8f9fc';
+    return '<tr style="background:'+bg+';opacity:.7">'+
+      '<td style="'+tdS+';text-align:center">'+(tipiLabel[a.tipo]||'📋')+'</td>'+
+      '<td style="'+tdS+';text-decoration:line-through;color:#888">'+escHtml(a.titolo)+'</td>'+
+      '<td style="'+tdS+';color:#aaa;font-size:11px">'+escHtml(a.note||'')+'</td>'+
+      '<td style="'+tdS+';color:#aaa">'+( a.scadenza?fmt(a.scadenza):'—')+'</td>'+
+      '<td style="'+tdS+';text-align:center">'+
+        '<button onclick="attivitaRiapri(\''+a.id+'\')" style="background:#fff;border:1px solid #e0e4ea;color:#555;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-right:4px">↩ Riapri</button>'+
+        '<button onclick="attivitaElimina(\''+a.id+'\')" style="background:#fff;border:1px solid #e0e4ea;color:#dc2626;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">✕</button>'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  ca.innerHTML =
+    '<div style="font-size:18px;font-weight:700;color:#1F3864;margin-bottom:16px">✅ Attività da Fare</div>'+
+    // Form aggiungi
+    '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:16px 20px;margin-bottom:20px;max-width:800px">'+
+      '<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">➕ Nuova attività</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'+
+        '<div style="flex:2;min-width:200px">'+
+          '<label style="font-size:10px;font-weight:700;color:#555;display:block;margin-bottom:3px">TITOLO *</label>'+
+          '<input id="att-titolo" type="text" placeholder="Es. Inviare file a Daniela" style="width:100%;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">'+
+        '</div>'+
+        '<div style="min-width:130px">'+
+          '<label style="font-size:10px;font-weight:700;color:#555;display:block;margin-bottom:3px">TIPO</label>'+
+          '<select id="att-tipo" style="width:100%;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;background:#fff;outline:none">'+
+            '<option value="task">📋 Attività</option>'+
+            '<option value="appuntamento">📅 Appuntamento</option>'+
+            '<option value="scadenza">⏰ Scadenza</option>'+
+            '<option value="promemoria">🔔 Promemoria</option>'+
+          '</select>'+
+        '</div>'+
+        '<div style="min-width:140px">'+
+          '<label style="font-size:10px;font-weight:700;color:#555;display:block;margin-bottom:3px">SCADENZA</label>'+
+          '<input id="att-scadenza" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">'+
+        '</div>'+
+        '<div style="flex:1;min-width:150px">'+
+          '<label style="font-size:10px;font-weight:700;color:#555;display:block;margin-bottom:3px">NOTE</label>'+
+          '<input id="att-note" type="text" placeholder="Dettagli opzionali" style="width:100%;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">'+
+        '</div>'+
+        '<button onclick="attivitaAggiungi()" style="background:#1F3864;border:none;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap">➕ Aggiungi</button>'+
+      '</div>'+
+    '</div>'+
+    // Tabella da fare
+    '<div style="max-width:900px">'+
+      (nonFatte.length ?
+        '<div style="font-size:12px;font-weight:700;color:#1F3864;margin-bottom:6px">Da fare ('+nonFatte.length+')</div>'+
+        '<div style="overflow-x:auto;margin-bottom:20px"><table style="border-collapse:collapse;width:100%;min-width:600px">'+
+        '<thead><tr>'+
+          '<th style="'+thS+';text-align:center">TIPO</th>'+
+          '<th style="'+thS+'">TITOLO</th>'+
+          '<th style="'+thS+'">NOTE</th>'+
+          '<th style="'+thS+'">SCADENZA</th>'+
+          '<th style="'+thS+';text-align:center">AZIONE</th>'+
+        '</tr></thead><tbody>'+rowsNF+'</tbody></table></div>'
+      : '<div style="background:#f0fdf4;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;max-width:600px"><div style="font-size:24px;margin-bottom:6px">🎉</div><div style="font-size:13px;font-weight:700;color:#166534">Tutto fatto!</div></div>') +
+      (fatte.length ?
+        '<details><summary style="cursor:pointer;font-size:12px;font-weight:700;color:#888;margin-bottom:6px;user-select:none">✅ Completate ('+fatte.length+')</summary>'+
+        '<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;width:100%;min-width:600px">'+
+        '<thead><tr>'+
+          '<th style="'+thS+';text-align:center">TIPO</th>'+
+          '<th style="'+thS+'">TITOLO</th>'+
+          '<th style="'+thS+'">NOTE</th>'+
+          '<th style="'+thS+'">SCADENZA</th>'+
+          '<th style="'+thS+';text-align:center">AZIONE</th>'+
+        '</tr></thead><tbody>'+rowsF+'</tbody></table></div></details>'
+      : '') +
+    '</div>';
+}
+
+window.attivitaAggiungi = function() {
+  var titolo = (document.getElementById('att-titolo')||{}).value||'';
+  var tipo   = (document.getElementById('att-tipo')||{}).value||'task';
+  var scad   = (document.getElementById('att-scadenza')||{}).value||'';
+  var note   = (document.getElementById('att-note')||{}).value||'';
+  if (!titolo.trim()) { showToast('Inserisci il titolo','error'); return; }
+  var list = getAttivita();
+  list.push({ id: Date.now().toString(), titolo: titolo.trim(), tipo: tipo, scadenza: scad, note: note.trim(), completata: false, data_creazione: new Date().toISOString().split('T')[0] });
+  saveAttivita(list);
+  var panel = document.getElementById('filippo-panel');
+  if (panel) renderAttivita(null,panel,null);
+  showToast('Attività aggiunta');
+};
+window.attivitaCompleta = function(id) {
+  var list = getAttivita();
+  var a = list.find(function(x){return x.id===id;});
+  if (a) { a.completata=true; a.data_completata=new Date().toISOString().split('T')[0]; }
+  saveAttivita(list);
+  var panel=document.getElementById('filippo-panel');
+  if(panel) renderAttivita(null,panel,null);
+};
+window.attivitaRiapri = function(id) {
+  var list = getAttivita();
+  var a = list.find(function(x){return x.id===id;});
+  if (a) { a.completata=false; delete a.data_completata; }
+  saveAttivita(list);
+  var panel=document.getElementById('filippo-panel');
+  if(panel) renderAttivita(null,panel,null);
+};
+window.attivitaElimina = function(id) {
+  var list = getAttivita().filter(function(x){return x.id!==id;});
+  saveAttivita(list);
+  var panel=document.getElementById('filippo-panel');
+  if(panel) renderAttivita(null,panel,null);
+  showToast('Attività eliminata');
+};
 
 // ═══ ORDINI IN RITARDO ═══
 function renderOrdiniRitardo(ignored, panel, ignored2) {
