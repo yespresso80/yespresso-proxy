@@ -458,6 +458,7 @@ textarea.field{min-height:80px;resize:vertical}
           </div>
         </div>
         <button class="filter-btn" onclick="loadTickets()">↻ Aggiorna</button>
+        <button id="vai-auto-btn" onclick="vaiAuto()" style="display:none;background:#166534;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">🤖 VAI AUTO</button>
         <div style="position:relative" id="tools-menu-wrap">
           <button class="filter-btn" onclick="toggleToolsMenu()" id="tools-menu-btn" style="display:flex;align-items:center;gap:4px;background:#2d3748;border-color:#1a202c;color:#fff;font-weight:700">🛠️ Strumenti ▾</button>
           <div id="tools-menu-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:500;min-width:230px;overflow:hidden">
@@ -6462,11 +6463,31 @@ function _syncAutoReplyToggle(){
   var knob=document.getElementById("auto-reply-knob");
   var lbl=document.getElementById("auto-reply-label");
   var ind=document.getElementById("auto-reply-indicator");
+  var vaiBtn=document.getElementById("vai-auto-btn");
   if(tog) tog.style.background=enabled?"#16a34a":"#e0e4ea";
   if(knob) knob.style.left=enabled?"23px":"3px";
   if(lbl){ lbl.textContent=enabled?"ON":"OFF"; lbl.style.color=enabled?"#166534":"#888"; }
   if(ind) ind.style.display=enabled?"block":"none";
+  if(vaiBtn) vaiBtn.style.display=enabled?"inline-block":"none";
 }
+
+window.vaiAuto=async function(){
+  if(!isAutoReplyEnabled()){ showToast("Attiva prima l'auto-risposta nelle impostazioni","error"); return; }
+  var btn=document.getElementById("vai-auto-btn");
+  if(btn){ btn.disabled=true; btn.textContent="🤖 In corso..."; }
+  try{
+    // Prendi TUTTI i ticket open — non solo quelli freschi
+    var allOpen=tickets.filter(function(t){ return t.status==="open"; });
+    if(!allOpen.length){ showToast("Nessun ticket Open da processare","error"); return; }
+    showToast("🤖 Avvio auto-risposta su "+allOpen.length+" ticket Open...","success");
+    // Resetta i processati così li riprova tutti
+    _autoProcessedIds.clear();
+    await autoProcessTickets(allOpen);
+    showToast("🤖 Auto-risposta completata","success");
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent="🤖 VAI AUTO"; }
+  }
+};
 
 window.toggleAutoReplyUI=function(){
   var cur=isAutoReplyEnabled();
