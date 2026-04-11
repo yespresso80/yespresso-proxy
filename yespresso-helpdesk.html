@@ -1085,6 +1085,8 @@ async function loadTickets(){
             localStorage.setItem(CACHE_KEY,JSON.stringify(cacheOnly));
             localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));
           }catch(e){}
+          // Auto-processa nuovi ticket open se auto-risposta abilitata
+          if(isAutoReplyEnabled()) setTimeout(function(){ autoProcessTickets(freshDedup); }, 2000);
         }
         const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
         const bar=document.getElementById("ticket-count-bar");
@@ -6141,6 +6143,164 @@ function setAutoReply(val){
 }
 
 // Determina se la risposta AI richiede azione manuale (no auto-invio)
+// ── AUTO-PROCESSO TICKET IN BACKGROUND ──
+var _autoProcessedIds = new Set(); // ticket già processati in questa sessione
+var _autoProcessing = false;       // flag per evitare processamenti paralleli
+
+async function autoProcessTickets(freshTickets){
+  if(!isAutoReplyEnabled()) return;
+  if(_autoProcessing) return;
+  _autoProcessing = true;
+
+  try{
+    // Prendi solo ticket open non ancora processati, non spam, AI non bloccata
+    var toProcess = (freshTickets||[]).filter(function(t){
+      var tid = String(t.ID||t.id);
+      if(_autoProcessedIds.has(tid)) return false;           // già processato
+      if(t.status !== 'open') return false;                  // solo open
+      var email = (t.requester&&t.requester.email)||'';
+      if(isNoAiEmail(email)) return false;                   // AI disabilitata
+      if(isSpamTicket(t)) return false;                      // spam
+      return true;
+    });
+
+    if(!toProcess.length){ _autoProcessing=false; return; }
+
+    console.log('[AUTO-REPLY] Ticket da processare:', toProcess.length);
+
+    // Mostra indicatore in basso
+    var bar = document.getElementById('ticket-count-bar');
+    var origBarText = bar ? bar.textContent : '';
+
+    for(var i=0; i<toProcess.length; i++){
+      if(!isAutoReplyEnabled()){ break; } // abort se disattivato nel mentre
+      var t = toProcess[i];
+      var tid = String(t.ID||t.id);
+
+      // Marca subito come processato per evitare doppi tentativi
+      _autoProcessedIds.add(tid);
+
+      if(bar) bar.textContent = '🤖 Auto-risposta: elaboro ticket '+(i+1)+'/'+toProcess.length+'...';
+
+      try{
+        // Carica il ticket completo con messaggi
+        var fullTicket = await hdFetch('/v1/tickets/'+tid).catch(function(){ return null; });
+        if(!fullTicket) continue;
+        var email = (fullTicket.requester&&fullTicket.requester.email)||'';
+        if(isSpamTicket(fullTicket)||isNoAiEmail(email)) continue;
+
+        // Costruisci thread
+        var events = fullTicket.events || fullTicket.messages || [];
+        var lastMsg = '';
+        var fullThread = '';
+        if(events.length){
+          var sorted = events.slice().sort(function(a,b){ return new Date(a.createdAt||a.created_at||0)-new Date(b.createdAt||b.created_at||0); });
+          sorted.forEach(function(ev){
+            var txt = (ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'';
+            txt = txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().substring(0,600);
+            if(!txt) return;
+            var who = ev.actor ? (ev.actor.name||ev.actor.email||'Agente') : 'Cliente';
+            fullThread += who+': '+txt+'\n';
+          });
+          var lastEv = sorted[sorted.length-1];
+          lastMsg = (lastEv&&lastEv.message&&(lastEv.message.text||lastEv.message.richTextHtml))||'';
+          lastMsg = lastMsg.replace(/<[^>]+>/g,' ').trim().substring(0,800);
+        }
+
+        // Cerca ordine Shopify
+        var order = null;
+        try{
+          var subj = fullTicket.subject||'';
+          var amzMatch = subj.match(/\d{3}-\d{7}-\d{7}/);
+          var shopMatch = subj.match(/#?(\d{8,13})/);
+          var orderQ = amzMatch ? ('query='+encodeURIComponent(amzMatch[0])) : (shopMatch ? ('name=%23'+shopMatch[1]) : null);
+          if(!orderQ && email && !email.includes('amazon') && !email.includes('marketplace')){
+            orderQ = 'query='+encodeURIComponent(email);
+          }
+          if(orderQ){
+            var od = await shopifyGet('orders.json?status=any&limit=3&'+orderQ).catch(function(){ return null; });
+            if(od&&od.orders&&od.orders.length) order = od.orders[0];
+          }
+        }catch(oe){ console.log('[AUTO-REPLY] order fetch err:', oe.message); }
+
+        // Controlla stato spedizione
+        if(order){
+          var fship = (order.fulfillments||[]).slice(-1)[0];
+          var shipSt = fship&&fship.shipment_status;
+          if(['ready_for_pickup','failure','attempted_delivery'].includes(shipSt)){
+            console.log('[AUTO-REPLY] Skip ticket '+tid+' — stato spedizione critico:', shipSt);
+            continue;
+          }
+        }
+
+        // Costruisci order info
+        var orderInfo = '';
+        if(order){
+          try{ orderInfo = formatOrderInfo(order); }catch(fe){ orderInfo = 'Ordine: '+(order.name||order.id); }
+        }
+
+        // Chiama API Anthropic
+        var sysPrompt = getAISystemPrompt() + (order ? buildSolvedContext({subject:fullTicket.subject}) : '');
+        var userMsg = 'Oggetto: '+(fullTicket.subject||'')+'\nDa: '+((fullTicket.requester&&fullTicket.requester.name)||'Cliente')+'\nEmail: '+email+(orderInfo?'\n\nDati ordine: '+orderInfo:'')+'\n\nSTORICO CONVERSAZIONE:\n'+fullThread+'\n\nRispondi all\'ultimo messaggio del cliente.';
+
+        var aiRes = await proxyFetch(PROXY+'/anthropic/v1/messages',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:800,system:sysPrompt,messages:[{role:'user',content:userMsg}]})
+        }).catch(function(){ return null; });
+
+        if(!aiRes||!aiRes.ok) continue;
+        var aiData = await aiRes.json();
+        var reply = (aiData.content&&aiData.content[0]&&aiData.content[0].text)||'';
+        if(!reply.trim()) continue;
+
+        // Rimuovi tag [COPIA_IMPORTO:...]
+        reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/, '').trim();
+
+        // Controlla se serve azione manuale
+        if(needsManualAction(reply, order)){
+          console.log('[AUTO-REPLY] Skip ticket '+tid+' — richiede azione manuale');
+          continue;
+        }
+
+        // Invia risposta
+        var sendRes = await proxyFetch(PROXY+'/api/v1/tickets/'+tid,{
+          method:'PATCH',
+          headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},
+          body:JSON.stringify({message:{text:reply}})
+        }).catch(function(){ return null; });
+
+        if(!sendRes||!sendRes.ok){
+          console.log('[AUTO-REPLY] Invio fallito ticket '+tid);
+          continue;
+        }
+
+        // Chiudi ticket
+        await hdFetch('/v1/tickets/'+tid,{method:'PUT',body:JSON.stringify({status:'resolved'})}).catch(function(){});
+
+        // Aggiorna stato locale
+        var ix = tickets.findIndex(function(x){ return String(x.ID||x.id)===tid; });
+        if(ix>=0) tickets[ix].status='resolved';
+
+        showToast('🤖 Auto-risposta inviata: ticket #'+tid, 'success');
+        console.log('[AUTO-REPLY] ✅ Ticket '+tid+' risposto e chiuso');
+
+        // Pausa tra un ticket e l'altro per non sovraccaricare le API
+        await new Promise(function(r){ setTimeout(r, 1500); });
+
+      }catch(te){
+        console.log('[AUTO-REPLY] Errore ticket '+tid+':', te.message);
+      }
+    }
+
+    if(bar) bar.textContent = origBarText;
+    updateBadges(); renderTable();
+
+  }finally{
+    _autoProcessing = false;
+  }
+}
+
 function needsManualAction(replyText, order){
   var t=replyText||'';
 
