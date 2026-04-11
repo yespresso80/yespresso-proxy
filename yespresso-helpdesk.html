@@ -4797,6 +4797,8 @@ function openFilippoPanel(){
     id:'corrispettivi_it',label:'📊 Corrispettivi Italia',periodo:'',custom:true,groups:[]
   },{
     id:'merce_inserita',label:'📦 Merce Inserita',periodo:'',custom:true,groups:[]
+  },{
+    id:'ordini_ritardo',label:'⏰ Ordini in Ritardo',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -4818,13 +4820,18 @@ function openFilippoPanel(){
       var isA=sec.id===activeSection;
       html+='<div onclick="filippoSetSection(\'' +sec.id+ '\')" style="padding:11px 16px;cursor:pointer;border-left:3px solid '+(isA?'#16a34a':'transparent')+';background:'+(isA?'#f0fdf4':'transparent')+';display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<span style="font-size:13px;font-weight:600;color:'+(isA?'#166534':'#1a1a2e')+'">'+sec.label+'</span>'+
-        '<span style="font-size:11px;background:'+(done===items.length&&items.length>0?'#dcfce7':'#f0f2f5')+';color:'+(done===items.length&&items.length>0?'#166534':'#888')+';border-radius:10px;padding:1px 7px;font-weight:700">'+done+'/'+items.length+'</span>'+
+        (sec.custom?'':('<span style="font-size:11px;background:'+(done===items.length&&items.length>0?'#dcfce7':'#f0f2f5')+';color:'+(done===items.length&&items.length>0?'#166534':'#888')+';border-radius:10px;padding:1px 7px;font-weight:700">'+done+'/'+items.length+'</span>'))+
       '</div>';
     });
     html+='</div><div id="filippo-content" style="flex:1;overflow-y:auto;padding:24px">';
     SECTIONS.forEach(function(sec){
       if(sec.id!==activeSection)return;
-      if(sec.custom){return;} // custom sections rendered after panel.innerHTML
+      if(sec.custom){
+        if(sec.id==='corrispettivi_it') setTimeout(function(){renderCorrispettivi(null,panel,null);},0);
+        else if(sec.id==='merce_inserita') setTimeout(function(){renderMerceInserita(null,panel,null);},0);
+        else if(sec.id==='ordini_ritardo') setTimeout(function(){renderOrdiniRitardo(null,panel,null);},0);
+        return;
+      }
       html+='<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:4px">'+sec.label+'</div>'+
         '<div style="font-size:12px;color:#888;margin-bottom:20px">🗓️ '+sec.periodo+'</div>';
       sec.groups.forEach(function(group){
@@ -4858,7 +4865,8 @@ function openFilippoPanel(){
     // Render sezioni custom dopo che il panel è nel DOM
     var activeSec=SECTIONS.find(function(s){return s.id===activeSection;});
     if(activeSec&&activeSec.custom){
-      if(activeSec.id==='merce_inserita') renderMerceInserita(panel);
+      if(activeSec.id==='merce_inserita') renderMerceInserita(null,panel,null);
+      else if(activeSec.id==='ordini_ritardo') renderOrdiniRitardo(null,panel,null);
       else renderCorrispettivi(null,panel,null);
     }
   }
@@ -4883,6 +4891,122 @@ function openFilippoPanel(){
   document.body.appendChild(panel);
   renderPanel();
 }
+// ═══ MERCE INSERITA ═══
+var _merceInseritaKey = 'filippo_merce_inserita';
+
+function getMerceInserita() {
+  try { return JSON.parse(localStorage.getItem(_merceInseritaKey) || '[]'); } catch(e) { return []; }
+}
+function saveMerceInserita(list) {
+  localStorage.setItem(_merceInseritaKey, JSON.stringify(list));
+}
+
+function renderMerceInserita(ignored, panel, ignored2) {
+  var ca = panel.querySelector('#filippo-content');
+  if (!ca) return;
+  var list = getMerceInserita();
+
+  var thS = 'background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:8px 10px;border:1px solid #2E75B6;text-align:left;white-space:nowrap';
+  var thR = thS + ';text-align:right';
+  var tdS = 'font-size:12px;padding:6px 10px;border:1px solid #e0e4ea;vertical-align:top';
+  var tdR = tdS + ';text-align:right';
+
+  var rows = list.map(function(item, i) {
+    var bg = i % 2 === 0 ? '#fff' : '#f8f9fc';
+    return '<tr style="background:' + bg + '">' +
+      '<td style="' + tdS + '">' + escHtml(item.prodotto) + '</td>' +
+      '<td style="' + tdR + '">' + item.qta + '</td>' +
+      '<td style="' + tdS + ';color:#888;font-size:11px">' + escHtml(item.note || '') + '</td>' +
+      '<td style="' + tdS + ';text-align:center">' +
+        '<button onclick="merceRimuovi(' + i + ')" style="background:#dc2626;border:none;color:#fff;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">✕ Rimuovi</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  ca.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px">' +
+      '<div style="font-size:18px;font-weight:700;color:#1F3864">📦 Merce Inserita in Inventario</div>' +
+      '<div style="font-size:12px;color:#888">Promemoria merce inserita in Shopify ma non ancora fisicamente arrivata</div>' +
+    '</div>' +
+    // Form aggiungi
+    '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:20px;margin-bottom:20px;max-width:700px">' +
+      '<div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:12px">➕ Aggiungi prodotto</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">' +
+        '<div style="flex:2;min-width:200px">' +
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">PRODOTTO / CODICE</label>' +
+          '<input id="mi-prodotto" type="text" placeholder="Es. CNX5CAF872-240 — Cremoso 240pz" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">' +
+        '</div>' +
+        '<div style="min-width:90px">' +
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">QUANTITÀ</label>' +
+          '<input id="mi-qta" type="number" min="1" value="" placeholder="0" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">' +
+        '</div>' +
+        '<div style="flex:1;min-width:150px">' +
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">NOTE (opzionale)</label>' +
+          '<input id="mi-note" type="text" placeholder="Es. in attesa da fornitore X" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none">' +
+        '</div>' +
+        '<button onclick="merceAggiungi()" style="background:#1F3864;border:none;color:#fff;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap">➕ Aggiungi</button>' +
+      '</div>' +
+    '</div>' +
+    // Tabella
+    (list.length === 0 ?
+      '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#aaa;max-width:700px">' +
+        '<div style="font-size:32px;margin-bottom:10px">📭</div>' +
+        '<div style="font-size:14px">Nessun prodotto inserito</div>' +
+      '</div>'
+    :
+      '<div style="max-width:700px;overflow-x:auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+          '<div style="font-size:13px;font-weight:700;color:#1F3864">Prodotti in attesa di arrivo (' + list.length + ')</div>' +
+          '<button onclick="merceCancellaTutti()" style="background:#fff;border:1px solid #e0e4ea;color:#dc2626;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">🗑 Cancella tutti</button>' +
+        '</div>' +
+        '<table style="border-collapse:collapse;width:100%">' +
+          '<thead><tr>' +
+            '<th style="' + thS + '">PRODOTTO / CODICE</th>' +
+            '<th style="' + thR + '">QTÀ</th>' +
+            '<th style="' + thS + '">NOTE</th>' +
+            '<th style="' + thS + ';text-align:center">AZIONE</th>' +
+          '</tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>' +
+      '</div>'
+    );
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+window.merceAggiungi = function() {
+  var prod = (document.getElementById('mi-prodotto') || {}).value || '';
+  var qta  = parseInt((document.getElementById('mi-qta') || {}).value) || 0;
+  var note = (document.getElementById('mi-note') || {}).value || '';
+  if (!prod.trim()) { showToast('Inserisci il nome o codice prodotto', 'error'); return; }
+  if (qta <= 0) { showToast('Inserisci una quantità valida', 'error'); return; }
+  var list = getMerceInserita();
+  list.push({ prodotto: prod.trim(), qta: qta, note: note.trim(), data: new Date().toLocaleDateString('it-IT') });
+  saveMerceInserita(list);
+  var panel = document.getElementById('filippo-panel');
+  if (panel) renderMerceInserita(null, panel, null);
+  showToast('Prodotto aggiunto');
+};
+
+window.merceRimuovi = function(i) {
+  var list = getMerceInserita();
+  list.splice(i, 1);
+  saveMerceInserita(list);
+  var panel = document.getElementById('filippo-panel');
+  if (panel) renderMerceInserita(null, panel, null);
+  showToast('Prodotto rimosso');
+};
+
+window.merceCancellaTutti = function() {
+  if (!confirm('Cancellare tutti i prodotti dalla lista?')) return;
+  saveMerceInserita([]);
+  var panel = document.getElementById('filippo-panel');
+  if (panel) renderMerceInserita(null, panel, null);
+  showToast('Lista svuotata');
+};
+
 // ═══ CORRISPETTIVI ITALIA ═══
 var _corrData=null;
 var _corrRimborsi={amazon:0,temu:0,tiktok:0};
@@ -5295,6 +5419,241 @@ function renderMerceInserita(panel){
   }
 
   draw();
+}
+
+// ═══ MERCE INSERITA ═══
+var _merceKey = 'filippo_merce_inserita';
+function merceLoad(){ try{ return JSON.parse(localStorage.getItem(_merceKey)||'[]'); }catch(e){ return []; } }
+function merceSave(list){ localStorage.setItem(_merceKey, JSON.stringify(list)); }
+
+function renderMerceInserita(ignored, panel, ignored2){
+  var ca = panel.querySelector('#filippo-content');
+  if(!ca) return;
+  var list = merceLoad();
+
+  function render(){
+    list = merceLoad();
+    var rows = list.length ? list.map(function(item, i){
+      var bg = i%2===0 ? '#fff' : '#f8f9fc';
+      return '<tr style="background:'+bg+'">'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:13px;font-weight:600">'+escHtml(item.prodotto)+'</td>'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:13px;text-align:center">'+escHtml(String(item.qta))+'</td>'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:12px;color:#888">'+escHtml(item.note||'')+'</td>'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:11px;color:#aaa">'+escHtml(item.data||'')+'</td>'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;text-align:center">'+
+          '<button onclick="merceRimuovi('+i+')" style="background:#fee2e2;border:none;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;color:#dc2626">Rimuovi</button>'+
+        '</td>'+
+      '</tr>';
+    }).join('') : '<tr><td colspan="5" style="padding:20px;text-align:center;color:#aaa;font-size:13px;border:1px solid #e0e4ea">Nessuna merce annotata</td></tr>';
+
+    ca.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
+        '<div style="font-size:18px;font-weight:700;color:#1F3864">📦 Merce Inserita in Inventario</div>'+
+        '<div style="font-size:12px;color:#888">Solo promemoria — nessuna azione su Shopify</div>'+
+      '</div>'+
+      // Form aggiunta
+      '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:16px 20px;margin-bottom:20px;max-width:700px">'+
+        '<div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:12px">➕ Aggiungi prodotto</div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'+
+          '<div style="flex:3;min-width:180px">'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">PRODOTTO / CODICE</label>'+
+            '<input id="merce-prodotto" type="text" placeholder="es. CNX5CAF872-240 Supremo..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<div style="flex:1;min-width:80px">'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">QUANTITÀ</label>'+
+            '<input id="merce-qta" type="number" min="1" value="1" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<div style="flex:2;min-width:140px">'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">NOTE</label>'+
+            '<input id="merce-note" type="text" placeholder="es. ordine #123, data arr. prevista..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<button onclick="merceAggiungi()" style="background:#1F3864;border:none;color:#fff;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap">+ Aggiungi</button>'+
+        '</div>'+
+      '</div>'+
+      // Tabella
+      '<div style="overflow-x:auto;max-width:700px">'+
+        '<table style="border-collapse:collapse;width:100%">'+
+        '<thead><tr style="background:#1F3864">'+
+          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:left;border:1px solid #2E75B6">PRODOTTO</th>'+
+          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:center;border:1px solid #2E75B6;white-space:nowrap">QTÀ</th>'+
+          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:left;border:1px solid #2E75B6">NOTE</th>'+
+          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:left;border:1px solid #2E75B6">INSERITA IL</th>'+
+          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:center;border:1px solid #2E75B6"></th>'+
+        '</tr></thead>'+
+        '<tbody>'+rows+'</tbody>'+
+        '</table>'+
+      '</div>'+
+      (list.length ? '<div style="margin-top:10px;font-size:12px;color:#aaa">'+list.length+' prodott'+(list.length===1?'o':'i')+' in lista — clicca Rimuovi quando la merce è fisicamente arrivata</div>' : '');
+  }
+
+  window.merceAggiungi = function(){
+    var p = document.getElementById('merce-prodotto');
+    var q = document.getElementById('merce-qta');
+    var n = document.getElementById('merce-note');
+    if(!p||!p.value.trim()){showToast('Inserisci il prodotto','error');return;}
+    var list2 = merceLoad();
+    list2.push({
+      prodotto: p.value.trim(),
+      qta: parseInt(q&&q.value)||1,
+      note: n?n.value.trim():'',
+      data: new Date().toLocaleDateString('it-IT')
+    });
+    merceSave(list2);
+    render();
+    showToast('Prodotto aggiunto');
+  };
+
+  window.merceRimuovi = function(i){
+    if(!confirm('Rimuovere questo prodotto dalla lista?')) return;
+    var list2 = merceLoad();
+    list2.splice(i,1);
+    merceSave(list2);
+    render();
+    showToast('Prodotto rimosso');
+  };
+
+  function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  render();
+}
+
+// ═══ ORDINI IN RITARDO ═══
+function renderOrdiniRitardo(ignored, panel, ignored2) {
+  var ca = panel.querySelector('#filippo-content');
+  if (!ca) return;
+
+  // Raccoglie righe in ritardo da fabOrdini (globale del fabbisogno)
+  var ordini = (typeof fabOrdini !== 'undefined') ? fabOrdini : [];
+  if (!ordini.length) {
+    ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#1F3864;margin-bottom:20px">⏰ Ordini in Ritardo</div>' +
+      '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#aaa;max-width:800px">' +
+      '<div style="font-size:32px;margin-bottom:10px">📋</div>' +
+      '<div style="font-size:14px">Nessun ordine trovato nel fabbisogno.<br>Apri prima la pagina Fabbisogno per caricare i dati.</div>' +
+      '</div>';
+    return;
+  }
+
+  // Raccoglie tutte le righe ricevute in ritardo
+  // Raggruppa per mese basato su data_cons_richiesta (non data di ricezione)
+  var ritardi = {}; // key: YYYY-MM
+  var fmtD = function(s) {
+    if (!s) return '—';
+    var p = s.split('-');
+    return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : s;
+  };
+  var mesiLabel = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+  ordini.forEach(function(ord) {
+    if (ord.stato === 'annullato') return;
+    (ord.righe || []).forEach(function(r) {
+      var qtyRic = r.qty_ricevuta || 0;
+      if (!qtyRic) return; // niente ricevuto, salta
+      var dataRic = r.data_ricezione_effettiva;
+      if (!dataRic) return; // nessuna data ricezione salvata
+      var dataCons = (r.data_cons_riga || ord.data_consegna_prevista || '').substring(0, 10);
+      if (!dataCons) return;
+      if (dataRic <= dataCons) return; // in tempo, non in ritardo
+
+      // In ritardo: aggrega per mese della data consegna richiesta
+      var meseKey = dataCons.substring(0, 7); // YYYY-MM
+      if (!ritardi[meseKey]) ritardi[meseKey] = [];
+
+      // Calcola quante unità sono in ritardo (parziale o totale)
+      var qtaOrdinata = r.qty_ordinata || r.qty || 0;
+      var qtaInRitardo = Math.min(qtyRic, qtaOrdinata); // non più di quanto ordinato
+
+      ritardi[meseKey].push({
+        numero:    ord.numero_ordine || ('ORD-' + (ord.id || '')),
+        dataOrd:   ord.data_ordine || '—',
+        sku:       r.sku || r.sku_shopify || '—',
+        prodotto:  r.nome_prodotto || r.nome || r.sku || '—',
+        fornitore: ord.fornitore || '—',
+        qtaRitardo: qtaInRitardo,
+        dataCons:  dataCons,
+        dataRic:   dataRic,
+        giorni:    Math.round((new Date(dataRic) - new Date(dataCons)) / 86400000)
+      });
+    });
+  });
+
+  var mesiOrdinati = Object.keys(ritardi).sort().reverse();
+  var totRitardi = mesiOrdinati.reduce(function(s, k) { return s + ritardi[k].length; }, 0);
+
+  var thS = 'background:#1F3864;color:#fff;font-weight:700;font-size:10px;padding:6px 8px;border:1px solid #2E75B6;text-align:left;white-space:nowrap';
+  var tdS = 'font-size:11px;padding:5px 8px;border:1px solid #e0e4ea;vertical-align:top';
+  var tdR = tdS + ';text-align:right';
+  var tdC = tdS + ';text-align:center';
+
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">' +
+    '<div style="font-size:18px;font-weight:700;color:#1F3864">⏰ Ordini in Ritardo</div>' +
+    '<div style="font-size:12px;color:#888">Consegne effettuate oltre la data prevista — aggregate per mese di consegna richiesta</div>' +
+  '</div>';
+
+  if (!mesiOrdinati.length) {
+    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:32px;text-align:center;max-width:800px">' +
+      '<div style="font-size:28px;margin-bottom:8px">✅</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#166534">Nessun ritardo rilevato!</div>' +
+      '<div style="font-size:12px;color:#888;margin-top:4px">Tutti gli ordini ricevuti sono stati consegnati in tempo.</div>' +
+    '</div>';
+  } else {
+    html += '<div style="font-size:12px;color:#888;margin-bottom:16px">Totale righe in ritardo: <strong>' + totRitardi + '</strong></div>';
+
+    mesiOrdinati.forEach(function(meseKey) {
+      var parts = meseKey.split('-');
+      var label = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
+      var righe = ritardi[meseKey];
+
+      // Raggruppa per fornitore
+      var fornitori = {};
+      righe.forEach(function(r) {
+        if (!fornitori[r.fornitore]) fornitori[r.fornitore] = [];
+        fornitori[r.fornitore].push(r);
+      });
+
+      html += '<div style="margin-bottom:24px;max-width:900px">' +
+        '<div style="font-size:14px;font-weight:700;color:#dc2626;margin-bottom:10px;padding:8px 14px;background:#fff5f5;border-left:4px solid #dc2626;border-radius:0 8px 8px 0">' +
+          '📅 ' + label + ' — ' + righe.length + ' riga' + (righe.length !== 1 ? 'e' : '') + ' in ritardo' +
+        '</div>';
+
+      Object.keys(fornitori).sort().forEach(function(forn) {
+        var frRighe = fornitori[forn];
+        html += '<div style="margin-bottom:12px">' +
+          '<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px;padding:4px 10px;background:#f8f9fc;border-radius:6px">🏭 ' + escHtml(forn) + ' (' + frRighe.length + ')</div>' +
+          '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:700px">' +
+          '<thead><tr>' +
+            '<th style="' + thS + '">N° ORDINE</th>' +
+            '<th style="' + thS + '">DATA ORD.</th>' +
+            '<th style="' + thS + '">SKU</th>' +
+            '<th style="' + thS + '">PRODOTTO</th>' +
+            '<th style="' + thS + ';text-align:right">QTÀ RITARDO</th>' +
+            '<th style="' + thS + '">CONS. PREVISTA</th>' +
+            '<th style="' + thS + '">CONS. EFFETTIVA</th>' +
+            '<th style="' + thS + ';text-align:center">GG RITARDO</th>' +
+          '</tr></thead><tbody>';
+
+        frRighe.forEach(function(r, i) {
+          var bg = i % 2 === 0 ? '#fff' : '#fff5f5';
+          var ritColor = r.giorni >= 10 ? '#dc2626' : r.giorni >= 5 ? '#ea580c' : '#d97706';
+          html += '<tr style="background:' + bg + '">' +
+            '<td style="' + tdS + '">' + escHtml(r.numero) + '</td>' +
+            '<td style="' + tdS + '">' + fmtD(r.dataOrd) + '</td>' +
+            '<td style="' + tdS + ';font-family:monospace;font-size:10px">' + escHtml(r.sku) + '</td>' +
+            '<td style="' + tdS + '">' + escHtml(r.prodotto) + '</td>' +
+            '<td style="' + tdR + ';font-weight:700">' + r.qtaRitardo + '</td>' +
+            '<td style="' + tdS + '">' + fmtD(r.dataCons) + '</td>' +
+            '<td style="' + tdS + '">' + fmtD(r.dataRic) + '</td>' +
+            '<td style="' + tdC + ';font-weight:700;color:' + ritColor + '">+' + r.giorni + ' gg</td>' +
+          '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      });
+
+      html += '</div>';
+    });
+  }
+
+  ca.innerHTML = html;
 }
 
 function openElenaPanel(){
@@ -13553,10 +13912,12 @@ window.ricezioneSalva=async function(){
     righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
 
     var rimanente=qtyRicevuta;
+    var todayRec=new Date().toISOString().split('T')[0];
     righeAperte.forEach(function(entry){
       if(rimanente<=0) return;
       var scala=Math.min(rimanente,entry.residuo);
       entry.riga.qty_ricevuta=(entry.riga.qty_ricevuta||0)+scala;
+      if(!entry.riga.data_ricezione_effettiva) entry.riga.data_ricezione_effettiva=todayRec;
       if(ms>1) entry.riga.qty_ricevuta_master=Math.ceil(entry.riga.qty_ricevuta/ms);
       rimanente-=scala;
       // Controlla se ordine completato
