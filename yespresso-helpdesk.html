@@ -4785,16 +4785,18 @@ function openFilippoPanel(){
         {key:'fatture_amz',label:'Fatture e ricevute ordini AMZ del mese',note:'Sia ordini del mese che ordini digitali — verificare ordini digitali'},
         {key:'corrispettivi',label:'Corrispettivi RDV + metodo di pagamento',note:'File Excel riepilogo pagamenti; togliere da Amazon nella colonna IVA 22 i rimborsi'},
         {key:'metodo_pagamento',label:'Metodo di pagamento fatture Shopify',note:'Emesse su fattureincloud — file fatture del mese con numero fattura e metodo di pagamento'},
-        {key:'estratto_paypal',label:'Estratto conto PayPal',note:'Estratti conto — mensili e personalizzati'},
-        {key:'pagamenti_paypal',label:'Pagamenti effettuati PayPal',note:'Attività > Transazioni > Filtro pagamenti inviati + periodo > screenshot'},
+        {key:'estratto_paypal',label:'Estratto conto PayPal',note:'Estratti conto — mensili e personalizzati &nbsp;<a href="https://www.paypal.com/reports/statements/mps" target="_blank" style="color:#0369a1;font-weight:600;font-size:11px">Apri PayPal ↗</a>'},
+        {key:'pagamenti_paypal',label:'Pagamenti effettuati PayPal',note:'Attività > Transazioni > Filtro pagamenti inviati + periodo > screenshot &nbsp;<a href="https://www.paypal.com/mep/unifiedtransactions?filter=0&query=" target="_blank" style="color:#0369a1;font-weight:600;font-size:11px">Apri PayPal ↗</a>'},
         {key:'fatture_figli',label:'Fatture pagate per figli'},
         {key:'estratto_banca',label:'Estratto conto banca e estratto conto carta'},
         {key:'file_riba',label:'File RIBA'},
-        {key:'rimanenze',label:'Rimanenze finali'}
+        {key:'rimanenze',label:'Rimanenze finali',note:'<a href="https://admin.shopify.com/store/40f758-3/analytics/reports/month_end_inventory_snapshot?ql=FROM+inventory%0ASHOW+ending_inventory_units%2C%0A++ending_inventory_value%0AWHERE+inventory_is_tracked+%3D+true%0AGROUP+BY+product_title%2C%0A++product_variant_title%2C%0A++product_variant_sku%2C%0A++inventory_item_cost%0AWITH+TOTALS%2C+PERCENT_CHANGE%0ASINCE+startOfMonth%28-1m%29+UNTIL+endOfMonth%28-1m%29%0AORDER+BY+product_title+ASC%0ALIMIT+1000%0AVISUALIZE+ending_inventory_units+TYPE+table" target="_blank" style="color:#0369a1;font-weight:600;font-size:11px">Apri Report Shopify ↗</a>'}
       ]}
     ]
   },{
     id:'corrispettivi_it',label:'📊 Corrispettivi Italia',periodo:'',custom:true,groups:[]
+  },{
+    id:'merce_inserita',label:'📦 Merce Inserita',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -4855,7 +4857,10 @@ function openFilippoPanel(){
     panel.querySelector('#fpc').onclick=function(){panel.remove();};
     // Render sezioni custom dopo che il panel è nel DOM
     var activeSec=SECTIONS.find(function(s){return s.id===activeSection;});
-    if(activeSec&&activeSec.custom) renderCorrispettivi(null,panel,null);
+    if(activeSec&&activeSec.custom){
+      if(activeSec.id==='merce_inserita') renderMerceInserita(panel);
+      else renderCorrispettivi(null,panel,null);
+    }
   }
   window.filippoSetSection=function(id){activeSection=id;renderPanel();};
   window.filippoToggle=function(key){
@@ -5180,6 +5185,117 @@ window.corrStampaPDF=function(){
   setTimeout(function(){w.print();},500);
 };
 
+
+// ═══ MERCE INSERITA ═══
+function renderMerceInserita(panel){
+  var ca=panel.querySelector('#filippo-content');
+  if(!ca)return;
+  function loadItems(){return JSON.parse(localStorage.getItem('filippo_merce_inserita')||'[]');}
+  function saveItems(data){localStorage.setItem('filippo_merce_inserita',JSON.stringify(data));}
+
+  function draw(){
+    var items=loadItems();
+    var thS='background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:8px 12px;border:1px solid #2E75B6;text-align:left';
+    var thR='background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:8px 12px;border:1px solid #2E75B6;text-align:center';
+    var rows=items.map(function(it,i){
+      var bg=i%2===0?'#fff':'#f8f9fc';
+      return '<tr style="background:'+bg+'">'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:13px;font-weight:600">'+it.nome+'</td>'+
+        '<td style="padding:8px 4px;border:1px solid #e0e4ea;text-align:center">'+
+          '<input type="number" min="0" value="'+it.qty+'" data-i="'+i+'" class="mi-qty" style="width:70px;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:13px;font-family:inherit;text-align:center">'+
+        '</td>'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:12px;color:#888">'+it.note+'</td>'+
+        '<td style="padding:8px 12px;border:1px solid #e0e4ea;text-align:center">'+
+          '<button data-i="'+i+'" class="mi-del" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;line-height:1">🗑</button>'+
+        '</td>'+
+      '</tr>';
+    }).join('');
+
+    ca.innerHTML=
+      '<div style="font-size:18px;font-weight:700;color:#1F3864;margin-bottom:4px">📦 Merce Inserita in Inventario</div>'+
+      '<div style="font-size:12px;color:#888;margin-bottom:20px">Promemoria quantità inserite su Shopify in attesa di arrivo fisico. Nessuna azione automatica.</div>'+
+      // Form aggiunta
+      '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:16px 20px;margin-bottom:20px;max-width:700px">'+
+        '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px">+ Aggiungi prodotto</div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'+
+          '<div style="flex:2;min-width:180px">'+
+            '<label style="font-size:11px;color:#555;font-weight:700;display:block;margin-bottom:4px">PRODOTTO</label>'+
+            '<input id="mi-nome" type="text" placeholder="es. Capsule Nespresso 240pz" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<div style="flex:0 0 85px">'+
+            '<label style="font-size:11px;color:#555;font-weight:700;display:block;margin-bottom:4px">QTÀ</label>'+
+            '<input id="mi-qty" type="number" min="1" value="1" style="width:100%;padding:8px 8px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;text-align:center;box-sizing:border-box">'+
+          '</div>'+
+          '<div style="flex:1;min-width:140px">'+
+            '<label style="font-size:11px;color:#555;font-weight:700;display:block;margin-bottom:4px">NOTE</label>'+
+            '<input id="mi-note" type="text" placeholder="es. data, fornitore..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<button id="mi-add" style="background:#166534;border:none;color:#fff;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap;flex-shrink:0">+ Aggiungi</button>'+
+        '</div>'+
+      '</div>'+
+      // Tabella
+      (items.length===0?
+        '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:48px;text-align:center;color:#aaa;max-width:700px">'+
+          '<div style="font-size:36px;margin-bottom:10px">📦</div>'+
+          '<div style="font-size:14px;font-weight:600;color:#555">Nessuna merce inserita</div>'+
+          '<div style="font-size:12px;margin-top:4px">Aggiungi un prodotto usando il form sopra</div>'+
+        '</div>':
+        '<div style="overflow-x:auto;max-width:700px">'+
+          '<table style="border-collapse:collapse;width:100%">'+
+          '<thead><tr>'+
+            '<th style="'+thS+';width:40%">PRODOTTO</th>'+
+            '<th style="'+thR+';width:15%">QTÀ</th>'+
+            '<th style="'+thS+'">NOTE</th>'+
+            '<th style="'+thR+';width:50px"></th>'+
+          '</tr></thead>'+
+          '<tbody>'+rows+'</tbody>'+
+          '</table></div>'+
+          '<div style="margin-top:10px;font-size:11px;color:#aaa;max-width:700px">'+items.length+' prodott'+(items.length===1?'o':'i')+' in lista — Modifica le quantità direttamente nella tabella, rimuovi quando la merce è arrivata fisicamente</div>'
+      );
+
+    // Listener aggiungi
+    var addBtn=ca.querySelector('#mi-add');
+    if(addBtn) addBtn.onclick=function(){
+      var nome=(ca.querySelector('#mi-nome').value||'').trim();
+      var qty=parseInt(ca.querySelector('#mi-qty').value)||1;
+      var note=(ca.querySelector('#mi-note').value||'').trim();
+      if(!nome){ca.querySelector('#mi-nome').focus();return;}
+      var data=loadItems();
+      data.push({nome:nome,qty:qty,note:note,ts:new Date().toLocaleDateString('it-IT')});
+      saveItems(data);
+      draw();
+    };
+
+    // Listener quantità
+    ca.querySelectorAll('.mi-qty').forEach(function(inp){
+      inp.addEventListener('change',function(){
+        var data=loadItems();
+        var i=parseInt(this.getAttribute('data-i'));
+        data[i].qty=parseInt(this.value)||0;
+        saveItems(data);
+      });
+    });
+
+    // Listener elimina
+    ca.querySelectorAll('.mi-del').forEach(function(btn){
+      btn.onclick=function(){
+        var i=parseInt(this.getAttribute('data-i'));
+        var data=loadItems();
+        var nome=data[i].nome;
+        if(!confirm('Rimuovere "'+nome+'" dalla lista?'))return;
+        data.splice(i,1);
+        saveItems(data);
+        draw();
+      };
+    });
+
+    // Enter su campo nome
+    var nomeInp=ca.querySelector('#mi-nome');
+    if(nomeInp) nomeInp.addEventListener('keydown',function(e){if(e.key==='Enter')ca.querySelector('#mi-add').click();});
+  }
+
+  draw();
+}
 
 function openElenaPanel(){
   // Stato flags: localStorage con chiavi giornaliera/settimanale/mensile
