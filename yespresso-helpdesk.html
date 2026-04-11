@@ -261,7 +261,7 @@ textarea.field{min-height:80px;resize:vertical}
   <div class="nav-icon" title="Dashboard">⊞</div>
   <div class="nav-spacer"></div>
   <div class="nav-icon" title="Lista">📋</div>
-  <div class="nav-icon" title="Impostazioni" onclick="openSettingsModal()" style="cursor:pointer">⚙️</div>
+  <div class="nav-icon" title="Impostazioni" onclick="openSettingsModal()" style="cursor:pointer;position:relative">⚙️<span id="auto-reply-indicator" style="display:none;position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#16a34a;border:1.5px solid #fff"></span></div>
   <div class="nav-icon" title="Notifiche">🔔</div>
   <div class="nav-avatar" title="Profilo">Y</div>
 </nav>
@@ -274,6 +274,26 @@ textarea.field{min-height:80px;resize:vertical}
       <button class="modal-close" onclick="closeSettingsModal()">×</button>
     </div>
     <div class="modal-body" style="gap:16px">
+      <!-- Sezione: Auto-risposta -->
+      <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:14px;font-weight:700;color:#166534">🤖 Auto-risposta AI</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="auto-reply-label" style="font-size:12px;font-weight:700;color:#166534">OFF</span>
+            <div id="auto-reply-toggle" onclick="toggleAutoReplyUI()" style="width:44px;height:24px;border-radius:12px;background:#e0e4ea;cursor:pointer;position:relative;transition:background .2s">
+              <div id="auto-reply-knob" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s"></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#166534;margin-bottom:8px">Quando attiva, l'AI invia automaticamente la risposta e chiude il ticket — solo se non sono richieste azioni manuali.</div>
+        <div style="font-size:11px;color:#888;background:#fff;border-radius:8px;padding:10px 12px;line-height:1.7">
+          <strong>Non invia automaticamente se:</strong><br>
+          • La risposta contiene rimborso, credito, buono, annullamento, rispedizione, ritiro, sostituzione<br>
+          • Lo stato spedizione è: Pronto al ritiro, Problema spedizione, Tentativo fallito<br>
+          • L'email sembra spam (noreply, bot, newsletter, pattern automatici)<br>
+          • L'AI è disabilitata per quel mittente (lista 🚫 qui sotto)
+        </div>
+      </div>
       <!-- Sezione: No AI -->
       <div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:10px;padding:16px">
         <div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:4px">🚫 Non generare messaggi AI</div>
@@ -3563,6 +3583,18 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     }
     // Scroll al box AI
     setTimeout(()=>{const ab=document.querySelector(".ai-reply-box");if(ab)ab.scrollIntoView({behavior:"smooth",block:"nearest"});},300);
+    // Auto-risposta se abilitata
+    if(reply && isAutoReplyEnabled()){
+      var _autoOrder=window._currentOrder||null;
+      var _needsAction=needsManualAction(reply,_autoOrder);
+      var lbl3=document.getElementById("ai-label");
+      if(_needsAction){
+        if(lbl3) lbl3.textContent="✨ Risposta AI — ⚠️ Richiede azione manuale (non inviata automaticamente)";
+      } else {
+        if(lbl3) lbl3.textContent="✨ Risposta AI — ⏳ Auto-invio in corso...";
+        tryAutoReply(reply,_autoOrder);
+      }
+    }
   }catch(e){
     console.error("Claude API error:",e);
     const gb=document.getElementById("gen-box");
@@ -6097,6 +6129,130 @@ function saveSettings(){
   closeSettingsModal();
 }
 const NO_AI_DEFAULTS=["vasnoreply@brt.it","ecommerce@yespresso.it","servizioclienti@brt.it","assistenza@paypal.it"];
+
+// ── AUTO-RISPOSTA ──
+function isAutoReplyEnabled(){
+  return loadSettings().autoReplyEnabled===true;
+}
+function setAutoReply(val){
+  var s=loadSettings();
+  s.autoReplyEnabled=val;
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+}
+
+// Determina se la risposta AI richiede azione manuale (no auto-invio)
+function needsManualAction(replyText, order){
+  var t=replyText||'';
+
+  // Parole chiave che indicano azione manuale richiesta
+  var manualKeywords=[
+    'rimborso','rimborseremo','rimborsiamo','emettere un rimborso',
+    'accredito','accrediteremo','buono sconto','buono di credito',
+    'annullare','annullamento','annulleremo',
+    'rispedire','rispediremo','nuova spedizione','rispediamo',
+    'ritiro','prenotiamo il ritiro','organizziamo il ritiro',
+    'credito','codice sconto',
+    'sostituzione','sostituiremo','sostituire',
+    'modifica.*indirizzo','cambio.*indirizzo',
+  ];
+  if(manualKeywords.some(function(k){ return new RegExp(k,'i').test(t); })) return true;
+
+  // Controlla stato spedizione ordine — se critico non auto-rispondere
+  if(order){
+    var fship=(order.fulfillments||[]).slice(-1)[0];
+    var shipSt=fship&&fship.shipment_status;
+    var criticalStates=['ready_for_pickup','failure','attempted_delivery'];
+    if(criticalStates.includes(shipSt)) return true;
+  }
+
+  return false;
+}
+
+// Rileva se un ticket sembra spam — controlla email, subject e corpo
+function isSpamTicket(ticket){
+  if(!ticket) return false;
+  var email=((ticket.requester&&ticket.requester.email)||'').toLowerCase();
+  var subject=(ticket.subject||'').toLowerCase();
+  var name=((ticket.requester&&ticket.requester.name)||'').toLowerCase();
+
+  // Email patterns tipici di spam/bot
+  var spamEmailPatterns=[
+    'noreply','no-reply','donotreply','do-not-reply',
+    'newsletter','promo','marketing','bulk','mailer-daemon',
+    'postmaster','bounce','notifications@','notify@',
+    'alerts@','info@amazon','payment@','invoice@',
+    'daemon','robot','automat','system@','admin@',
+    'support@shopify','notification@'
+  ];
+  if(spamEmailPatterns.some(function(p){ return email.includes(p); })) return true;
+
+  // Subject patterns tipici di spam/notifiche automatiche
+  var spamSubjectPatterns=[
+    'unsubscribe','newsletter','promotion','offerta speciale',
+    'congratulat','hai vinto','you have won','click here',
+    'free trial','gratis','win a','claim your',
+    'verify your account','confirm your email',
+    'invoice #','receipt for','order confirmation',
+    'delivery notification','tracking update',
+    'automatically generated','do not reply',
+    'auto-reply','out of office','fuori ufficio',
+    'nessuna risposta','no reply needed'
+  ];
+  if(spamSubjectPatterns.some(function(p){ return subject.includes(p); })) return true;
+
+  // Nome mittente sospetto (solo numeri, stringa random lunga senza spazi)
+  if(/^\d+$/.test(name)) return true;
+  if(name.length>30&&!name.includes(' ')) return true;
+
+  // Email con troppi numeri o caratteri casuali (pattern bot)
+  var localPart=email.split('@')[0]||'';
+  var numCount=(localPart.match(/\d/g)||[]).length;
+  if(localPart.length>15&&numCount>8) return true;
+
+  return false;
+}
+
+// Auto-invia risposta se abilitato e non serve azione manuale
+async function tryAutoReply(replyText, order){
+  if(!isAutoReplyEnabled()) return false;
+  if(!selectedTicket) return false;
+  if(isNoAiEmail((selectedTicket.requester&&selectedTicket.requester.email)||'')) return false;
+  if(isSpamTicket(selectedTicket)){
+    var lbl=document.getElementById("ai-label");
+    if(lbl) lbl.textContent="⚠️ Ticket sembra spam — auto-risposta bloccata";
+    showToast("⚠️ Ticket spam rilevato — non auto-rispondo","error");
+    return false;
+  }
+  if(needsManualAction(replyText, order)) return false;
+
+  var tid=selectedTicket.ID||selectedTicket.id;
+  try{
+    // Invia risposta
+    var msgRes=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
+      method:"PATCH",
+      headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
+      body:JSON.stringify({message:{text:replyText}})
+    });
+    if(!msgRes.ok) return false;
+
+    // Chiudi ticket
+    await hdFetch("/v1/tickets/"+tid,{method:"PUT",body:JSON.stringify({status:"resolved"})}).catch(function(){});
+
+    showToast("✅ Auto-risposta inviata e ticket chiuso","success");
+    var lbl=document.getElementById("ai-label");
+    if(lbl) lbl.textContent="✅ Auto-risposta inviata automaticamente";
+
+    // Aggiorna stato locale
+    selectedTicket.status="resolved";
+    var idx=tickets.findIndex(function(t){return (t.ID||t.id)===tid;});
+    if(idx>=0) tickets[idx].status="resolved";
+
+    return true;
+  }catch(e){
+    console.warn("Auto-reply failed:",e.message);
+    return false;
+  }
+}
 function getNoAiEmails(){
   const s=loadSettings();
   const saved=s.noAiEmails||[];
@@ -6136,7 +6292,28 @@ function removeNoAiEmail(idx){
 function openSettingsModal(){
   document.getElementById("settings-modal").style.display="flex";
   renderNoAiList();
+  // Sync stato toggle auto-risposta
+  _syncAutoReplyToggle();
 }
+
+function _syncAutoReplyToggle(){
+  var enabled=isAutoReplyEnabled();
+  var tog=document.getElementById("auto-reply-toggle");
+  var knob=document.getElementById("auto-reply-knob");
+  var lbl=document.getElementById("auto-reply-label");
+  var ind=document.getElementById("auto-reply-indicator");
+  if(tog) tog.style.background=enabled?"#16a34a":"#e0e4ea";
+  if(knob) knob.style.left=enabled?"23px":"3px";
+  if(lbl){ lbl.textContent=enabled?"ON":"OFF"; lbl.style.color=enabled?"#166534":"#888"; }
+  if(ind) ind.style.display=enabled?"block":"none";
+}
+
+window.toggleAutoReplyUI=function(){
+  var cur=isAutoReplyEnabled();
+  setAutoReply(!cur);
+  _syncAutoReplyToggle();
+  showToast("Auto-risposta "+((!cur)?"attivata ✅":"disattivata"),"success");
+};
 function closeSettingsModal(){
   document.getElementById("settings-modal").style.display="none";
 }
@@ -6488,10 +6665,10 @@ var AI_PROMPT_SECTIONS_DEFAULT=[
   {id:'base',label:'🧠 Base — Identità e tono',locked:true,text:"Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa con i dettagli reali. Se c'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale."},
   {id:'marketplace',label:'🛒 Marketplace (Amazon, Temu, TikTok)',locked:false,text:"Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace, NON rispondere come se fosse un cliente: scrivi invece una nota interna breve.\n\nREGOLE TICKET AMAZON: NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. Gli ordini Amazon sono gestiti direttamente da Yespresso. Per il tracking: invita il cliente a verificare dal suo account Amazon senza includere link BRT.\n\nREGOLA NUMERO ORDINE AMAZON: Se il messaggio proviene da un cliente Amazon (@marketplace.amazon.it) e non e presente un numero ordine Amazon nel thread, DEVI come PRIMA risposta chiederlo. Non procedere con rimborsi, sostituzioni, soluzioni tecniche o qualsiasi altra azione senza aver verificato il numero ordine."},
   {id:'spedizione',label:'📦 Spedizione e pacco non ricevuto',locked:false,text:"REGOLA CRITICA STATO SPEDIZIONE: Lo stato spedizione nei dati Shopify potrebbe non essere aggiornato in tempo reale. Se il messaggio del cliente descrive un problema di spedizione, fidati del messaggio del cliente.\n\nREGOLE PACCO NON RICEVUTO:\n3a) Pacco al BRT-FERMOPOINT: comunica che e pronto per il ritiro, includi il link BRT.\n3b) Fermopoint in aggiornamento: invita il cliente a verificare il link BRT tra qualche ora.\n3c) Tracking consegnato A DOMICILIO: comunica che il pacco risulta consegnato, includi tracking e link BRT, non offrire rimborso.\n4) Se il cliente insiste: ribadisci che risulta consegnato e non possiamo procedere con rimborso.\n\nREGOLA RITIRO BRT: Ogni volta che proponi un ritiro BRT includi SEMPRE: utilizzare la scatola ricevuta o equivalente, sigillare bene con nastro adesivo, inserire copia dell'ordine all'interno del pacco."},
-  {id:'danneggiati',label:'💥 Prodotti danneggiati',locked:false,text:"REGOLE PRODOTTI DANNEGGIATI:\n\nREGOLA 45 GIORNI (SOLO per prodotti danneggiati — non per cambio indirizzo o altre richieste): Se il contesto indica che l'ordine e stato effettuato da piu di 45 giorni E il cliente segnala capsule/prodotti danneggiati, rispondi che non e piu possibile gestire la segnalazione e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione.\n\n1) Se il cliente si lamenta di capsule danneggiate e NON ha ancora fornito foto e quantita: chiedi foto delle capsule/buste danneggiate, foto del pacco e quantita esatta danneggiata.\n1b) Se il cliente ha GIA fornito foto E quantita: procedi direttamente alla compensazione.\n1c) COMPENSAZIONE: calcola il valore moltiplicando quantita danneggiata per il prezzo unitario (prezzo riga / quantita capsule). SE acquistato sul sito Yespresso: accredita un buono sconto. SE acquistato su Amazon, Temu o TikTok: rimborso. Includi sempre il calcolo trasparente.\n2) Solo pacco esterno ammaccato ma prodotto integro: rispondi con scuse, spiega che il cartone e solo protezione esterna.\n\nREGOLA QUANTITA CRITICA - NON DEROGARE MAI: SE MENO DI 100 capsule danneggiate: VIETATO offrire rispedizione o sostituzione. Offri SOLO credito parziale (sito) o rimborso parziale (Amazon/Temu/TikTok). SE 100 O PIU capsule danneggiate: puoi offrire rispedizione o sostituzione. PRIORITA ASSOLUTA.\n\nFORMATI BUSTE: capsule A Modo Mio in buste da 20 capsule, capsule Dolce Gusto in buste da 16 capsule, capsule Nespresso/Caffitaly/Bialetti in buste da 10 capsule, cialde carta ESE 44mm e capsule Fior Fiore/Lui Espresso sono imbustate singolarmente.\n\nCALCOLO IVA: IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%. Per sito/Temu/TikTok: indica SOLO valore IVA inclusa. Per Amazon: indica ENTRAMBI i valori.\n\nIMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata: per sito/Temu/TikTok [COPIA_IMPORTO:X,XX]; per Amazon [COPIA_IMPORTO:X,XX|Y,YY]."},
+  {id:'danneggiati',label:'💥 Prodotti danneggiati',locked:false,text:"REGOLE PRODOTTI DANNEGGIATI:\n\nREGOLA 45 GIORNI (SOLO per prodotti danneggiati — non per cambio indirizzo o altre richieste): Se il contesto indica che l'ordine e stato effettuato da piu di 45 giorni E il cliente segnala capsule/prodotti danneggiati, rispondi che non e piu possibile gestire la segnalazione e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione.\n\n1) Se il cliente si lamenta di capsule danneggiate e NON ha ancora fornito foto e quantita: chiedi foto delle capsule/buste danneggiate (in formato JPG), foto del pacco e quantita esatta danneggiata.\n1b) Se il cliente ha GIA fornito foto E quantita: procedi direttamente alla compensazione.\n1c) COMPENSAZIONE: calcola il valore moltiplicando quantita danneggiata per il prezzo unitario (prezzo riga / quantita capsule). SE acquistato sul sito Yespresso: accredita un buono sconto. SE acquistato su Amazon, Temu o TikTok: rimborso. Includi sempre il calcolo trasparente.\n2) Solo pacco esterno ammaccato ma prodotto integro: rispondi con scuse, spiega che il cartone e solo protezione esterna.\n\nREGOLA QUANTITA CRITICA - NON DEROGARE MAI: SE MENO DI 100 capsule danneggiate: VIETATO offrire rispedizione o sostituzione. Offri SOLO credito parziale (sito) o rimborso parziale (Amazon/Temu/TikTok). SE 100 O PIU capsule danneggiate: puoi offrire rispedizione o sostituzione. PRIORITA ASSOLUTA.\n\nFORMATI BUSTE: capsule A Modo Mio in buste da 20 capsule, capsule Dolce Gusto in buste da 16 capsule, capsule Nespresso/Caffitaly/Bialetti in buste da 10 capsule, cialde carta ESE 44mm e capsule Fior Fiore/Lui Espresso sono imbustate singolarmente.\n\nCALCOLO IVA: IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%. Per sito/Temu/TikTok: indica SOLO valore IVA inclusa. Per Amazon: indica ENTRAMBI i valori.\n\nIMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata: per sito/Temu/TikTok [COPIA_IMPORTO:X,XX]; per Amazon [COPIA_IMPORTO:X,XX|Y,YY]."},
   {id:'acquisto_errato',label:'↩️ Acquisto errato e resi',locked:false,text:"REGOLA CRITICA - ACQUISTO ERRATO: Ogni volta che il cliente menziona di aver acquistato capsule sbagliate o non compatibili, DEVI rispondere ESCLUSIVAMENTE con la procedura di reso: reso entro 14 giorni, spese di spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, tutti i prodotti devono essere integri e non aperti. Se proviene da Temu usa la procedura reso Temu. NON suggerire soluzioni tecniche. NON offrire rimborso. NON chiedere informazioni aggiuntive.\n\nREGOLA 20 GIORNI (SOLO per acquisto errato): Se il contesto indica che l'ordine e stato effettuato da piu di 20 giorni E il cliente segnala un acquisto errato, rispondi che non e piu possibile gestire la segnalazione per ordini cosi datati e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione."},
-  {id:'tecnico',label:'🔧 Problemi tecnici capsule',locked:false,text:"REGOLA PROBLEMA TECNICO: Solo se il cliente descrive un problema tecnico con capsule compatibili SENZA menzionare errore di acquisto.\n\nREGOLA 45 GIORNI (SOLO per problemi tecnici — non per cambio indirizzo o altre richieste): Se il contesto indica che l'ordine e stato effettuato da piu di 45 giorni E il cliente segnala un problema tecnico con le capsule, rispondi che non e piu possibile gestire la segnalazione e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione.\n\nCapsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo.\n\nCapsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore).\n\nCapsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula.\n\nProblemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video, foto della busta con numero lotto e scadenza ben visibili. NON offrire rimborso prima di avere queste informazioni."},
-  {id:'errore_spedizione',label:'📬 Prodotto sbagliato / Errore spedizione',locked:false,text:"REGOLA PRODOTTO ERRATO RICEVUTO: DEVI come PRIMA risposta richiedere: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco con etichetta BRT visibile, 3) foto della busta con le capsule ricevute. NON procedere con rimborsi o sostituzioni prima di aver ricevuto queste informazioni.\n\nREGOLA ERRORE SPEDIZIONE: Se il prodotto errato ricevuto e di almeno 100 unita: 1) spedire il prodotto corretto ordinato, 2) organizzare il ritiro del prodotto errato tramite BRT. Il cliente NON deve rispedire il prodotto a sue spese.\n\nREGOLA 30 GIORNI (SOLO per errore spedizione/prodotto sbagliato): Se il contesto indica che l'ordine e stato effettuato da piu di 30 giorni E il cliente segnala un prodotto sbagliato o errore di spedizione, rispondi che non e piu possibile gestire la segnalazione per ordini cosi datati e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione."},
+  {id:'tecnico',label:'🔧 Problemi tecnici capsule',locked:false,text:"REGOLA PROBLEMA TECNICO: Solo se il cliente descrive un problema tecnico con capsule compatibili SENZA menzionare errore di acquisto.\n\nREGOLA 45 GIORNI (SOLO per problemi tecnici — non per cambio indirizzo o altre richieste): Se il contesto indica che l'ordine e stato effettuato da piu di 45 giorni E il cliente segnala un problema tecnico con le capsule, rispondi che non e piu possibile gestire la segnalazione e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione.\n\nCapsule Bialetti: sensore alluminio potrebbe non riconoscere la capsula, suggerisci carta alluminio sul retro e pulizia alloggiamento con panno caldo.\n\nCapsule Nespresso: spiega cause (dentini sporchi, acqua fredda nel circuito, contenitore pieno) e soluzioni (decalcificazione mensile, pulizia dentini, erogazione a vuoto, max 4 capsule nel contenitore).\n\nCapsule Caffitaly su macchine Volta acquistate fine 2024-2025 o macchine Caffitaly vecchie: la capsula non viene bucata correttamente, suggerisci di fare un buchino con forbicina sul retro della capsula.\n\nProblemi di erogazione con qualsiasi altra capsula: chiedi numero ordine, tipo capsula, modello macchina, descrizione problema e video, foto della busta con numero lotto e scadenza ben visibili (foto in formato JPG). NON offrire rimborso prima di avere queste informazioni."},
+  {id:'errore_spedizione',label:'📬 Prodotto sbagliato / Errore spedizione',locked:false,text:"REGOLA PRODOTTO ERRATO RICEVUTO: DEVI come PRIMA risposta richiedere: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco con etichetta BRT visibile (in formato JPG), 3) foto della busta con le capsule ricevute (in formato JPG). NON procedere con rimborsi o sostituzioni prima di aver ricevuto queste informazioni.\n\nREGOLA ERRORE SPEDIZIONE: Se il prodotto errato ricevuto e di almeno 100 unita: 1) spedire il prodotto corretto ordinato, 2) organizzare il ritiro del prodotto errato tramite BRT. Il cliente NON deve rispedire il prodotto a sue spese.\n\nREGOLA 30 GIORNI (SOLO per errore spedizione/prodotto sbagliato): Se il contesto indica che l'ordine e stato effettuato da piu di 30 giorni E il cliente segnala un prodotto sbagliato o errore di spedizione, rispondi che non e piu possibile gestire la segnalazione per ordini cosi datati e invita il cliente a comunicarcelo tempestivamente in futuro. Non procedere con nessuna altra azione."},
   {id:'compatibilita',label:'📋 Compatibilità capsule',locked:false,text:"REGOLA COMPATIBILITA CAPSULE — FONDAMENTALE: I sistemi capsule venduti da Yespresso sono INCOMPATIBILI tra loro. Non confonderli mai.\\n\\nSISTEMI DISPONIBILI:\\n- Capsule A MODO MIO: compatibili con macchine Lavazza A Modo Mio. NON compatibili con macchine Bialetti.\\n- Capsule BIALETTI (Mokona/Mokespresso): compatibili con macchine Bialetti Mokona e Mokespresso. NON compatibili con macchine Lavazza A Modo Mio. NON sono la stessa cosa delle capsule A Modo Mio.\\n- Capsule NESPRESSO: compatibili con macchine Nespresso. Sistema diverso da tutti gli altri.\\n- Capsule CAFFITALY: compatibili con macchine Caffitaly/Tchibo/Wacaco. Sistema diverso.\\n- Capsule DOLCE GUSTO: compatibili con macchine Nescafe Dolce Gusto.\\n- Cialde ESE 44mm: compatibili con macchine che accettano cialde carta standard ESE 44mm.\\n\\nATTENZIONE: Se il cliente ha ordinato capsule A Modo Mio ma ha una macchina Bialetti Mokona (o viceversa), il prodotto NON e compatibile con la sua macchina. Non dire mai che le capsule A Modo Mio sono compatibili con macchine Bialetti generiche — Bialetti Mokona usa un sistema diverso da A Modo Mio."},
   {id:'credito',label:'🎁 Credito e rimborsi negozio',locked:false,text:"ISTRUZIONI CREDITO NEGOZIO: Quando proponi un credito sul sito yespresso.it, includi SEMPRE queste istruzioni: Il credito e valido per 90 giorni. Per utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparira un banner con scritto utilizzalo.\n\nREGOLA RICHIESTA SCONTO: 1) Se ha un ordine recente non ancora spedito: rispondi che i prezzi sono gia scontati. 2) Se non ha ordini in corso: usa la risposta rapida PROMOZIONE DELLA SETTIMANA."},
   {id:'custom',label:'➕ Regole personalizzate',locked:false,text:''}
@@ -8152,6 +8329,8 @@ setTimeout(aggiornaResoBadge, 1000);
 loadTickets();
 loadSolvedExamples();
 loadAgentsAndTags();
+// Sync indicatore auto-risposta all'avvio
+setTimeout(function(){ if(typeof _syncAutoReplyToggle==='function') _syncAutoReplyToggle(); }, 500);
 // Auto-refresh ogni 60 secondi (silent, non interrompe ticket aperto)
 setInterval(async function(){
   try{
