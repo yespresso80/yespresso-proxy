@@ -111,7 +111,10 @@ function serverIsSpam(ticket) {
 }
 
 const NO_AI_SERVER = ['vasnoreply@brt.it','servizioclienti@brt.it','assistenza@paypal.it','seller@orders.temu.com'];
+const AUTO_REPLY_TEST_MODE = true; // 🧪 TEST: risponde solo a commerciale@yespresso.it — rimuovere dopo i test
+const AUTO_REPLY_TEST_EMAIL = 'commerciale@yespresso.it';
 function serverIsNoAi(email) {
+  if (AUTO_REPLY_TEST_MODE && email !== AUTO_REPLY_TEST_EMAIL) return true; // blocca tutto tranne l'email di test
   return NO_AI_SERVER.some(e => email.includes(e));
 }
 
@@ -185,20 +188,16 @@ async function serverAutoReplyWorker(processAll) {
   if (!HD_TOKEN || !ANTHROPIC_KEY) return;
   let settings = {};
   try { const fd = await ghFilippoGet(); settings = fd.data || {}; } catch(e) {}
-  
-  // Se era OFF e ora è ON, processa tutto
+
   const wasOff = serverAutoReplyWorker._lastEnabled === false;
   const isNowOn = !!settings.autoReplyEnabled;
   serverAutoReplyWorker._lastEnabled = isNowOn;
-  
   if (!isNowOn) return;
-  
-  // Processa tutti i ticket Open se: primo avvio, era OFF, o processAll richiesto
+
   const shouldProcessAll = processAll || wasOff;
-  
   console.log('[AUTO-REPLY-SERVER] Start worker... processAll='+shouldProcessAll);
+
   try {
-    // Prendi ticket Open
     const pages = await Promise.all([1,2,3].map(p =>
       hdGet(`/tickets?pageSize=50&page=${p}&status=open&sortBy=lastMessageAt&order=desc`).catch(() => [])
     ));
@@ -210,38 +209,29 @@ async function serverAutoReplyWorker(processAll) {
       const email = ((ticket.requester && ticket.requester.email) || '').toLowerCase();
       if (serverIsNoAi(email) || serverIsSpam(ticket)) continue;
 
-      // Se shouldProcessAll, ignora il controllo timestamp e processa tutti
       if (!shouldProcessAll && _serverAutoProcessed[tid]) {
         const lastMsg = ticket.lastMessageAt || ticket.updatedAt || '';
         if (!lastMsg || new Date(lastMsg) <= new Date(_serverAutoProcessed[tid])) continue;
       }
 
-      // Marca subito come processato
       _serverAutoProcessed[tid] = new Date().toISOString();
 
       try {
-        // Carica ticket completo
         const full = await hdGet(`/tickets/${tid}`);
         if (!full || (full.status && full.status !== 'open')) continue;
 
-        // Ordina eventi
-        const events = (full.events || []).sort((a,b) =>
-          new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        const events = (full.events || []).sort((a,b) => new Date(a.createdAt||0)-new Date(b.createdAt||0));
 
-        // Controlla insoddisfazione cliente (solo se già risposto prima)
-        if (_serverAutoProcessed[tid] && events.length) {
+        // Controlla insoddisfazione
+        if (events.length) {
           const prevTime = new Date(_serverAutoProcessed[tid]);
-          for (let i = events.length - 1; i >= 0; i--) {
+          for (let i = events.length-1; i >= 0; i--) {
             const ev = events[i];
-            const isClient = !ev.actor || ev.actor.type === 'contact' || ev.actor.type === 'customer';
-            if (isClient && new Date(ev.createdAt || 0) < prevTime) {
-              const txt = ((ev.message && (ev.message.text || ev.message.richTextHtml)) || ev.text || '')
-                .replace(/<[^>]+>/g, ' ').trim();
+            const isClient = !ev.actor || ev.actor.type==='contact' || ev.actor.type==='customer';
+            if (isClient && new Date(ev.createdAt||0) < prevTime) {
+              const txt = ((ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'').replace(/<[^>]+>/g,' ').trim();
               if (serverClienteInsoddisfatto(txt)) {
-                console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} bloccato — cliente insoddisfatto`);
-                _serverAutoBlocked.add(tid);
-                _serverNeedsAction.add(tid);
-                delete _serverAutoProcessed[tid];
+                _serverAutoBlocked.add(tid); _serverNeedsAction.add(tid); delete _serverAutoProcessed[tid];
               }
               break;
             }
@@ -249,7 +239,24 @@ async function serverAutoReplyWorker(processAll) {
           if (_serverAutoBlocked.has(tid)) continue;
         }
 
-        // Stato spedizione critico?
+        // ══ CONTROLLO FONDAMENTALE: l'ultimo messaggio è del cliente? ══
+        // Se l'ultimo messaggio è nostro (agente), non rispondere
+        const sortedEvs = (full.events||[]).filter(ev => ev.message && (
+          (ev.message.text && ev.message.text.trim()) ||
+          (ev.message.richTextHtml && ev.message.richTextHtml.trim())
+        )).sort((a,b) => new Date(a.createdAt||0)-new Date(b.createdAt||0));
+
+        if (!sortedEvs.length) continue; // nessun messaggio
+
+        const lastEv = sortedEvs[sortedEvs.length-1];
+        const lastIsAgent = lastEv.actor && (lastEv.actor.type === 'agent' || lastEv.actor.type === 'member');
+        if (lastIsAgent) {
+          console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — ultimo msg è agente, skip`);
+          _serverAutoProcessed[tid] = new Date().toISOString();
+          continue;
+        }
+
+        // Cerca ordine Shopify
         const subj = full.subject || '';
         let order = null;
         try {
@@ -257,138 +264,158 @@ async function serverAutoReplyWorker(processAll) {
           const shopM = subj.match(/#?(\d{8,13})/);
           const temuM = subj.match(/PO-\d+-\d+/i);
           let oQ = null;
-          if (amzM) oQ = 'query=' + encodeURIComponent(amzM[0]);
-          else if (temuM) oQ = 'query=' + encodeURIComponent(temuM[0]);
-          else if (shopM) oQ = 'name=%23' + shopM[1];
+          if (amzM) oQ = 'query='+encodeURIComponent(amzM[0]);
+          else if (temuM) oQ = 'query='+encodeURIComponent(temuM[0]);
+          else if (shopM) oQ = 'name=%23'+shopM[1];
           else if (email && !email.includes('marketplace') && !email.includes('temu') && !email.includes('amazon'))
-            oQ = 'email=' + encodeURIComponent(email);
+            oQ = 'email='+encodeURIComponent(email);
           if (oQ) {
-            const od = await shopifyGet(`orders.json?status=any&limit=3&${oQ}`).catch(() => null);
+            const od = await shopifyGet(`orders.json?status=any&limit=3&${oQ}`).catch(()=>null);
             if (od && od.orders && od.orders.length) order = od.orders[0];
           }
         } catch(e) {}
 
+        // Stato spedizione critico
         if (order) {
-          const fship = (order.fulfillments || []).slice(-1)[0];
+          const fship = (order.fulfillments||[]).slice(-1)[0];
           const shipSt = fship && fship.shipment_status;
-          if (['ready_for_pickup','failure','attempted_delivery'].includes(shipSt)){
-            _serverNeedsAction.add(tid);
-            continue;
-          }
+          if (['ready_for_pickup','failure','attempted_delivery'].includes(shipSt)) { _serverNeedsAction.add(tid); continue; }
         }
 
         // Costruisci thread
-        let fullThread = '', lastMsg = '';
+        let fullThread = '';
         events.forEach(ev => {
-          const txt = ((ev.message && (ev.message.text || ev.message.richTextHtml)) || ev.text || '')
-            .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 600);
+          const txt = ((ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().substring(0,600);
           if (!txt) return;
-          const who = ev.actor ? (ev.actor.name || ev.actor.email || 'Agente') : 'Cliente';
-          fullThread += who + ': ' + txt + '\n';
+          const who = ev.actor ? (ev.actor.name||ev.actor.email||'Agente') : 'Cliente';
+          fullThread += who+': '+txt+'\n';
         });
-        const lastEv = events[events.length - 1];
-        if (lastEv) lastMsg = ((lastEv.message && (lastEv.message.text || lastEv.message.richTextHtml)) || lastEv.text || '')
-          .replace(/<[^>]+>/g, ' ').trim().substring(0, 800);
 
-        // Order info per AI
-        let orderInfo = '';
-        if (order) {
-          const f = order.fulfillments && order.fulfillments[0];
-          orderInfo = `Ordine ${order.name} | Stato: ${order.fulfillment_status || 'non spedito'} | €${order.total_price}`;
-          if (order.cancelled_at) orderInfo += ` | ⚠️ ANNULLATO il ${new Date(order.cancelled_at).toLocaleDateString('it-IT')}`;
-          if (order.payment_gateway) orderInfo += ` | Metodo pagamento: ${order.payment_gateway}`;
-          if (f && f.tracking_number) orderInfo += ` | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=${f.tracking_number}`;
+        // ══ STEP 1: CLASSIFICAZIONE ══
+        // Prima chiamata AI — solo classifica, non risponde
+        const classifyMsg = `Analizza questo ticket di assistenza clienti e classifica il tipo di richiesta.
+
+Oggetto: ${subj}
+Storico:
+${fullThread}
+
+Rispondi SOLO con un JSON in questo formato esatto, nessun testo aggiuntivo:
+{"categoria": "SOLO_INFO", "motivo": "breve spiegazione"}
+
+Usa SOLO_INFO se e SOLO SE il ticket riguarda ESCLUSIVAMENTE:
+- Dov'è il mio ordine / stato spedizione (solo informazioni tracking)
+- Ordine non ancora spedito (solo informazione tempi)
+- Domanda generica su compatibilità capsule/prodotti (solo informazione)
+- Conferma di annullamento ordine già elaborato dal sistema
+- Orari, informazioni aziendali, come usare il sito
+
+Usa AZIONE_MANUALE per QUALSIASI altra situazione, incluso:
+- Capsule danneggiate, difettose, di qualità inferiore
+- Problemi tecnici con capsule o macchine
+- Richiesta di rimborso, credito, compensazione, sostituzione
+- Acquisto errato, reso
+- Prodotto sbagliato ricevuto
+- Reclami sulla qualità
+- Lotto difettoso
+- Merce mancante
+- Richiesta annullamento ordine
+- Qualsiasi situazione che potrebbe richiedere un compenso economico
+- Dubbi o situazioni ambigue
+
+In caso di dubbio usa SEMPRE AZIONE_MANUALE.`;
+
+        const classRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 100, system: 'Sei un classificatore di ticket. Rispondi SOLO con JSON.', messages: [{ role: 'user', content: classifyMsg }] })
+        });
+        const classData = await classRes.json();
+        const classText = (classData.content && classData.content[0] && classData.content[0].text) || '';
+        let categoria = 'AZIONE_MANUALE';
+        try {
+          const classJson = JSON.parse(classText.match(/\{[^}]+\}/)[0]);
+          categoria = classJson.categoria || 'AZIONE_MANUALE';
+        } catch(e) { categoria = 'AZIONE_MANUALE'; }
+
+        console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} → ${categoria}`);
+
+        if (categoria !== 'SOLO_INFO') {
+          _serverNeedsAction.add(tid);
+          continue; // Non rispondere — metti pallino arancione
         }
 
-        // Carica prompt AI da GitHub (sezioni configurate nell'helpdesk)
-        let aiPrompt = "Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa. NON usare mai markdown. Scrivi solo testo plain normale.";
+        // ══ STEP 2: RISPOSTA (solo se SOLO_INFO) ══
+        let aiPrompt = "Sei l'assistente clienti di Yespresso. Rispondi in italiano, tono cordiale. Firma come Il Team Yespresso. NON usare markdown. Solo testo plain. NON promettere rimborsi, crediti, sostituzioni o compensazioni di alcun tipo. Fornisci SOLO informazioni fattuali.";
         try {
           const ghToken = process.env.GH_TOKEN;
           if (ghToken) {
             const promptRes = await fetch('https://api.github.com/repos/yespresso80/yespresso-proxy/contents/ai-prompt.json', {
-              headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
+              headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' }
             });
             if (promptRes.ok) {
               const promptJ = await promptRes.json();
               const promptData = JSON.parse(Buffer.from(promptJ.content.replace(/\n/g,''),'base64').toString('utf8'));
               const sections = promptData.sections || promptData;
               if (Array.isArray(sections)) {
-                const txt = sections.filter(s => !s.disabled && s.text && s.text.trim()).map(s => s.text.trim()).join('\n\n');
-                if (txt) aiPrompt = txt;
+                const txt = sections.filter(s => !s.disabled && s.text && s.text.trim() && s.id === 'base').map(s => s.text.trim()).join('\n\n');
+                if (txt) aiPrompt = txt + '\n\nATTENZIONE MODALITÀ AUTO-RISPOSTA: Rispondi SOLO con informazioni fattuali (tracking, tempi spedizione, info prodotti). NON promettere mai rimborsi, crediti, sostituzioni, compensazioni o azioni economiche di alcun tipo. Se non sei sicuro di cosa rispondere, non rispondere.';
               }
             }
           }
-        } catch(e) { console.log('[AUTO-REPLY-SERVER] Prompt load err:', e.message); }
+        } catch(e) {}
 
-        // Chiama Anthropic
-        const userMsg = `Oggetto: ${subj}\nDa: ${(full.requester && full.requester.name) || 'Cliente'}\nEmail: ${email}` +
-          (orderInfo ? `\n\nDati ordine:\n${orderInfo}` : '') +
-          `\n\nSTORICO:\n${fullThread}\n\nRispondi all'ultimo messaggio del cliente.`;
+        // Order info
+        let orderInfo = '';
+        if (order) {
+          const f = order.fulfillments && order.fulfillments[0];
+          orderInfo = `Ordine ${order.name} | Stato: ${order.fulfillment_status||'non spedito'} | €${order.total_price}`;
+          if (order.cancelled_at) orderInfo += ` | ANNULLATO il ${new Date(order.cancelled_at).toLocaleDateString('it-IT')}`;
+          if (f && f.tracking_number) orderInfo += ` | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=${f.tracking_number}`;
+        }
+
+        const userMsg = `Oggetto: ${subj}\nDa: ${(full.requester&&full.requester.name)||'Cliente'}\nEmail: ${email}`+
+          (orderInfo ? `\n\nDati ordine:\n${orderInfo}` : '')+
+          `\n\nSTORICO:\n${fullThread}\n\nRispondi SOLO con informazioni di tracking/stato ordine. NON fare promesse economiche.`;
 
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 800, system: aiPrompt, messages: [{ role: 'user', content: userMsg }] })
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 500, system: aiPrompt, messages: [{ role: 'user', content: userMsg }] })
         });
         const aiData = await aiRes.json();
         let reply = (aiData.content && aiData.content[0] && aiData.content[0].text) || '';
         if (!reply.trim()) continue;
 
         // Pulizia
-        reply = reply
-          .replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/, '')
-          .replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi, '$1')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/\s{2,}/g, ' ')
-          .trim();
+        reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'').replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi,'$1').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
 
-        // Auto-annullamento ordine sito (non marketplace) se l'AI conferma annullamento
-        const isMarketplaceOrder = order && ((order.note_attributes||[]).some(a =>
-          ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id','tiktok_order'].includes(a.name)
-        ));
-        const aiConfirmsCancel = /annulleremo|abbiamo.*annullato|provvederemo.*annull|come da.*richiest.*annull/i.test(reply);
-        const canCancel = serverCanCancelOrder(order);
-
-        if(order && !isMarketplaceOrder && aiConfirmsCancel && canCancel){
-          try{
-            const cancelRes = await fetch(`https://${SHOPIFY_SHOP}/admin/api/2024-01/orders/${order.id}/cancel.json`,{
-              method:'POST',
-              headers:{'X-Shopify-Access-Token':SHOPIFY_TOKEN,'Content-Type':'application/json'},
-              body:JSON.stringify({reason:'customer',email:true,refund:true})
-            });
-            if(cancelRes.ok){
-              console.log(`[AUTO-REPLY-SERVER] ✅ Ordine ${order.name} annullato su Shopify`);
-              // Aggiorna risposta con conferma
-              const pgMap={shopify_payments:'carta di credito/debito',paypal:'PayPal',cash_on_delivery:'',klarna:'Klarna'};
-              const payLabel=pgMap[order.payment_gateway]||order.payment_gateway||'';
-              if(order.payment_gateway && order.payment_gateway!=='cash_on_delivery'){
-                reply=reply.replace(/annulleremo|annullare|annullerà/i,'abbiamo annullato');
-                if(!reply.includes('rimborso')) reply+='\n\nIl rimborso'+(payLabel?' sul suo '+payLabel:'')+' verrà elaborato entro 3-5 giorni lavorativi.';
-              }
-            }
-          }catch(ce){ console.log('[AUTO-REPLY-SERVER] Errore annullamento Shopify:', ce.message); }
-        }
-
-        if (serverNeedsManualAction(reply)) {
-          console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — azione manuale richiesta, skip`);
+        // Verifica finale di sicurezza — se la risposta contiene promesse economiche non inviare
+        const unsafePatterns = [
+          /rimborso/i, /accredito/i, /credito/i, /compensazione/i, /sostituzione/i,
+          /rispedire/i, /procediamo/i, /provvederemo/i, /rimborseremo/i
+        ];
+        if (unsafePatterns.some(p => p.test(reply))) {
+          console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — risposta contiene promesse economiche, skip`);
           _serverNeedsAction.add(tid);
           continue;
         }
 
-        // Invia risposta
-        const sendRes = await hdPatch(`/tickets/${tid}`, { message: { text: reply } });
-        if (!sendRes.ok) { console.log(`[AUTO-REPLY-SERVER] Invio fallito ticket ${tid}: ${sendRes.status}`); continue; }
-
-        // Chiudi ticket
-        for (const m of ['PUT','PATCH']) {
-          try { await hdPut(`/tickets/${tid}`, { status: 'solved' }); break; } catch(e) {}
+        // Invia risposta E chiudi in una sola chiamata
+        const sendRes = await hdPatch(`/tickets/${tid}`, { message: { text: reply }, status: 'solved' });
+        if (!sendRes.ok) {
+          // Fallback: invia separato poi chiudi
+          const sendRes2 = await hdPatch(`/tickets/${tid}`, { message: { text: reply } });
+          if (!sendRes2.ok) { console.log(`[AUTO-REPLY-SERVER] Invio fallito ticket ${tid}: ${sendRes2.status}`); continue; }
+          for (const m of ['PUT','PATCH']) {
+            try { await hdPut(`/tickets/${tid}`, { status: 'solved' }); break; } catch(e) {}
+          }
         }
 
         _serverAutoProcessed[tid] = new Date().toISOString();
         _serverNeedsAction.delete(tid);
         console.log(`[AUTO-REPLY-SERVER] ✅ Ticket ${tid} risposto e chiuso`);
+        await new Promise(r => setTimeout(r, 2000));
 
-        await new Promise(r => setTimeout(r, 2000)); // pausa tra ticket
       } catch(e) {
         console.log(`[AUTO-REPLY-SERVER] Errore ticket ${tid}:`, e.message);
       }
