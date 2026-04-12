@@ -6393,25 +6393,37 @@ function clienteInsoddisfatto(msgCliente){
 function needsManualAction(replyText, order){
   var t=replyText||'';
 
-  // Parole chiave che indicano azione manuale richiesta
+  // Azioni CONFERMATE che richiedono intervento manuale immediato
+  // (frasi che indicano che l'azione è già stata decisa/emessa, non condizionale)
   var manualKeywords=[
-    'rimborso','rimborseremo','rimborsiamo','emettere un rimborso',
-    'accredito','accrediteremo','credito','credito',
-    'annullare','annullamento','annulleremo',
-    'rispedire','rispediremo','nuova spedizione','rispediamo',
-    'ritiro','prenotiamo il ritiro','organizziamo il ritiro',
-    'credito','codice sconto',
-    'sostituzione','sostituiremo','sostituire',
-    'modifica.*indirizzo','cambio.*indirizzo',
+    // Rimborso confermato (non condizionale)
+    'provvederemo.*rimborso','procederemo.*rimborso','abbiamo.*rimborsato',
+    'rimborso.*è stato','rimborso.*verrà accreditato','rimborso.*entro',
+    'emettere un rimborso','emesso il rimborso','rimborso immediato',
+    'accredito.*verrà','accrediteremo','abbiamo accreditato',
+    // Credito confermato
+    'invieremo.*credito','abbiamo inviato.*credito','credito.*è stato inviato',
+    // Annullamento
+    'annulleremo','abbiamo annullato','provvederemo.*annull',
+    // Rispedizione confermata
+    'rispediremo','provvederemo.*rispedire','nuova spedizione.*partirà',
+    'abbiamo.*rispedito',
+    // Sostituzione confermata
+    'sostituiremo','provvederemo.*sostituzione','abbiamo.*sostituito',
+    // Modifica indirizzo
+    'modifica.*indirizzo','cambio.*indirizzo','aggiorneremo.*indirizzo',
+    // BRT — azione diretta
+    'comunicher.*corriere','comunicare.*corriere','contatter.*brt',
+    'sbloccare.*spedizione','rimessa in consegna','provveder.*brt',
+    'disposizioni.*corriere','avvis.*corriere',
+    'prenotiamo il ritiro','organizziamo il ritiro',
   ];
   if(manualKeywords.some(function(k){ return new RegExp(k,'i').test(t); })) return true;
 
-  // Controlla stato spedizione ordine — se critico non auto-rispondere
   if(order){
     var fship=(order.fulfillments||[]).slice(-1)[0];
     var shipSt=fship&&fship.shipment_status;
-    var criticalStates=['ready_for_pickup','failure','attempted_delivery'];
-    if(criticalStates.includes(shipSt)) return true;
+    if(['ready_for_pickup','failure','attempted_delivery'].includes(shipSt)) return true;
   }
 
   return false;
@@ -6423,6 +6435,11 @@ function isSpamTicket(ticket){
   var email=((ticket.requester&&ticket.requester.email)||'').toLowerCase();
   var subject=(ticket.subject||'').toLowerCase();
   var name=((ticket.requester&&ticket.requester.name)||'').toLowerCase();
+
+  // I ticket Amazon/Temu/TikTok NON sono spam anche se l'email sembra random
+  var isMarketplace = subject.includes('amazon') || subject.includes('temu') || subject.includes('tiktok') ||
+    email.includes('marketplace.amazon') || email.includes('orders.temu') || email.includes('amazonpayments');
+  if(isMarketplace) return false;
 
   // Email patterns tipici di spam/bot
   var spamEmailPatterns=[
@@ -6453,7 +6470,7 @@ function isSpamTicket(ticket){
   if(/^\d+$/.test(name)) return true;
   if(name.length>30&&!name.includes(' ')) return true;
 
-  // Email con troppi numeri o caratteri casuali (pattern bot)
+  // Email con troppi numeri o caratteri casuali (pattern bot) — solo se non marketplace
   var localPart=email.split('@')[0]||'';
   var numCount=(localPart.match(/\d/g)||[]).length;
   if(localPart.length>15&&numCount>8) return true;
