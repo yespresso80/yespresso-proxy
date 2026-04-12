@@ -7363,9 +7363,10 @@ async function loadAIPromptFromServer(){
           // Sezione esistente — aggiorna solo il testo delle sezioni LOCKED (base)
           // Le altre le lasciamo come le ha modificate l'utente
           var ci = cloudSecs.findIndex(function(s){return s.id===ds.id;});
-          if(ci>=0 && ds.locked && cloudSecs[ci].text !== ds.text){
-            // Per le sezioni locked aggiorna sempre al testo più recente
-            // cloudSecs[ci].text = ds.text; // commentato: lascia libertà all'utente
+          if(ci>=0 && !cloudSecs[ci].custom){
+            // Aggiorna sempre il testo delle sezioni standard (non custom dell'utente)
+            cloudSecs[ci].text = ds.text;
+            cloudSecs[ci].label = ds.label;
           }
         }
       });
