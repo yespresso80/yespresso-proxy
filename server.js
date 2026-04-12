@@ -113,14 +113,22 @@ function serverIsNoAi(email) {
   return NO_AI_SERVER.some(e => email.includes(e));
 }
 
-async function serverAutoReplyWorker() {
+async function serverAutoReplyWorker(processAll) {
   if (!HD_TOKEN || !ANTHROPIC_KEY) return;
-  // Carica impostazioni auto-risposta da filippo-data
   let settings = {};
   try { const fd = await ghFilippoGet(); settings = fd.data || {}; } catch(e) {}
-  if (!settings.autoReplyEnabled) return; // OFF — non fare nulla
-
-  console.log('[AUTO-REPLY-SERVER] Start worker...');
+  
+  // Se era OFF e ora è ON, processa tutto
+  const wasOff = serverAutoReplyWorker._lastEnabled === false;
+  const isNowOn = !!settings.autoReplyEnabled;
+  serverAutoReplyWorker._lastEnabled = isNowOn;
+  
+  if (!isNowOn) return;
+  
+  // Processa tutti i ticket Open se: primo avvio, era OFF, o processAll richiesto
+  const shouldProcessAll = processAll || wasOff;
+  
+  console.log('[AUTO-REPLY-SERVER] Start worker... processAll='+shouldProcessAll);
   try {
     // Prendi ticket Open
     const pages = await Promise.all([1,2,3].map(p =>
@@ -134,8 +142,8 @@ async function serverAutoReplyWorker() {
       const email = ((ticket.requester && ticket.requester.email) || '').toLowerCase();
       if (serverIsNoAi(email) || serverIsSpam(ticket)) continue;
 
-      // Controlla se già processato e se il cliente ha risposto dopo
-      if (_serverAutoProcessed[tid]) {
+      // Se shouldProcessAll, ignora il controllo timestamp e processa tutti
+      if (!shouldProcessAll && _serverAutoProcessed[tid]) {
         const lastMsg = ticket.lastMessageAt || ticket.updatedAt || '';
         if (!lastMsg || new Date(lastMsg) <= new Date(_serverAutoProcessed[tid])) continue;
       }
@@ -297,8 +305,8 @@ async function serverAutoReplyWorker() {
 
 // Avvia worker dopo 10 secondi dal boot, poi ogni 60s
 setTimeout(() => {
-  serverAutoReplyWorker();
-  setInterval(serverAutoReplyWorker, AUTO_REPLY_INTERVAL);
+  serverAutoReplyWorker(true); // true = processa anche ticket esistenti al boot
+  setInterval(() => serverAutoReplyWorker(false), AUTO_REPLY_INTERVAL);
 }, 10000);
 const attachmentsCache = new Map();
 let lastImapSync = 0;
