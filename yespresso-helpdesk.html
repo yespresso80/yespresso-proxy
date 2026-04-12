@@ -3310,11 +3310,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     }
   }
 
-  // Se stato critico → non generare risposta AI ma mostra sidebar normalmente
-  if(order && order._criticalShipping) {
-    // La sidebar viene costruita sotto, ma non chiamiamo Claude
-  } else {
-  if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
+  // Costruisci sempre la sidebar ordine (sia per stati critici che normali)
+  if(genBox&&!order?._criticalShipping)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
 
   const oArea=document.getElementById("order-info-area");
   // Non sovrascrivere il box se è già stato costruito da isTemuInfoSospeso
@@ -3366,7 +3363,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     // ═══ PROBLEMA SPEDIZIONE: 4 pulsanti messaggio ═══
     const _fromEmail4=(t.requester&&t.requester.email)||"";
     const _isBrtSender=_fromEmail4.includes("vasnoreply@brt")||_fromEmail4.includes("servizioclienti@brt");
-    if(f&&f.shipment_status==='failure'&&!_isBrtSender){
+    if(f&&(f.shipment_status==='failure'||f.shipment_status==='attempted_delivery')&&!_isBrtSender){
       const sa=order.shipping_address||{};
       const indirizzo=[sa.address1,sa.city,sa.zip,sa.province_code].filter(Boolean).join(', ');
       const nomeCliente=(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()||(t.requester&&t.requester.name)||'';
@@ -3538,6 +3535,10 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     return;
   }
   const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+(orderInfo?"\n\nDati ordine: "+orderInfo:"")+"\n\nSTORICO CONVERSAZIONE (dal più vecchio al più recente):\n"+fullThread+otherOpenStr+recentStr+"\n\nRispondi all'ultimo messaggio del cliente tenendo conto dell'INTERA conversazione sopra. Se il cliente ha gia fornito informazioni nei messaggi precedenti (es. numero ordine, descrizione problema, quantita prodotti), NON chiederle di nuovo ma usa quelle informazioni per rispondere.";
+
+  // Se stato spedizione critico → non chiamare Claude
+  if(order && order._criticalShipping){ return; }
+
   try{
     const res=await proxyFetch(PROXY+"/anthropic/v1/messages",{
       method:"POST",headers:{"Content-Type":"application/json"},
@@ -3682,7 +3683,6 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       if(rt){rt.value="";rt.placeholder="⚠ Errore AI ("+e.message+") — scrivi manualmente";}
     }
   }
-  } // end else criticalShipping
 }
 
 
