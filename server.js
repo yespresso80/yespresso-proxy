@@ -749,6 +749,60 @@ async function ghFilippoSave(data, sha) {
   await fetch(GH_FILIPPO_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
 
+// ── GITHUB: Quick Replies ──
+const GH_QR_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/quick-replies.json';
+async function ghQrGet() {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) return { data: { replies: [], cats: [] }, sha: null };
+  const r = await fetch(GH_QR_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+  if (r.status === 404) return { data: { replies: [], cats: [] }, sha: null };
+  const j = await r.json();
+  return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+}
+async function ghQrSave(data, sha) {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('GH_TOKEN non configurato');
+  const body = { message: 'update quick-replies', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+  if (sha) body.sha = sha;
+  await fetch(GH_QR_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+// ── GITHUB: Reso AI Prompt ──
+const GH_RESO_AI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/reso-ai-prompt.json';
+async function ghResoAIGet() {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) return { data: null, sha: null };
+  const r = await fetch(GH_RESO_AI_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+  if (r.status === 404) return { data: null, sha: null };
+  const j = await r.json();
+  return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+}
+async function ghResoAISave(data, sha) {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('GH_TOKEN non configurato');
+  const body = { message: 'update reso-ai-prompt', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+  if (sha) body.sha = sha;
+  await fetch(GH_RESO_AI_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+// ── GITHUB: AI Prompt ──
+const GH_AIPROMPT_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/ai-prompt.json';
+async function ghAiPromptGet() {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) return { data: null, sha: null };
+  const r = await fetch(GH_AIPROMPT_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+  if (r.status === 404) return { data: null, sha: null };
+  const j = await r.json();
+  return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+}
+async function ghAiPromptSave(data, sha) {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('GH_TOKEN non configurato');
+  const body = { message: 'update ai-prompt', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+  if (sha) body.sha = sha;
+  await fetch(GH_AIPROMPT_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
 const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
@@ -1239,32 +1293,6 @@ async function brtRestPost(path, body) {
   }
 
   // ── QUICK REPLIES — GitHub come database persistente ──
-  const GH_QR_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/quick-replies.json';
-
-  async function ghQrGet() {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) return { data: { replies: [], cats: [] }, sha: null };
-    const r = await fetch(GH_QR_URL, {
-      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (r.status === 404) return { data: { replies: [], cats: [] }, sha: null };
-    const j = await r.json();
-    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
-    return { data, sha: j.sha };
-  }
-
-  async function ghQrSave(data, sha) {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) throw new Error('GH_TOKEN non configurato');
-    const body = { message: 'update quick-replies', content: Buffer.from(JSON.stringify(data)).toString('base64') };
-    if (sha) body.sha = sha;
-    await fetch(GH_QR_URL, {
-      method: 'PUT',
-      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  }
-
   if (req.url === '/quick-replies' && req.method === 'GET') {
     try {
       const { data } = await ghQrGet();
@@ -1294,24 +1322,7 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // ── FAB DATA: salvataggio/lettura ordini fornitori su GitHub ────
   // ── RESO AI PROMPT ───────────────────────────────────────────
-  const GH_RESO_AI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/reso-ai-prompt.json';
-  async function ghResoAIGet() {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) return { data: null, sha: null };
-    const r = await fetch(GH_RESO_AI_URL, { headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' } });
-    if (r.status === 404) return { data: null, sha: null };
-    const j = await r.json();
-    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
-  }
-  async function ghResoAISave(data, sha) {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) throw new Error('GH_TOKEN non configurato');
-    const body = { message: 'update reso-ai-prompt', content: Buffer.from(JSON.stringify(data)).toString('base64') };
-    if (sha) body.sha = sha;
-    await fetch(GH_RESO_AI_URL, { method: 'PUT', headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  }
   if (req.url === '/reso-ai-prompt') {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(); return; }
@@ -1330,33 +1341,7 @@ async function brtRestPost(path, body) {
   }
 
 
-  // ── AI PROMPT: salvataggio sezioni prompt su GitHub ───────────
-  const GH_AIPROMPT_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/ai-prompt.json';
-
-  async function ghAiPromptGet() {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) return { data: null, sha: null };
-    const r = await fetch(GH_AIPROMPT_URL, {
-      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (r.status === 404) return { data: null, sha: null };
-    const j = await r.json();
-    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
-    return { data, sha: j.sha };
-  }
-
-  async function ghAiPromptSave(data, sha) {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) throw new Error('GH_TOKEN non configurato');
-    const body = { message: 'update ai-prompt', content: Buffer.from(JSON.stringify(data)).toString('base64') };
-    if (sha) body.sha = sha;
-    await fetch(GH_AIPROMPT_URL, {
-      method: 'PUT',
-      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  }
-
+  // ── AI PROMPT ───────────────────────────────────────────────
   if (req.url === '/ai-prompt') {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') {
