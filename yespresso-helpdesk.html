@@ -3656,8 +3656,13 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       var _autoOrder=window._currentOrder||null;
       var _needsAction=needsManualAction(reply,_autoOrder);
       var lbl3=document.getElementById("ai-label");
+      var _tid=selectedTicket&&String(selectedTicket.ID||selectedTicket.id);
+      // Non inviare automaticamente se già processato in questa sessione
+      var _alreadyDone=_tid&&_autoProcessedIds[_tid];
       if(_needsAction){
         if(lbl3) lbl3.textContent="✨ Risposta AI — ⚠️ Richiede azione manuale (non inviata automaticamente)";
+      } else if(_alreadyDone){
+        if(lbl3) lbl3.textContent="✨ Risposta AI — già gestito automaticamente";
       } else {
         if(lbl3) lbl3.textContent="✨ Risposta AI — ⏳ Auto-invio in corso...";
         tryAutoReply(reply,_autoOrder);
@@ -6216,6 +6221,7 @@ function setAutoReply(val){
 var _autoProcessedIds = {}; // {tid: timestamp quando abbiamo risposto}
 var _autoBlockedIds = new Set(); // ticket bloccati definitivamente (cliente insoddisfatto)
 var _autoProcessing = false;     // flag per evitare processamenti paralleli
+var _autoProcessingTids = new Set(); // ticket attualmente in elaborazione
 
 async function autoProcessTickets(freshTickets){
   if(!isAutoReplyEnabled()) return;
@@ -6226,12 +6232,12 @@ async function autoProcessTickets(freshTickets){
     // Prendi solo ticket open non ancora processati, non spam, AI non bloccata
     var toProcess = (freshTickets||[]).filter(function(t){
       var tid = String(t.ID||t.id);
-      if(_autoBlockedIds.has(tid)) return false;        // bloccato definitivamente
+      if(_autoBlockedIds.has(tid)) return false;
+      if(_autoProcessingTids.has(tid)) return false; // già in elaborazione
       if(t.status !== 'open') return false;
       var email = (t.requester&&t.requester.email)||'';
       if(isNoAiEmail(email)) return false;
       if(isSpamTicket(t)) return false;
-      // Se già processato, riprocessa solo se il cliente ha scritto DOPO la nostra risposta
       if(_autoProcessedIds[tid]){
         var lastMsg = t.lastMessageAt || t.updatedAt || t.updated_at || '';
         var lastReply = _autoProcessedIds[tid];
@@ -6255,6 +6261,7 @@ async function autoProcessTickets(freshTickets){
 
       // Marca subito come processato con timestamp per evitare doppi tentativi
       _autoProcessedIds[tid] = new Date().toISOString();
+      _autoProcessingTids.add(tid); // lock per-ticket
 
       if(bar) bar.textContent = '🤖 Auto-risposta: elaboro ticket '+(i+1)+'/'+toProcess.length+' — #'+tid+'...';
 
@@ -6411,6 +6418,7 @@ async function autoProcessTickets(freshTickets){
         showToast('🤖 Auto-risposta inviata: ticket #'+tid, 'success');
         console.log('[AUTO-REPLY] ✅ Ticket '+tid+' risposto e chiuso');
         _autoProcessedIds[tid] = new Date().toISOString();
+        _autoProcessingTids.delete(tid); // rilascia lock
         // Aggiungi al set processed per pallino verde
         _autoReplyStatus.processed.add(String(tid));
         // Pausa tra un ticket e l'altro per non sovraccaricare le API
@@ -6418,6 +6426,7 @@ async function autoProcessTickets(freshTickets){
 
       }catch(te){
         console.log('[AUTO-REPLY] Errore ticket '+tid+':', te.message);
+        _autoProcessingTids.delete(tid); // rilascia lock anche in caso di errore
       }
     }
 
@@ -6463,6 +6472,7 @@ function needsManualAction(replyText, order){
     'rimborso.*è stato','rimborso.*verrà accreditato','rimborso.*entro',
     'emettere un rimborso','emesso il rimborso','rimborso immediato',
     'accredito.*verrà','accrediteremo','abbiamo accreditato',
+    'procediamo.*accredito','procediamo.*rimborso','procediamo.*credito','procediamo immediatamente',
     // Credito confermato
     'invieremo.*credito','abbiamo inviato.*credito','credito.*è stato inviato',
     // Annullamento

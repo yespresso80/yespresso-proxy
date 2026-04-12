@@ -66,6 +66,8 @@ function serverNeedsManualAction(text) {
     'rimborso','rimborseremo','rimborsiamo','emettere un rimborso',
     'provvederemo.*rimborso','procederemo.*rimborso','abbiamo.*rimborsato',
     'rimborso.*è stato','accredito.*verrà','accrediteremo','abbiamo accreditato',
+    'procediamo.*accredito','procediamo.*rimborso','procediamo.*credito','procediamo immediatamente',
+    'invieremo.*credito','abbiamo inviato.*credito','credito.*è stato inviato',
     'invieremo.*credito','abbiamo inviato.*credito','credito.*è stato inviato',
     // annullamento sito gestito automaticamente — rimane solo per marketplace
     'rispediremo','provvederemo.*rispedire','nuova spedizione.*partirà',
