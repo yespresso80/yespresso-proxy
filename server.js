@@ -292,42 +292,43 @@ async function serverAutoReplyWorker(processAll) {
         });
 
         // ══ STEP 1: CLASSIFICAZIONE ══
-        // Prima chiamata AI — solo classifica, non risponde
-        const classifyMsg = `Analizza questo ticket di assistenza clienti e classifica il tipo di richiesta.
+        const classifyMsg = `Analizza questo ticket e classifica il tipo di richiesta.
 
 Oggetto: ${subj}
 Storico:
 ${fullThread}
 
-Rispondi SOLO con un JSON in questo formato esatto, nessun testo aggiuntivo:
-{"categoria": "SOLO_INFO", "motivo": "breve spiegazione"}
+Rispondi SOLO con JSON esatto, nessun testo aggiuntivo:
+{"categoria": "CATEGORIA", "motivo": "breve spiegazione"}
 
-Usa SOLO_INFO se e SOLO SE il ticket riguarda ESCLUSIVAMENTE:
-- Dov'è il mio ordine / stato spedizione (solo informazioni tracking)
-- Ordine non ancora spedito (solo informazione tempi)
-- Domanda generica su compatibilità capsule/prodotti (solo informazione)
-- Conferma di annullamento ordine già elaborato dal sistema
-- Orari, informazioni aziendali, come usare il sito
+CATEGORIE:
 
-Usa AZIONE_MANUALE per QUALSIASI altra situazione, incluso:
-- Capsule danneggiate, difettose, di qualità inferiore
-- Problemi tecnici con capsule o macchine
-- Richiesta di rimborso, credito, compensazione, sostituzione
-- Acquisto errato, reso
-- Prodotto sbagliato ricevuto
-- Reclami sulla qualità
-- Lotto difettoso
-- Merce mancante
-- Richiesta annullamento ordine
-- Qualsiasi situazione che potrebbe richiedere un compenso economico
-- Dubbi o situazioni ambigue
+SOLO_INFO — solo se riguarda ESCLUSIVAMENTE:
+- Dov'è il mio ordine / stato spedizione / tracking
+- Ordine non ancora spedito (solo info tempi)
+- Domanda generica compatibilità capsule/prodotti
+- Orari, info aziendali, come usare il sito
+
+GESTIBILE_AUTO — gestisce automaticamente con limiti precisi:
+- Capsule danneggiate/difettose/qualità → chiede foto e quantità, NON promette rimborsi
+- Problema tecnico capsule → dà istruzioni tecniche, NON promette rimborsi
+- Acquisto errato (capsule sbagliate/incompatibili) → spiega procedura reso; se il cliente scrive che vuole il ritiro da parte nostra con decurtazione di 8€ usa quella modalità
+- Annullamento ordine SITO (non Amazon/Temu/TikTok) → verifica condizioni e annulla se possibile
+- Prodotto sbagliato ricevuto (errore nostro) → chiede foto e descrizione, poi NON risponde più (prima risposta sola)
+
+AZIONE_MANUALE — tutto il resto, incluso:
+- Richiesta esplicita di rimborso/credito/compensazione/sostituzione
+- Rimborso già promesso da precedente risposta
+- Cliente insoddisfatto della risposta ricevuta
+- Situazioni ambigue o complesse
+- Qualsiasi dubbio
 
 In caso di dubbio usa SEMPRE AZIONE_MANUALE.`;
 
         const classRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 100, system: 'Sei un classificatore di ticket. Rispondi SOLO con JSON.', messages: [{ role: 'user', content: classifyMsg }] })
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 100, system: 'Sei un classificatore di ticket. Rispondi SOLO con JSON valido.', messages: [{ role: 'user', content: classifyMsg }] })
         });
         const classData = await classRes.json();
         const classText = (classData.content && classData.content[0] && classData.content[0].text) || '';
@@ -335,17 +336,18 @@ In caso di dubbio usa SEMPRE AZIONE_MANUALE.`;
         try {
           const classJson = JSON.parse(classText.match(/\{[^}]+\}/)[0]);
           categoria = classJson.categoria || 'AZIONE_MANUALE';
+          if (!['SOLO_INFO','GESTIBILE_AUTO'].includes(categoria)) categoria = 'AZIONE_MANUALE';
         } catch(e) { categoria = 'AZIONE_MANUALE'; }
 
         console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} → ${categoria}`);
 
-        if (categoria !== 'SOLO_INFO') {
+        if (categoria === 'AZIONE_MANUALE') {
           _serverNeedsAction.add(tid);
-          continue; // Non rispondere — metti pallino arancione
+          continue;
         }
 
-        // ══ STEP 2: RISPOSTA (solo se SOLO_INFO) ══
-        let aiPrompt = "Sei l'assistente clienti di Yespresso. Rispondi in italiano, tono cordiale. Firma come Il Team Yespresso. NON usare markdown. Solo testo plain. NON promettere rimborsi, crediti, sostituzioni o compensazioni di alcun tipo. Fornisci SOLO informazioni fattuali.";
+        // ══ STEP 2: CARICA PROMPT E ORDINE INFO ══
+        let aiPrompt = "Sei l'assistente clienti di Yespresso. Rispondi in italiano, tono cordiale. Firma come Il Team Yespresso. NON usare markdown.";
         try {
           const ghToken = process.env.GH_TOKEN;
           if (ghToken) {
@@ -357,30 +359,67 @@ In caso di dubbio usa SEMPRE AZIONE_MANUALE.`;
               const promptData = JSON.parse(Buffer.from(promptJ.content.replace(/\n/g,''),'base64').toString('utf8'));
               const sections = promptData.sections || promptData;
               if (Array.isArray(sections)) {
-                const txt = sections.filter(s => !s.disabled && s.text && s.text.trim() && s.id === 'base').map(s => s.text.trim()).join('\n\n');
-                if (txt) aiPrompt = txt + '\n\nATTENZIONE MODALITÀ AUTO-RISPOSTA: Rispondi SOLO con informazioni fattuali (tracking, tempi spedizione, info prodotti). NON promettere mai rimborsi, crediti, sostituzioni, compensazioni o azioni economiche di alcun tipo. Se non sei sicuro di cosa rispondere, non rispondere.';
+                const txt = sections.filter(s => !s.disabled && s.text && s.text.trim()).map(s => s.text.trim()).join('\n\n');
+                if (txt) aiPrompt = txt;
               }
             }
           }
         } catch(e) {}
 
-        // Order info
         let orderInfo = '';
         if (order) {
           const f = order.fulfillments && order.fulfillments[0];
           orderInfo = `Ordine ${order.name} | Stato: ${order.fulfillment_status||'non spedito'} | €${order.total_price}`;
           if (order.cancelled_at) orderInfo += ` | ANNULLATO il ${new Date(order.cancelled_at).toLocaleDateString('it-IT')}`;
+          if (order.payment_gateway) orderInfo += ` | Metodo pagamento: ${order.payment_gateway}`;
           if (f && f.tracking_number) orderInfo += ` | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=${f.tracking_number}`;
+          if ((order.line_items||[]).length) orderInfo += ` | Prodotti: ${order.line_items.map(i=>i.quantity+'x '+i.name).join(', ')}`;
         }
 
+        // ══ STEP 3: ISTRUZIONI SPECIFICHE PER CATEGORIA ══
+        let istruzioni = '';
+        let isFirstReplyOnly = false; // per "prodotto sbagliato" non risponde più dopo la prima
+
+        if (categoria === 'SOLO_INFO') {
+          istruzioni = 'Rispondi SOLO con informazioni fattuali (tracking, tempi, stato ordine). NON promettere mai rimborsi, crediti, sostituzioni o compensazioni.';
+        } else if (categoria === 'GESTIBILE_AUTO') {
+          // Determina sottocategoria dal testo
+          const txt = fullThread.toLowerCase() + ' ' + subj.toLowerCase();
+          if (/capsul.*dann|dann.*capsul|capsul.*rott|busta.*dann|qualit|lotto|bruciato|difettos/i.test(txt)) {
+            istruzioni = 'Il cliente segnala capsule danneggiate o di qualità inferiore. Chiedi SOLO: 1) foto delle capsule/buste danneggiate in formato JPG, 2) foto del pacco ricevuto, 3) quantità esatta danneggiata. NON promettere rimborsi, crediti o sostituzioni. NON calcolare importi.';
+          } else if (/problem.*tecnic|non funzion|macchina|non riconosc|non ero|non bucata|erogazione|pressione/i.test(txt)) {
+            istruzioni = 'Il cliente ha un problema tecnico con le capsule. Fornisci istruzioni tecniche specifiche per il tipo di capsula/macchina. NON promettere rimborsi o sostituzioni.';
+          } else if (/acquist.*errat|errat.*acquist|sbagliato|compatibil|compatibilità|non compatibil|macchina.*nespresso|macchina.*bialetti|macchina.*dolce|capsule che acquisto|prodotto che acquisto/i.test(txt)) {
+            const wantsBrt = /ritiro.*8|8.*euro.*ritiro|ritiro da parte|ritiro.*voi|8€|8 euro/i.test(txt);
+            if (wantsBrt) {
+              istruzioni = 'Il cliente ha acquistato per errore le capsule sbagliate E vuole il ritiro da parte nostra con decurtazione di 8€. Spiega la procedura: organizzeremo il ritiro tramite BRT, l\'importo di 8€ verrà detratto dal credito/rimborso. Il cliente deve conservare il prodotto nella scatola originale e attendere le istruzioni BRT.';
+            } else {
+              istruzioni = 'Il cliente ha acquistato per errore le capsule sbagliate. Spiega la procedura reso: entro 14 giorni, spese spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, prodotti integri e non aperti. NON offrire sostituzione né rimborso diretto.';
+            }
+          } else if (/annull/i.test(txt)) {
+            // Annullamento — già gestito sotto con serverCanCancelOrder
+            istruzioni = 'Il cliente richiede annullamento ordine. Verifica le condizioni e conferma se possibile. Se non annullabile, spiega il motivo.';
+          } else if (/prodotto sbagliato.*ricevu|ricevu.*prodotto sbagliato|spediz.*errat|errat.*spediz|prodotto errato|capsule diverse/i.test(txt)) {
+            istruzioni = 'Il cliente ha ricevuto il prodotto sbagliato per errore nostro. Chiedi: 1) descrizione del prodotto ricevuto per errore, 2) foto della scatola/pacco con etichetta BRT visibile (JPG), 3) foto della busta con le capsule ricevute (JPG). NON procedere con rimborsi o sostituzioni. Questa è la PRIMA e UNICA risposta automatica su questo ticket.';
+            isFirstReplyOnly = true;
+          } else {
+            // Fallback sicuro
+            categoria = 'AZIONE_MANUALE';
+            _serverNeedsAction.add(tid);
+            continue;
+          }
+        }
+
+        // ══ STEP 4: GENERA RISPOSTA ══
+        const systemFull = aiPrompt + '\n\nMODALITÀ AUTO-RISPOSTA — ISTRUZIONI SPECIFICHE:\n' + istruzioni + '\n\nREGOLA ASSOLUTA: NON promettere mai rimborsi, accrediti, crediti, compensazioni economiche o sostituzioni. Se necessario farlo, NON rispondere.';
         const userMsg = `Oggetto: ${subj}\nDa: ${(full.requester&&full.requester.name)||'Cliente'}\nEmail: ${email}`+
           (orderInfo ? `\n\nDati ordine:\n${orderInfo}` : '')+
-          `\n\nSTORICO:\n${fullThread}\n\nRispondi SOLO con informazioni di tracking/stato ordine. NON fare promesse economiche.`;
+          `\n\nSTORICO:\n${fullThread}\n\nRispondi seguendo le istruzioni specifiche. NON fare promesse economiche.`;
 
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 500, system: aiPrompt, messages: [{ role: 'user', content: userMsg }] })
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 600, system: systemFull, messages: [{ role: 'user', content: userMsg }] })
         });
         const aiData = await aiRes.json();
         let reply = (aiData.content && aiData.content[0] && aiData.content[0].text) || '';
@@ -389,25 +428,43 @@ In caso di dubbio usa SEMPRE AZIONE_MANUALE.`;
         // Pulizia
         reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'').replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi,'$1').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
 
-        // Verifica finale di sicurezza — se la risposta contiene promesse economiche non inviare
-        const unsafePatterns = [
-          /rimborso/i, /accredito/i, /credito/i, /compensazione/i, /sostituzione/i,
-          /rispedire/i, /procediamo/i, /provvederemo/i, /rimborseremo/i
-        ];
+        // Verifica finale sicurezza
+        const unsafePatterns = [/rimborso/i,/accredito/i,/\bcredito\b/i,/compensazione/i,/sostituzione/i,/rispedire/i,/procediamo.*rimborso/i,/provvederemo.*rimborso/i,/rimborseremo/i,/accrediteremo/i,/procediamo.*credito/i,/procediamo.*accredito/i];
         if (unsafePatterns.some(p => p.test(reply))) {
           console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — risposta contiene promesse economiche, skip`);
           _serverNeedsAction.add(tid);
           continue;
         }
 
-        // Invia risposta E chiudi in una sola chiamata
-        const sendRes = await hdPatch(`/tickets/${tid}`, { message: { text: reply }, status: 'solved' });
+        // ══ STEP 5: ANNULLAMENTO SHOPIFY (se richiesto) ══
+        if (/annull/i.test(fullThread + ' ' + subj)) {
+          const isMarketplaceOrder = order && ((order.note_attributes||[]).some(a => ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id','tiktok_order'].includes(a.name)));
+          if (order && !isMarketplaceOrder && serverCanCancelOrder(order)) {
+            try {
+              const cancelRes = await fetch(`https://${SHOPIFY_SHOP}/admin/api/2024-01/orders/${order.id}/cancel.json`,{
+                method:'POST',
+                headers:{'X-Shopify-Access-Token':SHOPIFY_TOKEN,'Content-Type':'application/json'},
+                body:JSON.stringify({reason:'customer',email:true,refund:true})
+              });
+              if (cancelRes.ok) {
+                console.log(`[AUTO-REPLY-SERVER] ✅ Ordine ${order.name} annullato su Shopify`);
+                reply = reply.replace(/annulleremo|annullare|annullerà/i,'abbiamo annullato');
+              }
+            } catch(ce) { console.log('[AUTO-REPLY-SERVER] Errore annullamento:', ce.message); }
+          }
+        }
+
+        // ══ STEP 6: INVIA ══
+        // Per "prodotto sbagliato" non chiudere il ticket — lascia Open ma segna come processato
+        const newStatus = isFirstReplyOnly ? 'open' : 'solved';
+        const sendRes = await hdPatch(`/tickets/${tid}`, { message: { text: reply }, status: newStatus });
         if (!sendRes.ok) {
-          // Fallback: invia separato poi chiudi
           const sendRes2 = await hdPatch(`/tickets/${tid}`, { message: { text: reply } });
           if (!sendRes2.ok) { console.log(`[AUTO-REPLY-SERVER] Invio fallito ticket ${tid}: ${sendRes2.status}`); continue; }
-          for (const m of ['PUT','PATCH']) {
-            try { await hdPut(`/tickets/${tid}`, { status: 'solved' }); break; } catch(e) {}
+          if (!isFirstReplyOnly) {
+            for (const m of ['PUT','PATCH']) {
+              try { await hdPut(`/tickets/${tid}`, { status: 'solved' }); break; } catch(e) {}
+            }
           }
         }
 
