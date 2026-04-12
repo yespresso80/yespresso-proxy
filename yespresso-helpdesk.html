@@ -1110,7 +1110,7 @@ async function loadTickets(){
         const bar=document.getElementById("ticket-count-bar");
         if(bar){bar.textContent=(tickets.length)+" ticket · aggiornato "+nowR;if(changed){bar.style.color="#2a9d60";setTimeout(()=>{bar.style.color="";},1500);}}
       }catch(e){console.log("Auto-refresh failed:",e.message)}
-    },60*1000);
+    },30*1000); // refresh ogni 30 secondi
 
   }catch(e){
     clearInterval(loadTimer);
@@ -8707,13 +8707,20 @@ async function pollAutoReplyStatus(){
     var r = await proxyFetch(PROXY+'/auto-reply-status');
     if(!r.ok) return;
     var d = await r.json();
+    var prevProcessed = _autoReplyStatus.processed.size;
     _autoReplyStatus.needsAction = new Set((d.needsAction||[]).map(String));
     _autoReplyStatus.blocked = new Set((d.blocked||[]).map(String));
     _autoReplyStatus.processed = new Set((d.processed||[]).map(String));
+    renderTable();
+    // Se il server ha processato nuovi ticket, ricarica la lista subito
+    if(_autoReplyStatus.processed.size > prevProcessed){
+      console.log('[POLL] Server ha processato nuovi ticket — ricarico lista');
+      loadTickets();
+    }
   }catch(e){}
 }
-setInterval(pollAutoReplyStatus, 30000); // ogni 30s
-setTimeout(pollAutoReplyStatus, 5000);   // primo poll dopo 5s
+setInterval(pollAutoReplyStatus, 20000); // ogni 20s
+setTimeout(pollAutoReplyStatus, 5000);
 // Auto-refresh ogni 60 secondi (silent, non interrompe ticket aperto)
 setInterval(async function(){
   try{

@@ -23,7 +23,7 @@ console.log("[INIT] IMAP_USER:", IMAP_USER);
 console.log("[INIT] IMAP_PASSWORD presente:", !!IMAP_PASSWORD);
 
 
-const HD_BASE_URL = "https://yespresso.helpdesk.com/api/v1";
+const HD_BASE_URL = "https://api.helpdesk.com/v1";
 
 // ══════════════════════════════════════════════════════
 // AUTO-RISPOSTA SERVER-SIDE — gira ogni 60s anche a PC spento
@@ -67,7 +67,7 @@ function serverNeedsManualAction(text) {
     'provvederemo.*rimborso','procederemo.*rimborso','abbiamo.*rimborsato',
     'rimborso.*è stato','accredito.*verrà','accrediteremo','abbiamo accreditato',
     'invieremo.*credito','abbiamo inviato.*credito','credito.*è stato inviato',
-    'annulleremo','abbiamo annullato','provvederemo.*annull',
+    // annullamento sito gestito automaticamente — rimane solo per marketplace
     'rispediremo','provvederemo.*rispedire','nuova spedizione.*partirà',
     'sostituiremo','provvederemo.*sostituzione',
     'modifica.*indirizzo','cambio.*indirizzo','aggiorneremo.*indirizzo',
@@ -111,6 +111,72 @@ function serverIsSpam(ticket) {
 const NO_AI_SERVER = ['vasnoreply@brt.it','servizioclienti@brt.it','assistenza@paypal.it','seller@orders.temu.com'];
 function serverIsNoAi(email) {
   return NO_AI_SERVER.some(e => email.includes(e));
+}
+
+// Verifica se un ordine sito è annullabile in base all'orario e giorno
+function serverCanCancelOrder(order) {
+  if (!order || !order.created_at) return false;
+  if (order.cancelled_at) return false; // già annullato
+  if (order.fulfillment_status && order.fulfillment_status !== 'unfulfilled') return false; // già in lavorazione
+
+  const created = new Date(order.created_at);
+  const now = new Date();
+
+  // Helper: è giorno lavorativo (lun-ven)?
+  function isWorkday(d) { const day = d.getDay(); return day >= 1 && day <= 5; }
+  // Helper: prossimo giorno lavorativo alle 9:00
+  function nextWorkdayAt9(d) {
+    const next = new Date(d); next.setHours(0,0,0,0); next.setDate(next.getDate()+1);
+    while (!isWorkday(next)) next.setDate(next.getDate()+1);
+    next.setHours(9,0,0,0); return next;
+  }
+
+  const createdHour = created.getHours() + created.getMinutes()/60;
+  const createdDay = created.getDay(); // 0=dom, 1=lun, ..., 5=ven, 6=sab
+  const isCreatedWorkday = isWorkday(created);
+
+  let deadline = null;
+
+  if (!isCreatedWorkday) {
+    // Weekend o festivo → annullabile entro le 9 del prossimo lun/giorno lavorativo
+    deadline = nextWorkdayAt9(created);
+    // Se venerdì dalle 16:46+ → stesso lunedì
+    if (createdDay === 5 && createdHour >= 16.767) {
+      deadline = nextWorkdayAt9(created);
+    }
+  } else {
+    // Giorno lavorativo
+    if (createdHour <= 9.0) {
+      // 00:01-09:00 → entro le 9:00 stesso giorno
+      deadline = new Date(created); deadline.setHours(9,0,0,0);
+    } else if (createdHour <= 16.0) {
+      // 09:01-16:00 → entro 1 ora dalla creazione e comunque entro le 16:15
+      const oneHourLater = new Date(created.getTime() + 60*60*1000);
+      const cutoff = new Date(created); cutoff.setHours(16,15,0,0);
+      deadline = oneHourLater < cutoff ? oneHourLater : cutoff;
+    } else if (createdHour <= 16.75) {
+      // 16:01-16:45 → NON annullabile
+      return false;
+    } else {
+      // 16:46-23:59 → entro le 9 del giorno lavorativo successivo
+      deadline = nextWorkdayAt9(created);
+    }
+  }
+
+  return deadline && now <= deadline;
+}
+
+// Verifica se un ticket riguarda richiesta annullamento sito
+function serverIsAnnullamentoSito(subject, events) {
+  const subj = (subject||'').toLowerCase();
+  if (!subj.includes('annull')) {
+    // Cerca nel testo degli eventi
+    const lastMsgs = (events||[]).slice(-3).map(ev =>
+      ((ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'').toLowerCase()
+    ).join(' ');
+    if (!lastMsgs.includes('annull')) return false;
+  }
+  return true;
 }
 
 async function serverAutoReplyWorker(processAll) {
@@ -273,6 +339,33 @@ async function serverAutoReplyWorker(processAll) {
           .replace(/<[^>]+>/g, ' ')
           .replace(/\s{2,}/g, ' ')
           .trim();
+
+        // Auto-annullamento ordine sito (non marketplace) se l'AI conferma annullamento
+        const isMarketplaceOrder = order && ((order.note_attributes||[]).some(a =>
+          ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id','tiktok_order'].includes(a.name)
+        ));
+        const aiConfirmsCancel = /annulleremo|abbiamo.*annullato|provvederemo.*annull|come da.*richiest.*annull/i.test(reply);
+        const canCancel = serverCanCancelOrder(order);
+
+        if(order && !isMarketplaceOrder && aiConfirmsCancel && canCancel){
+          try{
+            const cancelRes = await fetch(`https://${SHOPIFY_SHOP}/admin/api/2024-01/orders/${order.id}/cancel.json`,{
+              method:'POST',
+              headers:{'X-Shopify-Access-Token':SHOPIFY_TOKEN,'Content-Type':'application/json'},
+              body:JSON.stringify({reason:'customer',email:true,refund:true})
+            });
+            if(cancelRes.ok){
+              console.log(`[AUTO-REPLY-SERVER] ✅ Ordine ${order.name} annullato su Shopify`);
+              // Aggiorna risposta con conferma
+              const pgMap={shopify_payments:'carta di credito/debito',paypal:'PayPal',cash_on_delivery:'',klarna:'Klarna'};
+              const payLabel=pgMap[order.payment_gateway]||order.payment_gateway||'';
+              if(order.payment_gateway && order.payment_gateway!=='cash_on_delivery'){
+                reply=reply.replace(/annulleremo|annullare|annullerà/i,'abbiamo annullato');
+                if(!reply.includes('rimborso')) reply+='\n\nIl rimborso'+(payLabel?' sul suo '+payLabel:'')+' verrà elaborato entro 3-5 giorni lavorativi.';
+              }
+            }
+          }catch(ce){ console.log('[AUTO-REPLY-SERVER] Errore annullamento Shopify:', ce.message); }
+        }
 
         if (serverNeedsManualAction(reply)) {
           console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — azione manuale richiesta, skip`);
