@@ -111,7 +111,7 @@ function serverIsSpam(ticket) {
 }
 
 const NO_AI_SERVER = ['vasnoreply@brt.it','servizioclienti@brt.it','assistenza@paypal.it','seller@orders.temu.com'];
-const AUTO_REPLY_TEST_MODE = true; // 🧪 TEST: risponde solo a commerciale@yespresso.it — rimuovere dopo i test
+const AUTO_REPLY_TEST_MODE = false; // 🧪 TEST: risponde solo a commerciale@yespresso.it — rimuovere dopo i test
 const AUTO_REPLY_TEST_EMAIL = 'commerciale@yespresso.it';
 function serverIsNoAi(email) {
   if (AUTO_REPLY_TEST_MODE && email !== AUTO_REPLY_TEST_EMAIL) return true; // blocca tutto tranne l'email di test
@@ -301,6 +301,9 @@ ${fullThread}
 Rispondi SOLO con JSON esatto, nessun testo aggiuntivo:
 {"categoria": "CATEGORIA", "motivo": "breve spiegazione"}
 
+REGOLA FONDAMENTALE: classifica in base al TIPO DI PROBLEMA, NON a cosa chiede il cliente.
+Anche se il cliente chiede rimborso/credito, se il problema è capsule danneggiate → GESTIBILE_AUTO.
+
 CATEGORIE:
 
 SOLO_INFO — solo se riguarda ESCLUSIVAMENTE:
@@ -309,21 +312,19 @@ SOLO_INFO — solo se riguarda ESCLUSIVAMENTE:
 - Domanda generica compatibilità capsule/prodotti
 - Orari, info aziendali, come usare il sito
 
-GESTIBILE_AUTO — gestisce automaticamente con limiti precisi:
-- Capsule danneggiate/difettose/qualità → chiede foto e quantità, NON promette rimborsi
-- Problema tecnico capsule → dà istruzioni tecniche, NON promette rimborsi
-- Acquisto errato (capsule sbagliate/incompatibili) → spiega procedura reso; se il cliente scrive che vuole il ritiro da parte nostra con decurtazione di 8€ usa quella modalità
-- Annullamento ordine SITO (non Amazon/Temu/TikTok) → verifica condizioni e annulla se possibile
-- Prodotto sbagliato ricevuto (errore nostro) → chiede foto e descrizione, poi NON risponde più (prima risposta sola)
+GESTIBILE_AUTO — classifica qui se il problema è uno di questi:
+- Capsule danneggiate/difettose/qualità inferiore (anche se chiede rimborso)
+- Problema tecnico capsule o macchina
+- Acquisto errato (capsule sbagliate/incompatibili)
+- Annullamento ordine SITO (non Amazon/Temu/TikTok)
+- Prodotto sbagliato ricevuto (errore di spedizione nostro)
 
-AZIONE_MANUALE — tutto il resto, incluso:
-- Richiesta esplicita di rimborso/credito/compensazione/sostituzione
-- Rimborso già promesso da precedente risposta
-- Cliente insoddisfatto della risposta ricevuta
-- Situazioni ambigue o complesse
-- Qualsiasi dubbio
+AZIONE_MANUALE — solo se:
+- Cliente già insoddisfatto di una risposta precedente ricevuta
+- Richiesta rimborso/credito senza un problema specifico dichiarato
+- Situazione già in escalation o molto complessa
 
-In caso di dubbio usa SEMPRE AZIONE_MANUALE.`;
+In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.`;
 
         const classRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',

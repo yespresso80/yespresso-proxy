@@ -5096,7 +5096,7 @@ function openFilippoPanel(){
     // Step 3: classificazione AI
     addStep('Classifico il ticket con AI...');
     var fullThread = 'Cliente: '+message;
-    var classifyMsg = 'Analizza questo ticket e rispondi SOLO con JSON.\nOggetto: '+subject+'\nStorico:\n'+fullThread+'\n\n{"categoria":"SOLO_INFO"} se riguarda SOLO tracking/stato ordine/tempi spedizione/info prodotti.\n{"categoria":"AZIONE_MANUALE"} per TUTTO il resto: danni, qualità, rimborsi, crediti, resi, annullamenti, problemi tecnici, compensazioni, dubbi.\nIn caso di dubbio usa SEMPRE AZIONE_MANUALE.';
+    var classifyMsg = 'Analizza questo ticket e rispondi SOLO con JSON.\nOggetto: '+subject+'\nStorico:\n'+fullThread+'\n\nREGOLA: classifica per TIPO DI PROBLEMA, non per cosa chiede il cliente.\n{"categoria":"SOLO_INFO"} se riguarda SOLO tracking/stato/tempi/info prodotti.\n{"categoria":"GESTIBILE_AUTO"} se riguarda: capsule danneggiate, qualità, problema tecnico, acquisto errato, annullamento sito, prodotto sbagliato.\n{"categoria":"AZIONE_MANUALE"} se: cliente già insoddisfatto, escalation, rimborso senza problema specifico.\nIn dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → GESTIBILE_AUTO.';
     var categoria = 'AZIONE_MANUALE';
     try{
       var cr = await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:50,system:'Sei un classificatore. Rispondi SOLO con JSON.',messages:[{role:'user',content:classifyMsg}]})});
@@ -6422,7 +6422,7 @@ function saveSettings(){
   closeSettingsModal();
 }
 const NO_AI_DEFAULTS=["vasnoreply@brt.it","servizioclienti@brt.it","assistenza@paypal.it","seller@orders.temu.com"];
-const AUTO_REPLY_TEST_MODE = true; // 🧪 TEST: risponde solo a commerciale@yespresso.it
+const AUTO_REPLY_TEST_MODE = false; // 🧪 TEST: risponde solo a commerciale@yespresso.it
 const AUTO_REPLY_TEST_EMAIL = 'commerciale@yespresso.it';
 
 // ── AUTO-RISPOSTA ──
@@ -6595,10 +6595,11 @@ async function autoProcessTickets(freshTickets){
 
         // ══ STEP 1: CLASSIFICAZIONE ══
         var classifyMsg = 'Analizza questo ticket e rispondi SOLO con JSON.\nOggetto: '+(fullTicket.subject||'')+'\nStorico:\n'+fullThread+'\n\n'+
-          '{"categoria":"SOLO_INFO"} se riguarda SOLO tracking/stato ordine/tempi/info prodotti.\n'+
-          '{"categoria":"GESTIBILE_AUTO"} se riguarda: capsule danneggiate (chiede info), problema tecnico (dà istruzioni), acquisto errato (procedura reso), annullamento ordine sito, prodotto sbagliato ricevuto (chiede foto prima risposta).\n'+
-          '{"categoria":"AZIONE_MANUALE"} per: richiesta rimborso/credito/compensazione esplicita, cliente insoddisfatto, situazioni complesse o ambigue.\n'+
-          'In caso di dubbio usa SEMPRE AZIONE_MANUALE.';
+          'REGOLA FONDAMENTALE: classifica per TIPO DI PROBLEMA, non per cosa chiede il cliente. Anche se chiede rimborso/credito, se ha capsule danneggiate → GESTIBILE_AUTO.\n\n'+
+          '{"categoria":"SOLO_INFO"} se riguarda SOLO: tracking/stato ordine/tempi spedizione/info prodotti/orari.\n'+
+          '{"categoria":"GESTIBILE_AUTO"} se riguarda: capsule danneggiate o qualità inferiore, problema tecnico capsule/macchina, acquisto errato (capsule sbagliate), annullamento ordine sito, prodotto sbagliato ricevuto.\n'+
+          '{"categoria":"AZIONE_MANUALE"} se: cliente già insoddisfatto di risposta precedente, escalation, rimborso senza un problema specifico dichiarato.\n'+
+          'In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.';
 
         var classRes = await proxyFetch(PROXY+'/anthropic/v1/messages',{
           method:'POST', headers:{'Content-Type':'application/json'},
