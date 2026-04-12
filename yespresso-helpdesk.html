@@ -4912,6 +4912,8 @@ function openFilippoPanel(){
     id:'ordini_ritardo',label:'⏰ Ordini in Ritardo',periodo:'',custom:true,groups:[]
   },{
     id:'attivita',label:'✅ Attività da Fare',periodo:'',custom:true,groups:[]
+  },{
+    id:'sandbox_ai',label:'🧪 Test AI Automatica',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -4944,6 +4946,7 @@ function openFilippoPanel(){
         else if(sec.id==='merce_inserita') setTimeout(function(){renderMerceInserita(null,panel,null);},0);
         else if(sec.id==='ordini_ritardo') setTimeout(function(){renderOrdiniRitardo(null,panel,null);},0);
         else if(sec.id==='attivita') setTimeout(function(){renderAttivita(null,panel,null);},0);
+        else if(sec.id==='sandbox_ai') setTimeout(function(){renderSandboxAI(panel);},0);
         return;
       }
       html+='<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:4px">'+sec.label+'</div>'+
@@ -4982,10 +4985,211 @@ function openFilippoPanel(){
       if(activeSec.id==='merce_inserita') renderMerceInserita(null,panel,null);
       else if(activeSec.id==='ordini_ritardo') renderOrdiniRitardo(null,panel,null);
       else if(activeSec.id==='attivita') renderAttivita(null,panel,null);
+      else if(activeSec.id==='sandbox_ai') renderSandboxAI(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
   window.filippoSetSection=function(id){activeSection=id;renderPanel();};
+
+  function renderSandboxAI(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca)return;
+    ca.innerHTML='<div style="max-width:760px">'
+      +'<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:4px">🧪 Test AI Automatica</div>'
+      +'<div style="font-size:12px;color:#888;margin-bottom:20px">Simula come risponde il sistema di auto-risposta AI a un ticket, senza inviare nulla.</div>'
+      +'<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px;margin-bottom:16px">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+          +'<div>'
+            +'<label style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Numero Ordine (opzionale)</label>'
+            +'<input id="sb-order" type="text" placeholder="es. #2024192053" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit">'
+          +'</div>'
+          +'<div>'
+            +'<label style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Email Mittente (opzionale)</label>'
+            +'<input id="sb-email" type="text" placeholder="es. cliente@gmail.com" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit">'
+          +'</div>'
+        +'</div>'
+        +'<div style="margin-bottom:12px">'
+          +'<label style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Oggetto Ticket</label>'
+          +'<input id="sb-subject" type="text" placeholder="es. Problema con capsule danneggiate" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit">'
+        +'</div>'
+        +'<div style="margin-bottom:16px">'
+          +'<label style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Messaggio Cliente</label>'
+          +'<textarea id="sb-message" rows="5" placeholder="Scrivi qui il messaggio come se fossi il cliente..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+          +'<span style="font-size:11px;color:#888;margin-top:6px">Esempi rapidi:</span>'
+          +'<button onclick="document.getElementById(\'sb-subject\').value=\'Dove è il mio ordine?\';document.getElementById(\'sb-message\').value=\'Buongiorno, ho effettuato un ordine 3 giorni fa ma non ho ricevuto ancora nulla. Quando arriva?\'" style="font-size:11px;padding:4px 10px;border:1px solid #e0e4ea;border-radius:6px;background:#f8faff;cursor:pointer">📦 Dov\'è ordine</button>'
+          +'<button onclick="document.getElementById(\'sb-subject\').value=\'Capsule danneggiate\';document.getElementById(\'sb-message\').value=\'Buongiorno, ho ricevuto il pacco ma alcune capsule sono rotte. Vorrei un rimborso.\'" style="font-size:11px;padding:4px 10px;border:1px solid #e0e4ea;border-radius:6px;background:#f8faff;cursor:pointer">💥 Capsule danneggiate</button>'
+          +'<button onclick="document.getElementById(\'sb-subject\').value=\'Richiesta annullamento ordine\';document.getElementById(\'sb-message\').value=\'Buongiorno, vorrei annullare il mio ordine effettuato stamattina. Ho sbagliato il prodotto.\'" style="font-size:11px;padding:4px 10px;border:1px solid #e0e4ea;border-radius:6px;background:#f8faff;cursor:pointer">🚫 Annullamento</button>'
+          +'<button onclick="document.getElementById(\'sb-subject\').value=\'Ho ordinato le capsule sbagliate\';document.getElementById(\'sb-message\').value=\'Salve, ho acquistato per errore capsule Bialetti ma ho la macchina Nespresso. Allego la foto del prodotto che acquisto abitualmente. Chiedo la sostituzione.\'" style="font-size:11px;padding:4px 10px;border:1px solid #e0e4ea;border-radius:6px;background:#f8faff;cursor:pointer">↩️ Acquisto errato</button>'
+          +'<button onclick="document.getElementById(\'sb-subject\').value=\'Problema tecnico capsule\';document.getElementById(\'sb-message\').value=\'Buongiorno, le mie capsule compatibili Nespresso non vengono riconosciute dalla macchina. Cosa posso fare?\'" style="font-size:11px;padding:4px 10px;border:1px solid #e0e4ea;border-radius:6px;background:#f8faff;cursor:pointer">🔧 Prob. tecnico</button>'
+        +'</div>'
+        +'<button onclick="runSandboxTest()" style="background:#166534;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;width:100%">🚀 Esegui Test AI</button>'
+      +'</div>'
+      +'<div id="sb-result" style="display:none"></div>'
+    +'</div>';
+  }
+
+  window.runSandboxTest = async function(){
+    var orderNum = (document.getElementById('sb-order').value||'').trim();
+    var email = (document.getElementById('sb-email').value||'').trim() || 'test@sandbox.it';
+    var subject = (document.getElementById('sb-subject').value||'').trim() || 'Test ticket';
+    var message = (document.getElementById('sb-message').value||'').trim();
+    if(!message){ alert('Scrivi un messaggio!'); return; }
+
+    var res = document.getElementById('sb-result');
+    res.style.display='block';
+    res.innerHTML='<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px">'
+      +'<div style="font-size:14px;font-weight:700;color:#166534;margin-bottom:12px">⏳ Analisi in corso...</div>'
+      +'<div id="sb-steps" style="font-size:12px;color:#888;font-style:italic"></div>'
+    +'</div>';
+
+    var steps = document.getElementById('sb-steps');
+    function addStep(txt){ steps.innerHTML += '<div style="margin-bottom:4px">→ '+txt+'</div>'; }
+
+    // Step 1: cerca ordine Shopify
+    addStep('Cerco ordine Shopify...');
+    var order = null;
+    if(orderNum){
+      try{
+        var num = orderNum.replace('#','').trim();
+        var od = await shopifyGet('orders.json?status=any&limit=1&name=%23'+num);
+        if(od&&od.orders&&od.orders.length) order=od.orders[0];
+        if(!order){
+          var od2 = await shopifyGet('orders.json?status=any&limit=1&email='+encodeURIComponent(email));
+          if(od2&&od2.orders&&od2.orders.length) order=od2.orders[0];
+        }
+      }catch(e){}
+    } else if(email && !email.includes('sandbox')){
+      try{
+        var od3 = await shopifyGet('orders.json?status=any&limit=1&email='+encodeURIComponent(email));
+        if(od3&&od3.orders&&od3.orders.length) order=od3.orders[0];
+      }catch(e){}
+    }
+    if(order) addStep('✅ Ordine trovato: '+order.name+' — '+order.fulfillment_status+' — €'+order.total_price);
+    else addStep('ℹ️ Nessun ordine Shopify trovato');
+
+    // Step 2: simulazione regole orarie annullamento
+    var cancelSimulation = null;
+    if(order && /annull/i.test(subject+' '+message)){
+      var isMarket = (order.note_attributes||[]).some(function(a){ return ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id'].includes(a.name); });
+      if(!isMarket){
+        var created = new Date(order.created_at);
+        var now = new Date();
+        var h = created.getHours()+created.getMinutes()/60;
+        var day = created.getDay();
+        var isWd = day>=1&&day<=5;
+        var deadline = null;
+        if(!isWd){ var nd=new Date(created);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);while(nd.getDay()<1||nd.getDay()>5)nd.setDate(nd.getDate()+1);nd.setHours(9,0,0,0);deadline=nd; }
+        else if(h<=9){ var d1=new Date(created);d1.setHours(9,0,0,0);deadline=d1; }
+        else if(h<=16){ var d2=new Date(created.getTime()+3600000);var d3=new Date(created);d3.setHours(16,15,0,0);deadline=d2<d3?d2:d3; }
+        else if(h<=16.75){ deadline=null; }
+        else{ var nd2=new Date(created);nd2.setHours(0,0,0,0);nd2.setDate(nd2.getDate()+1);while(nd2.getDay()<1||nd2.getDay()>5)nd2.setDate(nd2.getDate()+1);nd2.setHours(9,0,0,0);deadline=nd2; }
+        cancelSimulation = deadline ? (now<=deadline ? {canCancel:true, deadline:deadline} : {canCancel:false, deadline:deadline}) : {canCancel:false, deadline:null};
+      }
+    }
+
+    // Step 3: classificazione AI
+    addStep('Classifico il ticket con AI...');
+    var fullThread = 'Cliente: '+message;
+    var classifyMsg = 'Analizza questo ticket e rispondi SOLO con JSON.\nOggetto: '+subject+'\nStorico:\n'+fullThread+'\n\n{"categoria":"SOLO_INFO"} se riguarda SOLO tracking/stato ordine/tempi spedizione/info prodotti.\n{"categoria":"AZIONE_MANUALE"} per TUTTO il resto: danni, qualità, rimborsi, crediti, resi, annullamenti, problemi tecnici, compensazioni, dubbi.\nIn caso di dubbio usa SEMPRE AZIONE_MANUALE.';
+    var categoria = 'AZIONE_MANUALE';
+    try{
+      var cr = await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:50,system:'Sei un classificatore. Rispondi SOLO con JSON.',messages:[{role:'user',content:classifyMsg}]})});
+      var cd = await cr.json();
+      var ct = (cd.content&&cd.content[0]&&cd.content[0].text)||'';
+      try{ var cj=JSON.parse(ct.match(/\{[^}]+\}/)[0]); categoria=cj.categoria||'AZIONE_MANUALE'; }catch(e){}
+    }catch(e){ addStep('⚠️ Errore classificazione: '+e.message); }
+    addStep('Classificazione: <strong style="color:'+(categoria==='SOLO_INFO'?'#16a34a':'#dc2626')+'">'+categoria+'</strong>');
+
+    // Step 4: genera risposta solo se SOLO_INFO
+    var reply = '';
+    var azioni = [];
+    if(categoria === 'SOLO_INFO'){
+      addStep('Genero risposta AI...');
+      var orderInfo='';
+      if(order){
+        var f=order.fulfillments&&order.fulfillments[0];
+        orderInfo='Ordine '+order.name+' | Stato: '+(order.fulfillment_status||'non spedito')+' | €'+order.total_price;
+        if(order.cancelled_at) orderInfo+=' | ANNULLATO il '+new Date(order.cancelled_at).toLocaleDateString('it-IT');
+        if(order.payment_gateway) orderInfo+=' | Metodo pagamento: '+order.payment_gateway;
+        if(f&&f.tracking_number) orderInfo+=' | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+f.tracking_number;
+      }
+      var sysPrompt = getAISystemPrompt()+'\n\nMODALITÀ AUTO-RISPOSTA: Rispondi SOLO con informazioni fattuali. NON promettere rimborsi, crediti, sostituzioni o compensazioni.';
+      var userMsg = 'Oggetto: '+subject+'\nDa: Cliente\nEmail: '+email+(orderInfo?'\n\nDati ordine:\n'+orderInfo:'')+'\n\nSTORICO:\n'+fullThread+'\n\nRispondi SOLO con informazioni di tracking/stato.';
+      try{
+        var ar = await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:500,system:sysPrompt,messages:[{role:'user',content:userMsg}]})});
+        var ad = await ar.json();
+        reply = (ad.content&&ad.content[0]&&ad.content[0].text)||'';
+        reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
+        var unsafe=[/rimborso/i,/accredito/i,/credito/i,/compensazione/i,/sostituzione/i,/procediamo/i,/provvederemo/i];
+        if(unsafe.some(function(p){return p.test(reply);})){
+          addStep('⚠️ Risposta contiene promesse economiche — bloccata');
+          azioni.push('🟠 AZIONE BLOCCATA: risposta conteneva promesse economiche → pallino arancione');
+          reply = '';
+          categoria = 'AZIONE_MANUALE';
+        }
+      }catch(e){ addStep('⚠️ Errore generazione: '+e.message); }
+    }
+
+    // Step 5: simula azioni (senza eseguirle)
+    if(/annull/i.test(subject+' '+message)){
+      if(order){
+        var isMarket2=(order.note_attributes||[]).some(function(a){return ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id'].includes(a.name);});
+        if(!isMarket2){
+          if(cancelSimulation&&cancelSimulation.canCancel){
+            azioni.push('✅ AZIONE SIMULATA: Annullamento ordine '+order.name+' su Shopify con rimborso automatico (scadenza era '+cancelSimulation.deadline.toLocaleString('it-IT')+')');
+          } else if(cancelSimulation&&!cancelSimulation.canCancel){
+            azioni.push('❌ AZIONE NON ESEGUITA: Annullamento non possibile — fuori orario'+(cancelSimulation.deadline?' (scadenza era '+cancelSimulation.deadline.toLocaleString('it-IT')+')':'— fascia 16:01-16:45'));
+          }
+        } else {
+          azioni.push('ℹ️ Ordine marketplace (Amazon/Temu/TikTok) — annullamento non gestito automaticamente');
+        }
+      } else {
+        azioni.push('ℹ️ Annullamento richiesto ma nessun ordine trovato — necessaria azione manuale');
+      }
+    }
+    if(categoria==='AZIONE_MANUALE'&&!azioni.length){
+      azioni.push('🟠 AZIONE: Ticket segnato come "richiede azione manuale" → pallino arancione in lista');
+    }
+    if(reply){
+      azioni.push('✉️ AZIONE SIMULATA: Risposta inviata al cliente + ticket impostato su Solved');
+    }
+
+    // Mostra risultato finale
+    var resultHtml='<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px">';
+    resultHtml+='<div style="font-size:14px;font-weight:700;color:#166534;margin-bottom:16px">📊 Risultato Test</div>';
+
+    // Badge classificazione
+    resultHtml+='<div style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-bottom:16px;background:'+(categoria==='SOLO_INFO'?'#dcfce7':'#fee2e2')+';color:'+(categoria==='SOLO_INFO'?'#166534':'#dc2626')+'">'+
+      (categoria==='SOLO_INFO'?'✅ SOLO_INFO — risponde automaticamente':'🟠 AZIONE_MANUALE — richiede intervento umano')+'</div>';
+
+    // Risposta
+    if(reply){
+      resultHtml+='<div style="margin-bottom:16px"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">💬 RISPOSTA CHE VERREBBE INVIATA</div>'
+        +'<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:14px;font-size:13px;line-height:1.6;white-space:pre-wrap;color:#1a1a2e">'+reply+'</div></div>';
+    }
+
+    // Azioni
+    if(azioni.length){
+      resultHtml+='<div><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">⚡ AZIONI EFFETTUATE (SIMULATE)</div>';
+      azioni.forEach(function(a){
+        resultHtml+='<div style="padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:13px;background:'
+          +(a.startsWith('✅')?'#f0fdf4':a.startsWith('❌')?'#fef2f2':a.startsWith('✉️')?'#eff6ff':'#fff8f0')
+          +';border:1px solid '
+          +(a.startsWith('✅')?'#86efac':a.startsWith('❌')?'#fca5a5':a.startsWith('✉️')?'#93c5fd':'#fed7aa')
+          +'">'+a+'</div>';
+      });
+      resultHtml+='</div>';
+    }
+
+    if(!reply && categoria==='SOLO_INFO'){
+      resultHtml+='<div style="padding:10px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px;font-size:13px;color:#854d0e">⚠️ Nessuna risposta generata — errore AI o risposta vuota</div>';
+    }
+
+    resultHtml+='</div>';
+    res.innerHTML=resultHtml;
+  };
   window.filippoToggle=function(key){
     if(isDoneMonth(key))localStorage.removeItem('filippo_flag_'+key);
     else setFlag(key);
@@ -6238,7 +6442,7 @@ async function autoProcessTickets(freshTickets){
       if(_autoProcessingTids.has(tid)) return false; // già in elaborazione
       if(t.status !== 'open') return false;
       var email = (t.requester&&t.requester.email)||'';
-      if(isNoAiEmail(email)) return false;
+      if(isNoAiEmailAutoOnly(email)) return false;
       if(isSpamTicket(t)) return false;
       if(_autoProcessedIds[tid]){
         var lastMsg = t.lastMessageAt || t.updatedAt || t.updated_at || '';
@@ -6300,7 +6504,7 @@ async function autoProcessTickets(freshTickets){
           continue;
         }
         var email = (fullTicket.requester&&fullTicket.requester.email)||'';
-        if(isSpamTicket(fullTicket)||isNoAiEmail(email)) continue;
+        if(isSpamTicket(fullTicket)||isNoAiEmailAutoOnly(email)) continue;
 
         // Costruisci thread
         var events = fullTicket.events || fullTicket.messages || [];
@@ -6590,7 +6794,7 @@ function isSpamTicket(ticket){
 async function tryAutoReply(replyText, order){
   if(!isAutoReplyEnabled()) return false;
   if(!selectedTicket) return false;
-  if(isNoAiEmail((selectedTicket.requester&&selectedTicket.requester.email)||'')) return false;
+  if(isNoAiEmailAutoOnly((selectedTicket.requester&&selectedTicket.requester.email)||'')) return false;
   if(isSpamTicket(selectedTicket)){
     var lbl=document.getElementById("ai-label");
     if(lbl) lbl.textContent="⚠️ Ticket sembra spam — auto-risposta bloccata";
@@ -6651,9 +6855,15 @@ function getNoAiEmails(){
 }
 function isNoAiEmail(email){
   if(!email) return false;
-  if(AUTO_REPLY_TEST_MODE && email.toLowerCase()!==AUTO_REPLY_TEST_EMAIL) return true; // 🧪 TEST
+  // TEST MODE blocca solo l'auto-risposta automatica, non la generazione manuale
+  // Il controllo test mode viene fatto direttamente in autoProcessTickets e tryAutoReply
   const list=getNoAiEmails();
   return list.some(e=>e.startsWith("@")?email.toLowerCase().endsWith(e.toLowerCase()):email.toLowerCase()===e.toLowerCase());
+}
+function isNoAiEmailAutoOnly(email){
+  if(!email) return false;
+  if(AUTO_REPLY_TEST_MODE && email.toLowerCase()!==AUTO_REPLY_TEST_EMAIL) return true; // 🧪 TEST
+  return isNoAiEmail(email);
 }
 function renderNoAiList(){
   const list=getNoAiEmails();
