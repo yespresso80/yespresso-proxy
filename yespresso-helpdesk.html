@@ -790,7 +790,22 @@ let activeFilters={source:"",tag:"",agent:"",dateFrom:"",dateTo:""};
 
 function avatarColor(s){let h=0;for(let i=0;i<(s||"").length;i++)h=s.charCodeAt(i)+((h<<5)-h);return AVATAR_COLORS[Math.abs(h)%AVATAR_COLORS.length]}
 function initials(n){const p=(n||"?").trim().split(" ");return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
-function timeAgo(d){if(!d)return"";const diff=Date.now()-new Date(d).getTime();const m=Math.floor(diff/60000),h=Math.floor(m/60),dy=Math.floor(h/24);if(dy>0)return dy+"d ago";if(h>0)return h+" hours ago";if(m>0)return m+" min ago";return"just now"}
+function timeAgo(d){
+  if(!d)return"";
+  var dt=new Date(d);
+  var now=new Date();
+  var todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  var yesterdayStart=new Date(todayStart-86400000);
+  var hh=String(dt.getHours()).padStart(2,'0');
+  var mm=String(dt.getMinutes()).padStart(2,'0');
+  var timeStr=hh+':'+mm;
+  if(dt>=todayStart) return timeStr; // oggi: solo orario
+  if(dt>=yesterdayStart) return 'Ieri '+timeStr; // ieri: "Ieri 14:32"
+  // più vecchio: "12/04 14:32"
+  var d2=String(dt.getDate()).padStart(2,'0');
+  var mo=String(dt.getMonth()+1).padStart(2,'0');
+  return d2+'/'+mo+' '+timeStr;
+}
 function srcLabel(email){
   if(!email)return"";
   if(email.includes("temu")||email.includes("orders.temu"))return"🟠 Temu";
@@ -1081,13 +1096,15 @@ async function loadTickets(){
           tickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
           updateBadges();renderTable();
           try{
-            // Salva solo open+pending in cache (solved/closed troppo numerosi per localStorage)
             const cacheOnly=tickets.filter(t=>t.status==="open"||t.status==="pending").slice(0,200);
             localStorage.setItem(CACHE_KEY,JSON.stringify(cacheOnly));
             localStorage.setItem(CACHE_META,JSON.stringify({savedAt:Date.now(),count:tickets.length}));
           }catch(e){}
-          // Auto-processa nuovi ticket open se auto-risposta abilitata
-          if(isAutoReplyEnabled()) setTimeout(function(){ autoProcessTickets(freshDedup); }, 2000);
+        }
+        // Auto-processa TUTTI i ticket open ad ogni refresh (non solo quelli cambiati)
+        if(isAutoReplyEnabled()){
+          const allOpenNow = tickets.filter(function(t){ return t.status==='open'; });
+          setTimeout(function(){ autoProcessTickets(allOpenNow); }, 2000);
         }
         const nowR=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
         const bar=document.getElementById("ticket-count-bar");
@@ -1394,8 +1411,7 @@ function renderTable(){
     const isSent=sentTickets.has(tid);
     const name=(t.requester&&t.requester.name)||(t.requester&&t.requester.email)||"Cliente";
     const email=(t.requester&&t.requester.email)||"";
-    const lastEvent=t.events&&t.events[t.events.length-1];
-    const lastTime=lastEvent&&lastEvent.createdAt?timeAgo(lastEvent.createdAt):"";
+    const lastTime=timeAgo(t.lastMessageAt||t.updatedAt||t.updated_at||"");
     const src=srcLabel(email);
     const sc=STATUS_CLASS[t.status]||"s-closed";
     const sl=STATUS_LABELS[t.status]||t.status;
@@ -1602,7 +1618,20 @@ async function selectTicket(tid){
         const _evAttFiles=Array.isArray(ev.attachments)?ev.attachments:(ev.attachments&&ev.attachments.files?ev.attachments.files:[]);
         const _evMsgAtts=Array.isArray(evMsg.attachments)?evMsg.attachments:[];
         const evAttachments=[..._evMsgAtts,..._evAttFiles.map(f=>({url:f.url||f.href||"",contentType:f.type||f.contentType||f.mimeType||"",name:f.name||f.filename||f.originalName||""}))].filter(a=>a.url);
-        const evDate=ev.createdAt?new Date(ev.createdAt).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+        const evDate=(function(){
+          if(!ev.createdAt)return"";
+          var dt=new Date(ev.createdAt);
+          var now=new Date();
+          var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+          var yesterdayS=new Date(todayS-86400000);
+          var hh=String(dt.getHours()).padStart(2,'0');
+          var mn=String(dt.getMinutes()).padStart(2,'0');
+          var dd=String(dt.getDate()).padStart(2,'0');
+          var mo=String(dt.getMonth()+1).padStart(2,'0');
+          if(dt>=todayS) return 'Oggi '+hh+':'+mn;
+          if(dt>=yesterdayS) return 'Ieri '+hh+':'+mn;
+          return dd+'/'+mo+' '+hh+':'+mn;
+        })();
         const isAgent=ev.author&&ev.author.type==="agent";
         const isClient=ev.author&&ev.author.type==="client";
         const authorLabel=isAgent?"👤 Agente":isClient?"🙋 Cliente":"";
@@ -2556,7 +2585,20 @@ async function openTicketPreview(tid){
   } else {
     events.forEach((ev,idx)=>{
       const isAgent=ev.author&&ev.author.type==="agent";
-      const evDate=ev.createdAt?new Date(ev.createdAt).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+      const evDate=(function(){
+          if(!ev.createdAt)return"";
+          var dt=new Date(ev.createdAt);
+          var now=new Date();
+          var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+          var yesterdayS=new Date(todayS-86400000);
+          var hh=String(dt.getHours()).padStart(2,'0');
+          var mn=String(dt.getMinutes()).padStart(2,'0');
+          var dd=String(dt.getDate()).padStart(2,'0');
+          var mo=String(dt.getMonth()+1).padStart(2,'0');
+          if(dt>=todayS) return 'Oggi '+hh+':'+mn;
+          if(dt>=yesterdayS) return 'Ieri '+hh+':'+mn;
+          return dd+'/'+mo+' '+hh+':'+mn;
+        })();
       const rawText=(ev.message&&(ev.message.text||ev.message.richTextHtml))||"";
       const txt=rawText.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().substring(0,500);
       const msgAtts=Array.isArray(ev.message&&ev.message.attachments)?ev.message.attachments:[];
@@ -3966,8 +4008,7 @@ async function loadCustomerHistory(email, name, currentTid){
     const tid2=t.ID||t.id;
     const sc=STATUS_CLASS[t.status]||"s-closed";
     const sl=STATUS_LABELS[t.status]||t.status;
-    const lastEvent=t.events&&t.events[t.events.length-1];
-    const lastTime=lastEvent&&lastEvent.createdAt?timeAgo(lastEvent.createdAt):"";
+    const lastTime=timeAgo(t.lastMessageAt||t.updatedAt||t.updated_at||"");
     const isOpen=t.status==="open"||t.status==="pending";
     const hdUrl="https://app.helpdesk.com/tickets/"+tid2;
     return `<div class="ch-item${isOpen?" ch-current":""}">
