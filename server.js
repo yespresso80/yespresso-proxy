@@ -392,9 +392,9 @@ In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.`;
           } else if (/problem.*tecnic|non funzion|macchina|non riconosc|non ero|non bucata|erogazione|pressione/i.test(txt)) {
             istruzioni = 'Il cliente ha un problema tecnico con le capsule. Fornisci istruzioni tecniche specifiche per il tipo di capsula/macchina. NON promettere rimborsi o sostituzioni.';
           } else if (/acquist.*errat|errat.*acquist|sbagliato|compatibil|compatibilità|non compatibil|macchina.*nespresso|macchina.*bialetti|macchina.*dolce|capsule che acquisto|prodotto che acquisto/i.test(txt)) {
-            const wantsBrt = /ritiro.*8|8.*euro.*ritiro|ritiro da parte|ritiro.*voi|8€|8 euro/i.test(txt);
+            const wantsBrt = /il cliente ha scelto la modalit.*ritiro da parte nostra/i.test(txt);
             if (wantsBrt) {
-              istruzioni = 'Il cliente ha acquistato per errore le capsule sbagliate E vuole il ritiro da parte nostra con decurtazione di 8€. Spiega la procedura: organizzeremo il ritiro tramite BRT, l\'importo di 8€ verrà detratto dal credito/rimborso. Il cliente deve conservare il prodotto nella scatola originale e attendere le istruzioni BRT.';
+              istruzioni = 'Il chatbot ha indicato che il cliente ha scelto il ritiro da parte nostra. Conferma che organizzeremo il ritiro tramite BRT e che al ricevimento verrà creato un credito pari al valore dei prodotti al netto di 8€ di gestione reso.';
             } else {
               istruzioni = 'Il cliente ha acquistato per errore le capsule sbagliate. Spiega la procedura reso: entro 14 giorni, spese spedizione a carico del cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, prodotti integri e non aperti. NON offrire sostituzione né rimborso diretto.';
             }
