@@ -5104,34 +5104,59 @@ function openFilippoPanel(){
       var ct = (cd.content&&cd.content[0]&&cd.content[0].text)||'';
       try{ var cj=JSON.parse(ct.match(/\{[^}]+\}/)[0]); categoria=cj.categoria||'AZIONE_MANUALE'; }catch(e){}
     }catch(e){ addStep('⚠️ Errore classificazione: '+e.message); }
-    addStep('Classificazione: <strong style="color:'+(categoria==='SOLO_INFO'?'#16a34a':'#dc2626')+'">'+categoria+'</strong>');
+    addStep('Classificazione: <strong style="color:'+(categoria==='SOLO_INFO'?'#16a34a':categoria==='GESTIBILE_AUTO'?'#d97706':'#dc2626')+'">'+categoria+'</strong>');
 
-    // Step 4: genera risposta solo se SOLO_INFO
+    // Step 4: genera risposta per SOLO_INFO e GESTIBILE_AUTO
     var reply = '';
     var azioni = [];
-    if(categoria === 'SOLO_INFO'){
-      addStep('Genero risposta AI...');
-      var orderInfo='';
-      if(order){
-        var f=order.fulfillments&&order.fulfillments[0];
-        orderInfo='Ordine '+order.name+' | Stato: '+(order.fulfillment_status||'non spedito')+' | €'+order.total_price;
-        if(order.cancelled_at) orderInfo+=' | ANNULLATO il '+new Date(order.cancelled_at).toLocaleDateString('it-IT');
-        if(order.payment_gateway) orderInfo+=' | Metodo pagamento: '+order.payment_gateway;
-        if(f&&f.tracking_number) orderInfo+=' | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+f.tracking_number;
+    var orderInfo='';
+    if(order){
+      var f2=order.fulfillments&&order.fulfillments[0];
+      var shipSt2=f2&&f2.shipment_status;
+      var shipLabels={delivered:'✅ Consegnato',in_transit:'🚚 In transito',out_for_delivery:'🛵 In consegna oggi',attempted_delivery:'⚠️ Tentativo fallito',failure:'❌ Problema spedizione',ready_for_pickup:'📬 Pronto al ritiro'};
+      orderInfo='Ordine '+order.name+' | Stato spedizione: '+(shipLabels[shipSt2]||order.fulfillment_status||'non spedito')+' | €'+order.total_price;
+      if(order.cancelled_at) orderInfo+=' | ANNULLATO il '+new Date(order.cancelled_at).toLocaleDateString('it-IT');
+      if(order.payment_gateway) orderInfo+=' | Metodo pagamento: '+order.payment_gateway;
+      if(f2&&f2.tracking_number) orderInfo+=' | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+f2.tracking_number;
+      if((order.line_items||[]).length) orderInfo+=' | Prodotti: '+order.line_items.map(function(i){return i.quantity+'x '+i.name;}).join(', ');
+    }
+
+    if(categoria === 'SOLO_INFO' || categoria === 'GESTIBILE_AUTO'){
+      addStep('Genero risposta AI ('+(categoria==='SOLO_INFO'?'info ordine':'gestione problema')+')...');
+
+      var istruzioni = '';
+      var txt2 = fullThread.toLowerCase()+' '+subject.toLowerCase();
+      if(categoria === 'SOLO_INFO'){
+        istruzioni = 'Rispondi SOLO con informazioni fattuali (tracking, stato ordine, tempi). Se risulta consegnato dillo chiaramente. NON promettere rimborsi o compensazioni.';
+      } else {
+        if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt2))
+          istruzioni = 'Il cliente segnala capsule danneggiate. Chiedi SOLO: 1) foto capsule/buste danneggiate JPG, 2) foto pacco ricevuto JPG, 3) quantità esatta. NON promettere rimborsi o crediti.';
+        else if(/problem.*tecnic|non funzion|macchina|non riconosc|non bucata|erogazione/i.test(txt2))
+          istruzioni = 'Il cliente ha un problema tecnico. Fornisci istruzioni tecniche specifiche. NON promettere rimborsi.';
+        else if(/acquist.*errat|sbagliato|compatibil|non compatibil|capsule che acquisto/i.test(txt2))
+          istruzioni = /ritiro.*8|8.*euro.*ritiro|8€/i.test(txt2)
+            ? 'Spiega procedura ritiro da parte nostra tramite BRT con decurtazione 8€. Il cliente conserva il prodotto e attende istruzioni BRT.'
+            : 'Spiega procedura reso: entro 14 giorni, spese a carico cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, prodotti integri. NON offrire rimborso diretto.';
+        else if(/annull/i.test(txt2))
+          istruzioni = 'Verifica condizioni annullamento e rispondi se possibile o non possibile.';
+        else if(/prodotto sbagliato.*ricevu|prodotto errato|spediz.*errat/i.test(txt2))
+          istruzioni = 'Chiedi: 1) descrizione prodotto ricevuto per errore, 2) foto scatola con etichetta BRT (JPG), 3) foto busta capsule (JPG). NON promettere rimborsi.';
+        else
+          istruzioni = 'Gestisci la richiesta chiedendo le informazioni necessarie senza promettere compensazioni economiche.';
       }
-      var sysPrompt = getAISystemPrompt()+'\n\nMODALITÀ AUTO-RISPOSTA: Rispondi SOLO con informazioni fattuali. NON promettere rimborsi, crediti, sostituzioni o compensazioni.';
-      var userMsg = 'Oggetto: '+subject+'\nDa: Cliente\nEmail: '+email+(orderInfo?'\n\nDati ordine:\n'+orderInfo:'')+'\n\nSTORICO:\n'+fullThread+'\n\nRispondi SOLO con informazioni di tracking/stato.';
+
+      var sysPrompt = getAISystemPrompt()+'\n\nMODALITÀ AUTO-RISPOSTA:\n'+istruzioni+'\n\nREGOLA ASSOLUTA: NON promettere rimborsi, accrediti, crediti, compensazioni o sostituzioni.';
+      var userMsg2 = 'Oggetto: '+subject+'\nDa: Cliente\nEmail: '+email+(orderInfo?'\n\nDati ordine:\n'+orderInfo:'')+'\n\nSTORICO:\n'+fullThread;
       try{
-        var ar = await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:500,system:sysPrompt,messages:[{role:'user',content:userMsg}]})});
+        var ar = await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:500,system:sysPrompt,messages:[{role:'user',content:userMsg2}]})});
         var ad = await ar.json();
         reply = (ad.content&&ad.content[0]&&ad.content[0].text)||'';
         reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
-        var unsafe=[/rimborso/i,/accredito/i,/credito/i,/compensazione/i,/sostituzione/i,/procediamo/i,/provvederemo/i];
+        var unsafe=[/rimborso/i,/accredito/i,/\bcredito\b/i,/compensazione/i,/sostituzione/i,/procediamo.*rimborso/i,/provvederemo.*rimborso/i];
         if(unsafe.some(function(p){return p.test(reply);})){
           addStep('⚠️ Risposta contiene promesse economiche — bloccata');
           azioni.push('🟠 AZIONE BLOCCATA: risposta conteneva promesse economiche → pallino arancione');
-          reply = '';
-          categoria = 'AZIONE_MANUALE';
+          reply=''; categoria='AZIONE_MANUALE';
         }
       }catch(e){ addStep('⚠️ Errore generazione: '+e.message); }
     }
@@ -5165,8 +5190,10 @@ function openFilippoPanel(){
     resultHtml+='<div style="font-size:14px;font-weight:700;color:#166534;margin-bottom:16px">📊 Risultato Test</div>';
 
     // Badge classificazione
-    resultHtml+='<div style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-bottom:16px;background:'+(categoria==='SOLO_INFO'?'#dcfce7':'#fee2e2')+';color:'+(categoria==='SOLO_INFO'?'#166534':'#dc2626')+'">'+
-      (categoria==='SOLO_INFO'?'✅ SOLO_INFO — risponde automaticamente':'🟠 AZIONE_MANUALE — richiede intervento umano')+'</div>';
+    var badgeColor = categoria==='SOLO_INFO'?'#dcfce7':categoria==='GESTIBILE_AUTO'?'#fef9c3':'#fee2e2';
+    var badgeText2 = categoria==='SOLO_INFO'?'#166534':categoria==='GESTIBILE_AUTO'?'#92400e':'#dc2626';
+    var badgeLabel = categoria==='SOLO_INFO'?'✅ SOLO_INFO — risponde automaticamente':categoria==='GESTIBILE_AUTO'?'🔧 GESTIBILE_AUTO — risponde con istruzioni':'🟠 AZIONE_MANUALE — richiede intervento umano';
+    resultHtml+='<div style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-bottom:16px;background:'+badgeColor+';color:'+badgeText2+'">'+badgeLabel+'</div>';
 
     // Risposta
     if(reply){
