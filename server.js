@@ -1074,8 +1074,28 @@ async function brtRestPost(path, body) {
       const descEvento = (ultimoEvento.descrizione_evento || "").toUpperCase();
       const at_fermopoint = descEvento.includes("FERMO") || descEvento.includes("PUNTO DI RITIRO") || descEvento.includes("FERMOPOINT");
       const scadenza_ritiro = ultimoEvento.data_evento || "";
+      
+      // Estrai indirizzo punto di ritiro dalla struttura BRT
+      let punto_info = "";
+      try {
+        const filiale = spedizione.filiale_destinazione || spedizione.filiale || {};
+        const ragSoc = filiale.ragione_sociale || filiale.descrizione || "";
+        const via = filiale.indirizzo || filiale.via || "";
+        const cap = filiale.cap || "";
+        const citta = filiale.localita || filiale.citta || "";
+        const prov = filiale.provincia || "";
+        if(ragSoc || via) {
+          punto_info = [ragSoc, via, cap+' '+citta+' ('+prov+')'].filter(Boolean).join(", ").trim();
+        }
+        // Fallback: cerca nell'ultimo evento
+        if(!punto_info && ultimoEvento.filiale) {
+          const fe = ultimoEvento.filiale;
+          punto_info = [fe.ragione_sociale||fe.descrizione, fe.indirizzo, (fe.cap||'')+' '+(fe.localita||fe.citta||'')].filter(Boolean).join(", ").trim();
+        }
+      } catch(pe) {}
+      
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, raw: data }));
+      res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, punto_info, raw: data }));
     } catch(e) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: e.message }));

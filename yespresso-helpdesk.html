@@ -1687,7 +1687,8 @@ async function selectTicket(tid){
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'indirizzo\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#dc3545;border-bottom:1px solid #f0f2f5">📍 Indirizzo inesistente/sconosciuto</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'assente\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#fd7e14;border-bottom:1px solid #f0f2f5">🔔 Assente dopo lasciato avviso</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rifiuto\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6f42c1;border-bottom:1px solid #f0f2f5">❌ Rifiuto senza motivazione</div>'+
-              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'fermopoint\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#0d6efd">📦 Verso punto di ritiro</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'fermopoint\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#0d6efd;border-bottom:1px solid #f0f2f5">📦 Verso punto di ritiro</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rientro\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6c757d">🔄 In fase di rientro / Rientrato in sede</div>'+
             '</div>'+
           '</div>'+
           '<div style="flex:1"></div>'+
@@ -3136,7 +3137,7 @@ function formatOrderInfo(order){
   const sS2={delivered:"Consegnato",in_transit:"In transito",out_for_delivery:"In consegna",attempted_delivery:"Tentativo fallito",failure:"Problema",ready_for_pickup:"Pronto al ritiro - BRT Fermopoint"};
   const fship=order.fulfillments&&order.fulfillments[0];
   // Se il pacco ha flag fermopoint (impostato dal check BRT), usa quello
-  const shipSt=order._brtFermopoint?"IN ATTESA DI RITIRO AL BRT-FERMOPOINT":(fship&&fship.shipment_status?(sS2[fship.shipment_status]||fship.shipment_status):null);
+  const shipSt=order._brtFermopoint?"IN ATTESA DI RITIRO AL BRT-FERMOPOINT"+(order._brtPuntoInfo?' — Punto di ritiro: '+order._brtPuntoInfo:'')+(order._brtScadenza?' — Scadenza ritiro: '+order._brtScadenza:''):(fship&&fship.shipment_status?(sS2[fship.shipment_status]||fship.shipment_status):null);
   let info="Ordine "+(order.name||"#"+order.order_number)+(amz?" (Amazon: "+amz.value+")":(temu?" (Temu: "+temu.value+")":""))+" | Stato: "+(shipSt||(fS[order.fulfillment_status]||"Non spedito"))+" | €"+order.total_price+(items?" | "+items:"");
   // Stato annullamento — fondamentale per l'AI
   if(order.cancelled_at){
@@ -3271,45 +3272,50 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   const requesterName=(t.requester&&t.requester.name)||"";
   console.log("🔍 searchText preview:", searchText.substring(0,200));
   const order=await fetchShopifyOrder(searchText,email||"",requesterName);
-  // Controlla se il pacco è al fermopoint BRT (Shopify segna 'delivered' ma non è consegnato al cliente)
+  // Controlla se il pacco è al fermopoint BRT (stato delivered o ready_for_pickup)
   if(order){
     const fCheck=order.fulfillments&&order.fulfillments[0];
     const tnCheck=fCheck&&(fCheck.tracking_number||(fCheck.tracking_numbers&&fCheck.tracking_numbers[0]))||'';
-    if(fCheck&&fCheck.shipment_status==='delivered'&&tnCheck){
+    const isFermopointStatus=fCheck&&(fCheck.shipment_status==='delivered'||fCheck.shipment_status==='ready_for_pickup');
+    if(isFermopointStatus&&tnCheck){
       try{
-        const tnPodCheck=tnCheck.startsWith('26')?tnCheck:'26'+tnCheck;
-        const brtPageUrl='https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tnCheck;
         const brtR=await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck));
         if(brtR.ok){
           const brtD=await brtR.json();
-          if(brtD.at_fermopoint){
+          if(brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup'){
             order._brtFermopoint=true;
             order._brtFermopointInfo=brtD;
-            console.log('[BRT] Pacco al fermopoint, correggo stato per AI');
+            order._brtScadenza=brtD.scadenza_ritiro||'';
+            order._brtPuntoInfo=brtD.punto_info||'';
+            console.log('[BRT] Pacco al fermopoint, punto:', order._brtPuntoInfo||'non recuperato');
           }
         }
       }catch(e){console.log('[BRT fermopoint check]',e.message);}
     }
   }
-  // Controlla se pacco e al fermopoint BRT e recupera ubicazione punto di ritiro
-  if(order){
-    const fCk=order.fulfillments&&order.fulfillments[0];
-    const tnCk=fCk&&(fCk.tracking_number||(fCk.tracking_numbers&&fCk.tracking_numbers[0]))||'';
-    if(fCk&&fCk.shipment_status==='delivered'&&tnCk){
-      try{
-        const brtR=await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCk));
-        if(brtR.ok){
-          const brtD=await brtR.json();
-          if(brtD.at_fermopoint){
-            order._brtFermopoint=true;
-            order._brtScadenza=brtD.scadenza_ritiro||'';
-            order._brtPuntoInfo=brtD.punto_info||'';
-          }
-        }
-      }catch(e){console.log('[BRT fermopoint]',e.message);}
+  const orderInfo=formatOrderInfo(order);
+
+  // ══ CHECK STATO SPEDIZIONE CRITICO ══
+  // Se lo stato è attempted_delivery, failure o ready_for_pickup → non generare risposta AI
+  // ma mostrare il pannello risposta manuale con messaggio
+  if(order && !_skipAI){
+    const fCrit=order.fulfillments&&order.fulfillments[0];
+    const shipStCrit=fCrit&&fCrit.shipment_status;
+    const criticalStates=['attempted_delivery','failure'];
+    if(criticalStates.includes(shipStCrit)){
+      const stateLabels={attempted_delivery:'⚠️ Tentativo fallito',failure:'❌ Problema spedizione',ready_for_pickup:'📬 Pronto al ritiro BRT'};
+      const stateLabel=stateLabels[shipStCrit]||shipStCrit;
+      if(genBox){genBox.style.display='none';}
+      const aa=document.getElementById('action-area');
+      if(aa)aa.style.display='block';
+      const lbl=document.getElementById('ai-label');
+      if(lbl)lbl.textContent='🚚 '+stateLabel+' — seleziona risposta rapida dal menu';
+      const rt=document.getElementById('reply-text');
+      if(rt)rt.value='';
+      console.log('[generateReply] Stato critico spedizione → skip AI:', shipStCrit);
+      return;
     }
   }
-  const orderInfo=formatOrderInfo(order);
 
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Claude sta generando la risposta...';
 
@@ -6330,6 +6336,19 @@ function inviaMessaggioProblemaSpedizione(orderId, tipo){
     'la informiamo che il corriere non è riuscito a completare la consegna presso il suo indirizzo e sta depositando il suo pacco presso un punto di ritiro BRT nelle vicinanze.\n\n'+
     'A breve riceverà una comunicazione diretta da parte del corriere con l\'indirizzo esatto del punto di ritiro.\n\n'+
     'Cordiali saluti,\nIl Team Yespresso';
+  } else if(tipo==='rientro'){
+    // Determina se è cliente marketplace (Amazon/Temu/TikTok) o sito
+    var _email=(selectedTicket&&selectedTicket.requester&&selectedTicket.requester.email)||'';
+    var _isMarket=_email.includes('marketplace.amazon')||_email.includes('orders.temu')||_email.includes('tiktok')||_email.includes('amazonpayments');
+    var _opzioneEconomica=_isMarket
+      ? 'un rimborso completo del suo ordine sul metodo di pagamento utilizzato'
+      : 'un credito da utilizzare sul nostro sito yespresso.it oppure la rispedizione dell\'ordine';
+    testo=saluto+'\n'+
+    'la informiamo che purtroppo non è stato possibile completare la consegna del suo ordine e il pacco è in fase di rientro presso i nostri magazzini (o è già rientrato).\n\n'+
+    'Ci scusiamo per l\'inconveniente. Per procedere al meglio, la preghiamo di indicarci come desidera che gestiamo la situazione:\n\n'+
+    '1. ✉️ Rispedizione dell\'ordine — provvediamo a rispedirle il pacco (ci confermi l\'indirizzo corretto)\n'+
+    '2. 💶 '+( _isMarket ? 'Rimborso — emettiamo il rimborso completo sul metodo di pagamento utilizzato' : 'Credito — le accreditiamo il valore dell\'ordine come credito da utilizzare su yespresso.it' )+'\n\n'+
+    'Attesa sua risposta per procedere immediatamente.\n\nCordiali saluti,\nIl Team Yespresso';
   }
   // Inserisci nel campo risposta e mostra action area
   const genBox=document.getElementById('gen-box');
