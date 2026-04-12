@@ -23,7 +23,283 @@ console.log("[INIT] IMAP_USER:", IMAP_USER);
 console.log("[INIT] IMAP_PASSWORD presente:", !!IMAP_PASSWORD);
 
 
-// Cache allegati in memoria
+const HD_BASE_URL = "https://yespresso.helpdesk.com/api/v1";
+
+// ══════════════════════════════════════════════════════
+// AUTO-RISPOSTA SERVER-SIDE — gira ogni 60s anche a PC spento
+// ══════════════════════════════════════════════════════
+const AUTO_REPLY_INTERVAL = 60 * 1000;
+const _serverAutoProcessed = {}; // {tid: isoTimestamp ultima risposta}
+const _serverAutoBlocked = new Set(); // ticket bloccati (cliente insoddisfatto)
+const _serverNeedsAction = new Set(); // ticket che richiedono azione manuale
+
+async function hdGet(path) {
+  const r = await fetch(HD_BASE_URL + path, {
+    headers: { 'Authorization': 'Basic ' + HD_TOKEN, 'User-Agent': 'Yespresso/1.0' }
+  });
+  return r.json();
+}
+async function hdPatch(path, body) {
+  return fetch(HD_BASE_URL + path, {
+    method: 'PATCH',
+    headers: { 'Authorization': 'Basic ' + HD_TOKEN, 'Content-Type': 'application/json', 'User-Agent': 'Yespresso/1.0' },
+    body: JSON.stringify(body)
+  });
+}
+async function hdPut(path, body) {
+  return fetch(HD_BASE_URL + path, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Basic ' + HD_TOKEN, 'Content-Type': 'application/json', 'User-Agent': 'Yespresso/1.0' },
+    body: JSON.stringify(body)
+  });
+}
+async function shopifyGet(path) {
+  const r = await fetch(`https://${SHOPIFY_SHOP}/admin/api/2024-01/${path}`, {
+    headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }
+  });
+  return r.json();
+}
+
+function serverNeedsManualAction(text) {
+  const t = text || '';
+  const keywords = [
+    'rimborso','rimborseremo','rimborsiamo','emettere un rimborso',
+    'provvederemo.*rimborso','procederemo.*rimborso','abbiamo.*rimborsato',
+    'rimborso.*è stato','accredito.*verrà','accrediteremo','abbiamo accreditato',
+    'invieremo.*credito','abbiamo inviato.*credito','credito.*è stato inviato',
+    'annulleremo','abbiamo annullato','provvederemo.*annull',
+    'rispediremo','provvederemo.*rispedire','nuova spedizione.*partirà',
+    'sostituiremo','provvederemo.*sostituzione',
+    'modifica.*indirizzo','cambio.*indirizzo','aggiorneremo.*indirizzo',
+    'comunicher.*corriere','comunicare.*corriere','contatter.*brt',
+    'sbloccare.*spedizione','rimessa in consegna','provveder.*brt',
+    'disposizioni.*corriere','avvis.*corriere',
+    'prenotiamo il ritiro','organizziamo il ritiro',
+  ];
+  return keywords.some(k => new RegExp(k, 'i').test(t));
+}
+
+function serverClienteInsoddisfatto(text) {
+  const t = (text || '').toLowerCase();
+  const segnali = [
+    'non è quello che volevo','non mi ha risposto','risposta inutile',
+    'non avete capito','non capite','stessa risposta','risposta automatica',
+    'voglio parlare con','voglio un umano','operatore','responsabile',
+    'assurdo','vergogna','pessimo','schifo','scandaloso','inaccettabile',
+    'mai più','denuncia','ancora lo stesso problema','problema persiste',
+    'non è risolto','non avete risolto','ancora non funziona',
+    'ho già spiegato','vi ho già detto','ennesima volta',
+  ];
+  return segnali.some(s => t.includes(s));
+}
+
+function serverIsSpam(ticket) {
+  const email = ((ticket.requester && ticket.requester.email) || '').toLowerCase();
+  const subject = (ticket.subject || '').toLowerCase();
+  // Marketplace non è mai spam
+  if (subject.includes('amazon') || subject.includes('temu') || subject.includes('tiktok') ||
+      email.includes('marketplace.amazon') || email.includes('orders.temu')) return false;
+  const spamPat = ['noreply','no-reply','donotreply','newsletter','promo','marketing',
+    'bulk','mailer-daemon','postmaster','bounce','daemon','robot','automat'];
+  if (spamPat.some(p => email.includes(p))) return true;
+  const localPart = email.split('@')[0] || '';
+  const numCount = (localPart.match(/\d/g) || []).length;
+  if (localPart.length > 15 && numCount > 8) return true;
+  return false;
+}
+
+const NO_AI_SERVER = ['vasnoreply@brt.it','servizioclienti@brt.it','assistenza@paypal.it','seller@orders.temu.com'];
+function serverIsNoAi(email) {
+  return NO_AI_SERVER.some(e => email.includes(e));
+}
+
+async function serverAutoReplyWorker() {
+  if (!HD_TOKEN || !ANTHROPIC_KEY) return;
+  // Carica impostazioni auto-risposta da filippo-data
+  let settings = {};
+  try { const fd = await ghFilippoGet(); settings = fd.data || {}; } catch(e) {}
+  if (!settings.autoReplyEnabled) return; // OFF — non fare nulla
+
+  console.log('[AUTO-REPLY-SERVER] Start worker...');
+  try {
+    // Prendi ticket Open
+    const pages = await Promise.all([1,2,3].map(p =>
+      hdGet(`/tickets?pageSize=50&page=${p}&status=open&sortBy=lastMessageAt&order=desc`).catch(() => [])
+    ));
+    const allOpen = pages.flat().filter(t => t && (t.ID || t.id));
+
+    for (const ticket of allOpen) {
+      const tid = String(ticket.ID || ticket.id);
+      if (_serverAutoBlocked.has(tid)) continue;
+      const email = ((ticket.requester && ticket.requester.email) || '').toLowerCase();
+      if (serverIsNoAi(email) || serverIsSpam(ticket)) continue;
+
+      // Controlla se già processato e se il cliente ha risposto dopo
+      if (_serverAutoProcessed[tid]) {
+        const lastMsg = ticket.lastMessageAt || ticket.updatedAt || '';
+        if (!lastMsg || new Date(lastMsg) <= new Date(_serverAutoProcessed[tid])) continue;
+      }
+
+      // Marca subito come processato
+      _serverAutoProcessed[tid] = new Date().toISOString();
+
+      try {
+        // Carica ticket completo
+        const full = await hdGet(`/tickets/${tid}`);
+        if (!full || (full.status && full.status !== 'open')) continue;
+
+        // Ordina eventi
+        const events = (full.events || []).sort((a,b) =>
+          new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
+        // Controlla insoddisfazione cliente (solo se già risposto prima)
+        if (_serverAutoProcessed[tid] && events.length) {
+          const prevTime = new Date(_serverAutoProcessed[tid]);
+          for (let i = events.length - 1; i >= 0; i--) {
+            const ev = events[i];
+            const isClient = !ev.actor || ev.actor.type === 'contact' || ev.actor.type === 'customer';
+            if (isClient && new Date(ev.createdAt || 0) < prevTime) {
+              const txt = ((ev.message && (ev.message.text || ev.message.richTextHtml)) || ev.text || '')
+                .replace(/<[^>]+>/g, ' ').trim();
+              if (serverClienteInsoddisfatto(txt)) {
+                console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} bloccato — cliente insoddisfatto`);
+                _serverAutoBlocked.add(tid);
+                _serverNeedsAction.add(tid);
+                delete _serverAutoProcessed[tid];
+              }
+              break;
+            }
+          }
+          if (_serverAutoBlocked.has(tid)) continue;
+        }
+
+        // Stato spedizione critico?
+        const subj = full.subject || '';
+        let order = null;
+        try {
+          const amzM = subj.match(/\d{3}-\d{7}-\d{7}/);
+          const shopM = subj.match(/#?(\d{8,13})/);
+          const temuM = subj.match(/PO-\d+-\d+/i);
+          let oQ = null;
+          if (amzM) oQ = 'query=' + encodeURIComponent(amzM[0]);
+          else if (temuM) oQ = 'query=' + encodeURIComponent(temuM[0]);
+          else if (shopM) oQ = 'name=%23' + shopM[1];
+          else if (email && !email.includes('marketplace') && !email.includes('temu') && !email.includes('amazon'))
+            oQ = 'email=' + encodeURIComponent(email);
+          if (oQ) {
+            const od = await shopifyGet(`orders.json?status=any&limit=3&${oQ}`).catch(() => null);
+            if (od && od.orders && od.orders.length) order = od.orders[0];
+          }
+        } catch(e) {}
+
+        if (order) {
+          const fship = (order.fulfillments || []).slice(-1)[0];
+          const shipSt = fship && fship.shipment_status;
+          if (['ready_for_pickup','failure','attempted_delivery'].includes(shipSt)){
+            _serverNeedsAction.add(tid);
+            continue;
+          }
+        }
+
+        // Costruisci thread
+        let fullThread = '', lastMsg = '';
+        events.forEach(ev => {
+          const txt = ((ev.message && (ev.message.text || ev.message.richTextHtml)) || ev.text || '')
+            .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 600);
+          if (!txt) return;
+          const who = ev.actor ? (ev.actor.name || ev.actor.email || 'Agente') : 'Cliente';
+          fullThread += who + ': ' + txt + '\n';
+        });
+        const lastEv = events[events.length - 1];
+        if (lastEv) lastMsg = ((lastEv.message && (lastEv.message.text || lastEv.message.richTextHtml)) || lastEv.text || '')
+          .replace(/<[^>]+>/g, ' ').trim().substring(0, 800);
+
+        // Order info per AI
+        let orderInfo = '';
+        if (order) {
+          const f = order.fulfillments && order.fulfillments[0];
+          orderInfo = `Ordine ${order.name} | Stato: ${order.fulfillment_status || 'non spedito'} | €${order.total_price}`;
+          if (order.cancelled_at) orderInfo += ` | ⚠️ ANNULLATO il ${new Date(order.cancelled_at).toLocaleDateString('it-IT')}`;
+          if (order.payment_gateway) orderInfo += ` | Metodo pagamento: ${order.payment_gateway}`;
+          if (f && f.tracking_number) orderInfo += ` | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=${f.tracking_number}`;
+        }
+
+        // Carica prompt AI da GitHub (sezioni configurate nell'helpdesk)
+        let aiPrompt = "Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa. NON usare mai markdown. Scrivi solo testo plain normale.";
+        try {
+          const ghToken = process.env.GH_TOKEN;
+          if (ghToken) {
+            const promptRes = await fetch('https://api.github.com/repos/yespresso80/yespresso-proxy/contents/ai-prompt.json', {
+              headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
+            });
+            if (promptRes.ok) {
+              const promptJ = await promptRes.json();
+              const promptData = JSON.parse(Buffer.from(promptJ.content.replace(/\n/g,''),'base64').toString('utf8'));
+              const sections = promptData.sections || promptData;
+              if (Array.isArray(sections)) {
+                const txt = sections.filter(s => !s.disabled && s.text && s.text.trim()).map(s => s.text.trim()).join('\n\n');
+                if (txt) aiPrompt = txt;
+              }
+            }
+          }
+        } catch(e) { console.log('[AUTO-REPLY-SERVER] Prompt load err:', e.message); }
+
+        // Chiama Anthropic
+        const userMsg = `Oggetto: ${subj}\nDa: ${(full.requester && full.requester.name) || 'Cliente'}\nEmail: ${email}` +
+          (orderInfo ? `\n\nDati ordine:\n${orderInfo}` : '') +
+          `\n\nSTORICO:\n${fullThread}\n\nRispondi all'ultimo messaggio del cliente.`;
+
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 800, system: aiPrompt, messages: [{ role: 'user', content: userMsg }] })
+        });
+        const aiData = await aiRes.json();
+        let reply = (aiData.content && aiData.content[0] && aiData.content[0].text) || '';
+        if (!reply.trim()) continue;
+
+        // Pulizia
+        reply = reply
+          .replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/, '')
+          .replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi, '$1')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
+        if (serverNeedsManualAction(reply)) {
+          console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — azione manuale richiesta, skip`);
+          _serverNeedsAction.add(tid);
+          continue;
+        }
+
+        // Invia risposta
+        const sendRes = await hdPatch(`/tickets/${tid}`, { message: { text: reply } });
+        if (!sendRes.ok) { console.log(`[AUTO-REPLY-SERVER] Invio fallito ticket ${tid}: ${sendRes.status}`); continue; }
+
+        // Chiudi ticket
+        for (const m of ['PUT','PATCH']) {
+          try { await hdPut(`/tickets/${tid}`, { status: 'solved' }); break; } catch(e) {}
+        }
+
+        _serverAutoProcessed[tid] = new Date().toISOString();
+        _serverNeedsAction.delete(tid);
+        console.log(`[AUTO-REPLY-SERVER] ✅ Ticket ${tid} risposto e chiuso`);
+
+        await new Promise(r => setTimeout(r, 2000)); // pausa tra ticket
+      } catch(e) {
+        console.log(`[AUTO-REPLY-SERVER] Errore ticket ${tid}:`, e.message);
+      }
+    }
+  } catch(e) {
+    console.log('[AUTO-REPLY-SERVER] Errore worker:', e.message);
+  }
+}
+
+// Avvia worker dopo 10 secondi dal boot, poi ogni 60s
+setTimeout(() => {
+  serverAutoReplyWorker();
+  setInterval(serverAutoReplyWorker, AUTO_REPLY_INTERVAL);
+}, 10000);
 const attachmentsCache = new Map();
 let lastImapSync = 0;
 const IMAP_SYNC_INTERVAL = 5 * 60 * 1000;
@@ -267,6 +543,24 @@ const LOGIN_PAGE = `<!DOCTYPE html>
 </script>
 </body>
 </html>`;
+
+// ── FILIPPO DATA (merce inserita + attività) ──
+const GH_FILIPPO_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/filippo-data.json';
+async function ghFilippoGet() {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) return { data: null, sha: null };
+  const r = await fetch(GH_FILIPPO_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+  if (r.status === 404) return { data: null, sha: null };
+  const j = await r.json();
+  return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+}
+async function ghFilippoSave(data, sha) {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('GH_TOKEN non configurato');
+  const body = { message: 'update filippo-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+  if (sha) body.sha = sha;
+  await fetch(GH_FILIPPO_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
 
 const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
@@ -964,23 +1258,19 @@ async function brtRestPost(path, body) {
   }
 
 
-  // ── FILIPPO DATA (merce inserita + attività) ──
-  const GH_FILIPPO_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/filippo-data.json';
-  async function ghFilippoGet() {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) return { data: null, sha: null };
-    const r = await fetch(GH_FILIPPO_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
-    if (r.status === 404) return { data: null, sha: null };
-    const j = await r.json();
-    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+  // ── AUTO-REPLY STATUS — lista ticket che richiedono azione ──
+  if (req.url === '/auto-reply-status') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    res.writeHead(200, CORS);
+    res.end(JSON.stringify({
+      needsAction: [..._serverNeedsAction],
+      blocked: [..._serverAutoBlocked],
+      processed: Object.keys(_serverAutoProcessed)
+    }));
+    return;
   }
-  async function ghFilippoSave(data, sha) {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) throw new Error('GH_TOKEN non configurato');
-    const body = { message: 'update filippo-data', content: Buffer.from(JSON.stringify(data)).toString('base64') };
-    if (sha) body.sha = sha;
-    await fetch(GH_FILIPPO_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  }
+
+  // ── FILIPPO DATA endpoint ──
   if (req.url === '/filippo-data') {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,x-app-token'}); res.end(); return; }

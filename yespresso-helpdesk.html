@@ -1415,12 +1415,23 @@ function renderTable(){
     const src=srcLabel(email);
     const sc=STATUS_CLASS[t.status]||"s-closed";
     const sl=STATUS_LABELS[t.status]||t.status;
+    const _tidStr=String(tid);
+    const _needsAction=isAutoReplyEnabled()&&_autoReplyStatus.needsAction.has(_tidStr);
+    const _isBlocked=isAutoReplyEnabled()&&_autoReplyStatus.blocked.has(_tidStr);
+    const _isProcessed=isAutoReplyEnabled()&&_autoReplyStatus.processed.has(_tidStr)&&(t.status==='solved'||t.status==='resolved');
+    const _actionDot=_isBlocked
+      ? '<span title="Cliente insoddisfatto — intervento necessario" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#dc2626;margin-left:5px;vertical-align:middle;flex-shrink:0"></span>'
+      : _needsAction
+        ? '<span title="AI: azione manuale necessaria" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;margin-left:5px;vertical-align:middle;flex-shrink:0"></span>'
+        : _isProcessed
+          ? '<span title="Risolto automaticamente dall\'AI" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#16a34a;margin-left:5px;vertical-align:middle;flex-shrink:0"></span>'
+          : '';
     return `<div class="ticket-row${isActive?" active":""}" onclick="selectTicket('${tid}')">
       <div class="tr-check"><input type="checkbox" ${selectedTicketIds.has(tid)?"checked":""} onclick="event.stopPropagation();toggleBulkSelect('${tid}',this)"/></div>
       <div class="tr-requester">
         <div class="tr-avatar" style="background:${avatarColor(name)}">${initials(name)}</div>
         <div class="tr-req-info">
-          <div class="tr-req-name">${name}${isSent?' <span style="color:#2a9d60;font-size:10px">✓</span>':""}</div>
+          <div class="tr-req-name" style="display:flex;align-items:center">${name}${isSent?' <span style="color:#2a9d60;font-size:10px">✓</span>':""}${_actionDot}</div>
           <div class="tr-req-email">${email}</div>
         </div>
       </div>
@@ -6194,6 +6205,10 @@ function setAutoReply(val){
   var s=loadSettings();
   s.autoReplyEnabled=val;
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  // Salva anche su server così il worker server-side lo legge
+  if(!_filippoDataCache) _filippoDataCache={};
+  _filippoDataCache.autoReplyEnabled=val;
+  _saveFilippoData();
 }
 
 // Determina se la risposta AI richiede azione manuale (no auto-invio)
@@ -6395,8 +6410,9 @@ async function autoProcessTickets(freshTickets){
 
         showToast('🤖 Auto-risposta inviata: ticket #'+tid, 'success');
         console.log('[AUTO-REPLY] ✅ Ticket '+tid+' risposto e chiuso');
-        // Aggiorna timestamp risposta per rilevare futuri re-reply
         _autoProcessedIds[tid] = new Date().toISOString();
+        // Aggiungi al set processed per pallino verde
+        _autoReplyStatus.processed.add(String(tid));
         // Pausa tra un ticket e l'altro per non sovraccaricare le API
         await new Promise(function(r){ setTimeout(r, 1500); });
 
@@ -6561,6 +6577,8 @@ async function tryAutoReply(replyText, order){
     showToast("✅ Auto-risposta inviata e ticket chiuso","success");
     var lbl=document.getElementById("ai-label");
     if(lbl) lbl.textContent="✅ Auto-risposta inviata automaticamente";
+    // Pallino verde
+    _autoReplyStatus.processed.add(String(tid));
 
     // Aggiorna stato locale
     selectedTicket.status="solved";
@@ -8679,6 +8697,22 @@ loadSolvedExamples();
 loadAgentsAndTags();
 // Sync indicatore auto-risposta all'avvio
 setTimeout(function(){ if(typeof _syncAutoReplyToggle==='function') _syncAutoReplyToggle(); }, 500);
+
+// ── Polling stato auto-risposta dal server ──
+var _autoReplyStatus = { needsAction: new Set(), blocked: new Set(), processed: new Set() };
+async function pollAutoReplyStatus(){
+  if(!isAutoReplyEnabled()) return;
+  try{
+    var r = await proxyFetch(PROXY+'/auto-reply-status');
+    if(!r.ok) return;
+    var d = await r.json();
+    _autoReplyStatus.needsAction = new Set((d.needsAction||[]).map(String));
+    _autoReplyStatus.blocked = new Set((d.blocked||[]).map(String));
+    _autoReplyStatus.processed = new Set((d.processed||[]).map(String));
+  }catch(e){}
+}
+setInterval(pollAutoReplyStatus, 30000); // ogni 30s
+setTimeout(pollAutoReplyStatus, 5000);   // primo poll dopo 5s
 // Auto-refresh ogni 60 secondi (silent, non interrompe ticket aperto)
 setInterval(async function(){
   try{
