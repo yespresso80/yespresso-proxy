@@ -371,6 +371,7 @@ In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.`;
         if (order) {
           const f = order.fulfillments && order.fulfillments[0];
           orderInfo = `Ordine ${order.name} | Stato: ${order.fulfillment_status||'non spedito'} | €${order.total_price}`;
+          if (order.created_at) orderInfo += ` | Creato il: ${new Date(order.created_at).toLocaleString('it-IT')}`;
           if (order.cancelled_at) orderInfo += ` | ANNULLATO il ${new Date(order.cancelled_at).toLocaleDateString('it-IT')}`;
           if (order.payment_gateway) orderInfo += ` | Metodo pagamento: ${order.payment_gateway}`;
           if (f && f.tracking_number) orderInfo += ` | Tracking BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=${f.tracking_number}`;
@@ -430,7 +431,7 @@ In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.`;
         reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'').replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi,'$1').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
 
         // Verifica finale sicurezza
-        const unsafePatterns = [/rimborso/i,/accredito/i,/\bcredito\b/i,/compensazione/i,/sostituzione/i,/rispedire/i,/procediamo.*rimborso/i,/provvederemo.*rimborso/i,/rimborseremo/i,/accrediteremo/i,/procediamo.*credito/i,/procediamo.*accredito/i];
+        const unsafePatterns = [/provvederemo.*rimborso/i,/procediamo.*rimborso/i,/effettueremo.*rimborso/i,/rimborso.*entro/i,/rimborso.*verrà/i,/accrediteremo/i,/abbiamo accreditato/i,/accredito.*verrà/i,/invieremo.*credito/i,/procediamo.*sostituzione/i,/provvederemo.*sostituzione/i,/rispediremo/i,/procediamo.*accredito/i,/procediamo immediatamente/i];
         if (unsafePatterns.some(p => p.test(reply))) {
           console.log(`[AUTO-REPLY-SERVER] Ticket ${tid} — risposta contiene promesse economiche, skip`);
           _serverNeedsAction.add(tid);
