@@ -6353,7 +6353,12 @@ async function autoProcessTickets(freshTickets){
         if(!reply.trim()) continue;
 
         // Rimuovi tag [COPIA_IMPORTO:...]
-        reply = reply.replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/, '').trim();
+        reply = reply
+          .replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/, '')
+          .replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi, '$1')
+          .replace(/<[^>]+>/g,' ')
+          .replace(/\s{2,}/g,' ')
+          .trim();
 
         // Controlla se serve azione manuale
         if(needsManualAction(reply, order)){
@@ -6533,12 +6538,18 @@ async function tryAutoReply(replyText, order){
   if(needsManualAction(replyText, order)) return false;
 
   var tid=selectedTicket.ID||selectedTicket.id;
+  // Rimuovi tag [COPIA_IMPORTO:...] e HTML dei link prima dell'invio
+  var cleanReply=replyText
+    .replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'')
+    .replace(/<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi, '$1')
+    .replace(/<[^>]+>/g,' ')
+    .replace(/\s{2,}/g,' ')
+    .trim();
   try{
-    // Invia risposta
     var msgRes=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
       method:"PATCH",
       headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-      body:JSON.stringify({message:{text:replyText}})
+      body:JSON.stringify({message:{text:cleanReply}})
     });
     if(!msgRes.ok) return false;
 
