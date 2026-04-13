@@ -627,39 +627,45 @@ async function syncImapAttachments() {
 
 function findAttachmentsForTicket(requesterEmail, subject, orderNum) {
   const results = [];
-  const emailLow = (requesterEmail||"").toLowerCase();
+  const emailLow = (requesterEmail||"").toLowerCase().trim();
   const subjLow = (subject||"").toLowerCase();
   const orderNumLow = (orderNum||"").toLowerCase();
 
   for (const [, data] of attachmentsCache) {
     const fromLow = (data.from||"").toLowerCase();
     const dataSubjLow = (data.subject||"").toLowerCase();
+    const bodyTextLow = (data.bodyText||"").toLowerCase();
 
-    // 1. Match per email esatta (escludi email anonime Amazon/Temu)
+    // 1. Match per email ESATTA (stesso indirizzo completo)
     const isAnonEmail = emailLow.includes("amazon") || emailLow.includes("temu") ||
                         emailLow.includes("marketplace") || emailLow.includes("bounce-");
-    const emailMatch = !isAnonEmail && emailLow && fromLow &&
-      (fromLow.includes(emailLow) || emailLow.includes(fromLow.split("@")[0]));
+    const emailMatch = !isAnonEmail && emailLow.length > 5 && fromLow.length > 5 &&
+      (fromLow === emailLow || fromLow.includes('<'+emailLow+'>') || fromLow.includes(emailLow));
 
-    // 2. Match per numero ordine Amazon nel subject O nel body dell'email ricevuta
-    const bodyTextLow = (data.bodyText||"").toLowerCase();
-    const orderMatch = orderNumLow.length > 5 && (
+    // 2. Match per numero ordine Amazon nel subject O nel body (solo se orderNum >= 10 chars)
+    const orderMatch = orderNumLow.length >= 10 && (
       dataSubjLow.includes(orderNumLow) ||
       bodyTextLow.includes(orderNumLow)
     );
 
-    // 3. Match per subject (solo se non Amazon/marketplace)
-    const subjClean = subjLow.replace(/^(re:|fwd:|fw:)\s*/gi,"").trim().substring(0,30);
-    const subjMatch = !isAnonEmail && subjClean.length > 5 &&
-      (data.subject||"").toLowerCase().includes(subjClean.substring(0,20));
+    // 3. Match per subject — solo se subject è molto specifico (>= 15 chars) e match completo
+    // NON usare match parziale per evitare false corrispondenze
+    const subjClean = subjLow.replace(/^(re:|fwd:|fw:)\s*/gi,"").trim();
+    const subjMatch = !isAnonEmail && subjClean.length >= 15 && emailMatch &&
+      dataSubjLow.includes(subjClean.substring(0, 30));
 
     if (emailMatch || orderMatch || subjMatch) {
       results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date, subject: data.subject })));
     }
   }
-  // Deduplicazione per URL
+  // Deduplicazione per URL/data
   const seen = new Set();
-  return results.filter(a => { if(seen.has(a.url)) return false; seen.add(a.url); return true; });
+  return results.filter(a => {
+    const key = a.url || (a.filename + (a.data||'').substring(0,20));
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 setTimeout(syncImapAttachments, 8000);
