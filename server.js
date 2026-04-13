@@ -301,30 +301,27 @@ ${fullThread}
 Rispondi SOLO con JSON esatto, nessun testo aggiuntivo:
 {"categoria": "CATEGORIA", "motivo": "breve spiegazione"}
 
-REGOLA FONDAMENTALE: classifica in base al TIPO DI PROBLEMA, NON a cosa chiede il cliente.
-Anche se il cliente chiede rimborso/credito, se il problema è capsule danneggiate → GESTIBILE_AUTO.
+CATEGORIE — scegli la prima che corrisponde:
 
-CATEGORIE:
+SOLO_INFO → se il ticket riguarda ESCLUSIVAMENTE informazioni senza problemi da risolvere:
+- Dove è il mio ordine / tracking / stato spedizione / quando arriva
+- Ordine non ancora spedito (quando viene spedito)
+- Info prodotti, compatibilità capsule, orari, info aziendali
+- Conferma di ricezione ordine
 
-SOLO_INFO — solo se riguarda ESCLUSIVAMENTE:
-- Dov'è il mio ordine / stato spedizione / tracking
-- Ordine non ancora spedito (solo info tempi)
-- Domanda generica compatibilità capsule/prodotti
-- Orari, info aziendali, come usare il sito
+GESTIBILE_AUTO → se c'è un problema specifico gestibile:
+- Capsule danneggiate, rotte, di qualità inferiore (anche se chiede rimborso)
+- Problema tecnico con capsule o macchina
+- Capsule sbagliate acquistate per errore (acquisto errato)
+- Annullamento ordine sito (non Amazon/Temu/TikTok)
+- Prodotto sbagliato ricevuto per errore di spedizione
 
-GESTIBILE_AUTO — classifica qui se il problema è uno di questi:
-- Capsule danneggiate/difettose/qualità inferiore (anche se chiede rimborso)
-- Problema tecnico capsule o macchina
-- Acquisto errato (capsule sbagliate/incompatibili)
-- Annullamento ordine SITO (non Amazon/Temu/TikTok)
-- Prodotto sbagliato ricevuto (errore di spedizione nostro)
+AZIONE_MANUALE → SOLO se:
+- Cliente espressamente insoddisfatto di una risposta già ricevuta da noi
+- Richiesta di rimborso o credito monetario esplicita senza problema dichiarato
 
-AZIONE_MANUALE — solo se:
-- Cliente già insoddisfatto di una risposta precedente ricevuta
-- Richiesta rimborso/credito senza un problema specifico dichiarato
-- Situazione già in escalation o molto complessa
-
-In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.`;
+IMPORTANTE: "Dov'è il mio ordine", "quando arriva", "non ho ricevuto nulla" → SEMPRE SOLO_INFO.
+In caso di dubbio usa SEMPRE AZIONE_MANUALE.\``;
 
         const classRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -388,6 +385,13 @@ In dubbio tra GESTIBILE_AUTO e AZIONE_MANUALE → usa GESTIBILE_AUTO.`;
           // Determina sottocategoria dal testo
           const txt = fullThread.toLowerCase() + ' ' + subj.toLowerCase();
           if (/capsul.*dann|dann.*capsul|capsul.*rott|busta.*dann|qualit|lotto|bruciato|difettos/i.test(txt)) {
+            const hasFoto = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato/i.test(txt);
+            const hasQta = /\d+\s*capsule|\d+\s*buste|capsule.*\d+|\d+\s*pezzi/i.test(txt);
+            if (hasFoto || hasQta) {
+              // Foto o quantità già fornite → serve intervento umano per compensazione
+              _serverNeedsAction.add(tid);
+              continue;
+            }
             istruzioni = 'Il cliente segnala capsule danneggiate o di qualità inferiore. Chiedi SOLO: 1) foto delle capsule/buste danneggiate in formato JPG, 2) foto del pacco ricevuto, 3) quantità esatta danneggiata. NON promettere rimborsi, crediti o sostituzioni. NON calcolare importi.';
           } else if (/problem.*tecnic|non funzion|macchina|non riconosc|non ero|non bucata|erogazione|pressione/i.test(txt)) {
             istruzioni = 'Il cliente ha un problema tecnico con le capsule. Fornisci istruzioni tecniche specifiche per il tipo di capsula/macchina. NON promettere rimborsi o sostituzioni.';
