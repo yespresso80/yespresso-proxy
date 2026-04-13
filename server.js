@@ -817,6 +817,28 @@ async function ghAiPromptSave(data, sha) {
   await fetch(GH_AIPROMPT_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
 
+// ── GITHUB: Resi ──
+const GH_RESI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/resi.json';
+async function ghResiGet() {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) return { data: [], sha: null };
+  const r = await fetch(GH_RESI_URL, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+  if (r.status === 404) return { data: [], sha: null };
+  const j = await r.json();
+  return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+}
+async function ghResiSave(data, sha) {
+  const ghToken = process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('GH_TOKEN non configurato');
+  const body = { message: 'update resi', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+  if (sha) body.sha = sha;
+  const r = await fetch(GH_RESI_URL, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    const err = await r.json().catch(()=>({}));
+    throw new Error('GitHub PUT resi: '+(err.message||r.status));
+  }
+}
+
 const server = http.createServer(async function(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, User-Agent");
@@ -1251,32 +1273,6 @@ async function brtRestPost(path, body) {
   }
 
   // ── RESI — GitHub come database persistente ──
-  const GH_RESI_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/resi.json';
-
-  async function ghResiGet() {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) return { data: [], sha: null };
-    const r = await fetch(GH_RESI_URL, {
-      headers: { 'Authorization': 'token ' + ghToken, 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (r.status === 404) return { data: [], sha: null };
-    const j = await r.json();
-    const data = JSON.parse(Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8'));
-    return { data, sha: j.sha };
-  }
-
-  async function ghResiSave(data, sha) {
-    const ghToken = process.env.GH_TOKEN;
-    if (!ghToken) throw new Error('GH_TOKEN non configurato');
-    const body = { message: 'update resi', content: Buffer.from(JSON.stringify(data)).toString('base64') };
-    if (sha) body.sha = sha;
-    await fetch(GH_RESI_URL, {
-      method: 'PUT',
-      headers: { 'Authorization': 'token ' + ghToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  }
-
   if (req.url === '/resi' && req.method === 'GET') {
     try {
       const { data } = await ghResiGet();
