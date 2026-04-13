@@ -3381,7 +3381,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       html+='<br><div style="margin-top:6px;background:#e8f4ff;border:1px solid #b3d4ff;border-radius:8px;padding:8px 10px">';
       html+='<div style="font-size:11px;font-weight:700;color:#1a73e8;margin-bottom:4px">📦 FERMOPOINT — Incolla indirizzo da BRT:</div>';
       html+='<input id="'+fpId+'" placeholder="Es. Via Roma 1, Roma — dal sito BRT" style="width:100%;padding:5px 8px;border:1px solid #b3d4ff;border-radius:6px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box">';
-      html+='<div style="font-size:10px;color:#888;margin-top:3px">Dopo aver incollato l\'indirizzo, clicca ⚡ per rigenerare la risposta</div>';
+      html+='<div style="font-size:10px;color:#888;margin-top:3px">Dopo aver incollato l\'indirizzo clicca il bottone per rigenerare</div>';
+      html+='<button onclick="generateReply(null,null,null)" style="margin-top:6px;width:100%;padding:6px;background:#1a73e8;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↻ Rigenera risposta con indirizzo</button>';
       html+='</div>';
       // Salva riferimento globale per l'AI
       window._fermopointAddrMap = window._fermopointAddrMap||{};
