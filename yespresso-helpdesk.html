@@ -10389,10 +10389,18 @@ window.addEventListener('message', function(e){
   }
   if(e.data.type==='MOLNAR_SAVE'){
     localStorage.setItem('ordini_molnar_listino_v1',JSON.stringify(e.data.listino||[]));
+    // Salva su cloud
+    proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:'ordini_molnar_listino_v1',value:e.data.listino||[]})
+    }).catch(function(){});
     showToast('Listino Molnar salvato!');
   }
   if(e.data.type==='FABIO_SAVE'){
     localStorage.setItem('ordini_fabio_listino_v2',JSON.stringify(e.data.listino||[]));
+    // Salva su cloud
+    proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:'ordini_fabio_listino_v2',value:e.data.listino||[]})
+    }).catch(function(){});
     showToast('Listino salvato!');
   }
 });
@@ -10444,8 +10452,26 @@ function openOrdiniMolnar(){
     }
     loadingSpan.textContent=prods.length+' prodotti caricati';
     var savedListino=[];
-    try{savedListino=JSON.parse(localStorage.getItem('ordini_molnar_listino_v1')||'[]');}catch(ex){}
-    var injection='<script>window._FABIO_LISTINO_INIT='+JSON.stringify(savedListino)+';window._FABIO_PRODUCTS_INIT='+JSON.stringify(prods)+';<\/script>';
+    try{
+      var lr=await proxyFetch(PROXY+'/filippo-data?key=ordini_molnar_listino_v1');
+      if(lr.ok){
+        var ld=await lr.json();
+        if(ld&&Array.isArray(ld.value)&&ld.value.length){
+          savedListino=ld.value;
+          localStorage.setItem('ordini_molnar_listino_v1',JSON.stringify(savedListino));
+        }
+      }
+    }catch(ex){}
+    if(!savedListino.length){
+      try{savedListino=JSON.parse(localStorage.getItem('ordini_molnar_listino_v1')||'[]');}catch(ex){}
+    }
+    // Inietta token + listino + prodotti
+    var tokenInj='';
+    if(typeof APP_TOKEN!=='undefined'&&APP_TOKEN){
+      tokenInj='const APP_TOKEN_INJECTED="'+APP_TOKEN+'";'+
+        'const _origFetch=window.fetch;window.fetch=function(url,opts){opts=opts||{};if(typeof url==="string"&&url.includes("yespresso-proxy")){opts.headers=opts.headers||{};opts.headers["x-app-token"]=APP_TOKEN_INJECTED;}return _origFetch(url,opts);};';
+    }
+    var injection='<script>'+tokenInj+'window._FABIO_LISTINO_INIT='+JSON.stringify(savedListino)+';window._FABIO_PRODUCTS_INIT='+JSON.stringify(prods)+';<\/script>';
     var htmlFinal=html.replace('</head>',injection+'</head>');
     var blob=new Blob([htmlFinal],{type:'text/html'});
     iframe.src=URL.createObjectURL(blob);
@@ -10458,6 +10484,9 @@ window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='FABIO_SAVE'&&document.getElementById('molnar-pg')){
     localStorage.setItem('ordini_molnar_listino_v1',JSON.stringify(e.data.listino||[]));
+    proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:'ordini_molnar_listino_v1',value:e.data.listino||[]})
+    }).catch(function(){});
     showToast('Listino Molnar salvato!');
   }
 });
@@ -10518,10 +10547,28 @@ function _openOrdiniCliente(toolKey, storageKey, customerId, title){
     }
     loadingSpan.textContent=prods.length+' prodotti caricati';
 
-    // Ora inietta listino + prodotti nell'HTML
+    // Carica listino — prima dal server (GitHub), poi da localStorage come fallback
     var savedListino=[];
-    try{ savedListino=JSON.parse(localStorage.getItem(storageKey)||'[]'); }catch(ex){}
-    var injection='<script>window._FABIO_LISTINO_INIT='+JSON.stringify(savedListino)+';window._FABIO_PRODUCTS_INIT='+JSON.stringify(prods)+';<\/script>';
+    try{
+      var lr=await proxyFetch(PROXY+'/filippo-data?key='+storageKey);
+      if(lr.ok){
+        var ld=await lr.json();
+        if(ld&&Array.isArray(ld.value)&&ld.value.length){
+          savedListino=ld.value;
+          localStorage.setItem(storageKey,JSON.stringify(savedListino));
+        }
+      }
+    }catch(ex){}
+    if(!savedListino.length){
+      try{ savedListino=JSON.parse(localStorage.getItem(storageKey)||'[]'); }catch(ex){}
+    }
+    var tokenInjection='';
+    if(typeof APP_TOKEN!=='undefined'&&APP_TOKEN){
+      tokenInjection=
+        'const APP_TOKEN_INJECTED="'+APP_TOKEN+'";'+
+        'const _origFetch=window.fetch;window.fetch=function(url,opts){opts=opts||{};if(typeof url==="string"&&url.includes("yespresso-proxy")){opts.headers=opts.headers||{};opts.headers["x-app-token"]=APP_TOKEN_INJECTED;}return _origFetch(url,opts);};';
+    }
+    var injection='<script>'+tokenInjection+'window._FABIO_LISTINO_INIT='+JSON.stringify(savedListino)+';window._FABIO_PRODUCTS_INIT='+JSON.stringify(prods)+';<\/script>';
     var htmlFinal=html.replace('</head>',injection+'</head>');
     var blob=new Blob([htmlFinal],{type:'text/html'});
     iframe.src=URL.createObjectURL(blob);
@@ -10612,6 +10659,9 @@ window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='FABIO_SAVE'&&e.data._source==='molnar'){
     localStorage.setItem('ordini_molnar_listino_v1',JSON.stringify(e.data.listino||[]));
+    proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:'ordini_molnar_listino_v1',value:e.data.listino||[]})
+    }).catch(function(){});
     showToast('Listino Molnar salvato!');
   }
 });

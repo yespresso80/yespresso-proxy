@@ -1479,11 +1479,21 @@ async function brtRestPost(path, body) {
   }
 
   // ── FILIPPO DATA endpoint ──
-  if (req.url === '/filippo-data') {
+  if (req.url.startsWith('/filippo-data')) {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') { res.writeHead(200,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,x-app-token'}); res.end(); return; }
     if (req.method === 'GET') {
-      try { const { data } = await ghFilippoGet(); res.writeHead(200,CORS); res.end(JSON.stringify(data||{})); }
+      try {
+        const { data } = await ghFilippoGet();
+        const qs = req.url.split('?')[1] || '';
+        const params = new URLSearchParams(qs);
+        const key = params.get('key');
+        if (key && data && data[key] !== undefined) {
+          res.writeHead(200,CORS); res.end(JSON.stringify({value: data[key]}));
+        } else {
+          res.writeHead(200,CORS); res.end(JSON.stringify(data||{}));
+        }
+      }
       catch(e) { res.writeHead(200,CORS); res.end(JSON.stringify({})); }
       return;
     }
@@ -1492,10 +1502,25 @@ async function brtRestPost(path, body) {
       req.on('end', async function(){
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString());
-          let retries = 3;
-          while (retries-- > 0) {
-            try { const { sha } = await ghFilippoGet(); await ghFilippoSave(parsed, sha); break; }
-            catch(e2) { if (retries === 0) throw e2; await new Promise(r => setTimeout(r, 300)); }
+          // Se ha key+value salva come chiave specifica nell'oggetto filippo-data
+          if (parsed.key && parsed.value !== undefined) {
+            let retries = 3;
+            while (retries-- > 0) {
+              try {
+                const { data: existing, sha } = await ghFilippoGet();
+                const updated = Object.assign({}, existing||{});
+                updated[parsed.key] = parsed.value;
+                await ghFilippoSave(updated, sha);
+                break;
+              } catch(e2) { if (retries === 0) throw e2; await new Promise(r => setTimeout(r, 300)); }
+            }
+          } else {
+            // Salva intero oggetto (backward compat)
+            let retries = 3;
+            while (retries-- > 0) {
+              try { const { sha } = await ghFilippoGet(); await ghFilippoSave(parsed, sha); break; }
+              catch(e2) { if (retries === 0) throw e2; await new Promise(r => setTimeout(r, 300)); }
+            }
           }
           res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
         } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
