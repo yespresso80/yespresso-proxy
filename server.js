@@ -386,7 +386,7 @@ In caso di dubbio usa SEMPRE AZIONE_MANUALE.\``;
           const txt = fullThread.toLowerCase() + ' ' + subj.toLowerCase();
           if (/capsul.*dann|dann.*capsul|capsul.*rott|busta.*dann|qualit|lotto|bruciato|difettos/i.test(txt)) {
             const hasFoto = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato/i.test(txt);
-            const hasQta = /\d+\s*capsule|\d+\s*buste|capsule.*\d+|\d+\s*pezzi/i.test(txt);
+            const hasQta = /\d+\s*capsule\s*(dann|rott|difett|guast|bruci|mancant)/i.test(txt) || /ho\s+(trovato|contato|riscontrato).*\d+/i.test(txt);
             if (hasFoto || hasQta) {
               // Foto o quantità già fornite → serve intervento umano per compensazione
               _serverNeedsAction.add(tid);

@@ -5133,7 +5133,7 @@ function openFilippoPanel(){
         if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt2)){
           // Se il cliente ha già inviato le foto e dichiarato la quantità → AZIONE_MANUALE
           var hasFoto = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato/i.test(txt2);
-          var hasQta = /\d+\s*capsule|\d+\s*buste|capsule.*\d+|\d+\s*pezzi/i.test(txt2);
+          var hasQta = /\d+\s*capsule\s*(dann|rott|difett|guast|bruci|mancant)/i.test(txt2) || /ho\s+(trovato|contato|riscontrato).*\d+/i.test(txt2);
           if(hasFoto || hasQta){
             categoria = 'AZIONE_MANUALE';
             istruzioni = '';
@@ -6674,7 +6674,7 @@ async function autoProcessTickets(freshTickets){
         } else {
           if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt)){
             var hasFoto2=/allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato/i.test(txt);
-            var hasQta2=/\d+\s*capsule|\d+\s*buste|capsule.*\d+|\d+\s*pezzi/i.test(txt);
+            var hasQta2=/\d+\s*capsule\s*(dann|rott|difett|guast|bruci|mancant)/i.test(txt) || /ho\s+(trovato|contato|riscontrato).*\d+/i.test(txt);
             if(hasFoto2||hasQta2){ _autoReplyStatus.needsAction.add(String(tid)); continue; }
             istruzioni = 'Chiedi SOLO: 1) foto capsule/buste danneggiate in JPG, 2) foto pacco ricevuto, 3) quantità esatta. NON promettere rimborsi o crediti. NON calcolare compensazioni.';
           } else if(/problem.*tecnic|non funzion|macchina|non riconosc|non bucata|erogazione/i.test(txt)){
