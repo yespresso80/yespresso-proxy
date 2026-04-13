@@ -1724,6 +1724,8 @@ async function brtRestPost(path, body) {
     const token = await getShopifyToken();
     targetUrl = "https://" + SHOPIFY_SHOP + "/admin/api/2024-01" + p;
     requestHeaders = { "X-Shopify-Access-Token": token, "Content-Type": "application/json" };
+    // Se riceviamo 401 su Shopify, forza rinnovo token al prossimo tentativo
+    const origShopifyPath = p;
   } else if (req.url.startsWith("/anthropic")) {
     const p = req.url.replace("/anthropic", "");
     targetUrl = "https://api.anthropic.com" + p;
@@ -1748,6 +1750,7 @@ async function brtRestPost(path, body) {
       proxyRes.on("end", function() {
         const responseBody = Buffer.concat(respChunks);
         console.log("[RISPOSTA] " + proxyRes.statusCode);
+        if (proxyRes.statusCode === 401) { _shopifyToken = null; _shopifyTokenExpiresAt = 0; console.log('[SHOPIFY] 401 → token resettato per rinnovo'); }
         if (proxyRes.statusCode !== 200 && proxyRes.statusCode !== 201) console.log(responseBody.toString().substring(0, 300));
         const respHeaders = { "Content-Type": proxyRes.headers["content-type"] || "application/json" };
         if (proxyRes.headers["link"]) respHeaders["Link"] = proxyRes.headers["link"];
