@@ -323,12 +323,20 @@ AZIONE_MANUALE → SOLO se:
 IMPORTANTE: "Dov'è il mio ordine", "quando arriva", "non ho ricevuto nulla" → SEMPRE SOLO_INFO.
 In caso di dubbio usa SEMPRE AZIONE_MANUALE.\``;
 
-        const classRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 100, system: 'Sei un classificatore di ticket. Rispondi SOLO con JSON valido.', messages: [{ role: 'user', content: classifyMsg }] })
-        });
-        const classData = await classRes.json();
+        const classRes = await (async () => {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const r = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+              body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 100, system: 'Sei un classificatore di ticket. Rispondi SOLO con JSON valido.', messages: [{ role: 'user', content: classifyMsg }] })
+            });
+            if (r.status !== 529 && r.status !== 529) return r;
+            console.log(`[AUTO-REPLY-SERVER] 529 overload, retry ${attempt+1}/3...`);
+            await new Promise(res => setTimeout(res, 5000 * (attempt + 1)));
+          }
+          return null;
+        })();
+        const classData = classRes ? await classRes.json() : {};
         const classText = (classData.content && classData.content[0] && classData.content[0].text) || '';
         let categoria = 'AZIONE_MANUALE';
         try {
