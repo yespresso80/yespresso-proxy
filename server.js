@@ -1163,35 +1163,41 @@ async function brtRestPost(path, body) {
     try {
       const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
       const result = data.ttParcelIdResponse || data;
-      const spedizione = result.spedizione || {};
-      const eventi = (spedizione.eventi && spedizione.eventi.evento) || [];
-      const eventiArr = Array.isArray(eventi) ? eventi : [eventi];
+      // La struttura BRT può essere spedizione diretta O dentro bolla.dati_spedizione
+      const spedizione = result.spedizione || (result.bolla && result.bolla.dati_spedizione) || {};
+      const bolla = result.bolla || {};
+      const eventi = (spedizione.eventi && spedizione.eventi.evento)
+        || (bolla.eventi && bolla.eventi.evento) || [];
+      const eventiArr = Array.isArray(eventi) ? eventi : (eventi && Object.keys(eventi).length ? [eventi] : []);
       const ultimoEvento = eventiArr[eventiArr.length - 1] || {};
-      const descEvento = (ultimoEvento.descrizione_evento || "").toUpperCase();
+      const descEvento = (ultimoEvento.descrizione_evento || ultimoEvento.des_evento || "").toUpperCase();
       const at_fermopoint = descEvento.includes("FERMO") || descEvento.includes("PUNTO DI RITIRO") || descEvento.includes("FERMOPOINT");
       // Cerca data scadenza ritiro in vari campi possibili della risposta BRT
       let scadenza_ritiro = "";
       try {
-        // Prova prima campi specifici di scadenza
         scadenza_ritiro = spedizione.data_scadenza_giacenza
           || spedizione.scadenza_giacenza
           || spedizione.data_giacenza
           || spedizione.data_limite_ritiro
           || spedizione.giacenza_fino_al
           || spedizione.data_scadenza
+          || bolla.data_scadenza_giacenza
+          || bolla.scadenza_giacenza
+          || bolla.data_giacenza
           || "";
-        // Se non trovato, cerca negli eventi uno con descrizione che contiene "GIACENZA" o "SCADENZA"
         if (!scadenza_ritiro) {
           const evGiac = eventiArr.find(function(e){
-            const d = (e.descrizione_evento||"").toUpperCase();
+            const d = (e.descrizione_evento||e.des_evento||"").toUpperCase();
             return d.includes("GIACENZ") || d.includes("SCADENZ") || d.includes("DISPONIBILE");
           });
-          if (evGiac) scadenza_ritiro = evGiac.data_evento || "";
+          if (evGiac) scadenza_ritiro = evGiac.data_evento || evGiac.data || "";
         }
-        // Log per debug
+        console.log("[BRT FERMOPOINT] result keys:", Object.keys(result).join(","));
         console.log("[BRT FERMOPOINT] spedizione keys:", Object.keys(spedizione).join(","));
+        console.log("[BRT FERMOPOINT] bolla keys:", Object.keys(bolla).join(","));
+        console.log("[BRT FERMOPOINT] eventi count:", eventiArr.length, "at_fermopoint:", at_fermopoint);
         console.log("[BRT FERMOPOINT] scadenza trovata:", scadenza_ritiro);
-        console.log("[BRT FERMOPOINT] ultimoEvento:", JSON.stringify(ultimoEvento).substring(0,200));
+        console.log("[BRT FERMOPOINT] ultimoEvento:", JSON.stringify(ultimoEvento).substring(0,300));
       } catch(se) { scadenza_ritiro = ultimoEvento.data_evento || ""; }
       
       // Estrai indirizzo punto di ritiro dalla struttura BRT

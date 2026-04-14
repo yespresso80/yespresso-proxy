@@ -12328,13 +12328,16 @@ function scatoleLoadData(){
   catch(e){ return {inventari:[],arrivi:[],ordini_tielle:[],inv_item_ids:{}}; }
 }
 var _scatoleSaveQueue=Promise.resolve();
+var _scatoleSaving=false;
 function scatoleSaveData(d){
   localStorage.setItem(SCATOLE_KEY,JSON.stringify(d));
   var snapshot=JSON.stringify(d);
+  _scatoleSaving=true;
   _scatoleSaveQueue=_scatoleSaveQueue.then(function(){
     return proxyFetch(PROXY+'/scatole-data',{method:'POST',headers:{'Content-Type':'application/json'},body:snapshot})
       .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
-      .catch(function(e){console.warn('[SCATOLE] Errore salvataggio server:',e.message);});
+      .catch(function(e){console.warn('[SCATOLE] Errore salvataggio server:',e.message);})
+      .finally(function(){_scatoleSaving=false;});
   });
 }
 async function scatoleLoadFromServer(){
@@ -12463,7 +12466,12 @@ async function scatoleAggiornaShopify(sku, nuovaQty){
 }
 
 function renderScatoleMagazzino(body){
-  // Carica dal server se disponibile, poi renderizza
+  // Se c'è un salvataggio in corso, non ricaricare dal server (sovrascrive dati locali)
+  if(_scatoleSaving){
+    var data = scatoleLoadData();
+    _renderScatoleMagazzinoInner(body, data);
+    return;
+  }
   scatoleLoadFromServer().then(function(){
     var data = scatoleLoadData();
     _renderScatoleMagazzinoInner(body, data);
