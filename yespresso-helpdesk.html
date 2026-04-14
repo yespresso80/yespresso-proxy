@@ -12941,22 +12941,36 @@ window.scatoleRiceviOrdineTielle = function(ordId){
     console.log('[SCATOLE RCV] location_ids in storage:', JSON.stringify(_dbg.location_ids));
     console.log('[SCATOLE RCV] righe ordine:', JSON.stringify(ord.righe.map(function(r){return {sku:r.sku,qty:r.qty,ricevuta:r.qty_ricevuta};})));
 
+    // Prima aggiorna tutte le qty_ricevuta in memoria
+    var valori = {};
     for(var i=0;i<ord.righe.length;i++){
       var r = ord.righe[i];
       var _inp=document.getElementById('sc-rcv-'+r.sku); var val = _inp ? (parseInt(_inp.value)||0) : 0;
+      if(val>0){ r.qty_ricevuta = (r.qty_ricevuta||0) + val; valori[r.sku]=val; }
+    }
+    // Poi salva tutto in un'unica operazione
+    var data3 = scatoleLoadData();
+    data3.arrivi = data3.arrivi||[];
+    // Aggiorna anche le righe dell'ordine in data3
+    var ordInData3 = (data3.ordini_tielle||[]).find(function(o){return o.id===ordId;});
+    for(var i=0;i<ord.righe.length;i++){
+      var r = ord.righe[i];
+      var val = valori[r.sku]||0;
       if(val<=0) continue;
-      // Aggiorna qty_ricevuta nell'ordine
-      r.qty_ricevuta = (r.qty_ricevuta||0) + val;
-      // Registra arrivo nello storico
-      var data3 = scatoleLoadData();
-      data3.arrivi = data3.arrivi||[];
       data3.arrivi.push({sku:r.sku, qty:val, data:todayStr, note:'Da ordine Tielle del '+ord.data_ordine});
-      scatoleSaveData(data3);
+      if(ordInData3){ var rInData3 = (ordInData3.righe||[]).find(function(x){return x.sku===r.sku;}); if(rInData3) rInData3.qty_ricevuta = r.qty_ricevuta; }
+    }
+    // Salva data3 con arrivi e qty_ricevuta aggiornate
+    if(ordInData3) ordInData3.stato = ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty;}) ? 'ricevuto' : (ord.righe.some(function(r){return (r.qty_ricevuta||0)>0;}) ? 'parziale' : 'attesa');
+    scatoleSaveData(data3);
+    // Ora aggiorna Shopify per ogni SKU ricevuto
+    for(var sku in valori){
+      var val = valori[sku];
       // Aggiorna Shopify — cerca location_ids sia in scatole che in matprod
       var data4 = scatoleLoadData();
       var matdata = (function(){ try{ return JSON.parse(localStorage.getItem('yespresso_matprod_v1')||'null')||{}; }catch(e){ return {}; } })();
-      var loc = (data4.location_ids && data4.location_ids[r.sku]) || (matdata.location_ids && matdata.location_ids[r.sku]);
-      console.log('[SCATOLE RCV] sku='+r.sku+' val='+val+' loc='+JSON.stringify(loc));
+      var loc = (data4.location_ids && data4.location_ids[sku]) || (matdata.location_ids && matdata.location_ids[sku]);
+      console.log('[SCATOLE RCV] sku='+sku+' val='+val+' loc='+JSON.stringify(loc));
       if(loc){
         try{
           var adjRes = await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
@@ -12970,12 +12984,20 @@ window.scatoleRiceviOrdineTielle = function(ordId){
     }
 
     // Aggiorna stato ordine
-    var allRicevuto = ord.righe.every(function(r){return r.qty_ricevuta>=r.qty;});
+    console.log('[SCATOLE RCV] righe dopo aggiornamento:', JSON.stringify(ord.righe.map(function(r){return {sku:r.sku,qty:r.qty,ricevuta:r.qty_ricevuta};})));
+    var allRicevuto = ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty;});
     var someRicevuto = ord.righe.some(function(r){return (r.qty_ricevuta||0)>0;});
     ord.stato = allRicevuto ? 'ricevuto' : (someRicevuto ? 'parziale' : 'attesa');
+    console.log('[SCATOLE RCV] stato ordine:', ord.stato, 'allRicevuto:', allRicevuto);
 
     var data5 = scatoleLoadData();
-    data5.ordini_tielle = (data5.ordini_tielle||[]).map(function(o){return o.id===ordId?ord:o;});
+    // Aggiorna anche le righe nell'ordine trovato in data5 (non solo ord in memoria)
+    var ordIdx5 = (data5.ordini_tielle||[]).findIndex(function(o){return o.id===ordId;});
+    if(ordIdx5>=0){
+      data5.ordini_tielle[ordIdx5] = ord;
+    } else {
+      data5.ordini_tielle = (data5.ordini_tielle||[]).map(function(o){return o.id===ordId?ord:o;});
+    }
     scatoleSaveData(data5);
     modal.remove();
     if(errori.length) showToast('⚠️ '+aggiornati+' aggiornati, errori: '+errori.join(', '),'error');
