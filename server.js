@@ -1161,7 +1161,7 @@ async function brtRestPost(path, body) {
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
     try {
-      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
+      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz) + "?codiceCliente=" + BRT_USER);
       const result = data.ttParcelIdResponse || data;
       // La struttura BRT: bolla.dati_spedizione + lista_eventi (array diretto)
       const spedizione = (result.bolla && result.bolla.dati_spedizione) || result.spedizione || {};
