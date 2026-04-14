@@ -1643,8 +1643,9 @@ async function selectTicket(tid){
         const _evMsgAtts=Array.isArray(evMsg.attachments)?evMsg.attachments:[];
         const evAttachments=[..._evMsgAtts,..._evAttFiles.map(f=>({url:f.url||f.href||"",contentType:f.type||f.contentType||f.mimeType||"",name:f.name||f.filename||f.originalName||""}))].filter(a=>a.url);
         const evDate=(function(){
-          if(!ev.createdAt)return"";
-          var dt=new Date(ev.createdAt);
+          var _evTs=ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||'';
+          if(!_evTs)return"";
+          var dt=new Date(_evTs);
           var now=new Date();
           var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
           var yesterdayS=new Date(todayS-86400000);
@@ -1834,7 +1835,7 @@ async function selectTicket(tid){
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu=(order&&order.shipping_address)||{};
-        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&(order.customer&&order.customer.phone||order.shipping_address&&order.shipping_address.phone||order.billing_address&&order.billing_address.phone))||''};
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -1949,7 +1950,7 @@ async function selectTicket(tid){
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div>';
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu=(order&&order.shipping_address)||{};
-        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu.name||'',addr:_saTemu.address1||'',zip:_saTemu.zip||'',city:_saTemu.city||'',prov:_saTemu.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&(order.customer&&order.customer.phone||order.shipping_address&&order.shipping_address.phone||order.billing_address&&order.billing_address.phone))||''};
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -2224,7 +2225,7 @@ function renderMessageHtml(text, attachments){
         html2+='<br><div style="display:flex;gap:6px;margin-top:8px"><button onclick="copyTemuOrderCRM(\''+order.id+'\',this)" style="flex:2;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📋 Copia CRM</button><button onclick="downloadTemuOrderCRM(\''+order.id+'\')" style="flex:1;background:#fff;color:#ff6600;border:2px solid #ff6600;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️ JPG</button></div><br><div style="display:flex;gap:6px;margin-top:4px"><button onclick="copyBrtTracking(\''+order.id+'\',this)" style="margin-top:4px;background:#c00;color:#fff;border:none;border-radius:8px;flex:3;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">📦 Tracking BRT</button><button onclick="downloadBrtTracking(\''+order.id+'\',this)" style="flex:1;background:#fff;color:#c00;border:2px solid #c00;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;cursor:pointer">⬇️</button></div>';
         window._brtPickupData=window._brtPickupData||{};
         var _saTemu2=(order&&order.shipping_address)||{};
-        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu2.name||'',addr:_saTemu2.address1||'',zip:_saTemu2.zip||'',city:_saTemu2.city||'',prov:_saTemu2.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
+        window._brtPickupData[order.id]={tn:(order&&order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'',orderName:(order&&order.name)||'',name:_saTemu2.name||'',addr:_saTemu2.address1||'',zip:_saTemu2.zip||'',city:_saTemu2.city||'',prov:_saTemu2.province_code||'',email:(order&&order.customer&&order.customer.email)||'',phone:(order&&(order.customer&&order.customer.phone||order.shipping_address&&order.shipping_address.phone||order.billing_address&&order.billing_address.phone))||''};
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
@@ -2614,8 +2615,9 @@ async function openTicketPreview(tid){
     events.forEach((ev,idx)=>{
       const isAgent=ev.author&&ev.author.type==="agent";
       const evDate=(function(){
-          if(!ev.createdAt)return"";
-          var dt=new Date(ev.createdAt);
+          var _evTs=ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||'';
+          if(!_evTs)return"";
+          var dt=new Date(_evTs);
           var now=new Date();
           var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
           var yesterdayS=new Date(todayS-86400000);
@@ -3507,7 +3509,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     if(order.shipping_address){
       const sa=order.shipping_address;
       window._brtPickupData=window._brtPickupData||{};
-      window._brtPickupData[order.id]={tn:(f&&f.tracking_number)||'',orderName:order.name||'',name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||'',email:(order.customer&&order.customer.email)||'',phone:(order.customer&&(order.customer.phone||order.billing_address&&order.billing_address.phone))||''};
+      window._brtPickupData[order.id]={tn:(f&&f.tracking_number)||'',orderName:order.name||'',name:sa.name||(t.requester&&t.requester.name)||'',addr:sa.address1||'',zip:sa.zip||'',city:sa.city||'',prov:sa.province_code||'',email:(order.customer&&order.customer.email)||'',phone:(order.customer&&order.customer.phone||order.shipping_address&&order.shipping_address.phone||order.billing_address&&order.billing_address.phone)||''};
       html+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
     html+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
     }
@@ -6569,8 +6571,33 @@ function setAutoReply(val){
 
 // Determina se la risposta AI richiede azione manuale (no auto-invio)
 // ── AUTO-PROCESSO TICKET IN BACKGROUND ──
-var _autoProcessedIds = {}; // {tid: timestamp quando abbiamo risposto}
-var _autoBlockedIds = new Set(); // ticket bloccati definitivamente (cliente insoddisfatto)
+// Persisti _autoProcessedIds in localStorage per sopravvivere ai reload
+var _AUTOPROC_KEY = 'yespresso_autoproc_ids';
+var _AUTOBLOCKED_KEY = 'yespresso_autoblocked_ids';
+function _loadAutoProcessedIds(){
+  try{ return JSON.parse(localStorage.getItem(_AUTOPROC_KEY)||'{}'); }catch(e){ return {}; }
+}
+function _saveAutoProcessedIds(){
+  try{ localStorage.setItem(_AUTOPROC_KEY, JSON.stringify(_autoProcessedIds)); }catch(e){}
+}
+function _loadAutoBlockedIds(){
+  try{ return new Set(JSON.parse(localStorage.getItem(_AUTOBLOCKED_KEY)||'[]')); }catch(e){ return new Set(); }
+}
+function _saveAutoBlockedIds(){
+  try{ localStorage.setItem(_AUTOBLOCKED_KEY, JSON.stringify([..._autoBlockedIds])); }catch(e){}
+}
+// Pulizia voci > 7 giorni all'avvio
+(function _cleanOldAutoProc(){
+  try{
+    var raw=JSON.parse(localStorage.getItem(_AUTOPROC_KEY)||'{}');
+    var cutoff=Date.now()-7*24*60*60*1000;
+    var cleaned={};
+    Object.keys(raw).forEach(function(k){ if(new Date(raw[k]).getTime()>cutoff) cleaned[k]=raw[k]; });
+    localStorage.setItem(_AUTOPROC_KEY,JSON.stringify(cleaned));
+  }catch(e){}
+})();
+var _autoProcessedIds = _loadAutoProcessedIds(); // {tid: timestamp quando abbiamo risposto}
+var _autoBlockedIds = _loadAutoBlockedIds(); // ticket bloccati definitivamente
 var _autoProcessing = false;     // flag per evitare processamenti paralleli
 var _autoProcessingTids = new Set(); // ticket attualmente in elaborazione
 
@@ -6612,6 +6639,7 @@ async function autoProcessTickets(freshTickets){
 
       // Marca subito come processato con timestamp per evitare doppi tentativi
       _autoProcessedIds[tid] = new Date().toISOString();
+      _saveAutoProcessedIds();
       _autoProcessingTids.add(tid); // lock per-ticket
 
       if(bar) bar.textContent = '🤖 Auto-risposta: elaboro ticket '+(i+1)+'/'+toProcess.length+' — #'+tid+'...';
@@ -6640,6 +6668,8 @@ async function autoProcessTickets(freshTickets){
             console.log('[AUTO-REPLY] Cliente insoddisfatto — blocco ticket '+tid);
             _autoBlockedIds.add(tid);
             delete _autoProcessedIds[tid];
+            _saveAutoProcessedIds();
+            _saveAutoBlockedIds();
             showToast('⚠️ Ticket #'+tid+' bloccato — cliente insoddisfatto','error');
             continue;
           }
@@ -6666,9 +6696,23 @@ async function autoProcessTickets(freshTickets){
           if(msgsWithText.length){
             var lastEvCheck = msgsWithText[msgsWithText.length-1];
             var lastIsAgent = lastEvCheck.actor && (lastEvCheck.actor.type==='agent'||lastEvCheck.actor.type==='member');
-            if(lastIsAgent){
-              console.log('[AUTO-REPLY] Ticket '+tid+' — ultimo msg è agente, skip');
+            // Considera anche le note private come "agente ha già risposto"
+            var lastIsPrivateNote = lastEvCheck.private||lastEvCheck.isPrivate||(lastEvCheck.message&&lastEvCheck.message.private)||false;
+            if(lastIsAgent || lastIsPrivateNote){
+              console.log('[AUTO-REPLY] Ticket '+tid+' — ultimo msg è agente o nota privata, skip');
               _autoProcessedIds[tid] = new Date().toISOString();
+              _saveAutoProcessedIds();
+              _autoProcessingTids.delete(tid);
+              continue;
+            }
+            // Controllo aggiuntivo: esiste già una nota privata o risposta agente nel thread?
+            var agentAlreadyReplied = sorted.some(function(ev){
+              var isAg = ev.actor && (ev.actor.type==='agent'||ev.actor.type==='member');
+              var isPriv = ev.private||ev.isPrivate||(ev.message&&ev.message.private)||false;
+              return isAg || isPriv;
+            });
+            if(agentAlreadyReplied && _autoProcessedIds[tid]){
+              console.log('[AUTO-REPLY] Ticket '+tid+' — agente ha già risposto in precedenza, skip');
               _autoProcessingTids.delete(tid);
               continue;
             }
@@ -6836,6 +6880,7 @@ async function autoProcessTickets(freshTickets){
         showToast('🤖 Auto-risposta inviata: ticket #'+tid, 'success');
         console.log('[AUTO-REPLY] ✅ Ticket '+tid+' risposto e chiuso');
         _autoProcessedIds[tid] = new Date().toISOString();
+        _saveAutoProcessedIds();
         _autoProcessingTids.delete(tid); // rilascia lock
         // Aggiungi al set processed per pallino verde
         _autoReplyStatus.processed.add(String(tid));
@@ -6982,6 +7027,12 @@ async function tryAutoReply(replyText, order){
   if(needsManualAction(replyText, order)) return false;
 
   var tid=selectedTicket.ID||selectedTicket.id;
+  // Controllo: già risposto in una sessione precedente?
+  if(_autoProcessedIds[String(tid)]){
+    var lbl0=document.getElementById("ai-label");
+    if(lbl0) lbl0.textContent="✨ Risposta AI — già gestito automaticamente";
+    return false;
+  }
   // Rimuovi tag [COPIA_IMPORTO:...] e HTML dei link prima dell'invio
   var cleanReply=replyText
     .replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'')
@@ -9181,6 +9232,15 @@ setTimeout(aggiornaResoBadge, 1000);
 
 
 
+// Intercetta Ctrl+Shift+R per evitare hard reload (che svuota cache e mostra ticket solved)
+document.addEventListener('keydown', function(e){
+  if(e.ctrlKey && e.shiftKey && e.key==='R'){
+    e.preventDefault();
+    loadTickets();
+    showToast('Ticket aggiornati', 'success');
+  }
+});
+
 loadTickets();
 loadSolvedExamples();
 loadAgentsAndTags();
@@ -9676,6 +9736,20 @@ function openBrtPickup(orderId){
       '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">INDIRIZZO RITIRO</div>'+
       '<input id="brt-indirizzo" value="'+(data.addr||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
     '</div>'+
+    '<div style="display:grid;grid-template-columns:100px 1fr 60px;gap:10px">'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">CAP</div>'+
+        '<input id="brt-cap" value="'+(data.zip||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">CITTÀ</div>'+
+        '<input id="brt-citta" value="'+(data.city||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">PROV</div>'+
+        '<input id="brt-prov" value="'+(data.prov||'').replace(/"/g,'&quot;')+'" maxlength="2" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box;text-transform:uppercase">'+
+      '</div>'+
+    '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
       '<div>'+
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">TELEFONO</div>'+
@@ -9729,7 +9803,9 @@ function openBrtPickup(orderId){
       var ordineVal=modal.querySelector('#brt-ordine').value.trim()||(data.orderName||String(orderId));
       var indirizzoVal=(modal.querySelector('#brt-indirizzo').value.trim()||data.addr||'').slice(0,35);
       var emailVal=modal.querySelector('#brt-email').value.trim()||alertEmail;
-      var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
+      var capVal=modal.querySelector('#brt-cap').value.trim()||data.zip||'';
+      var cittaVal=modal.querySelector('#brt-citta').value.trim()||data.city||'';
+      var provClean=(modal.querySelector('#brt-prov').value.trim()||data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
       var colliVal=parseInt(modal.querySelector('#brt-colli').value)||1;
       var payload=[{
         requestInfos:{parcelCount:colliVal,collectionDate:collDate},
@@ -9739,7 +9815,7 @@ function openBrtPickup(orderId){
           {type:"RQ",customerInfos:{custAccNumber:"1791201000"}},
           {
             type:"SE",
-            address:{compName:fullName.slice(0,35),state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:indirizzoVal},
+            address:{compName:fullName.slice(0,35),state:provClean,countryCode:"IT",zipCode:capVal,city:cittaVal,street:indirizzoVal},
             contact:{contactDetails:{contactPerson:fullName.slice(0,35),phone:phoneVal}}
           },
           {type:"RE",customerInfos:{custAccNumber:"1791201000"}}
