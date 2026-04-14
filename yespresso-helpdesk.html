@@ -12399,8 +12399,19 @@ async function scatoleGetInventarioShopify(){
       var variants = await shopifyGet('variants.json?limit=250');
       if(variants && variants.variants){
         variants.variants.forEach(function(v){
-          var p = SCATOLE_PRODOTTI.find(function(x){return x.sku===v.sku;});
-          if(p) invItemIds[p.sku] = v.inventory_item_id;
+          // Cerca per SKU esatto O per cod_forn (nome Shopify)
+          var vSkuClean=(v.sku||'').trim().toUpperCase();
+          var p = SCATOLE_PRODOTTI.find(function(x){
+            return x.sku===v.sku || 
+                   x.sku.toUpperCase()===vSkuClean ||
+                   (x.cod_forn&&x.cod_forn.toUpperCase()===vSkuClean) ||
+                   (x.cod_forn&&v.sku&&v.sku.toUpperCase().includes(x.sku.toUpperCase())) ||
+                   (v.sku&&v.sku.toUpperCase()===x.sku.toUpperCase());
+          });
+          if(p){ 
+            invItemIds[p.sku] = v.inventory_item_id; 
+            console.log('[SCATOLE] Match SKU: Shopify='+v.sku+' → interno='+p.sku+' inv_item_id='+v.inventory_item_id);
+          }
         });
       }
     }catch(e){ console.warn('Scatole: errore fetch variants', e.message); }
@@ -12803,7 +12814,7 @@ function renderScatoleOrdiniTielleSection(data){
         '<span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">'+sl+'</span>' +
         '<div style="margin-left:auto;display:flex;gap:6px">' +
           '<button onclick="scatoleRiceviOrdineTielle(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📥 Ricevi</button>' +
-          '<button onclick="scatoleSegnaRicevuto(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #86efac;color:#16a34a;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✓ Ricevuto</button>' +
+          '<button onclick="scatoleSegnaRicevuto(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #86efac;color:#16a34a;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✓ Chiudi ordine</button>' +
           '<button onclick="scatoleAnnullaOrdineTielle(\''+ord.id+'\')" style="background:#fff5f5;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕ Annulla</button>' +
         '</div>' +
       '</div>' +
@@ -12946,7 +12957,7 @@ window.scatoleRiceviOrdineTielle = function(ordId){
     var valori = {};
     for(var i=0;i<ord.righe.length;i++){
       var r = ord.righe[i];
-      var _inp=document.getElementById('sc-rcv-'+r.sku); var val = _inp ? (parseInt(_inp.value)||0) : 0;
+      var _inpId='sc-rcv-'+r.sku; var _inp=document.getElementById(_inpId)||modal.querySelector('#'+CSS.escape(_inpId)); var val = _inp ? (parseInt(_inp.value)||0) : 0; console.log('[SCATOLE RCV LOOP] sku='+JSON.stringify(r.sku)+' id='+_inpId+' inp='+(_inp?'found':'NOT FOUND')+' val='+val);
       if(val>0){ r.qty_ricevuta = (r.qty_ricevuta||0) + val; valori[r.sku]=val; }
     }
     // Poi salva tutto in un'unica operazione
@@ -13008,15 +13019,12 @@ window.scatoleRiceviOrdineTielle = function(ordId){
 };
 
 window.scatoleSegnaRicevuto = function(ordId){
-  if(!confirm('Segna questo ordine come completamente ricevuto? (senza aggiornare Shopify)')) return;
+  if(!confirm('Chiudi questo ordine e rimuovilo dagli arrivi attesi? (senza modificare Shopify)')) return;
   var data2 = scatoleLoadData();
-  var ord = (data2.ordini_tielle||[]).find(function(o){return o.id===ordId;});
-  if(!ord) return;
-  ord.stato = 'ricevuto';
-  // Segna tutte le righe come completamente ricevute
-  (ord.righe||[]).forEach(function(r){ r.qty_ricevuta = r.qty; });
+  // Rimuove completamente l'ordine dalla lista
+  data2.ordini_tielle = (data2.ordini_tielle||[]).filter(function(o){return o.id!==ordId;});
   scatoleSaveData(data2);
-  showToast('✅ Ordine segnato come ricevuto');
+  showToast('✅ Ordine rimosso');
   renderFabTab('scatole');
 };
 
@@ -13037,13 +13045,15 @@ window.scatoleEliminaEvento = function(tipo, sku, data_ev, qty){
   if(tipo==='conteggio'){
     data2.inventari = (data2.inventari||[]).filter(function(i){return !(i.sku===sku&&i.data===data_ev&&i.qty===qty);});
   } else {
-    data2.arrivi = (data2.arrivi||[]).filter(function(a,idx){
+    var _deleted = false;
+    data2.arrivi = (data2.arrivi||[]).filter(function(a){
       // Rimuovi solo il primo match
-      var match = a.sku===sku&&a.data===data_ev&&a.qty===qty;
-      if(match&&!data2._delFlag){data2._delFlag=true;return false;}
+      if(!_deleted && a.sku===sku && a.data===data_ev && a.qty===qty){
+        _deleted = true;
+        return false;
+      }
       return true;
     });
-    delete data2._delFlag;
   }
   scatoleSaveData(data2);
   renderFabTab('scatole');
