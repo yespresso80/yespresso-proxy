@@ -1643,8 +1643,7 @@ async function selectTicket(tid){
         const _evMsgAtts=Array.isArray(evMsg.attachments)?evMsg.attachments:[];
         const evAttachments=[..._evMsgAtts,..._evAttFiles.map(f=>({url:f.url||f.href||"",contentType:f.type||f.contentType||f.mimeType||"",name:f.name||f.filename||f.originalName||""}))].filter(a=>a.url);
         const evDate=(function(){
-          if(typeof window._evLogged==='undefined'){window._evLogged=true;console.log('[EV SAMPLE]',JSON.stringify(ev).substring(0,400));}
-          var _evTs=ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||ev.timestamp||ev.time||'';
+          var _evTs=ev.date||ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||'';
           if(!_evTs)return"";
           var dt=new Date(_evTs);
           var now=new Date();
@@ -2616,7 +2615,7 @@ async function openTicketPreview(tid){
     events.forEach((ev,idx)=>{
       const isAgent=ev.author&&ev.author.type==="agent";
       const evDate=(function(){
-          var _evTs=ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||'';
+          var _evTs=ev.date||ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||'';
           if(!_evTs)return"";
           var dt=new Date(_evTs);
           var now=new Date();
