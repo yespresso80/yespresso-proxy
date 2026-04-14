@@ -9639,11 +9639,14 @@ function openBrtContact(orderId){
 function openBrtPickup(orderId){
   const data=(window._brtPickupData||{})[orderId];
   if(!data){window.open("https://vas.brt.it/vas/orm2_0_1.htm","_blank");return;}
+  // Calcola prossimo giorno lavorativo (locale, non UTC) saltando sabato e domenica
   const tomorrow=new Date();
   tomorrow.setDate(tomorrow.getDate()+1);
+  // Salta weekend: domenica(0)->lunedì, sabato(6)->lunedì
   if(tomorrow.getDay()===0)tomorrow.setDate(tomorrow.getDate()+1);
-  if(tomorrow.getDay()===6)tomorrow.setDate(tomorrow.getDate()+2);
-  const collDate=tomorrow.toISOString().slice(0,10);
+  else if(tomorrow.getDay()===6)tomorrow.setDate(tomorrow.getDate()+2);
+  // Formatta come YYYY-MM-DD in ora locale (non UTC per evitare sfasamenti di fuso orario)
+  const collDate=tomorrow.getFullYear()+'-'+String(tomorrow.getMonth()+1).padStart(2,'0')+'-'+String(tomorrow.getDate()).padStart(2,'0');
   const isAmazonEmail=(data.email||"").includes("marketplace.amazon")||(data.email||"").includes("bounce-")||(data.email||"").includes("donotreply@amazon");
   const alertEmail=isAmazonEmail?"assistenza@yespresso.it":(data.email||"assistenza@yespresso.it");
   const modal=document.createElement("div");
@@ -9751,6 +9754,7 @@ function openBrtPickup(orderId){
           alerts:[{type:"CONFIRM",mail:emailVal}]
         }
       }];
+      console.log("BRT pickup payload:",JSON.stringify(payload));
       var res=await proxyFetch(PROXY+"/brt-orm/api/geodata/v410/colreqs",{
         method:"POST",
         headers:{"Content-Type":"application/json","X-Api-Key":"f393e3d3-8402-4614-a90e-8d111fa73ced"},
