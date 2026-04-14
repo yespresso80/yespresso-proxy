@@ -1595,6 +1595,7 @@ async function selectTicket(tid){
         </div>
       </div>
       <div class="ds-section" id="order-info-area" style="padding:12px 16px"></div>
+      <div class="ds-section" id="top-product-area" style="padding:0 16px"></div>
       <div class="ds-section" id="imap-attachments-area" style="padding:0 16px"></div>
       <div class="ds-section" id="last-order-area" style="padding:12px 16px"></div>
     </div>
@@ -1837,6 +1838,7 @@ async function selectTicket(tid){
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        renderTopProduct(order);
         if(order){window._lastShopifyOrder=order;}
         if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
@@ -1951,6 +1953,7 @@ async function selectTicket(tid){
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        renderTopProduct(order);
         if(order){window._lastShopifyOrder=order;}
         if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
@@ -2225,6 +2228,7 @@ function renderMessageHtml(text, attachments){
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
+        renderTopProduct(order);
         if(order){window._lastShopifyOrder=order;}
         if(order&&order.note){window._shopifyOrderNote=order.note;setTimeout(function(){aggiornaBoxNoteOrdine(order.note);},100);}
         if(order&&order.customer&&order.customer.id){var _isMarket=(email||'').includes('marketplace.amazon')||(email||'').includes('orders.temu')||(email||'').includes('tiktok')||(email||'').includes('donotreply@amazon');if(_isMarket)showMarketplaceOrders(order.customer.id);}
@@ -3136,6 +3140,29 @@ async function fetchShopifyOrder(message,email,requesterName){
     console.log("❌ Nessun ordine trovato. Email cercata:", emailClean, "| Nums:", allNums.slice(0,3));
   }catch(e){console.log("Shopify error:",e.message)}
   return null;
+}
+
+function renderTopProduct(order){
+  var area=document.getElementById('top-product-area');
+  if(!area) return;
+  if(!order||(order.line_items||[]).length===0){area.innerHTML='';return;}
+  var items=(order.line_items||[]).slice();
+  // Ordina per valore totale (prezzo x quantità) decrescente
+  items.sort(function(a,b){
+    return (parseFloat(b.price||0)*b.quantity)-(parseFloat(a.price||0)*a.quantity);
+  });
+  var top=items[0];
+  var topName=top.name||top.title||top.sku||'—';
+  var topVal=(parseFloat(top.price||0)*top.quantity).toFixed(2);
+  var html='<div style="margin:4px 0 6px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 12px">';
+  html+='<div style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📦 Prodotto principale</div>';
+  html+='<div style="font-size:12px;font-weight:700;color:#1a1a2e">'+top.quantity+'x '+topName+'</div>';
+  html+='<div style="font-size:11px;color:#555;margin-top:1px">€'+topVal+'</div>';
+  if(items.length>1){
+    html+='<div style="font-size:11px;color:#888;margin-top:3px;border-top:1px solid #bbf7d0;padding-top:3px">e altri '+(items.length-1)+' articol'+(items.length-1===1?'o':'i')+'</div>';
+  }
+  html+='</div>';
+  area.innerHTML=html;
 }
 
 function formatOrderInfo(order){
