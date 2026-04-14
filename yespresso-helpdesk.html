@@ -106,7 +106,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .msg-author-client{color:#1a56db}
 .msg-author-agent{color:#166534}
 .msg-author-private{color:#92400e}
-.msg-date{font-size:12px;color:#666;font-weight:600;background:rgba(0,0,0,.07);padding:3px 10px;border-radius:10px}
+.msg-date{font-size:12px;color:#1a1a2e;font-weight:600;background:#fff;border:1px solid #e0e4ea;padding:3px 10px;border-radius:10px}
 .msg-body{padding:10px 16px 14px;font-size:14px;line-height:1.7;color:#1a1a2e}
 .msg-body-email .email-inner{background:#fff;border-radius:4px;overflow:hidden;max-width:680px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .msg-body-email .email-inner img{max-width:100%;height:auto}
@@ -1543,13 +1543,18 @@ async function selectTicket(tid){
           const _evTs=ev.date||ev.createdAt||ev.created_at||'';
           const evDate=(function(){
             if(!_evTs)return'';
-            var dt=new Date(_evTs),now=new Date();
-            var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-            var yesterdayS=new Date(todayS-86400000);
+            var dt=new Date(_evTs);
+            if(isNaN(dt.getTime()))return'';
+            var now=new Date();
             var hh=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0');
             var dd=String(dt.getDate()).padStart(2,'0'),mo=String(dt.getMonth()+1).padStart(2,'0');
-            if(dt>=todayS)return'Oggi '+hh+':'+mn;
-            if(dt>=yesterdayS)return'Ieri '+hh+':'+mn;
+            var yyyy=dt.getFullYear();
+            // Confronto per data locale
+            var isToday=dt.getDate()===now.getDate()&&dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();
+            var yesterday=new Date(now); yesterday.setDate(yesterday.getDate()-1);
+            var isYesterday=dt.getDate()===yesterday.getDate()&&dt.getMonth()===yesterday.getMonth()&&dt.getFullYear()===yesterday.getFullYear();
+            if(isToday)return'Oggi '+hh+':'+mn;
+            if(isYesterday)return'Ieri '+hh+':'+mn;
             return dd+'/'+mo+' '+hh+':'+mn;
           })();
           const isAgent=ev.author&&ev.author.type==='agent';
@@ -1684,15 +1689,17 @@ async function selectTicket(tid){
           var _evTs=ev.date||ev.createdAt||ev.created_at||ev.updatedAt||ev.updated_at||'';
           if(!_evTs)return"";
           var dt=new Date(_evTs);
+          if(isNaN(dt.getTime()))return"";
           var now=new Date();
-          var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-          var yesterdayS=new Date(todayS-86400000);
           var hh=String(dt.getHours()).padStart(2,'0');
           var mn=String(dt.getMinutes()).padStart(2,'0');
           var dd=String(dt.getDate()).padStart(2,'0');
           var mo=String(dt.getMonth()+1).padStart(2,'0');
-          if(dt>=todayS) return 'Oggi '+hh+':'+mn;
-          if(dt>=yesterdayS) return 'Ieri '+hh+':'+mn;
+          var isToday=dt.getDate()===now.getDate()&&dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();
+          var yesterday=new Date(now); yesterday.setDate(yesterday.getDate()-1);
+          var isYesterday=dt.getDate()===yesterday.getDate()&&dt.getMonth()===yesterday.getMonth()&&dt.getFullYear()===yesterday.getFullYear();
+          if(isToday) return 'Oggi '+hh+':'+mn;
+          if(isYesterday) return 'Ieri '+hh+':'+mn;
           return dd+'/'+mo+' '+hh+':'+mn;
         })();
         const isAgent=ev.author&&ev.author.type==="agent";
@@ -12942,18 +12949,21 @@ window.scatoleRiceviOrdineTielle = function(ordId){
       data3.arrivi = data3.arrivi||[];
       data3.arrivi.push({sku:r.sku, qty:val, data:todayStr, note:'Da ordine Tielle del '+ord.data_ordine});
       scatoleSaveData(data3);
-      // Aggiorna Shopify
+      // Aggiorna Shopify — cerca location_ids sia in scatole che in matprod
       var data4 = scatoleLoadData();
-      var loc = data4.location_ids && data4.location_ids[r.sku];
+      var matdata = (function(){ try{ return JSON.parse(localStorage.getItem('yespresso_matprod_v1')||'null')||{}; }catch(e){ return {}; } })();
+      var loc = (data4.location_ids && data4.location_ids[r.sku]) || (matdata.location_ids && matdata.location_ids[r.sku]);
+      console.log('[SCATOLE RCV] sku='+r.sku+' val='+val+' loc='+JSON.stringify(loc));
       if(loc){
         try{
-          await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
+          var adjRes = await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
             method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify({location_id:loc.location_id,inventory_item_id:loc.inv_item_id,available_adjustment:val})
           });
+          console.log('[SCATOLE RCV] Shopify response status='+adjRes.status);
           aggiornati++;
         }catch(e){ errori.push(r.sku+': '+e.message); }
-      } else { errori.push(r.sku+': IDs non trovati, fai prima "Carica da Shopify"'); }
+      } else { errori.push(r.sku+': IDs non trovati — vai su "Materiali Produzione" → "Aggiorna inventario" per caricare gli IDs'); }
     }
 
     // Aggiorna stato ordine
