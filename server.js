@@ -1163,12 +1163,15 @@ async function brtRestPost(path, body) {
     try {
       const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
       const result = data.ttParcelIdResponse || data;
-      // La struttura BRT può essere spedizione diretta O dentro bolla.dati_spedizione
-      const spedizione = result.spedizione || (result.bolla && result.bolla.dati_spedizione) || {};
+      // La struttura BRT: bolla.dati_spedizione + lista_eventi (array diretto)
+      const spedizione = (result.bolla && result.bolla.dati_spedizione) || result.spedizione || {};
       const bolla = result.bolla || {};
-      const eventi = (spedizione.eventi && spedizione.eventi.evento)
-        || (bolla.eventi && bolla.eventi.evento) || [];
-      const eventiArr = Array.isArray(eventi) ? eventi : (eventi && Object.keys(eventi).length ? [eventi] : []);
+      // Gli eventi sono in lista_eventi (array diretto nel ttParcelIdResponse)
+      const listaEventi = result.lista_eventi || [];
+      const eventiArr = Array.isArray(listaEventi) ? listaEventi : (listaEventi ? [listaEventi] : []);
+      console.log("[BRT FERMOPOINT] lista_eventi count:", eventiArr.length);
+      if(eventiArr.length) console.log("[BRT FERMOPOINT] primo evento keys:", Object.keys(eventiArr[0]).join(","));
+      if(eventiArr.length) console.log("[BRT FERMOPOINT] ultimi 2 eventi:", JSON.stringify(eventiArr.slice(-2)));
       const ultimoEvento = eventiArr[eventiArr.length - 1] || {};
       const descEvento = (ultimoEvento.descrizione_evento || ultimoEvento.des_evento || "").toUpperCase();
       const at_fermopoint = descEvento.includes("FERMO") || descEvento.includes("PUNTO DI RITIRO") || descEvento.includes("FERMOPOINT");
@@ -1203,21 +1206,31 @@ async function brtRestPost(path, body) {
       // Estrai indirizzo punto di ritiro dalla struttura BRT
       let punto_info = "";
       try {
-        const filiale = spedizione.filiale_destinazione || spedizione.filiale || {};
-        const ragSoc = filiale.ragione_sociale || filiale.descrizione || "";
-        const via = filiale.indirizzo || filiale.via || "";
-        const cap = filiale.cap || "";
-        const citta = filiale.localita || filiale.citta || "";
-        const prov = filiale.provincia || "";
+        // Prova filiale_arrivo da dati_spedizione
+        const filArrivo = spedizione.filiale_arrivo || spedizione.filiale_destinazione || spedizione.filiale || {};
+        const ragSoc = filArrivo.ragione_sociale || filArrivo.descrizione || spedizione.filiale_arrivo || "";
+        const via = filArrivo.indirizzo || filArrivo.via || "";
+        const cap = filArrivo.cap || "";
+        const citta = filArrivo.localita || filArrivo.citta || "";
+        const prov = filArrivo.provincia || "";
         if(ragSoc || via) {
-          punto_info = [ragSoc, via, cap+' '+citta+' ('+prov+')'].filter(Boolean).join(", ").trim();
+          punto_info = [ragSoc, via, [cap, citta, prov?'('+prov+')':''].filter(Boolean).join(' ')].filter(Boolean).join(", ").trim();
+        }
+        // Fallback: usa filiale_arrivo stringa da dati_spedizione
+        if(!punto_info && spedizione.filiale_arrivo) {
+          punto_info = spedizione.filiale_arrivo;
         }
         // Fallback: cerca nell'ultimo evento
-        if(!punto_info && ultimoEvento.filiale) {
-          const fe = ultimoEvento.filiale;
-          punto_info = [fe.ragione_sociale||fe.descrizione, fe.indirizzo, (fe.cap||'')+' '+(fe.localita||fe.citta||'')].filter(Boolean).join(", ").trim();
+        if(!punto_info && ultimoEvento) {
+          const fe = ultimoEvento.filiale || ultimoEvento.filiale_evento || {};
+          if(fe && Object.keys(fe).length) {
+            punto_info = [fe.ragione_sociale||fe.descrizione, fe.indirizzo, (fe.cap||'')+' '+(fe.localita||fe.citta||'')].filter(Boolean).join(", ").trim();
+          }
+          if(!punto_info) punto_info = ultimoEvento.filiale_string || ultimoEvento.sede || "";
         }
-      } catch(pe) {}
+        console.log("[BRT FERMOPOINT] punto_info:", punto_info);
+        console.log("[BRT FERMOPOINT] dati_spedizione keys:", Object.keys(spedizione).join(","));
+      } catch(pe) { console.log("[BRT FERMOPOINT] punto_info error:", pe.message); }
       
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, punto_info, raw: data }));
