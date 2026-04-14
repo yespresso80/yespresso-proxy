@@ -106,7 +106,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .msg-author-client{color:#1a56db}
 .msg-author-agent{color:#166534}
 .msg-author-private{color:#92400e}
-.msg-date{font-size:11px;color:#aaa;font-style:italic;background:rgba(0,0,0,.04);padding:2px 8px;border-radius:10px}
+.msg-date{font-size:12px;color:#666;font-weight:600;background:rgba(0,0,0,.07);padding:3px 10px;border-radius:10px}
 .msg-body{padding:10px 16px 14px;font-size:14px;line-height:1.7;color:#1a1a2e}
 .msg-body-email .email-inner{background:#fff;border-radius:4px;overflow:hidden;max-width:680px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .msg-body-email .email-inner img{max-width:100%;height:auto}
@@ -1515,8 +1515,8 @@ async function selectTicket(tid){
 
   // Sort by date asc (oldest first = reading order), newest = main ticket
   openTickets.sort((a,b)=>{
-    const ad=new Date((a.events&&a.events[0]&&a.events[0].createdAt)||0);
-    const bd=new Date((b.events&&b.events[0]&&b.events[0].createdAt)||0);
+    const ad=new Date((a.events&&a.events[0]&&(a.events[0].date||a.events[0].createdAt))||0);
+    const bd=new Date((b.events&&b.events[0]&&(b.events[0].date||b.events[0].createdAt))||0);
     return ad-bd;
   });
 
@@ -1532,6 +1532,44 @@ async function selectTicket(tid){
       // Aggiorna anche nella cache
       const cacheIdx=tickets.findIndex(t=>(t.ID||t.id)===(mainTicket.ID||mainTicket.id));
       if(cacheIdx>=0)tickets[cacheIdx]=selectedTicket;
+      // Re-renderizza i messaggi con gli eventi completi (che hanno il campo date)
+      const _detailMsgs=document.querySelector('.detail-messages');
+      if(_detailMsgs){
+        let _rHtml='';
+        const _tkEvs=(fullTicket.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml||e.message.html));
+        _tkEvs.forEach(function(ev){
+          const evMsg=ev.message||{};
+          const evText=evMsg.richTextHtml||evMsg.html||evMsg.text||'';
+          const _evTs=ev.date||ev.createdAt||ev.created_at||'';
+          const evDate=(function(){
+            if(!_evTs)return'';
+            var dt=new Date(_evTs),now=new Date();
+            var todayS=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+            var yesterdayS=new Date(todayS-86400000);
+            var hh=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0');
+            var dd=String(dt.getDate()).padStart(2,'0'),mo=String(dt.getMonth()+1).padStart(2,'0');
+            if(dt>=todayS)return'Oggi '+hh+':'+mn;
+            if(dt>=yesterdayS)return'Ieri '+hh+':'+mn;
+            return dd+'/'+mo+' '+hh+':'+mn;
+          })();
+          const isAgent=ev.author&&ev.author.type==='agent';
+          const isClient=ev.author&&ev.author.type==='client';
+          const isPrivate=ev.private||ev.isPrivate||(ev.message&&ev.message.isPrivate)||false;
+          const blockClass=isPrivate?'msg-block msg-block-private':isAgent?'msg-block msg-block-agent':isClient?'msg-block msg-block-client':'msg-block msg-block-agent';
+          const avatarClass=isPrivate?'msg-avatar msg-avatar-private':isAgent?'msg-avatar msg-avatar-agent':'msg-avatar msg-avatar-client';
+          const avatarIcon=isPrivate?'🔒':isAgent?'👤':'🙋';
+          const authorName=isPrivate?'Nota Privata':isAgent?'Agente':isClient?(ev.author&&ev.author.name)||'Cliente':'Sistema';
+          _rHtml+='<div class="'+blockClass+'">'+
+            '<div class="msg-block-header">'+
+            '<div class="'+avatarClass+'">'+avatarIcon+'</div>'+
+            '<span class="msg-author '+(isPrivate?'msg-author-private':isAgent?'msg-author-agent':'msg-author-client')+'">'+authorName+'</span>'+
+            '<span class="msg-date">'+evDate+'</span>'+
+            '</div>'+
+            renderMsgBlock(evText,[])+
+            '</div>';
+        });
+        if(_rHtml) _detailMsgs.querySelector('div').innerHTML=_rHtml;
+      }
     }
   }catch(e){console.log("Full ticket load error:",e.message);}
 
@@ -1625,7 +1663,7 @@ async function selectTicket(tid){
     const tkEvents=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml||e.message.html));
     const isMain=tkId===tid2;
     // Header ticket
-    const tkDate=(tkEvents[0]&&tkEvents[0].createdAt)||"";
+    const tkDate=(tkEvents[0]&&(tkEvents[0].date||tkEvents[0].createdAt))||"";
     const tkDateStr=tkDate?new Date(tkDate).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
     messagesHtml+='<div class="concat-ticket">'+
       '<div class="concat-ticket-header">'+
@@ -12895,7 +12933,7 @@ window.scatoleRiceviOrdineTielle = function(ordId){
 
     for(var i=0;i<ord.righe.length;i++){
       var r = ord.righe[i];
-      var val = parseInt(document.getElementById('sc-rcv-'+r.sku)||{value:'0'}.value||'0')||0;
+      var _inp=document.getElementById('sc-rcv-'+r.sku); var val = _inp ? (parseInt(_inp.value)||0) : 0;
       if(val<=0) continue;
       // Aggiorna qty_ricevuta nell'ordine
       r.qty_ricevuta = (r.qty_ricevuta||0) + val;
