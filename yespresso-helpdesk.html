@@ -9674,12 +9674,12 @@ function openBrtPickup(orderId){
     '</div>'+
     '<div>'+
       '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">INDIRIZZO RITIRO</div>'+
-      '<input id="brt-indirizzo" value="'+addrStr.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
+      '<input id="brt-indirizzo" value="'+(data.addr||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
       '<div>'+
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">TELEFONO</div>'+
-        '<input id="brt-telefono" value="'+(data.phone||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
+        '<input id="brt-telefono" value="'+((data.phone||'').replace(/\+39/g,'').replace(/[\s()\-\/]/g,'')).replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;outline:none;box-sizing:border-box">'+
       '</div>'+
       '<div>'+
         '<div style="font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;margin-bottom:4px">EMAIL AVVISO</div>'+
@@ -9725,9 +9725,9 @@ function openBrtPickup(orderId){
     statusEl.textContent="Invio richiesta a BRT...";
     try{
       var fullName=modal.querySelector('#brt-nominativo').value.trim()||data.name||"Cliente";
-      var phoneVal=modal.querySelector('#brt-telefono').value.trim()||data.phone||"0200000000";
+      var phoneVal=(modal.querySelector('#brt-telefono').value.trim()||data.phone||"0200000000").replace(/\+39/g,"").replace(/[\s()\-\/]/g,"");
       var ordineVal=modal.querySelector('#brt-ordine').value.trim()||(data.orderName||String(orderId));
-      var indirizzoVal=modal.querySelector('#brt-indirizzo').value.trim()||addrStr;
+      var indirizzoVal=(modal.querySelector('#brt-indirizzo').value.trim()||data.addr||'').slice(0,35);
       var emailVal=modal.querySelector('#brt-email').value.trim()||alertEmail;
       var provClean=(data.prov||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
       var colliVal=parseInt(modal.querySelector('#brt-colli').value)||1;
@@ -9739,8 +9739,8 @@ function openBrtPickup(orderId){
           {type:"RQ",customerInfos:{custAccNumber:"1791201000"}},
           {
             type:"SE",
-            address:{compName:fullName,state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:indirizzoVal},
-            contact:{contactDetails:{contactPerson:fullName,phone:phoneVal}}
+            address:{compName:fullName.slice(0,35),state:provClean,countryCode:"IT",zipCode:data.zip||"",city:data.city||"",street:indirizzoVal},
+            contact:{contactDetails:{contactPerson:fullName.slice(0,35),phone:phoneVal}}
           },
           {type:"RE",customerInfos:{custAccNumber:"1791201000"}}
         ],
