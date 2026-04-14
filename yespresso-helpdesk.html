@@ -13042,18 +13042,22 @@ window.scatoleAnnullaOrdineTielle = function(ordId){
 window.scatoleEliminaEvento = function(tipo, sku, data_ev, qty){
   if(!confirm('Eliminare questo evento?')) return;
   var data2 = scatoleLoadData();
+  qty = parseInt(qty); // forza numero
+  console.log('[ELIMINA] tipo='+tipo+' sku='+sku+' data='+data_ev+' qty='+qty);
+  console.log('[ELIMINA] arrivi:', JSON.stringify((data2.arrivi||[]).map(function(a){return {sku:a.sku,data:a.data,qty:a.qty,types:typeof a.qty};})));
   if(tipo==='conteggio'){
-    data2.inventari = (data2.inventari||[]).filter(function(i){return !(i.sku===sku&&i.data===data_ev&&i.qty===qty);});
+    data2.inventari = (data2.inventari||[]).filter(function(i){return !(i.sku===sku&&i.data===data_ev&&parseInt(i.qty)===qty);});
   } else {
     var _deleted = false;
     data2.arrivi = (data2.arrivi||[]).filter(function(a){
-      // Rimuovi solo il primo match
-      if(!_deleted && a.sku===sku && a.data===data_ev && a.qty===qty){
+      if(!_deleted && a.sku===sku && a.data===data_ev && parseInt(a.qty)===qty){
         _deleted = true;
+        console.log('[ELIMINA] rimosso:', JSON.stringify(a));
         return false;
       }
       return true;
     });
+    if(!_deleted) console.warn('[ELIMINA] nessun match trovato!');
   }
   scatoleSaveData(data2);
   renderFabTab('scatole');

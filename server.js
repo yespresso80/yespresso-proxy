@@ -1169,7 +1169,30 @@ async function brtRestPost(path, body) {
       const ultimoEvento = eventiArr[eventiArr.length - 1] || {};
       const descEvento = (ultimoEvento.descrizione_evento || "").toUpperCase();
       const at_fermopoint = descEvento.includes("FERMO") || descEvento.includes("PUNTO DI RITIRO") || descEvento.includes("FERMOPOINT");
-      const scadenza_ritiro = ultimoEvento.data_evento || "";
+      // Cerca data scadenza ritiro in vari campi possibili della risposta BRT
+      let scadenza_ritiro = "";
+      try {
+        // Prova prima campi specifici di scadenza
+        scadenza_ritiro = spedizione.data_scadenza_giacenza
+          || spedizione.scadenza_giacenza
+          || spedizione.data_giacenza
+          || spedizione.data_limite_ritiro
+          || spedizione.giacenza_fino_al
+          || spedizione.data_scadenza
+          || "";
+        // Se non trovato, cerca negli eventi uno con descrizione che contiene "GIACENZA" o "SCADENZA"
+        if (!scadenza_ritiro) {
+          const evGiac = eventiArr.find(function(e){
+            const d = (e.descrizione_evento||"").toUpperCase();
+            return d.includes("GIACENZ") || d.includes("SCADENZ") || d.includes("DISPONIBILE");
+          });
+          if (evGiac) scadenza_ritiro = evGiac.data_evento || "";
+        }
+        // Log per debug
+        console.log("[BRT FERMOPOINT] spedizione keys:", Object.keys(spedizione).join(","));
+        console.log("[BRT FERMOPOINT] scadenza trovata:", scadenza_ritiro);
+        console.log("[BRT FERMOPOINT] ultimoEvento:", JSON.stringify(ultimoEvento).substring(0,200));
+      } catch(se) { scadenza_ritiro = ultimoEvento.data_evento || ""; }
       
       // Estrai indirizzo punto di ritiro dalla struttura BRT
       let punto_info = "";
