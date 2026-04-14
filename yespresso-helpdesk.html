@@ -12937,6 +12937,9 @@ window.scatoleRiceviOrdineTielle = function(ordId){
     var todayStr = new Date().toISOString().split('T')[0];
     var errori = [];
     var aggiornati = 0;
+    var _dbg = scatoleLoadData();
+    console.log('[SCATOLE RCV] location_ids in storage:', JSON.stringify(_dbg.location_ids));
+    console.log('[SCATOLE RCV] righe ordine:', JSON.stringify(ord.righe.map(function(r){return {sku:r.sku,qty:r.qty,ricevuta:r.qty_ricevuta};})));
 
     for(var i=0;i<ord.righe.length;i++){
       var r = ord.righe[i];
