@@ -12803,6 +12803,7 @@ function renderScatoleOrdiniTielleSection(data){
         '<span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">'+sl+'</span>' +
         '<div style="margin-left:auto;display:flex;gap:6px">' +
           '<button onclick="scatoleRiceviOrdineTielle(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📥 Ricevi</button>' +
+          '<button onclick="scatoleSegnaRicevuto(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #86efac;color:#16a34a;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✓ Ricevuto</button>' +
           '<button onclick="scatoleAnnullaOrdineTielle(\''+ord.id+'\')" style="background:#fff5f5;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕ Annulla</button>' +
         '</div>' +
       '</div>' +
@@ -13004,6 +13005,19 @@ window.scatoleRiceviOrdineTielle = function(ordId){
     else showToast('✅ Merce ricevuta e Shopify aggiornato');
     renderFabTab('scatole');
   };
+};
+
+window.scatoleSegnaRicevuto = function(ordId){
+  if(!confirm('Segna questo ordine come completamente ricevuto? (senza aggiornare Shopify)')) return;
+  var data2 = scatoleLoadData();
+  var ord = (data2.ordini_tielle||[]).find(function(o){return o.id===ordId;});
+  if(!ord) return;
+  ord.stato = 'ricevuto';
+  // Segna tutte le righe come completamente ricevute
+  (ord.righe||[]).forEach(function(r){ r.qty_ricevuta = r.qty; });
+  scatoleSaveData(data2);
+  showToast('✅ Ordine segnato come ricevuto');
+  renderFabTab('scatole');
 };
 
 window.scatoleAnnullaOrdineTielle = function(ordId){
