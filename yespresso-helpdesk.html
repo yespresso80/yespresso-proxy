@@ -1763,7 +1763,8 @@ async function selectTicket(tid){
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'assente\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#fd7e14;border-bottom:1px solid #f0f2f5">🔔 Assente dopo lasciato avviso</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rifiuto\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6f42c1;border-bottom:1px solid #f0f2f5">❌ Rifiuto senza motivazione</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'fermopoint\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#0d6efd;border-bottom:1px solid #f0f2f5">📦 Verso punto di ritiro</div>'+
-              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rientro\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6c757d">🔄 In fase di rientro / Rientrato in sede</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rientro\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6c757d;border-bottom:1px solid #f0f2f5">🔄 In fase di rientro / Rientrato in sede</div>'+
+              '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'giacenza\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#0d6efd">🔓 Sblocco giacenza</div>'+
             '</div>'+
           '</div>'+
           '<div style="flex:1"></div>'+
@@ -6695,6 +6696,12 @@ function inviaMessaggioProblemaSpedizione(orderId, tipo){
     '1. ✉️ Rispedizione dell\'ordine — provvediamo a rispedirle il pacco (ci confermi l\'indirizzo corretto)\n'+
     '2. 💶 '+( _isMarket ? 'Rimborso — emettiamo il rimborso completo sul metodo di pagamento utilizzato' : 'Credito — le accreditiamo il valore dell\'ordine come credito da utilizzare su yespresso.it' )+'\n\n'+
     'Attesa sua risposta per procedere immediatamente.\n\nCordiali saluti,\nIl Team Yespresso';
+  }
+  } else if(tipo==='giacenza'){
+    testo=saluto+'\n'+
+    'la informiamo che abbiamo provveduto a fornire tutte le informazioni necessarie al corriere BRT per sbloccare la giacenza e procedere con la consegna del suo ordine.\n\n'+
+    'Riceverà a breve comunicazione dal corriere con i dettagli per la consegna.\n\n'+
+    'Cordiali saluti,\nIl Team Yespresso';
   }
   // Inserisci nel campo risposta e mostra action area
   const genBox=document.getElementById('gen-box');
