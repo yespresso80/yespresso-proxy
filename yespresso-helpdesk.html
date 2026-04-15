@@ -3322,6 +3322,20 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
       if(genBox)genBox.style.display="none";if(aa){aa.style.display="block";if(rt)rt.value=reply;}}
   }catch(e){console.error("generateReplyNotaInterna:",e);if(genBox)genBox.style.display="none";}
 }
+async function generateReplyWithFermopoint(){
+  // Rigenera usando l'ordine già in memoria con i dati fermopoint preservati
+  const t = selectedTicket;
+  if(!t) return;
+  const email = (t.requester&&t.requester.email)||'';
+  const events = (t.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
+  const lastMsg = events.length ? ((events[events.length-1].message||{}).text||'') : '';
+  const fullThread = events.map(ev=>{
+    const role=(ev.author&&ev.author.type==='agent')?'AGENTE':'CLIENTE';
+    return role+': '+((ev.message&&(ev.message.text||ev.message.richTextHtml))||'').substring(0,600);
+  }).join('\n');
+  await generateReply(lastMsg, email, fullThread);
+}
+
 async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log("🚀 generateReply CHIAMATA email:",email);
   const _skipAI=skipAI||isNoAiEmail(email);
   const t=selectedTicket;
@@ -3373,10 +3387,10 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       const tnCheck=fCheck&&(fCheck.tracking_number||(fCheck.tracking_numbers&&fCheck.tracking_numbers[0]))||'';
       const isFermopointStatus=fCheck&&(fCheck.shipment_status==='delivered'||fCheck.shipment_status==='ready_for_pickup');
       if(isFermopointStatus&&tnCheck){
-        try{
-          const brtR=await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck));
+        // Asincrono — non blocca la generazione AI ma aggiorna i dati per eventuali rigenera
+        proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck)).then(async function(brtR){
           if(brtR&&brtR.ok){const brtD=await brtR.json();if(brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup'){order._brtFermopoint=true;order._brtScadenza=brtD.scadenza_ritiro||'';order._brtPuntoInfo=brtD.punto_info||'';console.log('[BRT] Fermopoint scadenza:',order._brtScadenza||'nd');}}
-        }catch(e){console.log('[BRT] check-fermopoint error:',e.message);}
+        }).catch(function(){});
       }
     }
   }
@@ -3468,7 +3482,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       html+='<div style="font-size:11px;font-weight:700;color:#1a73e8;margin-bottom:4px">📦 FERMOPOINT — Incolla indirizzo da BRT:</div>';
       html+='<input id="'+fpId+'" placeholder="Es. Via Roma 1, Roma — dal sito BRT" style="width:100%;padding:5px 8px;border:1px solid #b3d4ff;border-radius:6px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box">';
       html+='<div style="font-size:10px;color:#888;margin-top:3px">Dopo aver incollato l\'indirizzo clicca il bottone per rigenerare</div>';
-      html+='<button onclick="generateReply(null,null,null)" style="margin-top:6px;width:100%;padding:6px;background:#1a73e8;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↻ Rigenera risposta con indirizzo</button>';
+      html+='<button onclick="generateReplyWithFermopoint()" style="margin-top:6px;width:100%;padding:6px;background:#1a73e8;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↻ Rigenera risposta con indirizzo</button>';
       html+='</div>';
       // Salva riferimento globale per l'AI
       window._fermopointAddrMap = window._fermopointAddrMap||{};
