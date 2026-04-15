@@ -6468,7 +6468,28 @@ function openElenaPanel(){
       return '<a href="'+url+'" target="_blank" style="color:'+(color||'#0369a1')+';font-weight:600;font-size:12px;text-decoration:none">'+label+' ↗</a>';
     }
 
-    modal.innerHTML='<div style="background:#f8faff;border-radius:16px;width:560px;max-width:98vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.2);overflow:hidden">'+
+    var colSx =
+      '<div style="font-size:11px;font-weight:700;color:#0369a1;text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px">📅 Giornaliere Continue</div>'+
+      row('','always','🎫','Gestione Ticket Helpdesk','','always')+
+      row('','always','🏷️','Correggere Etichette',link('https://yespresso.cloud/?status=error','Apri Yespresso Cloud','#e53e3e'),'always')+
+      row('','always','🟠','Messaggi Temu',link('https://seller-eu.temu.com/chat.html?refer_page_name=home&refer_page_id=20406_1775814537293_x298aqefye&refer_page_sn=20406&_x_sessn_id=st0i61wa2s','Apri Temu Chat','#ff6600'),'always')+
+      row('','always','🎵','Messaggi TikTok',link('https://seller-it.tiktok.com/chat?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT','Apri TikTok Chat','#000'),'always')+
+      row('','always','🟠','Cancellazioni Temu',link('https://seller-eu.temu.com/orders.html?activeTab=2&optionValue=buyer_requested_cancel&groupKey=parentAfterSalesTag&_x_sessn_id=9s02ygkjpt&refer_page_name=home&refer_page_id=20406_1776247461952_w9nck1jth8&refer_page_sn=20406','Apri Cancellazioni','#ff6600'),'always')+
+      '<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">⏰ Giornaliere (1 volta)</div>'+
+      row('resi_tiktok','day','↩️','Resi TikTok','<span onclick="document.getElementById(\'elena-panel\').remove();openTikTokResiModal&&openTikTokResiModal()" style="color:#7c3aed;font-weight:600;font-size:12px;cursor:pointer">Vai a TIK TOK RESI ↗</span>','')+
+      row('resi_magazzino','day','📦','Resi Magazzino','<span onclick="document.getElementById(\'elena-panel\').remove();openRichiesteResoPanel&&openRichiesteResoPanel()" style="color:#e53e3e;font-weight:600;font-size:12px;cursor:pointer">Vai a Richieste Reso ↗</span>','');
+
+    var colDx =
+      '<div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px">📆 Settimanali (mercoledì)'+(!isMercoledi?' <span style="font-size:10px;color:#aaa;text-transform:none">— non oggi</span>':'')+'</div>'+
+      row('contrassegni','week','💰','Contrassegni Auto-Pagato','<span onclick="document.getElementById(\'elena-panel\').remove();openToolModal(\'contrassegno\')" style="color:#b45309;font-weight:600;font-size:12px;cursor:pointer">Vai a Contrassegno ↗</span>','')+
+      '<div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">📅 Mensili (4 del mese)'+(!isGiorno4?' <span style="font-size:10px;color:#aaa;text-transform:none">— non oggi</span>':'')+'</div>'+
+      row('iva_amazon','month','🧾','Calcolo IVA Amazon',
+        link('https://sellercentral.amazon.it/tax/vatreports/bulkdownload','Scarica IVA Amazon','#e8a000')+
+        ' · <span onclick="document.getElementById(\'elena-panel\').remove();openToolModal(\'fattura\')" style="color:#e8a000;font-weight:600;font-size:12px;cursor:pointer">Fattura Tagger ↗</span>'+
+        '<div style="font-size:11px;color:#888;margin-top:2px">Dal giorno 1 alla fine del mese prec.</div>',
+        '');
+
+    modal.innerHTML='<div style="background:#f8faff;border-radius:16px;width:900px;max-width:98vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.2);overflow:hidden">'+
       '<div style="padding:16px 20px;background:linear-gradient(135deg,#0369a1,#0ea5e9);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<span style="font-size:28px">👩</span>'+
@@ -6479,34 +6500,9 @@ function openElenaPanel(){
         '</div>'+
         '<button id="elena-close" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px;font-weight:700">✕</button>'+
       '</div>'+
-      '<div style="flex:1;overflow-y:auto;padding:16px 20px">'+
-
-      // Giornaliere continue
-      '<div style="font-size:11px;font-weight:700;color:#0369a1;text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px">📅 Attività Giornaliere Continue</div>'+
-      row('','always','🎫','Gestione Ticket Helpdesk','','always')+
-      row('','always','🏷️','Correggere Etichette',link('https://yespresso.cloud/?status=error','Apri Yespresso Cloud','#e53e3e'),'always')+
-      row('','always','🟠','Messaggi Temu',link('https://seller-eu.temu.com/chat.html?refer_page_name=home&refer_page_id=20406_1775814537293_x298aqefye&refer_page_sn=20406&_x_sessn_id=st0i61wa2s','Apri Temu Chat','#ff6600'),'always')+
-      row('','always','🎵','Messaggi TikTok',link('https://seller-it.tiktok.com/chat?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT','Apri TikTok Chat','#000'),'always')+
-      row('','always','🟠','Richieste Cancellazioni Temu',link('https://seller-eu.temu.com/orders.html?activeTab=2&optionValue=buyer_requested_cancel&groupKey=parentAfterSalesTag&_x_sessn_id=9s02ygkjpt&refer_page_name=home&refer_page_id=20406_1776247461952_w9nck1jth8&refer_page_sn=20406','Apri Cancellazioni Temu','#ff6600'),'always')+
-
-      // Giornaliere una volta
-      '<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">⏰ Attività Giornaliere (1 volta al giorno)</div>'+
-      row('resi_tiktok','day','↩️','Resi TikTok','<span onclick="document.getElementById(\'elena-panel\').remove();openTikTokResiModal&&openTikTokResiModal()" style="color:#7c3aed;font-weight:600;font-size:12px;cursor:pointer">Vai a TIK TOK RESI ↗</span>','')+
-      row('resi_magazzino','day','📦','Resi Magazzino','<span onclick="document.getElementById(\'elena-panel\').remove();openRichiesteResoPanel&&openRichiesteResoPanel()" style="color:#e53e3e;font-weight:600;font-size:12px;cursor:pointer">Vai a Richieste Reso (In attesa) ↗</span>','')+
-
-      // Settimanali
-      '<div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">📆 Attività Settimanali (ogni mercoledì)'+(!isMercoledi?' <span style="font-size:10px;font-weight:600;color:#aaa;text-transform:none">— oggi non è mercoledì</span>':'')+'</div>'+
-      row('contrassegni','week','💰','Contrassegni Auto-Pagato','<span onclick="document.getElementById(\'elena-panel\').remove();openToolModal(\'contrassegno\')" style="color:#b45309;font-weight:600;font-size:12px;cursor:pointer">Vai a Contrassegno Auto-Pagato ↗</span>','')+
-
-      // Mensili
-      '<div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">📅 Attività Mensili (ogni 4 del mese)'+(!isGiorno4?' <span style="font-size:10px;font-weight:600;color:#aaa;text-transform:none">— oggi non è il 4</span>':'')+'</div>'+
-      row('iva_amazon','month','🧾','Calcolo IVA Amazon',
-        link('https://sellercentral.amazon.it/tax/vatreports/bulkdownload','Scarica file IVA su Amazon','#e8a000')+
-        ' &nbsp;·&nbsp; '+
-        '<span onclick="document.getElementById(\'elena-panel\').remove();openToolModal(\'fattura\')" style="color:#e8a000;font-weight:600;font-size:12px;cursor:pointer">Vai ad Amazon Fattura Tagger ↗</span>'+
-        '<div style="font-size:11px;color:#888;margin-top:2px">Scarica dal giorno 1 alla fine del mese precedente, poi carica nel tagger</div>',
-        '')+
-
+      '<div style="flex:1;overflow-y:auto;padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">'+
+        '<div>'+colSx+'</div>'+
+        '<div>'+colDx+'</div>'+
       '</div>'+
       '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;text-align:center;flex-shrink:0">'+
         '<span style="font-size:11px;color:#aaa">I flag si rinnovano automaticamente ogni giorno / settimana / mese</span>'+
