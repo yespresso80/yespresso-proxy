@@ -6487,7 +6487,7 @@ function openElenaPanel(){
       row('','always','🏷️','Correggere Etichette',link('https://yespresso.cloud/?status=error','Apri Yespresso Cloud','#e53e3e'),'always')+
       row('','always','🟠','Messaggi Temu',link('https://seller-eu.temu.com/chat.html?refer_page_name=home&refer_page_id=20406_1775814537293_x298aqefye&refer_page_sn=20406&_x_sessn_id=st0i61wa2s','Apri Temu Chat','#ff6600'),'always')+
       row('','always','🎵','Messaggi TikTok',link('https://seller-it.tiktok.com/chat?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT','Apri TikTok Chat','#000'),'always')+
-      row('','always','🟠','Richieste Cancellazioni Temu',link('https://seller-eu.temu.com/orders.html?refer_page_name=home&refer_page_id=20406_1776246750585_fv5qiglu21&refer_page_sn=20406&_x_sessn_id=9s02ygkjpt&activeTab=0','Apri Cancellazioni Temu','#ff6600'),'always')+
+      row('','always','🟠','Richieste Cancellazioni Temu',link('https://seller-eu.temu.com/orders.html?activeTab=2&optionValue=buyer_requested_cancel&groupKey=parentAfterSalesTag&_x_sessn_id=9s02ygkjpt&refer_page_name=home&refer_page_id=20406_1776247461952_w9nck1jth8&refer_page_sn=20406','Apri Cancellazioni Temu','#ff6600'),'always')+
 
       // Giornaliere una volta
       '<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">⏰ Attività Giornaliere (1 volta al giorno)</div>'+
@@ -6535,8 +6535,18 @@ function toggleMerceMananteDropdown(){
   var wrap=document.getElementById('merce-mancante-btn-wrap');
   if(wrap){
     var rect=wrap.getBoundingClientRect();
-    if(rect.top<180){dd.style.bottom='auto';dd.style.top='34px';}
-    else{dd.style.top='auto';dd.style.bottom='34px';}
+    var menuH=dd.offsetHeight||220;
+    if(dd.parentNode!==document.body) document.body.appendChild(dd);
+    dd.style.position='fixed';
+    dd.style.zIndex='99999';
+    dd.style.left=rect.left+'px';
+    if(rect.top > menuH + 20){
+      dd.style.bottom=(window.innerHeight - rect.top + 4)+'px';
+      dd.style.top='auto';
+    } else {
+      dd.style.top=(rect.bottom + 4)+'px';
+      dd.style.bottom='auto';
+    }
   }
   dd.style.display='block';
   // Pre-popola importo dal campo reply-text se contiene un importo
@@ -6618,20 +6628,26 @@ function toggleFailureDropdown(){
   if(!dd) return;
   var isOpen = dd.style.display !== 'none';
   if(isOpen){ dd.style.display='none'; return; }
-  // Posiziona il menu verso l'alto di default (bottom:34px)
-  // Se non c'è spazio sopra, apri verso il basso
+
+  // Stacca il dropdown dal parent e appendilo al body con position:fixed
   var wrap=document.getElementById('failure-msg-btn-wrap');
   if(wrap){
     var rect=wrap.getBoundingClientRect();
-    var menuH=320; // altezza stimata menu (6 voci ~50px cad)
-    if(rect.top < menuH){
-      // Poco spazio sopra → apri verso il basso
-      dd.style.bottom='auto';
-      dd.style.top='34px';
-    } else {
-      // Spazio sufficiente sopra → apri verso l'alto
+    var menuH=dd.offsetHeight||320;
+    // Sposta al body se non già lì
+    if(dd.parentNode!==document.body){
+      document.body.appendChild(dd);
+    }
+    dd.style.position='fixed';
+    dd.style.zIndex='99999';
+    dd.style.left=rect.left+'px';
+    // Apri sopra o sotto in base allo spazio
+    if(rect.top > menuH + 20){
+      dd.style.bottom=(window.innerHeight - rect.top + 4)+'px';
       dd.style.top='auto';
-      dd.style.bottom='34px';
+    } else {
+      dd.style.top=(rect.bottom + 4)+'px';
+      dd.style.bottom='auto';
     }
   }
   dd.style.display='block';
@@ -6639,8 +6655,9 @@ function toggleFailureDropdown(){
   setTimeout(function(){
     document.addEventListener('click',function closeDD(e){
       var wrap2=document.getElementById('failure-msg-btn-wrap');
-      if(wrap2&&!wrap2.contains(e.target)){
-        var dd2=document.getElementById('failure-dropdown');
+      var dd2=document.getElementById('failure-dropdown');
+      var clickedInside=(wrap2&&wrap2.contains(e.target))||(dd2&&dd2.contains(e.target));
+      if(!clickedInside){
         if(dd2)dd2.style.display='none';
         document.removeEventListener('click',closeDD);
       }
