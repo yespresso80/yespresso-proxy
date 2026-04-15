@@ -6641,8 +6641,15 @@ function toggleFailureDropdown(){
     dd.style.position='fixed';
     dd.style.zIndex='99999';
     dd.style.left=rect.left+'px';
+    dd.style.minWidth='300px';
+    // Misura altezza reale rendendo visibile temporaneamente
+    dd.style.visibility='hidden';
+    dd.style.display='block';
+    var menuH2=dd.offsetHeight||320;
+    dd.style.display='none';
+    dd.style.visibility='visible';
     // Apri sopra o sotto in base allo spazio
-    if(rect.top > menuH + 20){
+    if(rect.top > menuH2 + 20){
       dd.style.bottom=(window.innerHeight - rect.top + 4)+'px';
       dd.style.top='auto';
     } else {
