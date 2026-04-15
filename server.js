@@ -1154,14 +1154,46 @@ async function brtRestPost(path, body) {
     return;
   }
 
-  // BRT check fermopoint
+  // BRT check fermopoint — usa scraping pagina web BRT (API REST non restituisce dati utili)
   if (req.url.startsWith("/brt/check-fermopoint")) {
     const qs = req.url.split("?")[1] || "";
     const params = new URLSearchParams(qs);
     const nspediz = params.get("nspediz") || "";
     if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
     try {
-      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz) + "?codiceCliente=" + BRT_USER);
+      // Scraping pagina pubblica BRT tracking
+      const brtWebUrl = "https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz=" + encodeURIComponent(nspediz);
+      const webRes = await fetch(brtWebUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const html = await webRes.text();
+      // Cerca "ARRIVATA AL BRT-fermopoint" e data scadenza nel formato "fino al DD.MM.YYYY"
+      const at_fermopoint = /FERMOPOINT|FERMO.?POINT|PUNTO DI RITIRO/i.test(html);
+      let scadenza_ritiro = "";
+      const scadMatch = html.match(/fino al\s+(\d{2}[.\/-]\d{2}[.\/-]\d{4})/i) 
+        || html.match(/DISPONIBILE[^<]*?(\d{2}[.\/-]\d{2}[.\/-]\d{4})/i)
+        || html.match(/scadenza[^<]*?(\d{2}[.\/-]\d{2}[.\/-]\d{4})/i);
+      if (scadMatch) scadenza_ritiro = scadMatch[1];
+      // Cerca indirizzo punto ritiro
+      let punto_info = "";
+      const pudoMatch = html.match(/BRT-fermopoint<\/[^>]+>\s*<[^>]+>([^<]{5,80})</i)
+        || html.match(/Punto di ritiro[^:]*:\s*<[^>]*>([^<]{5,100})</i);
+      if (pudoMatch) punto_info = pudoMatch[1].trim();
+      console.log("[BRT FERMOPOINT WEB] at_fermopoint:", at_fermopoint, "scadenza:", scadenza_ritiro, "punto:", punto_info);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, punto_info }));
+    } catch(e) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+  // BRT check fermopoint LEGACY (API REST - lasciato per riferimento)
+  if (req.url.startsWith("/brt/check-fermopoint-api")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const nspediz = params.get("nspediz") || "";
+    if (!nspediz) { res.writeHead(400); res.end(JSON.stringify({ error: "nspediz required" })); return; }
+    try {
+      const data = await brtRestGet("/parcelID/" + encodeURIComponent(nspediz));
       const result = data.ttParcelIdResponse || data;
       // La struttura BRT: bolla.dati_spedizione + lista_eventi (array diretto)
       const spedizione = (result.bolla && result.bolla.dati_spedizione) || result.spedizione || {};
@@ -1197,6 +1229,10 @@ async function brtRestPost(path, body) {
         }
         console.log("[BRT FERMOPOINT] result keys:", Object.keys(result).join(","));
         console.log("[BRT FERMOPOINT] spedizione keys:", Object.keys(spedizione).join(","));
+        console.log("[BRT FERMOPOINT] stato_sped_parte1:", spedizione.stato_sped_parte1, "| parte2:", spedizione.stato_sped_parte2);
+        console.log("[BRT FERMOPOINT] desc_stato_parte1:", spedizione.descrizione_stato_sped_parte1, "| parte2:", spedizione.descrizione_stato_sped_parte2);
+        console.log("[BRT FERMOPOINT] filiale_arrivo:", spedizione.filiale_arrivo, "| URL:", spedizione.filiale_arrivo_URL);
+        console.log("[BRT FERMOPOINT] dati_consegna:", JSON.stringify(bolla.dati_consegna||{}));
         console.log("[BRT FERMOPOINT] bolla keys:", Object.keys(bolla).join(","));
         console.log("[BRT FERMOPOINT] eventi count:", eventiArr.length, "at_fermopoint:", at_fermopoint);
         console.log("[BRT FERMOPOINT] scadenza trovata:", scadenza_ritiro);
