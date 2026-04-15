@@ -1740,6 +1740,22 @@ async function selectTicket(tid){
             '<span id="private-toggle-label">Privato</span>'+
           '</button>'+
           '<button class="qr-btn" onclick="openQRModal()" style="height:28px;font-size:11px;background:#FFFAAA;border-color:#e0d800;color:#000"># Risposte rapide</button>'+
+          '<div id="merce-mancante-btn-wrap" style="display:none;position:relative">'+
+            '<button onclick="toggleMerceMananteDropdown()" style="height:28px;font-size:11px;background:#e8f4ff;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:6px;padding:0 10px;cursor:pointer;font-weight:700;font-family:inherit">📦 Merce mancante ▾</button>'+
+            '<div id="merce-mancante-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:9999;min-width:300px;overflow:hidden">'+
+              '<div style="padding:9px 14px;border-bottom:1px solid #f0f2f5">'+
+                '<div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:6px">🎁 Creazione credito / Rimborso</div>'+
+                '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+
+                  '<span style="font-size:11px;color:#666">€</span>'+
+                  '<input id="mm-importo" type="number" min="0.01" step="0.01" placeholder="importo" style="width:80px;padding:4px 8px;border:1.5px solid #d1fae5;border-radius:6px;font-size:13px;font-weight:700;font-family:inherit;outline:none">'+
+                  '<button onclick="inviaMessaggioMerceMancante(\'credito\');toggleMerceMananteDropdown()" style="flex:1;padding:4px 8px;background:#16a34a;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✓ Genera</button>'+
+                '</div>'+
+                '<div id="mm-copia-bar" style="display:none;gap:4px;flex-wrap:wrap"></div>'+
+              '</div>'+
+              '<div onclick="inviaMessaggioMerceMancante(\'rispedizione\');toggleMerceMananteDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#1a73e8;border-bottom:1px solid #f0f2f5">🚚 Rispedizione merce mancante</div>'+
+              '<div onclick="inviaMessaggioMerceMancante(\'peso\');toggleMerceMananteDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#e67e22">⚖️ Richiesta peso al corriere</div>'+
+            '</div>'+
+          '</div>'+
           '<div id="failure-msg-btn-wrap" style="display:none;position:relative">'+
             '<button onclick="toggleFailureDropdown()" style="height:28px;font-size:11px;background:#fff3cd;border:1.5px solid #ffc107;color:#856404;border-radius:6px;padding:0 10px;cursor:pointer;font-weight:700;font-family:inherit">⚠️ Genera msg per ▾</button>'+
             '<div id="failure-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:9999;min-width:260px;overflow:hidden">'+
@@ -3504,6 +3520,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       window._failureOrderId=order.id;
       html+='<br><span style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#856404">⚠️ Problema spedizione</span>';
       setTimeout(function(){var w=document.getElementById('failure-msg-btn-wrap');if(w)w.style.display='block';},400);
+      // Nascondi menu merce mancante se visibile
+      setTimeout(function(){var w=document.getElementById('merce-mancante-btn-wrap');if(w)w.style.display='none';},400);
     }
     const fromEmail2=(t.requester&&t.requester.email)||"";
     const hideActions=fromEmail2.includes("donotreply@amazon")&&(t.subject||"").toLowerCase().includes("annullamento");
@@ -3728,6 +3746,25 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       }
       return;
     }
+    // Intercetta AZIONE_MANUALE_MERCE_MANCANTE — mostra menu senza risposta
+    if(reply&&reply.trim().includes('AZIONE_MANUALE_MERCE_MANCANTE')){
+      const gb0=document.getElementById('gen-box');
+      const aa0=document.getElementById('action-area');
+      const lbl0=document.getElementById('ai-label');
+      const rt0=document.getElementById('reply-text');
+      if(gb0)gb0.style.display='none';
+      if(aa0)aa0.style.cssText='display:block!important;visibility:visible!important';
+      if(rt0){rt0.value='';rt0.placeholder='Scegli azione dal menu "📦 Merce mancante" qui sopra';}
+      if(lbl0)lbl0.textContent='📦 Merce mancante ≥100 pezzi — scegli azione dal menu';
+      setTimeout(function(){
+        var w=document.getElementById('merce-mancante-btn-wrap');
+        if(w)w.style.display='block';
+        // Nascondi menu failure se visibile
+        var wf=document.getElementById('failure-msg-btn-wrap');
+        if(wf)wf.style.display='none';
+      },300);
+      return;
+    }
     // Show response
     const lbl=document.getElementById("ai-label");
     if(lbl)lbl.textContent="✨ Risposta suggerita dall'AI";
@@ -3793,6 +3830,30 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     }
     // Scroll al box AI
     setTimeout(()=>{const ab=document.querySelector(".ai-reply-box");if(ab)ab.scrollIntoView({behavior:"smooth",block:"nearest"});},300);
+    // Rileva merce mancante ≥100 capsule nel testo risposta o nel thread
+    setTimeout(function(){
+      var _replyText=(rt&&rt.value)||reply||'';
+      var _threadText='';
+      if(selectedTicket&&selectedTicket.events){
+        _threadText=(selectedTicket.events||[]).map(function(e){return (e.message&&(e.message.text||e.message.richTextHtml))||'';}).join(' ');
+      }
+      var _fullText=(_replyText+' '+_threadText).toLowerCase();
+      var _merceMancante=/manc[ao]n[ot][ei]|articol.*manc|capsule.*manc|prodott.*manc|merce.*manc|non.*ricevu|solo.*\d+.*capsul|ho ricevu.*\d+/i.test(_fullText);
+      // Cerca quantità ≥100
+      var _qty100=false;
+      var _qtyMatches=_fullText.match(/(\d+)\s*(capsul|cialda|pezzi|pz|unit)/gi)||[];
+      _qtyMatches.forEach(function(m){if(parseInt(m)>=100)_qty100=true;});
+      // Mostra menu solo se merce mancante rilevata CON quantità ≥100
+      var mmWrap=document.getElementById('merce-mancante-btn-wrap');
+      if(mmWrap){
+        mmWrap.style.display=(_merceMancante&&_qty100)?'block':'none';
+        if(_merceMancante&&_qty100){
+          // Salva dati ordine per uso nel menu
+          window._merceMananteOrderId=window._lastShopifyOrder&&window._lastShopifyOrder.id;
+          console.log('[MERCE MANCANTE] Rilevata ≥100 pezzi — mostro menu');
+        }
+      }
+    },300);
     // Auto-risposta se abilitata
     if(reply && isAutoReplyEnabled()){
       var _autoOrder=window._currentOrder||null;
@@ -6464,6 +6525,92 @@ function openElenaPanel(){
   renderPanel();
 }
 
+function toggleMerceMananteDropdown(){
+  var dd=document.getElementById('merce-mancante-dropdown');
+  if(!dd) return;
+  var isOpen=dd.style.display!=='none';
+  if(isOpen){dd.style.display='none';return;}
+  var wrap=document.getElementById('merce-mancante-btn-wrap');
+  if(wrap){
+    var rect=wrap.getBoundingClientRect();
+    if(rect.top<180){dd.style.bottom='auto';dd.style.top='34px';}
+    else{dd.style.top='auto';dd.style.bottom='34px';}
+  }
+  dd.style.display='block';
+  // Pre-popola importo dal campo reply-text se contiene un importo
+  setTimeout(function(){
+    var inp=document.getElementById('mm-importo');
+    if(inp) inp.oninput=function(){_aggiornaMmCopiaBar();};
+    if(inp&&!inp.value){
+      var rt=document.getElementById('reply-text');
+      var txt=(rt&&rt.value)||'';
+      var m=txt.match(/€\s*([\d]+[,.]\d{2})/);
+      if(m) inp.value=m[1].replace(',','.');
+    }
+    // Aggiorna pulsanti copia
+    _aggiornaMmCopiaBar();
+  },50);
+  setTimeout(function(){
+    document.addEventListener('click',function closeMM(e){
+      var w=document.getElementById('merce-mancante-btn-wrap');
+      if(w&&!w.contains(e.target)){
+        var d=document.getElementById('merce-mancante-dropdown');
+        if(d)d.style.display='none';
+        document.removeEventListener('click',closeMM);
+      }
+    });
+  },10);
+}
+
+function _aggiornaMmCopiaBar(){
+  var inp=document.getElementById('mm-importo');
+  var bar=document.getElementById('mm-copia-bar');
+  if(!inp||!bar) return;
+  var val=parseFloat(inp.value);
+  if(isNaN(val)||val<=0){bar.style.display='none';bar.innerHTML='';return;}
+  var valStr=val.toFixed(2).replace('.',',');
+  bar.style.display='flex';
+  bar.innerHTML='<span style="font-size:10px;color:#888;width:100%;margin-bottom:2px">💶 Copia importo:</span>'+
+    '<button onclick="navigator.clipboard.writeText(''+val.toFixed(2)+'');this.textContent='✓ '+this.dataset.v;setTimeout(function(b){b.textContent=b.dataset.v}(this),1500)" data-v="€'+valStr+'" style="background:#fff;border:1.5px solid #16a34a;color:#16a34a;border-radius:5px;padding:2px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">€'+valStr+'</button>';
+}
+
+function inviaMessaggioMerceMancante(tipo){
+  var order=window._lastShopifyOrder||{};
+  var t=selectedTicket||{};
+  var email=(t.requester&&t.requester.email)||'';
+  var nome=(order.customer&&order.customer.first_name?order.customer.first_name+' '+(order.customer.last_name||''):'').trim()||(t.requester&&t.requester.name)||'';
+  var saluto=nome?'Gentile '+nome+',':'Gentile Cliente,';
+  var isMarket=email.includes('marketplace.amazon')||email.includes('orders.temu')||email.includes('tiktok')||email.includes('amazonpayments');
+  var testo='';
+  var importoRaw=parseFloat((document.getElementById('mm-importo')||{}).value||0)||0;
+  var importoStr=importoRaw>0?importoRaw.toFixed(2).replace('.',','):'';
+  if(tipo==='credito'){
+    if(isMarket){
+      testo=saluto+'\n\nci scusiamo sinceramente per l\'inconveniente relativo alla merce mancante dal suo ordine.\n\n'+
+        (importoStr?'Abbiamo verificato e provvederemo a emettere un rimborso parziale di €'+importoStr+' per i prodotti non ricevuti sul metodo di pagamento utilizzato. Il rimborso verrà elaborato entro 3-5 giorni lavorativi.':'Abbiamo verificato e provvederemo a emettere un rimborso parziale per i prodotti non ricevuti sul metodo di pagamento utilizzato. Il rimborso verrà elaborato entro 3-5 giorni lavorativi.')+
+        '\n\nCi scusiamo nuovamente per il disagio.\n\nCordiali saluti,\nIl Team Yespresso'+
+        (importoStr?'\n[COPIA_IMPORTO:'+importoRaw.toFixed(2)+']':'');
+    } else {
+      testo=saluto+'\n\nci scusiamo sinceramente per l\'inconveniente relativo alla merce mancante dal suo ordine.\n\n'+
+        (importoStr?'Abbiamo verificato e provvederemo a creare un credito di €'+importoStr+' a suo favore, da utilizzare su yespresso.it entro 90 giorni.':'Abbiamo verificato e provvederemo a creare un credito a suo favore pari al valore dei prodotti non ricevuti, da utilizzare su yespresso.it entro 90 giorni.')+
+        '\n\nPer utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparirà un banner con scritto "UTILIZZALO".\n\nCordiali saluti,\nIl Team Yespresso'+
+        (importoStr?'\n[COPIA_IMPORTO:'+importoRaw.toFixed(2)+']':'');
+    }
+  } else if(tipo==='rispedizione'){
+    testo=saluto+'\n\nci scusiamo per la merce mancante dal suo ordine.\n\nAbbiamo verificato e stiamo predisponendo la spedizione degli articoli mancanti. Riceverà a breve un nuovo numero di tracciamento via email per seguire la consegna.\n\nCordiali saluti,\nIl Team Yespresso';
+  } else if(tipo==='peso'){
+    testo=saluto+'\n\nci scusiamo per l\'inconveniente.\n\nPer verificare quanto segnalato, abbiamo aperto una richiesta formale al corriere BRT per la verifica del peso della spedizione. Questo processo richiede solitamente 3-5 giorni lavorativi.\n\nNon appena riceveremo riscontro dal corriere la contatteremo immediatamente per comunicarle l\'esito e procedere di conseguenza.\n\nLa ringraziamo per la pazienza.\n\nCordiali saluti,\nIl Team Yespresso';
+  }
+  var genBox=document.getElementById('gen-box');
+  var actionArea=document.getElementById('action-area');
+  var replyText=document.getElementById('reply-text');
+  var aiLabel=document.getElementById('ai-label');
+  if(genBox)genBox.style.display='none';
+  if(actionArea)actionArea.style.display='block';
+  if(replyText)replyText.value=testo;
+  if(aiLabel)aiLabel.textContent='📦 Messaggio merce mancante';
+}
+
 function toggleFailureDropdown(){
   var dd=document.getElementById('failure-dropdown');
   if(!dd) return;
@@ -7603,6 +7750,7 @@ var AI_PROMPT_SECTIONS_DEFAULT=[
   {id:'fattura',label:'🧾 Richiesta / Modifica Fattura',locked:false,text:"REGOLA FATTURA:\n\nSe il cliente chiede la fattura o la modifica della fattura, distingui in base alla provenienza dell'ordine:\n\n1) CLIENTE AMAZON / TEMU / TIKTOK (email marketplace o ordine con Amazon Order Id / PARENT_ORDER_SN / TikTok Order Id): Rispondi che per gli ordini effettuati sul marketplace la fattura deve essere richiesta direttamente al marketplace. Per riceverla automaticamente sugli ordini futuri, il cliente puo iscriversi come cliente business sulla piattaforma e la fattura verra emessa automaticamente dal marketplace.\n\n2) CLIENTE SITO YESPRESSO (ordine Shopify senza attributi marketplace):\n\na) Controlla se nei dettagli aggiuntivi dell'ordine e presente il campo 'invoice' con valore 'yes'. Se SI → la fattura e stata emessa. Comunica al cliente che la fattura e stata emessa e gli verra recapitata tramite il Sistema di Interscambio (SDI) dell'Agenzia delle Entrate nei prossimi giorni. Poi elenca i dati di fatturazione presenti nei dettagli aggiuntivi dell'ordine (codice fiscale, ragione sociale/nome azienda, partita IVA, codice SDI, PEC) cosi il cliente puo verificare che siano corretti.\n\nb) Se nei dettagli aggiuntivi NON e presente il campo 'invoice: yes' → la fattura NON e stata richiesta al momento dell'ordine. Rispondi che purtroppo non e possibile emettere la fattura in un secondo momento: per legge la fattura deve essere emessa al momento dell'effettuazione dell'operazione (art. 21 comma 4 DPR 633/1972). Per i prossimi ordini, per richiedere la fattura il cliente deve cliccare sul pulsante rosso RICHIEDI FATTURA COME AZIENDA presente sopra il tasto Checkout sul sito yespresso.it e inserire i dati di fatturazione."},
   {id:'compatibilita',label:'📋 Compatibilità capsule',locked:false,text:"REGOLA COMPATIBILITA CAPSULE — FONDAMENTALE: I sistemi capsule venduti da Yespresso sono INCOMPATIBILI tra loro. Non confonderli mai.\\n\\nSISTEMI DISPONIBILI:\\n- Capsule A MODO MIO: compatibili con macchine Lavazza A Modo Mio. NON compatibili con macchine Bialetti.\\n- Capsule BIALETTI (Mokona/Mokespresso): compatibili con macchine Bialetti Mokona e Mokespresso. NON compatibili con macchine Lavazza A Modo Mio. NON sono la stessa cosa delle capsule A Modo Mio.\\n- Capsule NESPRESSO: compatibili con macchine Nespresso. Sistema diverso da tutti gli altri.\\n- Capsule CAFFITALY: compatibili con macchine Caffitaly/Tchibo/Wacaco. Sistema diverso.\\n- Capsule DOLCE GUSTO: compatibili con macchine Nescafe Dolce Gusto.\\n- Cialde ESE 44mm: compatibili con macchine che accettano cialde carta standard ESE 44mm.\\n\\nATTENZIONE: Se il cliente ha ordinato capsule A Modo Mio ma ha una macchina Bialetti Mokona (o viceversa), il prodotto NON e compatibile con la sua macchina. Non dire mai che le capsule A Modo Mio sono compatibili con macchine Bialetti generiche — Bialetti Mokona usa un sistema diverso da A Modo Mio."},
   {id:'credito',label:'🎁 Credito e rimborsi negozio',locked:false,text:"ISTRUZIONI CREDITO NEGOZIO: Quando proponi un credito sul sito yespresso.it, includi SEMPRE queste istruzioni: Il credito e valido per 90 giorni. Per utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparira un banner con scritto utilizzalo.\n\nREGOLA RICHIESTA SCONTO: 1) Se ha un ordine recente non ancora spedito: rispondi che i prezzi sono gia scontati. 2) Se non ha ordini in corso: usa la risposta rapida PROMOZIONE DELLA SETTIMANA."},
+  {id:'merce_mancante',label:'📦 Merce mancante',locked:false,text:"REGOLA MERCE MANCANTE:\n\nQuando il cliente segnala di aver ricevuto meno prodotti di quelli ordinati (capsule, cialde o altri articoli mancanti dall'ordine):\n\n1) PRIMA RISPOSTA — RICHIEDI SEMPRE queste informazioni se non sono già tutte presenti:\n- Quali prodotti mancano (nome e tipo)\n- Quante capsule/cialde/buste mancano esattamente\n- Foto del pacco ricevuto con etichetta BRT visibile (in formato JPG)\n- Foto del contenuto ricevuto\nNON procedere con rimborsi, crediti o rispedizioni prima di avere foto E quantità.\n\n2) SE HA GIÀ FORNITO FOTO E QUANTITÀ — distingui per quantità:\n\nA) MENO DI 100 capsule/cialde mancanti:\n- Esprimi dispiacere\n- Se acquistato su SITO YESPRESSO: crea un credito pari al valore dei prodotti mancanti\n- Se acquistato su AMAZON / TEMU / TIKTOK: procedi con rimborso parziale\n- Calcola il valore: prezzo riga / quantità totale x quantità mancante\n- Includi sempre il calcolo trasparente\n\nB) 100 O PIÙ capsule/cialde mancanti:\n- NON generare nessuna risposta al cliente\n- Rispondi SOLO con la parola chiave: AZIONE_MANUALE_MERCE_MANCANTE\n- L'operatore sceglierà manualmente come procedere\n\nCALCOLO IVA: IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%.\nPer sito/Temu/TikTok: indica SOLO valore IVA inclusa. Per Amazon: indica ENTRAMBI i valori.\n\nIMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata per i casi con importo: per sito/Temu/TikTok [COPIA_IMPORTO:X,XX]; per Amazon [COPIA_IMPORTO:X,XX|Y,YY]."},
   {id:'custom',label:'➕ Regole personalizzate',locked:false,text:''}
 ];
 function getAIPromptSections(){
