@@ -3364,9 +3364,11 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     const tnCheck=fCheck&&(fCheck.tracking_number||(fCheck.tracking_numbers&&fCheck.tracking_numbers[0]))||'';
     const isFermopointStatus=fCheck&&(fCheck.shipment_status==='delivered'||fCheck.shipment_status==='ready_for_pickup');
     if(isFermopointStatus&&tnCheck){
-      proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck)).then(async function(brtR){
-        if(brtR&&brtR.ok){const brtD=await brtR.json();if(brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup'){order._brtFermopoint=true;order._brtScadenza=brtD.scadenza_ritiro||'';order._brtPuntoInfo=brtD.punto_info||'';console.log('[BRT] Fermopoint:',order._brtPuntoInfo||'nd');}}
-      }).catch(function(){});
+      // AWAIT — aspetta il check fermopoint prima di generare la risposta AI
+      try{
+        const brtR=await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck));
+        if(brtR&&brtR.ok){const brtD=await brtR.json();if(brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup'){order._brtFermopoint=true;order._brtScadenza=brtD.scadenza_ritiro||'';order._brtPuntoInfo=brtD.punto_info||'';console.log('[BRT] Fermopoint scadenza:',order._brtScadenza||'nd');}}
+      }catch(e){console.log('[BRT] check-fermopoint error:',e.message);}
     }
   }
 
