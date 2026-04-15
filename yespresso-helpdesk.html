@@ -1758,7 +1758,7 @@ async function selectTicket(tid){
           '</div>'+
           '<div id="failure-msg-btn-wrap" style="display:none;position:relative">'+
             '<button onclick="toggleFailureDropdown()" style="height:28px;font-size:11px;background:#fff3cd;border:1.5px solid #ffc107;color:#856404;border-radius:6px;padding:0 10px;cursor:pointer;font-weight:700;font-family:inherit">⚠️ Genera msg per ▾</button>'+
-            '<div id="failure-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:9999;min-width:300px;max-height:70vh;overflow-y:auto">'+
+            '<div id="failure-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:10999;min-width:300px;overflow:visible">'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'indirizzo\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#dc3545;border-bottom:1px solid #f0f2f5">📍 Indirizzo inesistente/sconosciuto</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'assente\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#fd7e14;border-bottom:1px solid #f0f2f5">🔔 Assente dopo lasciato avviso</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rifiuto\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6f42c1;border-bottom:1px solid #f0f2f5">❌ Rifiuto senza motivazione</div>'+
@@ -6487,6 +6487,7 @@ function openElenaPanel(){
       row('','always','🏷️','Correggere Etichette',link('https://yespresso.cloud/?status=error','Apri Yespresso Cloud','#e53e3e'),'always')+
       row('','always','🟠','Messaggi Temu',link('https://seller-eu.temu.com/chat.html?refer_page_name=home&refer_page_id=20406_1775814537293_x298aqefye&refer_page_sn=20406&_x_sessn_id=st0i61wa2s','Apri Temu Chat','#ff6600'),'always')+
       row('','always','🎵','Messaggi TikTok',link('https://seller-it.tiktok.com/chat?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT','Apri TikTok Chat','#000'),'always')+
+      row('','always','🟠','Richieste Cancellazioni Temu',link('https://seller-eu.temu.com/orders.html?refer_page_name=home&refer_page_id=20406_1776246750585_fv5qiglu21&refer_page_sn=20406&_x_sessn_id=9s02ygkjpt&activeTab=0','Apri Cancellazioni Temu','#ff6600'),'always')+
 
       // Giornaliere una volta
       '<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin:12px 0 8px;letter-spacing:.5px">⏰ Attività Giornaliere (1 volta al giorno)</div>'+
