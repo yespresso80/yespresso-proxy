@@ -1758,7 +1758,7 @@ async function selectTicket(tid){
           '</div>'+
           '<div id="failure-msg-btn-wrap" style="display:none;position:relative">'+
             '<button onclick="toggleFailureDropdown()" style="height:28px;font-size:11px;background:#fff3cd;border:1.5px solid #ffc107;color:#856404;border-radius:6px;padding:0 10px;cursor:pointer;font-weight:700;font-family:inherit">⚠️ Genera msg per ▾</button>'+
-            '<div id="failure-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:9999;min-width:260px;overflow:hidden">'+
+            '<div id="failure-dropdown" style="display:none;position:absolute;bottom:34px;left:0;background:#fff;border:1.5px solid #e0e4ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:9999;min-width:300px;max-height:70vh;overflow-y:auto">'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'indirizzo\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#dc3545;border-bottom:1px solid #f0f2f5">📍 Indirizzo inesistente/sconosciuto</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'assente\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#fd7e14;border-bottom:1px solid #f0f2f5">🔔 Assente dopo lasciato avviso</div>'+
               '<div onclick="inviaMessaggioProblemaSpedizione(window._failureOrderId,\'rifiuto\');toggleFailureDropdown()" style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#6f42c1;border-bottom:1px solid #f0f2f5">❌ Rifiuto senza motivazione</div>'+
@@ -6572,7 +6572,7 @@ function _aggiornaMmCopiaBar(){
   var valStr=val.toFixed(2).replace('.',',');
   bar.style.display='flex';
   bar.innerHTML='<span style="font-size:10px;color:#888;width:100%;margin-bottom:2px">💶 Copia importo:</span>'+
-    '<button onclick="navigator.clipboard.writeText(''+val.toFixed(2)+'');this.textContent='✓ '+this.dataset.v;setTimeout(function(b){b.textContent=b.dataset.v}(this),1500)" data-v="€'+valStr+'" style="background:#fff;border:1.5px solid #16a34a;color:#16a34a;border-radius:5px;padding:2px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">€'+valStr+'</button>';
+    '<button onclick="navigator.clipboard.writeText(\"'+val.toFixed(2)+'\");this.textContent=\"✓ €'+valStr+'\";setTimeout(function(){document.querySelectorAll(\"#mm-copia-bar button\").forEach(function(b){b.textContent=\"€'+valStr+'\"})},1500)" style="background:#fff;border:1.5px solid #16a34a;color:#16a34a;border-radius:5px;padding:2px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">€'+valStr+'</button>';
 }
 
 function inviaMessaggioMerceMancante(tipo){
@@ -6622,7 +6622,7 @@ function toggleFailureDropdown(){
   var wrap=document.getElementById('failure-msg-btn-wrap');
   if(wrap){
     var rect=wrap.getBoundingClientRect();
-    var menuH=220; // altezza stimata menu
+    var menuH=320; // altezza stimata menu (6 voci ~50px cad)
     if(rect.top < menuH){
       // Poco spazio sopra → apri verso il basso
       dd.style.bottom='auto';
