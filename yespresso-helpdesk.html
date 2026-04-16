@@ -3414,6 +3414,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   }
 
   const orderInfo=formatOrderInfo(order);
+  console.log('[ORDER INFO per AI]', orderInfo);
   // Se c'è un indirizzo fermopoint incollato manualmente, aggiungilo al prompt
   const fpAddr = order && window._fermopointAddrMap && (window._fermopointAddrMap[order.id] || window._fermopointAddrMap[String(order.id)] || window._fermopointAddrMap[Number(order.id)]);
   console.log('[FERMOPOINT] order.id='+( order&&order.id)+' fpAddr='+fpAddr+' mapKeys='+JSON.stringify(Object.keys(window._fermopointAddrMap||{})));
