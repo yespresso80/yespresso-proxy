@@ -1808,7 +1808,10 @@ async function selectTicket(tid){
       const isAgent=ev.author&&ev.author.type==="agent";
       const role=isAgent?"AGENTE YESPRESSO":"CLIENTE";
       const txt=(ev.message.text||ev.message.richTextHtml||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").substring(0,1000).trim();
-      return role+": "+txt;
+      // Aggiungi data e ora del messaggio per permettere all'AI di applicare regole temporali
+      const evTs=ev.date||ev.createdAt||ev.created_at||"";
+      const evDateStr=evTs?(function(){var d=new Date(evTs);return d.toLocaleDateString("it-IT")+" ore "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");})():"";
+      return role+(evDateStr?" ["+evDateStr+"]":"")+": "+txt;
     }).join("\n");
   }).filter(Boolean).join("\n---\n");
   // Mostra box AI solo per ticket open/pending — non per solved/closed
