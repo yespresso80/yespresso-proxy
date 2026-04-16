@@ -5413,7 +5413,7 @@ function openFilippoPanel(){
         // Pulisci e parsa
         var clean=aiText.replace(/```json|```/g,'').trim();
         var nuovaBolle=JSON.parse(clean);
-        if(!Array.isArray(nuovaBolle)||nuovaBolle.length===0){alert('L'AI non ha trovato bolle nel PDF');return;}
+        if(!Array.isArray(nuovaBolle)||nuovaBolle.length===0){alert('Nessuna bolla trovata nel PDF');return;}
 
         if(status)status.innerHTML='<span style="color:#f59e0b">☁️ Caricamento PDF su GitHub...</span>';
 
@@ -5454,7 +5454,7 @@ function openFilippoPanel(){
     };
 
     window._bolleDelete=async function(id){
-      if(!confirm('Eliminare questa bolla dall'archivio?'))return;
+      if(!confirm('Eliminare questa bolla?'))return;
       bolle=bolle.filter(function(b){return b.id!==id;});
       await saveIndex();
       render();
