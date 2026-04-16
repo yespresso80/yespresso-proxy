@@ -3258,7 +3258,8 @@ function formatOrderInfo(order){
     const orderDate=new Date(order.created_at);
     const oggi=new Date();
     const giorniTrascorsi=Math.floor((oggi-orderDate)/(1000*60*60*24));
-    info+=" | Data ordine: "+orderDate.toLocaleDateString("it-IT")+" ("+giorniTrascorsi+" giorni fa)"+(giorniTrascorsi>45?" ⚠️ ORDINE OLTRE 45 GIORNI — NON GESTIBILE":"");
+    const orderTimeStr=orderDate.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
+    info+=" | Data ordine: "+orderDate.toLocaleDateString("it-IT")+" ore "+orderTimeStr+" ("+giorniTrascorsi+" giorni fa)"+(giorniTrascorsi>45?" ⚠️ ORDINE OLTRE 45 GIORNI — NON GESTIBILE":"");
   }
   if(f){
     if(f.shipment_status)info+=" | "+(sS[f.shipment_status]||f.shipment_status);
