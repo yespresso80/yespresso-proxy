@@ -3844,7 +3844,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         _threadText=(selectedTicket.events||[]).map(function(e){return (e.message&&(e.message.text||e.message.richTextHtml))||'';}).join(' ');
       }
       var _fullText=(_replyText+' '+_threadText).toLowerCase();
-      var _merceMancante=/manc[ao]n[ot][ei]|articol.*manc|capsule.*manc|prodott.*manc|merce.*manc|non.*ricevu|solo.*\d+.*capsul|ho ricevu.*\d+/i.test(_fullText);
+      // Rileva merce mancante DENTRO l'ordine (non pacco non consegnato)
+      var _merceMancante=(/articol.*manc|capsule.*manc|prodott.*manc|merce.*manc|solo.*\d+.*capsul|ho ricevu.*\d+.*capsul|ricevuto solo|mancanti dall.ordin|buste mancanti|pezzi mancanti/i.test(_fullText)) && !(/non ho ricevuto il pacco|pacco non.*arrivat|non.*ricevuto il pacco|pacco.*non.*consegnat|spedizione.*non.*arrivat/i.test(_fullText));
       // Cerca quantità ≥100
       var _qty100=false;
       var _qtyMatches=_fullText.match(/(\d+)\s*(capsul|cialda|pezzi|pz|unit)/gi)||[];
