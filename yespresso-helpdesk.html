@@ -5396,7 +5396,7 @@ function openFilippoPanel(){
 
       // Chiama AI per analizzare le bolle
       try{
-        var aiResp=await fetch('https://api.anthropic.com/v1/messages',{
+        var aiResp=await fetch(PROXY+'/anthropic/v1/messages',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify({
