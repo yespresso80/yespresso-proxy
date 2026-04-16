@@ -3348,11 +3348,26 @@ async function generateReplyWithFermopoint(){
   const t = selectedTicket;
   if(!t) return;
   const email = (t.requester&&t.requester.email)||'';
+
+  // Leggi indirizzo dal campo input (anche se non è stato digitato nulla ma solo incollato)
+  const order = window._lastShopifyOrder;
+  if(order){
+    const fpId='fp-addr-'+order.id;
+    const inp=document.getElementById(fpId);
+    if(inp&&inp.value.trim()){
+      window._fermopointAddrMap = window._fermopointAddrMap||{};
+      window._fermopointAddrMap[order.id]=inp.value.trim();
+    }
+  }
+
   const events = (t.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
   const lastMsg = events.length ? ((events[events.length-1].message||{}).text||'') : '';
   const fullThread = events.map(ev=>{
-    const role=(ev.author&&ev.author.type==='agent')?'AGENTE':'CLIENTE';
-    return role+': '+((ev.message&&(ev.message.text||ev.message.richTextHtml))||'').substring(0,600);
+    const isAgent=ev.author&&ev.author.type==='agent';
+    const role=isAgent?'AGENTE YESPRESSO':'CLIENTE';
+    const evTs=ev.date||ev.createdAt||ev.created_at||'';
+    const evDateStr=evTs?(function(){var d=new Date(evTs);return d.toLocaleDateString('it-IT')+' ore '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');})():'';
+    return role+(evDateStr?' ['+evDateStr+']':'')+': '+((ev.message&&(ev.message.text||ev.message.richTextHtml))||'').substring(0,600);
   }).join('\n');
   await generateReply(lastMsg, email, fullThread);
 }
