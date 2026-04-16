@@ -1177,6 +1177,9 @@ async function brtRestPost(path, body) {
       const pudoMatch = html.match(/BRT-fermopoint<\/[^>]+>\s*<[^>]+>([^<]{5,80})</i)
         || html.match(/Punto di ritiro[^:]*:\s*<[^>]*>([^<]{5,100})</i);
       if (pudoMatch) punto_info = pudoMatch[1].trim();
+      // Log porzione HTML intorno a "fermopoint" per debug punto_info
+      const fpIdx = html.toLowerCase().indexOf("fermopoint");
+      if(fpIdx > 0) console.log("[BRT FERMOPOINT WEB HTML]", html.substring(Math.max(0,fpIdx-100), fpIdx+500).replace(/\s+/g,' '));
       console.log("[BRT FERMOPOINT WEB] at_fermopoint:", at_fermopoint, "scadenza:", scadenza_ritiro, "punto:", punto_info);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, at_fermopoint, scadenza_ritiro, punto_info }));
@@ -1413,6 +1416,94 @@ async function brtRestPost(path, body) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
+    return;
+  }
+
+  // ── ARCHIVIO BOLLE ──────────────────────────────────────────────────────
+  const CORS_BOLLE = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS'};
+  const GH_BOLLE_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/bolle-index.json';
+  const GH_BOLLE_FILES_BASE = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/bolle/';
+
+  async function ghBolleIndexGet() {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return { data: [], sha: null };
+    const r = await fetch(GH_BOLLE_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (r.status === 404) return { data: [], sha: null };
+    const j = await r.json();
+    return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+  }
+
+  async function ghBolleIndexSave(data, sha) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    const body = { message: 'update bolle-index', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+    if (sha) body.sha = sha;
+    const r = await fetch(GH_BOLLE_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { const t = await r.text(); throw new Error('GitHub index save error: '+t); }
+  }
+
+  async function ghBollePdfSave(filename, base64data) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) throw new Error('GH_TOKEN non configurato');
+    // Check if file exists to get SHA
+    let sha = null;
+    const chk = await fetch(GH_BOLLE_FILES_BASE+filename, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (chk.ok) { const j = await chk.json(); sha = j.sha; }
+    const body = { message: 'add bolla pdf '+filename, content: base64data };
+    if (sha) body.sha = sha;
+    const r = await fetch(GH_BOLLE_FILES_BASE+filename, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { const t = await r.text(); throw new Error('GitHub pdf save error: '+t.substring(0,200)); }
+    const j = await r.json();
+    return j.content ? j.content.download_url : null;
+  }
+
+  async function ghBollePdfDelete(filename) {
+    const ghToken = process.env.GH_TOKEN;
+    if (!ghToken) return;
+    const chk = await fetch(GH_BOLLE_FILES_BASE+filename, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+    if (!chk.ok) return;
+    const j = await chk.json();
+    await fetch(GH_BOLLE_FILES_BASE+filename, { method: 'DELETE', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'delete bolla '+filename, sha: j.sha }) });
+  }
+
+  if (req.url === '/bolle-index' && req.method === 'OPTIONS') { res.writeHead(200, CORS_BOLLE); res.end(); return; }
+  if (req.url === '/bolle-index' && req.method === 'GET') {
+    try { const { data } = await ghBolleIndexGet(); res.writeHead(200, CORS_BOLLE); res.end(JSON.stringify(data)); }
+    catch(e) { console.error('[BOLLE GET]', e.message); res.writeHead(200, CORS_BOLLE); res.end('[]'); }
+    return;
+  }
+  if (req.url === '/bolle-index' && req.method === 'POST') {
+    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+    try {
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      // payload: { bolle: [...array completo aggiornato] }
+      const { sha } = await ghBolleIndexGet();
+      await ghBolleIndexSave(payload.bolle, sha);
+      res.writeHead(200, CORS_BOLLE); res.end(JSON.stringify({ ok: true }));
+    } catch(e) { console.error('[BOLLE POST]', e.message); res.writeHead(500, CORS_BOLLE); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+  if (req.url.startsWith('/bolle-pdf') && req.method === 'OPTIONS') { res.writeHead(200, CORS_BOLLE); res.end(); return; }
+  if (req.url.startsWith('/bolle-pdf') && req.method === 'POST') {
+    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+    try {
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      // payload: { filename: 'bolla_xxx.pdf', base64: '...' }
+      const downloadUrl = await ghBollePdfSave(payload.filename, payload.base64);
+      res.writeHead(200, CORS_BOLLE); res.end(JSON.stringify({ ok: true, url: downloadUrl }));
+    } catch(e) { console.error('[BOLLE PDF POST]', e.message); res.writeHead(500, CORS_BOLLE); res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+  if (req.url.startsWith('/bolle-pdf/') && req.method === 'DELETE') {
+    const filename = decodeURIComponent(req.url.replace('/bolle-pdf/', ''));
+    try {
+      await ghBollePdfDelete(filename);
+      // Rimuovi anche dall'indice
+      const { data, sha } = await ghBolleIndexGet();
+      const updated = data.filter(b => b.filename !== filename);
+      await ghBolleIndexSave(updated, sha);
+      res.writeHead(200, CORS_BOLLE); res.end(JSON.stringify({ ok: true }));
+    } catch(e) { res.writeHead(500, CORS_BOLLE); res.end(JSON.stringify({ ok: false, error: e.message })); }
     return;
   }
 

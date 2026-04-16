@@ -5176,6 +5176,8 @@ function openFilippoPanel(){
     id:'attivita',label:'✅ Attività da Fare',periodo:'',custom:true,groups:[]
   },{
     id:'sandbox_ai',label:'🧪 Test AI Automatica',periodo:'',custom:true,groups:[]
+  },{
+    id:'archivio_bolle',label:'📁 Archivio Bolle',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -5248,10 +5250,222 @@ function openFilippoPanel(){
       else if(activeSec.id==='ordini_ritardo') renderOrdiniRitardo(null,panel,null);
       else if(activeSec.id==='attivita') renderAttivita(null,panel,null);
       else if(activeSec.id==='sandbox_ai') renderSandboxAI(panel);
+      else if(activeSec.id==='archivio_bolle') renderArchivioBolle(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
   window.filippoSetSection=function(id){activeSection=id;renderPanel();};
+  // ── ARCHIVIO BOLLE ──────────────────────────────────────────────────────
+  async function renderArchivioBolle(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca)return;
+    ca.innerHTML='<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento archivio...</div>';
+
+    var PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    var filterFornitore=window._bolleFilterForn||'';
+    var filterAnno=window._bolleFilterAnno||'';
+
+    // Carica indice dal server
+    var bolle=[];
+    try{
+      var r=await fetch(PROXY+'/bolle-index');
+      bolle=await r.json();
+      if(!Array.isArray(bolle))bolle=[];
+    }catch(e){bolle=[];}
+
+    function genId(){return 'b'+Date.now()+'_'+Math.random().toString(36).slice(2,6);}
+
+    function getAnni(){
+      var aa=bolle.map(function(b){return b.anno}).filter(Boolean);
+      aa.push(new Date().getFullYear());
+      return [...new Set(aa)].sort(function(a,b){return b-a;});
+    }
+
+    async function saveIndex(){
+      try{
+        await fetch(PROXY+'/bolle-index',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bolle:bolle})});
+        showToast('✅ Archivio salvato su cloud');
+      }catch(e){showToast('⚠️ Salvataggio fallito: '+e.message);}
+    }
+
+    function render(){
+      var anni=getAnni();
+      var filtered=bolle.filter(function(b){
+        return (!filterFornitore||b.fornitore===filterFornitore)&&(!filterAnno||String(b.anno)===String(filterAnno));
+      }).sort(function(a,b){
+        if(b.anno!==a.anno)return (b.anno||0)-(a.anno||0);
+        return (b.data_bolla||'').localeCompare(a.data_bolla||'');
+      });
+
+      var allFornitori=[...new Set(bolle.map(function(b){return b.fornitore;}).filter(Boolean))].sort();
+
+      var html='<div style="max-width:960px">';
+      // Header
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">';
+      html+='<div><div style="font-size:18px;font-weight:700;color:#166534">📁 Archivio Bolle</div>';
+      html+='<div style="font-size:12px;color:#888;margin-top:2px">Carica un PDF — l'AI riconosce automaticamente le bolle</div></div>';
+      html+='<button onclick="window._bolleShowUpload=!window._bolleShowUpload;window._bolleRender&&window._bolleRender()" style="background:#166534;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📤 Carica PDF</button>';
+      html+='</div>';
+
+      // Upload form
+      if(window._bolleShowUpload){
+        html+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:20px;margin-bottom:20px">';
+        html+='<div style="font-size:14px;font-weight:700;color:#166534;margin-bottom:12px">📤 Carica PDF con bolle</div>';
+        html+='<div style="font-size:12px;color:#555;margin-bottom:12px">Puoi caricare un PDF con una o più bolle di fornitori diversi. L'AI le riconoscerà automaticamente.</div>';
+        html+='<input id="bolle-file-input" type="file" accept=".pdf,.PDF" style="font-size:13px;font-family:inherit;margin-bottom:12px">';
+        html+='<div id="bolle-upload-status" style="font-size:12px;color:#888;margin-bottom:8px"></div>';
+        html+='<div style="display:flex;gap:10px">';
+        html+='<button onclick="window._bolleAnalizza()" style="background:#166534;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🤖 Analizza con AI</button>';
+        html+='<button onclick="window._bolleShowUpload=false;window._bolleRender&&window._bolleRender()" style="background:#f0f2f5;color:#555;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">Annulla</button>';
+        html+='</div></div>';
+      }
+
+      // Filtri
+      html+='<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">';
+      html+='<select onchange="window._bolleFilterForn=this.value;window._bolleRender&&window._bolleRender()" style="padding:6px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:inherit">';
+      html+='<option value="">Tutti i fornitori</option>';
+      allFornitori.forEach(function(f){html+='<option value="'+f+'"'+(filterFornitore===f?' selected':'')+'>'+f+'</option>';});
+      html+='</select>';
+      html+='<select onchange="window._bolleFilterAnno=this.value;window._bolleRender&&window._bolleRender()" style="padding:6px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:12px;font-family:inherit">';
+      html+='<option value="">Tutti gli anni</option>';
+      anni.forEach(function(a){html+='<option value="'+a+'"'+(String(filterAnno)===String(a)?' selected':'')+'>'+a+'</option>';});
+      html+='</select>';
+      html+='<span style="font-size:12px;color:#888">'+filtered.length+' boll'+(filtered.length===1?'a':'e')+' trovat'+(filtered.length===1?'a':'e')+'</span>';
+      html+='</div>';
+
+      // Tabella
+      if(filtered.length===0){
+        html+='<div style="text-align:center;padding:50px;color:#aaa;font-size:14px">Nessuna bolla trovata.<br><span style="font-size:12px">Carica un PDF con il bottone 📤 Carica PDF</span></div>';
+      } else {
+        var byAnno={};
+        filtered.forEach(function(b){var y=b.anno||'—';if(!byAnno[y])byAnno[y]=[];byAnno[y].push(b);});
+        Object.keys(byAnno).sort(function(a,b){return b-a;}).forEach(function(anno){
+          html+='<div style="font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;border-bottom:2px solid #86efac;padding-bottom:4px">'+anno+'</div>';
+          html+='<div style="background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden;margin-bottom:12px">';
+          html+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+          html+='<thead><tr style="background:#f8faff">';
+          ['Fornitore','N° Bolla','Data','Contenuto/Note','File',''].forEach(function(h){
+            html+='<th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px">'+h+'</th>';
+          });
+          html+='</tr></thead><tbody>';
+          byAnno[anno].forEach(function(b,i){
+            var dataStr=b.data_bolla?new Date(b.data_bolla+'T12:00:00').toLocaleDateString('it-IT'):'—';
+            html+='<tr style="border-top:1px solid #f0f2f5;background:'+(i%2===0?'#fff':'#fafbfd')+'">';
+            html+='<td style="padding:9px 12px;font-weight:600;color:#1a1a2e">'+b.fornitore+'</td>';
+            html+='<td style="padding:9px 12px;color:#555;font-family:monospace;font-size:12px">'+(b.numero||'—')+'</td>';
+            html+='<td style="padding:9px 12px;color:#555;white-space:nowrap">'+dataStr+'</td>';
+            html+='<td style="padding:9px 12px;color:#777;font-size:12px;max-width:280px">'+(b.note||'—')+'</td>';
+            html+='<td style="padding:9px 12px">';
+            if(b.pdf_url){
+              html+='<a href="'+b.pdf_url+'" target="_blank" style="color:#0369a1;font-weight:600;font-size:12px;text-decoration:none">📄 Apri</a>';
+            } else {
+              html+='<span style="color:#ccc;font-size:12px">—</span>';
+            }
+            html+='</td>';
+            html+='<td style="padding:9px 12px"><button onclick="window._bolleDelete(''+b.id+'')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:15px" title="Elimina">🗑</button></td>';
+            html+='</tr>';
+          });
+          html+='</tbody></table></div>';
+        });
+      }
+      html+='</div>';
+      ca.innerHTML=html;
+    }
+
+    window._bolleRender=render;
+    window._bolleShowUpload=window._bolleShowUpload||false;
+    window._bolleFilterForn=filterFornitore;
+    window._bolleFilterAnno=filterAnno;
+
+    window._bolleAnalizza=async function(){
+      var fileInp=document.getElementById('bolle-file-input');
+      var status=document.getElementById('bolle-upload-status');
+      if(!fileInp||!fileInp.files||!fileInp.files[0]){alert('Seleziona un file PDF');return;}
+      var file=fileInp.files[0];
+      if(status)status.innerHTML='<span style="color:#f59e0b">⏳ Lettura PDF in corso...</span>';
+
+      // Leggi PDF come base64
+      var b64=await new Promise(function(res,rej){
+        var r=new FileReader();
+        r.onload=function(e){res(e.target.result.split(',')[1]);};
+        r.onerror=rej;
+        r.readAsDataURL(file);
+      });
+
+      if(status)status.innerHTML='<span style="color:#f59e0b">🤖 AI in analisi del PDF...</span>';
+
+      // Chiama AI per analizzare le bolle
+      try{
+        var aiResp=await fetch('https://api.anthropic.com/v1/messages',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            model:'claude-sonnet-4-20250514',
+            max_tokens:4000,
+            messages:[{role:'user',content:[
+              {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+              {type:'text',text:'Analizza questo PDF che contiene una o più bolle di consegna (DDT - Documenti di Trasporto). Per ogni bolla trovata estrai: fornitore (nome azienda mittente), numero_bolla (numero DDT/documento), data_bolla (formato YYYY-MM-DD), anno (intero), note (descrizione breve dei prodotti, es: "Capsule Nespresso 320 pz, Capsule Bialetti 128 pz"). Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo, nessun backtick. Esempio: [{"fornitore":"Noire S.r.l.","numero_bolla":"DI/505","data_bolla":"2025-12-16","anno":2025,"note":"Capsule CAF 240 NAP Cremoso 320 pz"}]'}
+            ]}]
+          })
+        });
+        var aiData=await aiResp.json();
+        var aiText=(aiData.content&&aiData.content[0]&&aiData.content[0].text)||'[]';
+        // Pulisci e parsa
+        var clean=aiText.replace(/```json|```/g,'').trim();
+        var nuovaBolle=JSON.parse(clean);
+        if(!Array.isArray(nuovaBolle)||nuovaBolle.length===0){alert('L'AI non ha trovato bolle nel PDF');return;}
+
+        if(status)status.innerHTML='<span style="color:#f59e0b">☁️ Caricamento PDF su GitHub...</span>';
+
+        // Salva PDF su GitHub
+        var filename='bolla_'+Date.now()+'.pdf';
+        var pdfResp=await fetch(PROXY+'/bolle-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:filename,base64:b64})});
+        var pdfData=await pdfResp.json();
+        var pdfUrl=pdfData.url||null;
+
+        if(status)status.innerHTML='<span style="color:#f59e0b">💾 Salvataggio indice...</span>';
+
+        // Aggiungi bolle all'indice
+        nuovaBolle.forEach(function(nb){
+          bolle.push({
+            id:genId(),
+            fornitore:nb.fornitore||'Sconosciuto',
+            numero:nb.numero_bolla||'',
+            data_bolla:nb.data_bolla||'',
+            anno:nb.anno||new Date().getFullYear(),
+            note:nb.note||'',
+            filename:filename,
+            pdf_url:pdfUrl,
+            created:new Date().toISOString()
+          });
+        });
+
+        await saveIndex();
+
+        window._bolleShowUpload=false;
+        if(status)status.innerHTML='';
+        showToast('✅ '+nuovaBolle.length+' boll'+(nuovaBolle.length===1?'a':'e')+' archiviata'+(nuovaBolle.length===1?'':'e')+' con successo!');
+        render();
+
+      }catch(e){
+        if(status)status.innerHTML='<span style="color:#dc2626">❌ Errore: '+e.message+'</span>';
+        console.error('[BOLLE ANALIZZA]',e);
+      }
+    };
+
+    window._bolleDelete=async function(id){
+      if(!confirm('Eliminare questa bolla dall'archivio?'))return;
+      bolle=bolle.filter(function(b){return b.id!==id;});
+      await saveIndex();
+      render();
+    };
+
+    render();
+  }
+  // ── FINE ARCHIVIO BOLLE ─────────────────────────────────────────────────
+
+
+
 
   function renderSandboxAI(panel){
     var ca=panel.querySelector('#filippo-content');
