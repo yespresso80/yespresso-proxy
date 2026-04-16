@@ -993,6 +993,45 @@ async function brtRestPost(path, body) {
 
 
   // BRT test connessione - usa parcelID di esempio
+  // ── BOLLE ANALIZZA (AI analisi PDF) ────────────────────────────────────
+  if (req.url === '/bolle-analizza' && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url === '/bolle-analizza' && req.method === 'POST') {
+    const CORS_BA = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+    try {
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      const { pdfBase64 } = payload;
+      if (!pdfBase64) { res.writeHead(400, CORS_BA); res.end(JSON.stringify({error:'missing pdfBase64'})); return; }
+      const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_KEY || '';
+      const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': ANTHROPIC_KEY },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+              { type: 'text', text: 'Analizza questo PDF che contiene una o più bolle di consegna (DDT - Documenti di Trasporto). Per ogni bolla trovata estrai: fornitore (nome azienda mittente), numero_bolla (numero DDT/documento), data_bolla (formato YYYY-MM-DD), anno (intero), note (descrizione breve dei prodotti es: "Capsule Nespresso 320 pz"). Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo, nessun backtick. Esempio: [{"fornitore":"Noire S.r.l.","numero_bolla":"DI/505","data_bolla":"2025-12-16","anno":2025,"note":"Capsule CAF 240 NAP Cremoso 320 pz"}]' }
+            ]
+          }]
+        })
+      });
+      const aiData = await aiResp.json();
+      res.writeHead(200, CORS_BA);
+      res.end(JSON.stringify(aiData));
+    } catch(e) {
+      console.error('[BOLLE ANALIZZA]', e.message);
+      res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
+      res.end(JSON.stringify({error: e.message}));
+    }
+    return;
+  }
+
   // ── Verifica token su endpoint sensibili ──
   const sensitiveEndpoints = ["/brt/", "/shopify", "/anthropic", "/creditsyard/"];
   if (sensitiveEndpoints.some(function(e){ return req.url.startsWith(e); })) {

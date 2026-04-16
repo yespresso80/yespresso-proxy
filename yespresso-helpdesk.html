@@ -5396,17 +5396,10 @@ function openFilippoPanel(){
 
       // Chiama AI per analizzare le bolle
       try{
-        var aiResp=await fetch(PROXY+'/anthropic/v1/messages',{
+        var aiResp=await fetch(PROXY+'/bolle-analizza',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            model:'claude-sonnet-4-20250514',
-            max_tokens:4000,
-            messages:[{role:'user',content:[
-              {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
-              {type:'text',text:'Analizza questo PDF che contiene una o più bolle di consegna (DDT - Documenti di Trasporto). Per ogni bolla trovata estrai: fornitore (nome azienda mittente), numero_bolla (numero DDT/documento), data_bolla (formato YYYY-MM-DD), anno (intero), note (descrizione breve dei prodotti, es: "Capsule Nespresso 320 pz, Capsule Bialetti 128 pz"). Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo, nessun backtick. Esempio: [{"fornitore":"Noire S.r.l.","numero_bolla":"DI/505","data_bolla":"2025-12-16","anno":2025,"note":"Capsule CAF 240 NAP Cremoso 320 pz"}]'}
-            ]}]
-          })
+          body:JSON.stringify({pdfBase64:b64})
         });
         var aiData=await aiResp.json();
         console.log('[BOLLE AI raw]', JSON.stringify(aiData).substring(0,500));
