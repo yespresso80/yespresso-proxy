@@ -5409,10 +5409,21 @@ function openFilippoPanel(){
           })
         });
         var aiData=await aiResp.json();
+        console.log('[BOLLE AI raw]', JSON.stringify(aiData).substring(0,500));
+        // Gestisci errori API
+        if(aiData.error){
+          if(status)status.innerHTML='<span style="color:#dc2626">❌ Errore AI: '+aiData.error.message+'</span>';
+          return;
+        }
         var aiText=(aiData.content&&aiData.content[0]&&aiData.content[0].text)||'[]';
+        console.log('[BOLLE AI text]', aiText.substring(0,500));
         // Pulisci e parsa
         var clean=aiText.replace(/```json|```/g,'').trim();
-        var nuovaBolle=JSON.parse(clean);
+        var nuovaBolle;
+        try{ nuovaBolle=JSON.parse(clean); }catch(pe){
+          if(status)status.innerHTML='<span style="color:#dc2626">❌ Errore parsing AI: '+pe.message+' — risposta: '+clean.substring(0,100)+'</span>';
+          return;
+        }
         if(!Array.isArray(nuovaBolle)||nuovaBolle.length===0){alert('Nessuna bolla trovata nel PDF');return;}
 
         if(status)status.innerHTML='<span style="color:#f59e0b">☁️ Caricamento PDF su GitHub...</span>';
