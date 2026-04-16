@@ -5362,7 +5362,7 @@ function openFilippoPanel(){
               html+='<span style="color:#ccc;font-size:12px">—</span>';
             }
             html+='</td>';
-            html+='<td style="padding:9px 12px"><button onclick="window._bolleDelete(''+b.id+'')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:15px" title="Elimina">🗑</button></td>';
+            html+='<td style="padding:9px 12px"><button onclick="(function(){window._bolleDelete(this.dataset.id)}).call(this)" data-id="'+b.id+'" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:15px" title="Elimina">&#128465;</button></td>';
             html+='</tr>';
           });
           html+='</tbody></table></div>';
