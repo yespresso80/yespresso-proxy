@@ -1016,7 +1016,7 @@ async function brtRestPost(path, body) {
             role: 'user',
             content: [
               { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
-              { type: 'text', text: 'Analizza questo PDF che contiene una o più bolle di consegna (DDT - Documenti di Trasporto). Per ogni bolla trovata estrai: fornitore (nome azienda mittente), numero_bolla (numero DDT/documento), data_bolla (formato YYYY-MM-DD), anno (intero), note (descrizione breve dei prodotti es: "Capsule Nespresso 320 pz"). Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo, nessun backtick. Esempio: [{"fornitore":"Noire S.r.l.","numero_bolla":"DI/505","data_bolla":"2025-12-16","anno":2025,"note":"Capsule CAF 240 NAP Cremoso 320 pz"}]' }
+              { type: 'text', text: 'Analizza questo PDF che contiene una o piu bolle di consegna (DDT - Documenti di Trasporto). Per ogni bolla trovata estrai: fornitore (nome azienda mittente), numero_bolla (numero DDT/documento), data_bolla (formato YYYY-MM-DD), anno (intero), pagina (numero pagina PDF dove inizia questa bolla, partendo da 1), note (descrizione breve dei prodotti es: Capsule Nespresso 320 pz). Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo, nessun backtick. Esempio: [{"fornitore":"Noire S.r.l.","numero_bolla":"DI/505","data_bolla":"2025-12-16","anno":2025,"pagina":1,"note":"Capsule CAF 240 NAP Cremoso 320 pz"},{"fornitore":"Best Espresso SpA","numero_bolla":"1358","data_bolla":"2025-12-12","anno":2025,"pagina":3,"note":"Capsule Nespresso 704 SC"}]' }
             ]
           }]
         })

@@ -5357,7 +5357,10 @@ function openFilippoPanel(){
             html+='<td style="padding:9px 12px;color:#777;font-size:12px;max-width:280px">'+(b.note||'—')+'</td>';
             html+='<td style="padding:9px 12px">';
             if(b.pdf_url){
-              html+='<a href="'+b.pdf_url+'" target="_blank" style="color:#0369a1;font-weight:600;font-size:12px;text-decoration:none">📄 Apri</a>';
+              var pageLabel=b.pagina?(' p.'+b.pagina):'';
+              html+='<a href="'+b.pdf_url+'" target="_blank" style="color:#0369a1;font-weight:600;font-size:12px;text-decoration:none">📄 Apri'+pageLabel+'</a>';
+            } else if(b.pdf_url_base){
+              html+='<a href="'+b.pdf_url_base+'" target="_blank" style="color:#0369a1;font-weight:600;font-size:12px;text-decoration:none">📄 Apri PDF</a>';
             } else {
               html+='<span style="color:#ccc;font-size:12px">—</span>';
             }
@@ -5417,7 +5420,23 @@ function openFilippoPanel(){
           if(status)status.innerHTML='<span style="color:#dc2626">❌ Errore parsing AI: '+pe.message+' — risposta: '+clean.substring(0,100)+'</span>';
           return;
         }
-        if(!Array.isArray(nuovaBolle)||nuovaBolle.length===0){alert('Nessuna bolla trovata nel PDF');return;}
+        // Gestisci caso array vuoto
+        if(!Array.isArray(nuovaBolle)||nuovaBolle.length===0){
+          if(status)status.innerHTML='<span style="color:#dc2626">❌ Nessuna bolla riconosciuta nel PDF. Verifica che il PDF contenga documenti di trasporto (DDT) leggibili.</span>'+
+            '<div style="margin-top:8px;font-size:12px;color:#555">Suggerimenti:<br>• Assicurati che il PDF non sia scansionato in bassa qualità<br>• Verifica che contenga DDT con numero bolla, fornitore e data<br>• Puoi aggiungere la bolla manualmente con il form</div>'+
+            '<button onclick="window._bolleShowManual=true;window._bolleRender&&window._bolleRender()" style="margin-top:8px;background:#166534;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit">+ Aggiungi manualmente</button>';
+          return;
+        }
+
+        // Controlla duplicati
+        var duplicati=[];
+        var daAggiungere=nuovaBolle.filter(function(nb){
+          var isDup=bolle.some(function(b){
+            return b.numero&&nb.numero_bolla&&b.numero.trim()===nb.numero_bolla.trim()&&String(b.anno)===String(nb.anno);
+          });
+          if(isDup)duplicati.push(nb);
+          return !isDup;
+        });
 
         if(status)status.innerHTML='<span style="color:#f59e0b">☁️ Caricamento PDF su GitHub...</span>';
 
@@ -5429,8 +5448,10 @@ function openFilippoPanel(){
 
         if(status)status.innerHTML='<span style="color:#f59e0b">💾 Salvataggio indice...</span>';
 
-        // Aggiungi bolle all'indice
-        nuovaBolle.forEach(function(nb){
+        // Aggiungi solo le bolle non duplicate
+        daAggiungere.forEach(function(nb){
+          var pageNum=nb.pagina||1;
+          var urlConPagina=pdfUrl?(pdfUrl+'#page='+pageNum):null;
           bolle.push({
             id:genId(),
             fornitore:nb.fornitore||'Sconosciuto',
@@ -5438,17 +5459,30 @@ function openFilippoPanel(){
             data_bolla:nb.data_bolla||'',
             anno:nb.anno||new Date().getFullYear(),
             note:nb.note||'',
+            pagina:pageNum,
             filename:filename,
-            pdf_url:pdfUrl,
+            pdf_url:urlConPagina,
+            pdf_url_base:pdfUrl,
             created:new Date().toISOString()
           });
         });
 
-        await saveIndex();
+        if(daAggiungere.length>0) await saveIndex();
 
         window._bolleShowUpload=false;
-        if(status)status.innerHTML='';
-        showToast('✅ '+nuovaBolle.length+' boll'+(nuovaBolle.length===1?'a':'e')+' archiviata'+(nuovaBolle.length===1?'':'e')+' con successo!');
+
+        // Messaggio risultato
+        var msgParts=[];
+        if(daAggiungere.length>0) msgParts.push('✅ '+daAggiungere.length+' boll'+(daAggiungere.length===1?'a':'e')+' archiviata'+(daAggiungere.length===1?'':'e'));
+        if(duplicati.length>0){
+          var dupNomi=duplicati.map(function(d){return d.fornitore+' '+d.numero_bolla;}).join(', ');
+          msgParts.push('⚠️ '+duplicati.length+' duplicate non caricate: '+dupNomi);
+          if(status)status.innerHTML='<div style="color:#b45309;font-size:12px;margin-bottom:8px">⚠️ Bolle già presenti (non caricate): <strong>'+dupNomi+'</strong></div>';
+          setTimeout(function(){if(status)status.innerHTML='';},8000);
+        } else {
+          if(status)status.innerHTML='';
+        }
+        if(msgParts.length>0) showToast(msgParts.join(' — '));
         render();
 
       }catch(e){
