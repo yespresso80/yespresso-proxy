@@ -1044,6 +1044,118 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // ── BILANCIO ANALIZZA (AI analisi PDF bilancio contabile) ─────────────
+  if (req.url === '/bilancio-analizza' && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url === '/bilancio-analizza' && req.method === 'POST') {
+    const CORS_BI = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+    try {
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      const { pdfBase64 } = payload;
+      if (!pdfBase64) { res.writeHead(400, CORS_BI); res.end(JSON.stringify({error:'missing pdfBase64'})); return; }
+      const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_KEY || '';
+      const prompt = 'Analizza questo PDF che contiene una situazione contabile progressiva (da inizio anno a fine mese indicato) di una societa. Estrai tutti i dati in JSON strutturato. Rispondi SOLO con JSON valido, nessun testo aggiuntivo, nessun backtick.\n\n'
+        + 'FORMATO RICHIESTO:\n'
+        + '{\n'
+        + '  "periodo_da": "YYYY-MM-DD",\n'
+        + '  "periodo_a": "YYYY-MM-DD",\n'
+        + '  "anno": 2026,\n'
+        + '  "mese": 3,\n'
+        + '  "societa": "nome societa",\n'
+        + '  "conti": [\n'
+        + '    {"codice":"40010.3","descrizione":"Corrispettivi vendite on-line caffe","importo":798811.68,"sezione":"ricavi"},\n'
+        + '    {"codice":"30060.1","descrizione":"Merci c/acquisti","importo":485596.79,"sezione":"costi"},\n'
+        + '    {"codice":"18010.1","descrizione":"Intesa Sanpaolo","importo":938668.27,"sezione":"attivo"},\n'
+        + '    {"codice":"26010.1","descrizione":"Fatture da ricevere","importo":98976.86,"sezione":"passivo"}\n'
+        + '  ],\n'
+        + '  "totali": {\n'
+        + '    "totale_attivo": 1234760.44,\n'
+        + '    "totale_passivo": 1234760.44,\n'
+        + '    "totale_costi": 920394.93,\n'
+        + '    "totale_ricavi": 928515.17,\n'
+        + '    "utile_perdita": 8120.24\n'
+        + '  }\n'
+        + '}\n\n'
+        + 'IMPORTANTE:\n'
+        + '- Includi TUTTI i conti presenti nel PDF, non saltare nessuna riga.\n'
+        + '- "sezione" deve essere una di: "attivo", "passivo", "costi", "ricavi".\n'
+        + '- Ignora la parte "RETTIFICHE FISCALI" del PDF: prendi solo i valori "Importo" del conto economico e dello stato patrimoniale contabile.\n'
+        + '- Gli importi sono in euro, usa punto come separatore decimale nel JSON.\n'
+        + '- Se l utile/perdita e una perdita, utile_perdita deve essere negativo (es. -11073.63).\n'
+        + '- "mese" e il numero del mese di fine periodo (es. se "01/01/2026 - 31/03/2026" allora mese=3).';
+      const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': ANTHROPIC_KEY },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 16000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      });
+      const aiData = await aiResp.json();
+      res.writeHead(200, CORS_BI);
+      res.end(JSON.stringify(aiData));
+    } catch(e) {
+      console.error('[BILANCIO ANALIZZA]', e.message);
+      res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
+      res.end(JSON.stringify({error: e.message}));
+    }
+    return;
+  }
+
+  // ── BILANCIO DATA (storage JSON su GitHub, un file per mese/anno) ──────
+  if (req.url.startsWith('/bilancio-data') && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url.startsWith('/bilancio-data')) {
+    const CORS_BD = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const GH_BILANCIO_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/bilancio-index.json';
+    async function ghBilancioIndexGet() {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) return { data: [], sha: null };
+      const r = await fetch(GH_BILANCIO_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+      if (r.status === 404) return { data: [], sha: null };
+      const j = await r.json();
+      return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+    }
+    async function ghBilancioIndexSave(data, sha) {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) throw new Error('GH_TOKEN non configurato');
+      const body = { message: 'update bilancio-index', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(GH_BILANCIO_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); throw new Error('GitHub bilancio save error: '+t.substring(0,200)); }
+    }
+    if (req.method === 'GET') {
+      try { const { data } = await ghBilancioIndexGet(); res.writeHead(200, CORS_BD); res.end(JSON.stringify(data)); }
+      catch(e) { console.error('[BILANCIO GET]', e.message); res.writeHead(200, CORS_BD); res.end('[]'); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+      try {
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        // payload: { bilanci: [...array completo aggiornato] }
+        const { sha } = await ghBilancioIndexGet();
+        await ghBilancioIndexSave(payload.bilanci, sha);
+        res.writeHead(200, CORS_BD); res.end(JSON.stringify({ ok: true }));
+      } catch(e) { console.error('[BILANCIO POST]', e.message); res.writeHead(500, CORS_BD); res.end(JSON.stringify({ ok: false, error: e.message })); }
+      return;
+    }
+    res.writeHead(405, CORS_BD); res.end(JSON.stringify({error:'Method not allowed'}));
+    return;
+  }
+
   // ── Verifica token su endpoint sensibili ──
   const sensitiveEndpoints = ["/brt/", "/shopify", "/anthropic", "/creditsyard/"];
   if (sensitiveEndpoints.some(function(e){ return req.url.startsWith(e); })) {

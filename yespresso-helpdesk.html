@@ -5324,6 +5324,8 @@ function openFilippoPanel(){
     id:'sandbox_ai',label:'🧪 Test AI Automatica',periodo:'',custom:true,groups:[]
   },{
     id:'archivio_bolle',label:'📁 Archivio Bolle',periodo:'',custom:true,groups:[]
+  },{
+    id:'analisi_bilancio',label:'📈 Analisi Bilancio',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -5397,6 +5399,7 @@ function openFilippoPanel(){
       else if(activeSec.id==='attivita') renderAttivita(null,panel,null);
       else if(activeSec.id==='sandbox_ai') renderSandboxAI(panel);
       else if(activeSec.id==='archivio_bolle') renderArchivioBolle(panel);
+      else if(activeSec.id==='analisi_bilancio') renderAnalisiBilancio(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
@@ -5670,6 +5673,551 @@ function openFilippoPanel(){
     render();
   }
   // ── FINE ARCHIVIO BOLLE ─────────────────────────────────────────────────
+
+  // ── ANALISI BILANCIO ─────────────────────────────────────────────────────
+  async function renderAnalisiBilancio(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca)return;
+    ca.innerHTML='<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento bilanci...</div>';
+
+    var PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+
+    // Carica indice bilanci dal server
+    var bilanci=[];
+    try{
+      var r=await fetch(PROXY+'/bilancio-data');
+      bilanci=await r.json();
+      if(!Array.isArray(bilanci))bilanci=[];
+    }catch(e){bilanci=[];}
+
+    // Stato: anno selezionato (default = anno corrente, o ultimo anno con dati)
+    var anniDisp=[...new Set(bilanci.map(function(b){return b.anno;}))].sort(function(a,b){return b-a;});
+    if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
+    if(!window._bilancioAnno || anniDisp.indexOf(window._bilancioAnno)<0){
+      window._bilancioAnno = anniDisp[0];
+    }
+
+    function showBilMsg(html_content, tipo){
+      var colors={'success':{'bg':'#f0fdf4','border':'#86efac','text':'#166534'},'warning':{'bg':'#fffbeb','border':'#fcd34d','text':'#92400e'},'error':{'bg':'#fef2f2','border':'#fca5a5','text':'#991b1b'}};
+      var c=colors[tipo]||colors['success'];
+      var existing=document.getElementById('bilancio-result-banner');
+      if(existing)existing.remove();
+      var banner=document.createElement('div');
+      banner.id='bilancio-result-banner';
+      banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;min-width:400px;max-width:700px;background:'+c.bg+';border:1.5px solid '+c.border+';border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:16px 20px;font-family:inherit';
+      banner.innerHTML='<div style="display:flex;align-items:flex-start;gap:12px">'
+        +'<div style="flex:1;font-size:13px;color:'+c.text+'">'+html_content+'</div>'
+        +'<button onclick="document.getElementById(\'bilancio-result-banner\').remove()" style="background:none;border:none;cursor:pointer;font-size:18px;color:'+c.text+';line-height:1;padding:0;flex-shrink:0">✕</button>'
+        +'</div>';
+      document.body.appendChild(banner);
+    }
+
+    // Formatta numero in EUR italiano
+    function fmtEur(n){
+      if(n==null||isNaN(n))return '—';
+      var abs=Math.abs(n);
+      var s=abs.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+      return n<0?'−'+s:s;
+    }
+    function fmtPct(n){
+      if(n==null||isNaN(n)||!isFinite(n))return '—';
+      return n.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+    }
+
+    // ── Riclassificazione ──
+    // Mapping voci: regole su codice conto per raggruppamento
+    function classificaConto(c){
+      var cod=String(c.codice||'');
+      var sez=c.sezione;
+      // Conto economico
+      if(sez==='ricavi'){
+        if(cod.startsWith('40010'))return {gruppo:'ricavi_vendite',label:'Ricavi vendite'};
+        if(cod.startsWith('40430'))return {gruppo:'resi_vendite',label:'Resi su vendite'};
+        if(cod.startsWith('41101'))return {gruppo:'altri_ricavi',label:'Altri ricavi'};
+        if(cod.startsWith('42043'))return {gruppo:'rim_finali',label:'Rimanenze finali'};
+        if(cod.startsWith('44110'))return {gruppo:'proventi_straord',label:'Proventi straordinari'};
+        if(cod.startsWith('30210')||cod.startsWith('30230'))return {gruppo:'rett_acquisti',label:'Sconti/resi su acquisti'};
+        if(cod.startsWith('31910'))return {gruppo:'rett_servizi',label:'Sconti/resi su servizi'};
+        return {gruppo:'altri_ricavi',label:'Altri ricavi'};
+      }
+      if(sez==='costi'){
+        if(cod.startsWith('30060'))return {gruppo:'acq_merci',label:'Acquisti merci'};
+        if(cod.startsWith('30041'))return {gruppo:'acq_merci',label:'Acquisti merci'};
+        if(cod.startsWith('30030')||cod.startsWith('30043')||cod.startsWith('30044')||cod.startsWith('30047')||cod.startsWith('30099')||cod.startsWith('30110')||cod.startsWith('30130')||cod.startsWith('30199'))return {gruppo:'acq_altri',label:'Altri acquisti e oneri accessori'};
+        if(cod.startsWith('36012')||cod.startsWith('36043'))return {gruppo:'rim_iniziali',label:'Rimanenze iniziali'};
+        if(cod.startsWith('31011'))return {gruppo:'costi_logistica',label:'Trasporti e spedizioni'};
+        if(cod.startsWith('31110'))return {gruppo:'pubblicita',label:'Pubblicità'};
+        if(cod.startsWith('31199.3')||cod.startsWith('31199.6'))return {gruppo:'commissioni_mkt',label:'Commissioni Amazon'};
+        if(cod.startsWith('31860.2'))return {gruppo:'commissioni_mkt',label:'Commissioni PayPal'};
+        if(cod.startsWith('31860.4'))return {gruppo:'commissioni_mkt',label:'Commissioni Shopify'};
+        if(cod.startsWith('31860.5'))return {gruppo:'commissioni_mkt',label:'Commissioni Temu'};
+        if(cod.startsWith('31860.6'))return {gruppo:'commissioni_mkt',label:'Commissioni TikTok'};
+        if(cod.startsWith('31860'))return {gruppo:'commissioni_bancarie',label:'Commissioni bancarie'};
+        if(cod.startsWith('31199'))return {gruppo:'altri_servizi',label:'Altri costi commerciali'};
+        if(cod.startsWith('31050')||cod.startsWith('32340'))return {gruppo:'software',label:'Software e licenze'};
+        if(cod.startsWith('31135')||cod.startsWith('31140'))return {gruppo:'trasferte',label:'Vitto, alloggio, rimborsi spese'};
+        if(cod.startsWith('31211'))return {gruppo:'utenze',label:'Energia elettrica'};
+        if(cod.startsWith('31241'))return {gruppo:'utenze',label:'Telefonia'};
+        if(cod.startsWith('31837'))return {gruppo:'assicurazioni',label:'Assicurazioni'};
+        if(cod.startsWith('31033'))return {gruppo:'manutenzioni',label:'Manutenzioni'};
+        if(cod.startsWith('31310'))return {gruppo:'amministratori',label:'Compensi amministratori'};
+        if(cod.startsWith('31340'))return {gruppo:'amministratori',label:'Indennità chilometriche amministratori'};
+        if(cod.startsWith('31370'))return {gruppo:'amministratori',label:'Contributi INPS amministratori'};
+        if(cod.startsWith('31710')||cod.startsWith('31720')||cod.startsWith('31725')||cod.startsWith('31730'))return {gruppo:'consulenze',label:'Consulenze e sindaci'};
+        if(cod.startsWith('32010'))return {gruppo:'fitti',label:'Fitti passivi'};
+        if(cod.startsWith('32320')||cod.startsWith('32330'))return {gruppo:'noleggi',label:'Noleggi'};
+        if(cod.startsWith('33010')||cod.startsWith('33020'))return {gruppo:'personale_retrib',label:'Salari e stipendi'};
+        if(cod.startsWith('33110')||cod.startsWith('33140')||cod.startsWith('33160'))return {gruppo:'personale_contr',label:'Contributi dipendenti'};
+        if(cod.startsWith('33210'))return {gruppo:'personale_tfr',label:'Accantonamento TFR'};
+        if(cod.startsWith('34'))return {gruppo:'ammortamenti',label:'Ammortamenti'};
+        if(cod.startsWith('35'))return {gruppo:'oneri_diversi',label:'Oneri diversi di gestione'};
+        if(cod.startsWith('37'))return {gruppo:'oneri_finanziari',label:'Oneri finanziari'};
+        return {gruppo:'altri_costi',label:'Altri costi'};
+      }
+      // Stato patrimoniale
+      if(sez==='attivo'){
+        if(cod.startsWith('11'))return {gruppo:'immob_immater',label:'Immobilizzazioni immateriali'};
+        if(cod.startsWith('12'))return {gruppo:'immob_mater',label:'Immobilizzazioni materiali'};
+        if(cod.startsWith('13'))return {gruppo:'att_finanz',label:'Attività finanziarie'};
+        if(cod.startsWith('14'))return {gruppo:'rimanenze',label:'Rimanenze'};
+        if(cod.startsWith('15'))return {gruppo:'clienti',label:'Clienti'};
+        if(cod.startsWith('16'))return {gruppo:'crediti_trib',label:'Crediti tributari'};
+        if(cod.startsWith('17440'))return {gruppo:'crediti_incassi',label:'Crediti per incassi (marketplace/PayPal/BRT)'};
+        if(cod.startsWith('17'))return {gruppo:'crediti_div',label:'Altri crediti'};
+        if(cod.startsWith('18'))return {gruppo:'liquidita',label:'Liquidità'};
+        if(cod.startsWith('19'))return {gruppo:'ratei_att',label:'Ratei e risconti attivi'};
+        return {gruppo:'altro_att',label:'Altro attivo'};
+      }
+      if(sez==='passivo'){
+        if(cod.startsWith('20'))return {gruppo:'patr_netto',label:'Patrimonio netto'};
+        if(cod.startsWith('21'))return {gruppo:'f_amm_immater',label:'F/amm. immateriali'};
+        if(cod.startsWith('22'))return {gruppo:'f_amm_mater',label:'F/amm. materiali'};
+        if(cod.startsWith('24'))return {gruppo:'tfr',label:'Fondo TFR'};
+        if(cod.startsWith('26'))return {gruppo:'fornitori',label:'Debiti v/fornitori'};
+        if(cod.startsWith('27'))return {gruppo:'debiti_trib',label:'Debiti tributari'};
+        if(cod.startsWith('28'))return {gruppo:'debiti_pers',label:'Debiti v/personale e enti previdenziali'};
+        if(cod.startsWith('17360'))return {gruppo:'debiti_pers',label:'Debiti v/personale'};
+        return {gruppo:'altro_pass',label:'Altro passivo'};
+      }
+      return {gruppo:'altro',label:'Altro'};
+    }
+
+    // Aggrega bilancio in struttura riclassificata { ricavi:{gruppo:importo}, costi:{...}, attivo:{...}, passivo:{...} }
+    function aggregaBilancio(bil){
+      var agg={ricavi:{},costi:{},attivo:{},passivo:{}};
+      (bil.conti||[]).forEach(function(c){
+        var cls=classificaConto(c);
+        var sez=c.sezione;
+        if(!agg[sez])agg[sez]={};
+        agg[sez][cls.gruppo]=(agg[sez][cls.gruppo]||0)+Number(c.importo||0);
+      });
+      return agg;
+    }
+
+    // Calcola le differenze mese per mese per il conto economico
+    // bilanciAnno = array di bilanci progressivi ordinati per mese (1..12)
+    // Restituisce array di 12 posizioni (indice 0 = gen, 11 = dic), ciascuna con { attivo, passivo, ricavi, costi, raw }
+    // ricavi/costi sono differenze (mese singolo), attivo/passivo sono snapshot (fine mese)
+    function calcolaMesi(bilanciAnno){
+      var mesi=new Array(12).fill(null);
+      // Ordina per mese
+      var ord=bilanciAnno.slice().sort(function(a,b){return a.mese-b.mese;});
+      var prevAgg=null;
+      ord.forEach(function(bil){
+        var agg=aggregaBilancio(bil);
+        var mese={raw:bil,aggCum:agg,attivo:agg.attivo,passivo:agg.passivo,ricavi:{},costi:{}};
+        // Differenze vs mese precedente (per CE)
+        if(prevAgg){
+          Object.keys(agg.ricavi).forEach(function(k){
+            mese.ricavi[k]=Number(((agg.ricavi[k]||0)-(prevAgg.ricavi[k]||0)).toFixed(2));
+          });
+          Object.keys(prevAgg.ricavi).forEach(function(k){
+            if(mese.ricavi[k]==null)mese.ricavi[k]=Number((0-(prevAgg.ricavi[k]||0)).toFixed(2));
+          });
+          Object.keys(agg.costi).forEach(function(k){
+            mese.costi[k]=Number(((agg.costi[k]||0)-(prevAgg.costi[k]||0)).toFixed(2));
+          });
+          Object.keys(prevAgg.costi).forEach(function(k){
+            if(mese.costi[k]==null)mese.costi[k]=Number((0-(prevAgg.costi[k]||0)).toFixed(2));
+          });
+        } else {
+          // Primo mese: i valori progressivi SONO i valori del mese
+          Object.keys(agg.ricavi).forEach(function(k){mese.ricavi[k]=agg.ricavi[k];});
+          Object.keys(agg.costi).forEach(function(k){mese.costi[k]=agg.costi[k];});
+        }
+        mesi[bil.mese-1]=mese;
+        prevAgg=agg;
+      });
+      return mesi;
+    }
+
+    // Calcola KPI riclassificati del conto economico (per un dato mese o YTD)
+    function calcolaKPI(ricavi,costi){
+      var ricaviVendite=ricavi.ricavi_vendite||0;
+      var resi=ricavi.resi_vendite||0;
+      var altriRicavi=(ricavi.altri_ricavi||0)+(ricavi.proventi_straord||0)+(ricavi.rett_acquisti||0)+(ricavi.rett_servizi||0);
+      var rimIniz=costi.rim_iniziali||0;
+      var rimFin=ricavi.rim_finali||0;
+      var ricaviNetti=ricaviVendite-resi;
+      var acqMerci=(costi.acq_merci||0)+(costi.acq_altri||0);
+      var varRim=rimFin-rimIniz; // positiva = aumento scorte
+      var costoVenduto=acqMerci-varRim;
+      var margineLordo=ricaviNetti-costoVenduto;
+      var costiLogistica=costi.costi_logistica||0;
+      var commMkt=costi.commissioni_mkt||0;
+      var commBanc=costi.commissioni_bancarie||0;
+      var pubblicita=costi.pubblicita||0;
+      var altriServ=(costi.altri_servizi||0)+(costi.software||0)+(costi.trasferte||0)+(costi.manutenzioni||0);
+      var margineContrib=margineLordo-costiLogistica-commMkt-commBanc-pubblicita-altriServ;
+      var personale=(costi.personale_retrib||0)+(costi.personale_contr||0)+(costi.personale_tfr||0);
+      var amministratori=costi.amministratori||0;
+      var fittiUtenze=(costi.fitti||0)+(costi.utenze||0)+(costi.assicurazioni||0)+(costi.noleggi||0)+(costi.consulenze||0);
+      var oneriDiv=costi.oneri_diversi||0;
+      var ebitda=margineContrib-personale-amministratori-fittiUtenze-oneriDiv+altriRicavi;
+      var ammort=costi.ammortamenti||0;
+      var ebit=ebitda-ammort;
+      var oneriFin=costi.oneri_finanziari||0;
+      var risAnteImp=ebit-oneriFin;
+      return {
+        ricaviVendite:ricaviVendite, resi:resi, ricaviNetti:ricaviNetti,
+        acqMerci:acqMerci, varRim:varRim, costoVenduto:costoVenduto, margineLordo:margineLordo,
+        costiLogistica:costiLogistica, commMkt:commMkt, commBanc:commBanc, pubblicita:pubblicita, altriServ:altriServ,
+        margineContrib:margineContrib,
+        personale:personale, amministratori:amministratori, fittiUtenze:fittiUtenze, oneriDiv:oneriDiv,
+        altriRicavi:altriRicavi, ebitda:ebitda, ammort:ammort, ebit:ebit, oneriFin:oneriFin, risAnteImp:risAnteImp
+      };
+    }
+
+    // Calcola snapshot SP riclassificato
+    function calcolaSP(attivo,passivo){
+      var immobImmNet=(attivo.immob_immater||0)-(passivo.f_amm_immater||0);
+      var immobMatNet=(attivo.immob_mater||0)-(passivo.f_amm_mater||0);
+      var immobNette=immobImmNet+immobMatNet;
+      var liquidita=attivo.liquidita||0;
+      var crediti=(attivo.clienti||0)+(attivo.crediti_incassi||0)+(attivo.crediti_div||0);
+      var creditiTrib=attivo.crediti_trib||0;
+      var rimanenze=attivo.rimanenze||0;
+      var altroAtt=(attivo.att_finanz||0)+(attivo.ratei_att||0)+(attivo.altro_att||0);
+      var totAttRicl=immobNette+liquidita+crediti+creditiTrib+rimanenze+altroAtt;
+
+      var pn=passivo.patr_netto||0;
+      var fornitori=passivo.fornitori||0;
+      var debitiTrib=passivo.debiti_trib||0;
+      var debitiPers=passivo.debiti_pers||0;
+      var tfr=passivo.tfr||0;
+      var altroPass=passivo.altro_pass||0;
+      var totPassRicl=pn+fornitori+debitiTrib+debitiPers+tfr+altroPass;
+
+      return {
+        immobNette:immobNette, liquidita:liquidita, crediti:crediti, creditiTrib:creditiTrib, rimanenze:rimanenze, altroAtt:altroAtt,
+        totAtt:totAttRicl,
+        pn:pn, fornitori:fornitori, debitiTrib:debitiTrib, debitiPers:debitiPers, tfr:tfr, altroPass:altroPass,
+        totPass:totPassRicl
+      };
+    }
+
+    // Render principale
+    function render(){
+      var anno=window._bilancioAnno;
+      var bilanciAnno=bilanci.filter(function(b){return b.anno===anno;});
+      var mesi=calcolaMesi(bilanciAnno);
+      var mesiPresenti=[];
+      for(var i=0;i<12;i++)if(mesi[i])mesiPresenti.push(i);
+      var NOMI_MESI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+
+      // KPI per mese + YTD
+      var kpiMesi=mesiPresenti.map(function(i){return calcolaKPI(mesi[i].ricavi,mesi[i].costi);});
+      var spMesi=mesiPresenti.map(function(i){return calcolaSP(mesi[i].attivo||{},mesi[i].passivo||{});});
+      // YTD = ultimo bilancio progressivo (già cumulato)
+      var lastMese=mesiPresenti[mesiPresenti.length-1];
+      var kpiYTD=lastMese!=null?calcolaKPI(mesi[lastMese].aggCum.ricavi,mesi[lastMese].aggCum.costi):null;
+
+      var html='<div style="max-width:1400px;margin:0 auto">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">';
+      html+='<div><div style="font-size:22px;font-weight:700;color:#1a1a2e">📈 Analisi Bilancio</div>';
+      html+='<div style="font-size:12px;color:#777;margin-top:3px">Carica il bilancio progressivo del mese (cumulativo da inizio anno). Il sistema calcola i valori del singolo mese per differenza.</div></div>';
+      html+='<div style="display:flex;gap:8px;align-items:center">';
+      html+='<label style="font-size:12px;color:#555;font-weight:600">Anno:</label>';
+      html+='<select onchange="window._bilancioAnno=parseInt(this.value);window._bilancioRender&&window._bilancioRender()" style="padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;background:#fff">';
+      anniDisp.forEach(function(a){
+        html+='<option value="'+a+'"'+(a===anno?' selected':'')+'>'+a+'</option>';
+      });
+      html+='</select>';
+      html+='<button onclick="window._bilancioUpload&&window._bilancioUpload()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">📤 Carica PDF bilancio</button>';
+      html+='</div></div>';
+
+      if(mesiPresenti.length===0){
+        html+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:30px;text-align:center;color:#92400e">';
+        html+='<div style="font-size:15px;font-weight:700;margin-bottom:8px">Nessun bilancio per '+anno+'</div>';
+        html+='<div style="font-size:13px">Clicca "📤 Carica PDF bilancio" per iniziare. Carica il bilancio progressivo di ogni mese (01/01→fine mese).</div>';
+        html+='</div></div>';
+        ca.innerHTML=html;
+        return;
+      }
+
+      // Elenco bilanci caricati (per gestione)
+      html+='<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#555;display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
+      html+='<span style="font-weight:700">Bilanci caricati '+anno+':</span>';
+      mesiPresenti.forEach(function(i){
+        var b=mesi[i].raw;
+        html+='<span style="background:#fff;border:1px solid #e0e4ea;border-radius:5px;padding:3px 8px;display:inline-flex;align-items:center;gap:6px">'+NOMI_MESI[i]+' '+anno;
+        html+=' <button onclick="window._bilancioDelete&&window._bilancioDelete(\''+b.id+'\')" title="Elimina" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:13px;line-height:1;padding:0">✕</button></span>';
+      });
+      html+='</div>';
+
+      // ── TABELLA CONTO ECONOMICO ──
+      html+='<div style="font-size:16px;font-weight:700;margin:18px 0 8px;color:#1a1a2e">CONTO ECONOMICO (valori per singolo mese)</div>';
+      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">';
+      html+='<thead><tr style="background:#f0f2f5;color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;background:#f0f2f5;min-width:260px">Voce</th>';
+      mesiPresenti.forEach(function(i){
+        html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;min-width:90px">'+NOMI_MESI[i]+'</th>';
+      });
+      html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#e8f5e9;min-width:100px;font-weight:700">YTD</th>';
+      html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#e3f2fd;min-width:70px">% ric.</th>';
+      html+='</tr></thead><tbody>';
+
+      function rowCE(label,getter,opts){
+        opts=opts||{};
+        var style=opts.bold?'font-weight:700':'';
+        var bg=opts.bg||'';
+        var color=opts.color||'';
+        var indent=opts.indent?'padding-left:24px;':'';
+        var border=opts.border?'border-top:1px solid #e0e4ea;':'';
+        html+='<tr style="'+(bg?'background:'+bg+';':'')+style+';'+color+'">';
+        html+='<td style="padding:6px 10px;'+indent+border+'position:sticky;left:0;background:'+(bg||'#fff')+'">'+label+'</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var v=getter(kpiMesi[ix]);
+          html+='<td style="text-align:right;padding:6px 10px;'+border+(v<0?'color:#c0392b;':'')+'">'+fmtEur(v)+'</td>';
+        });
+        var vYTD=kpiYTD?getter(kpiYTD):null;
+        html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700;'+border+(vYTD<0?'color:#c0392b;':'')+'">'+fmtEur(vYTD)+'</td>';
+        // % su ricavi netti (YTD)
+        var pct=(kpiYTD&&kpiYTD.ricaviNetti)?(vYTD/kpiYTD.ricaviNetti*100):null;
+        html+='<td style="text-align:right;padding:6px 10px;background:#e3f2fd;color:#555;'+border+'">'+(opts.skipPct?'':fmtPct(pct))+'</td>';
+        html+='</tr>';
+      }
+
+      rowCE('Ricavi vendite',function(k){return k.ricaviVendite;},{bold:true});
+      rowCE('− Resi su vendite',function(k){return -k.resi;},{indent:true});
+      rowCE('= Ricavi netti',function(k){return k.ricaviNetti;},{bold:true,bg:'#f8f9fc',border:true});
+      rowCE('− Acquisti merci e accessori',function(k){return -k.acqMerci;},{indent:true});
+      rowCE('± Variazione rimanenze',function(k){return k.varRim;},{indent:true});
+      rowCE('= Costo del venduto',function(k){return -k.costoVenduto;},{indent:true,color:'color:#555'});
+      rowCE('= MARGINE LORDO',function(k){return k.margineLordo;},{bold:true,bg:'#fff9e6',border:true});
+      rowCE('− Trasporti e spedizioni',function(k){return -k.costiLogistica;},{indent:true});
+      rowCE('− Commissioni marketplace/payment',function(k){return -k.commMkt;},{indent:true});
+      rowCE('− Commissioni bancarie',function(k){return -k.commBanc;},{indent:true});
+      rowCE('− Pubblicità',function(k){return -k.pubblicita;},{indent:true});
+      rowCE('− Altri costi commerciali',function(k){return -k.altriServ;},{indent:true});
+      rowCE('= MARGINE DI CONTRIBUZIONE',function(k){return k.margineContrib;},{bold:true,bg:'#fff9e6',border:true});
+      rowCE('− Personale (salari, stipendi, contributi, TFR)',function(k){return -k.personale;},{indent:true});
+      rowCE('− Compensi amministratori',function(k){return -k.amministratori;},{indent:true});
+      rowCE('− Fitti, utenze, consulenze',function(k){return -k.fittiUtenze;},{indent:true});
+      rowCE('− Oneri diversi di gestione',function(k){return -k.oneriDiv;},{indent:true});
+      rowCE('+ Altri ricavi/proventi',function(k){return k.altriRicavi;},{indent:true});
+      rowCE('= EBITDA',function(k){return k.ebitda;},{bold:true,bg:'#e8f5e9',border:true});
+      rowCE('− Ammortamenti',function(k){return -k.ammort;},{indent:true});
+      rowCE('= EBIT',function(k){return k.ebit;},{bold:true,bg:'#e8f5e9',border:true});
+      rowCE('− Oneri finanziari',function(k){return -k.oneriFin;},{indent:true});
+      rowCE('= RISULTATO ANTE IMPOSTE',function(k){return k.risAnteImp;},{bold:true,bg:'#dcfce7',border:true});
+
+      html+='</tbody></table></div>';
+
+      // ── KPI % ──
+      html+='<div style="font-size:16px;font-weight:700;margin:24px 0 8px;color:#1a1a2e">INDICATORI % (su ricavi netti del periodo)</div>';
+      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">';
+      html+='<thead><tr style="background:#f0f2f5;color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;background:#f0f2f5;min-width:260px">Indicatore</th>';
+      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;min-width:90px">'+NOMI_MESI[i]+'</th>';});
+      html+='<th style="text-align:right;padding:8px 10px;background:#e8f5e9;min-width:100px;font-weight:700">YTD</th>';
+      html+='</tr></thead><tbody>';
+
+      function rowPct(label,getter){
+        html+='<tr><td style="padding:6px 10px;position:sticky;left:0;background:#fff">'+label+'</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var k=kpiMesi[ix];
+          var v=k.ricaviNetti?getter(k)/k.ricaviNetti*100:null;
+          html+='<td style="text-align:right;padding:6px 10px">'+fmtPct(v)+'</td>';
+        });
+        var vY=(kpiYTD&&kpiYTD.ricaviNetti)?getter(kpiYTD)/kpiYTD.ricaviNetti*100:null;
+        html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700">'+fmtPct(vY)+'</td></tr>';
+      }
+      rowPct('Margine lordo %',function(k){return k.margineLordo;});
+      rowPct('Costi logistica %',function(k){return k.costiLogistica;});
+      rowPct('Commissioni marketplace %',function(k){return k.commMkt;});
+      rowPct('Pubblicità %',function(k){return k.pubblicita;});
+      rowPct('Margine contribuzione %',function(k){return k.margineContrib;});
+      rowPct('Personale + amministratori %',function(k){return k.personale+k.amministratori;});
+      rowPct('EBITDA %',function(k){return k.ebitda;});
+      rowPct('EBIT %',function(k){return k.ebit;});
+      rowPct('Risultato ante imposte %',function(k){return k.risAnteImp;});
+
+      html+='</tbody></table></div>';
+
+      // ── STATO PATRIMONIALE ──
+      html+='<div style="font-size:16px;font-weight:700;margin:24px 0 8px;color:#1a1a2e">STATO PATRIMONIALE (saldi fine mese)</div>';
+      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">';
+      html+='<thead><tr style="background:#f0f2f5;color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;background:#f0f2f5;min-width:260px">Voce</th>';
+      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;min-width:100px">'+NOMI_MESI[i]+'</th>';});
+      html+='</tr></thead><tbody>';
+
+      function rowSP(label,getter,opts){
+        opts=opts||{};
+        var style=opts.bold?'font-weight:700':'';
+        var bg=opts.bg||'#fff';
+        var border=opts.border?'border-top:1px solid #e0e4ea;':'';
+        html+='<tr style="background:'+bg+';'+style+'">';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bg+';'+(opts.indent?'padding-left:24px;':'')+border+'">'+label+'</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var v=getter(spMesi[ix]);
+          html+='<td style="text-align:right;padding:6px 10px;'+border+(v<0?'color:#c0392b;':'')+'">'+fmtEur(v)+'</td>';
+        });
+        html+='</tr>';
+      }
+      rowSP('ATTIVO',function(){return null;},{bold:true,bg:'#e3f2fd'});
+      rowSP('Immobilizzazioni nette',function(s){return s.immobNette;},{indent:true});
+      rowSP('Rimanenze',function(s){return s.rimanenze;},{indent:true});
+      rowSP('Crediti commerciali',function(s){return s.crediti;},{indent:true});
+      rowSP('Crediti tributari',function(s){return s.creditiTrib;},{indent:true});
+      rowSP('Liquidità (banca, PayPal, cassa)',function(s){return s.liquidita;},{indent:true,bold:true});
+      rowSP('Altro attivo',function(s){return s.altroAtt;},{indent:true});
+      rowSP('TOTALE ATTIVO RICLASSIFICATO',function(s){return s.totAtt;},{bold:true,bg:'#f8f9fc',border:true});
+      rowSP('PASSIVO',function(){return null;},{bold:true,bg:'#fff3e0',border:true});
+      rowSP('Patrimonio netto',function(s){return s.pn;},{indent:true,bold:true});
+      rowSP('Debiti v/fornitori',function(s){return s.fornitori;},{indent:true});
+      rowSP('Debiti tributari',function(s){return s.debitiTrib;},{indent:true});
+      rowSP('Debiti v/personale ed enti',function(s){return s.debitiPers;},{indent:true});
+      rowSP('Fondo TFR',function(s){return s.tfr;},{indent:true});
+      rowSP('Altro passivo',function(s){return s.altroPass;},{indent:true});
+      rowSP('TOTALE PASSIVO RICLASSIFICATO',function(s){return s.totPass;},{bold:true,bg:'#f8f9fc',border:true});
+
+      html+='</tbody></table></div>';
+
+      html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
+      html+='<strong>Note:</strong> I valori del conto economico mostrati nelle colonne mensili sono differenze tra il progressivo del mese e quello del mese precedente, cioè rappresentano il valore del singolo mese.';
+      html+=' Lo stato patrimoniale mostra invece i saldi di fine mese (fotografia).';
+      html+=' La colonna YTD è il progressivo da inizio anno all\'ultimo mese caricato.';
+      html+=' La colonna % è calcolata sul totale YTD dei ricavi netti.';
+      html+='</div>';
+
+      html+='</div>';
+      ca.innerHTML=html;
+    }
+    window._bilancioRender=render;
+
+    // ── Upload PDF bilancio ──
+    window._bilancioUpload=function(){
+      var inp=document.createElement('input');
+      inp.type='file';
+      inp.accept='application/pdf';
+      inp.onchange=async function(){
+        var f=inp.files&&inp.files[0];
+        if(!f)return;
+        showBilMsg('<div style="font-weight:700;margin-bottom:6px">⏳ Lettura PDF...</div>','warning');
+        try{
+          var b64=await new Promise(function(resolve,reject){
+            var reader=new FileReader();
+            reader.onload=function(){resolve(String(reader.result).split(',')[1]);};
+            reader.onerror=reject;
+            reader.readAsDataURL(f);
+          });
+          showBilMsg('<div style="font-weight:700;margin-bottom:6px">🤖 AI in analisi del bilancio...</div><div style="font-size:11px">Potrebbe richiedere 20-40 secondi</div>','warning');
+          var aiResp=await fetch(PROXY+'/bilancio-analizza',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({pdfBase64:b64})
+          });
+          var aiData=await aiResp.json();
+          if(aiData.error){
+            showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Errore AI</div><div style="font-size:12px">'+(aiData.error.message||aiData.error)+'</div>','error');
+            return;
+          }
+          var aiText=(aiData.content&&aiData.content[0]&&aiData.content[0].text)||'';
+          var clean=aiText.replace(/```json|```/g,'').trim();
+          var parsed;
+          try{parsed=JSON.parse(clean);}catch(pe){
+            showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Errore parsing AI</div><div style="font-size:11px">'+pe.message+'<br>Risposta: '+clean.substring(0,200)+'</div>','error');
+            return;
+          }
+          if(!parsed||!parsed.anno||!parsed.mese||!Array.isArray(parsed.conti)){
+            showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Dati incompleti dal PDF</div><div style="font-size:12px">Manca anno, mese o elenco conti. Verifica che il PDF sia una situazione contabile progressiva.</div>','error');
+            return;
+          }
+          // Controlla duplicato stesso anno+mese
+          var duplIdx=bilanci.findIndex(function(b){return b.anno===parsed.anno&&b.mese===parsed.mese;});
+          if(duplIdx>=0){
+            if(!confirm('Esiste già il bilancio di '+parsed.anno+'/'+String(parsed.mese).padStart(2,'0')+'. Vuoi sovrascriverlo con quello nuovo?')){
+              showBilMsg('Caricamento annullato.','warning');
+              return;
+            }
+            bilanci.splice(duplIdx,1);
+          }
+          // Aggiungi id e salva
+          var nuovo={
+            id:'bil_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+            anno:parsed.anno,
+            mese:parsed.mese,
+            periodo_da:parsed.periodo_da,
+            periodo_a:parsed.periodo_a,
+            societa:parsed.societa||'',
+            conti:parsed.conti,
+            totali:parsed.totali||{},
+            caricato_il:new Date().toISOString()
+          };
+          bilanci.push(nuovo);
+          // Salva indice
+          showBilMsg('<div style="font-weight:700;margin-bottom:6px">💾 Salvataggio...</div>','warning');
+          try{
+            await fetch(PROXY+'/bilancio-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bilanci:bilanci})});
+          }catch(e){
+            showBilMsg('⚠️ Salvataggio fallito: '+e.message,'error');
+            return;
+          }
+          // Se l'anno caricato non è quello corrente della vista, passa a quello
+          if(window._bilancioAnno!==nuovo.anno){
+            window._bilancioAnno=nuovo.anno;
+          }
+          // Aggiorna lista anni disponibili
+          anniDisp=[...new Set(bilanci.map(function(b){return b.anno;}))].sort(function(a,b){return b-a;});
+          showBilMsg('<div style="font-weight:700">✅ Bilancio '+nuovo.anno+'/'+String(nuovo.mese).padStart(2,'0')+' caricato</div><div style="font-size:11px;margin-top:4px">'+(nuovo.conti.length)+' conti importati</div>','success');
+          setTimeout(function(){
+            var b=document.getElementById('bilancio-result-banner');
+            if(b)b.remove();
+          },3500);
+          render();
+        }catch(e){
+          showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Errore</div><div style="font-size:12px">'+e.message+'</div>','error');
+        }
+      };
+      inp.click();
+    };
+
+    // ── Elimina bilancio ──
+    window._bilancioDelete=async function(id){
+      var b=bilanci.find(function(x){return x.id===id;});
+      if(!b)return;
+      if(!confirm('Eliminare il bilancio di '+b.anno+'/'+String(b.mese).padStart(2,'0')+'?'))return;
+      bilanci=bilanci.filter(function(x){return x.id!==id;});
+      try{
+        await fetch(PROXY+'/bilancio-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bilanci:bilanci})});
+        anniDisp=[...new Set(bilanci.map(function(x){return x.anno;}))].sort(function(a,b){return b-a;});
+        if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
+        if(anniDisp.indexOf(window._bilancioAnno)<0)window._bilancioAnno=anniDisp[0];
+        showBilMsg('✅ Bilancio eliminato','success');
+        setTimeout(function(){var e=document.getElementById('bilancio-result-banner');if(e)e.remove();},2000);
+        render();
+      }catch(e){
+        showBilMsg('❌ Errore eliminazione: '+e.message,'error');
+      }
+    };
+
+    render();
+  }
+  // ── FINE ANALISI BILANCIO ────────────────────────────────────────────────
+
+
 
 
 
