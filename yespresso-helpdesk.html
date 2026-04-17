@@ -710,7 +710,9 @@ async function assignAgent(agentId){
     // agentID deve essere stringa o null — converti se necessario
     const agentIdVal = agentId ? String(agentId) : null;
     console.log('[ASSIGN AGENT] agentId=',agentId,'agentIdVal=',agentIdVal,'tipo=',typeof agentId);
-    await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({assignment:{agentID:agentIdVal}})});
+    // Prova prima con agentID stringa, poi con ID intero se necessario
+    const body422 = agentIdVal ? {assignment:{agentID:agentIdVal}} : {assignment:{agentID:null}};
+    await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify(body422)});
     // Aggiorna localmente
     if(!selectedTicket.assignment)selectedTicket.assignment={};
     selectedTicket.assignment.agent=agentId?agentsList.find(a=>a.ID===agentId)||null:null;
@@ -858,7 +860,7 @@ async function hdFetch(path,options){
   try{
     const res=await fetch(url,Object.assign({},options,{headers,signal:controller.signal}));
     clearTimeout(timer);
-    if(!res.ok){const b=await res.text();throw new Error("Errore "+res.status+": "+b.substring(0,150))}
+    if(!res.ok){const b=await res.text();console.error("[hdFetch 4xx/5xx]",res.status,path,b);throw new Error("Errore "+res.status+": "+b.substring(0,500))}
     return res.json();
   }catch(e){
     clearTimeout(timer);
