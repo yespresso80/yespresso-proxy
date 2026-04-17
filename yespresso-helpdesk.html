@@ -707,7 +707,10 @@ async function assignAgent(agentId){
   const tid=selectedTicket.ID||selectedTicket.id;
   document.querySelector(".modal-overlay")?.remove();
   try{
-    await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({assignment:{agentID:agentId||null}})});
+    // agentID deve essere stringa o null — converti se necessario
+    const agentIdVal = agentId ? String(agentId) : null;
+    console.log('[ASSIGN AGENT] agentId=',agentId,'agentIdVal=',agentIdVal,'tipo=',typeof agentId);
+    await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({assignment:{agentID:agentIdVal}})});
     // Aggiorna localmente
     if(!selectedTicket.assignment)selectedTicket.assignment={};
     selectedTicket.assignment.agent=agentId?agentsList.find(a=>a.ID===agentId)||null:null;
