@@ -10286,8 +10286,7 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
         const attId=attData.ID||attData.id||(attData.attachment&&(attData.attachment.ID||attData.attachment.id));
         console.log('[POD ATTACH] id=',attId,'resp=',JSON.stringify(attData).substring(0,200));
         // Aggiungi nota privata con allegato
-        const notePayload={message:{text:'📸 POD — Prova di Consegna
-Tracking: '+tn},isPrivateNote:true};
+        const notePayload={message:{text:'📸 POD — Prova di Consegna - Tracking: '+tn},isPrivateNote:true};
         if(attId) notePayload.message.attachmentIDs=[attId];
         await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify(notePayload)});
         showToast('✅ POD allegato al ticket!');
