@@ -3351,13 +3351,20 @@ async function generateReplyWithFermopoint(){
 
   // Leggi indirizzo dal campo input (anche se non è stato digitato nulla ma solo incollato)
   const order = window._lastShopifyOrder;
+  console.log('[RIGENERA] order=', order&&order.id, '_lastShopifyOrder=', !!window._lastShopifyOrder);
   if(order){
     const fpId='fp-addr-'+order.id;
     const inp=document.getElementById(fpId);
+    console.log('[RIGENERA] fpId='+fpId+' inp='+!!inp+' value='+(inp&&inp.value));
     if(inp&&inp.value.trim()){
       window._fermopointAddrMap = window._fermopointAddrMap||{};
       window._fermopointAddrMap[order.id]=inp.value.trim();
+      console.log('[RIGENERA] Indirizzo salvato:', inp.value.trim());
+    } else {
+      console.log('[RIGENERA] Campo vuoto o non trovato');
     }
+  } else {
+    console.log('[RIGENERA] Nessun ordine in _lastShopifyOrder');
   }
 
   const events = (t.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
