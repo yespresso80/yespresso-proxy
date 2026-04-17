@@ -10326,19 +10326,35 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
       const imgTag=imgSrc?('<img src="'+imgSrc+'" style="max-width:600px" />'):'<a href="'+podUrl+'">Apri POD BRT</a>';
       const noteBody='<p>In allegato la prova di consegna (POD) del corriere BRT per la spedizione con tracking <strong>'+tn+'</strong>.</p>'+imgTag;
       console.log('[POD AL TICKET] tid=',tid);
-      const podPatchBody={message:{text:'In allegato la prova di consegna (POD) BRT - Tracking: '+tn+' - Link: '+podUrl}};
+      const imgLink=dataUrl.indexOf('tempimages')>=0?dataUrl:podUrl;
+      const podPatchBody={message:{text:'Le inviamo la prova di consegna (POD) del corriere BRT per la spedizione con tracking '+tn+'. Puo scaricarla cliccando qui: '+imgLink}};
       console.log('[POD AL TICKET] body=',JSON.stringify(podPatchBody));
       const podPatchRes=await proxyFetch(PROXY+'/api/v1/tickets/'+tid,{method:'PATCH',headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},body:JSON.stringify(podPatchBody)});
       const podPatchData=await podPatchRes.json();
-      console.log('[POD AL TICKET] risposta=',JSON.stringify(podPatchData).substring(0,300));
+      console.log('[POD AL TICKET] risposta=',JSON.stringify(podPatchData).substring(0,200));
       showToast('POD aggiunto al ticket!');
       btn.textContent='Aggiunto';btn.style.background='#888';
+      // Ricarica il ticket per vedere il messaggio
+      if(selectedTicket){
+        const tid2=selectedTicket.ID||selectedTicket.id;
+        setTimeout(async function(){
+          try{
+            const fresh=await hdFetch('/v1/tickets/'+tid2+'?includes=requester,assignee,events');
+            if(fresh&&fresh.ID){
+              selectedTicket=fresh;
+              const evArea=document.getElementById('ticket-events-area');
+              if(evArea) renderTicketEvents(selectedTicket,evArea);
+            }
+          }catch(e){}
+        },1000);
+      }
       // Aggiorna campo risposta al cliente
       const rt=document.getElementById('reply-text');
       if(rt){
         const requesterName=(selectedTicket&&selectedTicket.requester&&selectedTicket.requester.name)||'';
         const firstName=requesterName?requesterName.split(' ')[0]:'Cliente';
-        const podMsg='Gentile '+firstName+',\n\ncome richiesto, le alleghiamo la prova di consegna (POD) del corriere BRT per la spedizione con tracking '+tn+'.\n\nPuo verificare i dettagli della consegna tramite il seguente link BRT: '+podUrl+'\n\nRestiamo a disposizione per qualsiasi chiarimento.\n\nCordiali saluti,\nIl Team Yespresso';
+        const imgLink2=dataUrl.indexOf('tempimages')>=0?dataUrl:podUrl;
+        const podMsg='Gentile '+firstName+',\n\nle inviamo la prova di consegna (POD) del corriere BRT per la spedizione con tracking '+tn+'. Puo scaricarla cliccando qui: '+imgLink2+'\n\nRestiamo a disposizione per qualsiasi chiarimento.\n\nCordiali saluti,\nIl Team Yespresso';
         rt.value=podMsg;
         const aa=document.getElementById('action-area');
         if(aa)aa.style.display='block';
