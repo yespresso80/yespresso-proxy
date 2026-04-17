@@ -3723,6 +3723,50 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   // Se stato spedizione critico → non chiamare Claude
   if(order && order._criticalShipping){ return; }
 
+  // Scarica allegati immagine da HelpDesk e comprimili per l'AI
+  if(t&&t.events){
+    const seenHD=new Set((window._ticketAttachments||[]).map(a=>a.filename));
+    const hdImgsToAdd=[];
+    for(const ev of (t.events||[])){
+      const msgAtts=Array.isArray(ev.message&&ev.message.attachments)?ev.message.attachments:[];
+      for(const a of msgAtts){
+        if(!a.url||seenHD.has(a.name||''))continue;
+        const ct=(a.contentType||a.type||'').toLowerCase();
+        const nm=(a.name||a.filename||'').toLowerCase();
+        if(!ct.startsWith('image/')&&!/\.(png|jpg|jpeg|gif|webp)$/i.test(nm))continue;
+        try{
+          const imgR=await fetch(a.url);
+          if(!imgR.ok)continue;
+          const blob=await imgR.blob();
+          const b64=await new Promise(function(res2){
+            const objUrl=URL.createObjectURL(blob);
+            const img2=new Image();
+            img2.onload=function(){
+              URL.revokeObjectURL(objUrl);
+              const canvas=document.createElement('canvas');
+              const maxDim=1200;
+              let w=img2.naturalWidth,h=img2.naturalHeight;
+              if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+              canvas.width=w;canvas.height=h;
+              canvas.getContext('2d').drawImage(img2,0,0,w,h);
+              res2(canvas.toDataURL('image/jpeg',0.75).split(',')[1]);
+            };
+            img2.onerror=function(){res2(null);};
+            img2.src=objUrl;
+          });
+          if(b64&&b64.length>100){
+            seenHD.add(a.name||'');
+            hdImgsToAdd.push({filename:a.name||'img.jpg',data:b64,contentType:'image/jpeg'});
+            console.log('[HD IMG] Aggiunta immagine compressa: '+(a.name||'img')+'  '+(b64.length/1024).toFixed(0)+'KB');
+            if(hdImgsToAdd.length>=3)break;
+          }
+        }catch(e){console.log('[HD IMG err]',e.message);}
+      }
+      if(hdImgsToAdd.length>=3)break;
+    }
+    if(hdImgsToAdd.length>0)window._ticketAttachments=(window._ticketAttachments||[]).concat(hdImgsToAdd);
+  }
+
   try{
     const res=await anthropicFetch({model:"claude-sonnet-4-5",max_tokens:1000,
         system:getAISystemPrompt()+buildSolvedContext(selectedTicket),
@@ -3734,6 +3778,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
             seen.add(img.filename);
             return img.data&&img.data.length>100;
           });
+          console.log('[AI IMGS] _ticketAttachments count=',window._ticketAttachments&&window._ticketAttachments.length,'imgs validi=',imgs.length,imgs.map(i=>i.filename+' '+i.contentType+' dataLen='+i.data.length));
           if(!imgs.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
           const parts=[{type:"text",text:"Genera una risposta professionale per questo ticket. Sono allegate "+imgs.length+" foto inviate dal cliente che puoi analizzare:\n\n"+prompt}];
           imgs.forEach(img=>{
@@ -3741,10 +3786,10 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
             cleanData=cleanData.replace(/[0-9a-f]{10,}$/,"");
             const rem=cleanData.length%4;
             if(rem)cleanData+=("===".substring(0,4-rem));
-            // Limite 1.5MB base64 per immagine
-            if(cleanData.length>1500000){
-              console.log("[IMG] Tronco immagine da "+cleanData.length+" a 1.5MB");
-              cleanData=cleanData.substring(0,1500000);
+            // Limite 4MB base64 per immagine (le HD imgs sono già compresse)
+            if(cleanData.length>4000000){
+              console.log("[IMG] Tronco immagine da "+cleanData.length+" a 4MB");
+              cleanData=cleanData.substring(0,4000000);
               const rem2=cleanData.length%4;if(rem2)cleanData+=("===".substring(0,4-rem2));
             }
             // Normalizza media_type: Claude accetta solo jpeg/png/gif/webp
