@@ -12601,12 +12601,19 @@ window.matprodRiceviOrdine = function(ordId){
     var btn=this; btn.disabled=true; btn.textContent='Aggiornamento...';
     var errori=[], aggiornati=0;
     var data2 = matprodLoadData();
+    // Trova l'ordine in data2 (copia fresca) e aggiorna le qty lì
+    var ordInData2 = (data2.ordini_materiali||[]).find(function(o){return o.id===ordId;});
     for(var i=0;i<ord.righe.length;i++){
       var r = ord.righe[i];
       var el = document.getElementById('mp-rcv-'+r.sku);
       var val = el ? (parseInt(el.value)||0) : 0;
       if(val<=0) continue;
       r.qty_ricevuta = (r.qty_ricevuta||0)+val;
+      // Aggiorna anche nella copia data2
+      if(ordInData2&&ordInData2.righe){
+        var r2=ordInData2.righe.find(function(x){return x.sku===r.sku;});
+        if(r2) r2.qty_ricevuta=(r2.qty_ricevuta||0)+val;
+      }
       var loc = data2.location_ids && data2.location_ids[r.sku];
       if(loc){
         try{
@@ -12620,8 +12627,11 @@ window.matprodRiceviOrdine = function(ordId){
     }
     var allDone = ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty;});
     var someDone = ord.righe.some(function(r){return (r.qty_ricevuta||0)>0;});
-    ord.stato = allDone?'ricevuto':(someDone?'parziale':'attesa');
-    data2.ordini_materiali = (data2.ordini_materiali||[]).map(function(o){return o.id===ordId?ord:o;});
+    var nuovoStato = allDone?'ricevuto':(someDone?'parziale':'attesa');
+    ord.stato = nuovoStato;
+    // Aggiorna stato anche in data2
+    if(ordInData2) ordInData2.stato = nuovoStato;
+    data2.ordini_materiali = (data2.ordini_materiali||[]).map(function(o){return o.id===ordId?(ordInData2||ord):o;});
     matprodSaveData(data2);
     modal.remove();
     if(errori.length) showToast('⚠️ Errori: '+errori.join(', '),'error');
