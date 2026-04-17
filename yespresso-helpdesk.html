@@ -3837,7 +3837,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         if(errMsg.includes("Could not process image")||errMsg.includes("invalid_request_error")){
           const custName=(window._lastShopifyOrder&&window._lastShopifyOrder.shipping_address&&window._lastShopifyOrder.shipping_address.first_name)||"";
           const greeting=custName?"Gentile "+custName+",":"Gentile Cliente,";
-          if(rt2)rt2.value=greeting+"\n\nGrazie per averci contattato.\n\nPurtroppo non riusciamo a visualizzare i file allegati perché il formato non è supportato.\n\nLa preghiamo di reinviarci:\n- Le foto in formato JPG\n- I video in formato MOV\n\nAppena riceveremo i file nel formato corretto potremo procedere immediatamente.\n\nCordiali saluti";
+          // Non rispondere con messaggio di formato errato — l'AI gestisce normalmente
+          if(rt2)rt2.value='';
         } else {
           if(rt2)rt2.placeholder="⚠ Risposta AI vuota — scrivi manualmente. Err: "+errMsg;
         }
@@ -10309,12 +10310,14 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
       const t=selectedTicket;if(!t){showToast('Nessun ticket','error');btn.disabled=false;return;}
       const tid=t.ID||t.id;
       try{
-        const imgTag='<img src="'+dataUrl+'" style="max-width:100%" />';
-        const noteBody='<p><strong>📸 POD — Prova di Consegna</strong><br>Tracking: '+tn+'</p>'+imgTag;
-        await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:true})});
-        showToast('✅ POD aggiunto al ticket');
-        btn.textContent='✅ Aggiunto';btn.style.background='#888';
-      }catch(e){showToast('⚠️ Errore: '+e.message,'error');btn.disabled=false;btn.textContent='📎 Aggiungi al ticket';}
+        // Se base64 o URL pubblico tempimages usa img inline, altrimenti solo testo
+        const imgSrc=dataUrl.startsWith('data:')||dataUrl.indexOf('tempimages')>=0?dataUrl:null;
+        const imgTag=imgSrc?('<img src="'+imgSrc+'" style="max-width:600px" />'):'<a href="'+podUrl+'">Apri POD BRT</a>';
+        const noteBody='<p>In allegato la prova di consegna (POD) del corriere BRT per la spedizione con tracking <strong>'+tn+'</strong>.</p>'+imgTag;
+        await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:false})});
+        showToast('POD aggiunto al ticket!');
+        btn.textContent='Aggiunto';btn.style.background='#888';
+      }catch(e){showToast('Errore: '+e.message,'error');btn.disabled=false;btn.textContent='Aggiungi al ticket';}
     });
   }
 }
@@ -11197,16 +11200,28 @@ function pastePodFromClipboard(btnId){
   var dlg=document.createElement('div');
   dlg.id='pod-url-dialog';
   dlg.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:9999;width:460px;font-family:sans-serif';
-  dlg.innerHTML='<div style="font-weight:700;font-size:15px;margin-bottom:8px">🔗 Inserisci URL immagine POD</div>'+
-    '<div style="font-size:12px;color:#666;margin-bottom:12px">1. Clicca <b>📸 Vedi POD ↗</b> per aprire la pagina BRT<br>2. <b>Tasto destro sull\'immagine</b> → Copia indirizzo immagine<br>3. Incolla qui sotto</div>'+
+  dlg.innerHTML='<div style="font-weight:700;font-size:15px;margin-bottom:12px">📸 POD — Prova di Consegna</div>'+
+    '<div style="font-size:12px;color:#666;background:#f9f0ff;border-radius:8px;padding:10px;margin-bottom:14px">'+
+    '<b>Opzione 1 — Carica file:</b><br>1. Clicca <b>Vedi POD ↗</b> per aprire la pagina BRT<br>2. <b>Tasto destro immagine</b> → Salva immagine sul PC<br>3. Clicca il bottone Carica file sotto</div>'+
+    '<label style="display:block;padding:10px;background:#8e44ad;color:#fff;border-radius:8px;text-align:center;cursor:pointer;font-weight:700;font-size:13px;margin-bottom:12px">📎 Seleziona file immagine POD<input id="pod-direct-file" type="file" accept="image/*" style="display:none"></label>'+
+    '<div style="font-size:12px;color:#999;margin-bottom:6px;text-align:center">— oppure incolla URL immagine —</div>'+
     '<input id="pod-url-input" type="text" placeholder="https://vas.brt.it/tempimages/..." style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d4b8ff;border-radius:6px;font-size:13px;margin-bottom:12px">'+
     '<div style="display:flex;gap:8px;justify-content:flex-end">'+
     '<button id="pod-url-cancel" style="padding:7px 16px;border-radius:6px;border:1px solid #ddd;cursor:pointer;font-size:13px;background:#fff">Annulla</button>'+
-    '<button id="pod-url-load" style="padding:7px 16px;border-radius:6px;background:#8e44ad;color:#fff;cursor:pointer;font-size:13px;font-weight:700;border:none">📥 Carica POD</button>'+
+    '<button id="pod-url-load" style="padding:7px 16px;border-radius:6px;background:#555;color:#fff;cursor:pointer;font-size:13px;font-weight:700;border:none">Carica da URL</button>'+
     '</div>';
   document.body.appendChild(dlg);
   document.getElementById('pod-url-cancel').onclick=function(){dlg.remove();};
   document.getElementById('pod-url-load').onclick=function(){loadPodFromUrl(btnId,this);};
+  // Carica direttamente da file selezionato
+  document.getElementById('pod-direct-file').addEventListener('change',async function(){
+    var file=this.files&&this.files[0];
+    if(!file)return;
+    dlg.remove();
+    var dataUrl=await new Promise(function(res2){var fr=new FileReader();fr.onload=function(e){res2(e.target.result);};fr.readAsDataURL(file);});
+    showPodSidebar(dataUrl,'image/jpeg',d?d.tn:'POD',d?d.podUrl:'');
+    showToast('POD caricato dal file!');
+  });
   setTimeout(function(){var inp=document.getElementById('pod-url-input');if(inp)inp.focus();},100);
 }
 
@@ -11215,35 +11230,24 @@ function loadPodFromUrl(btnId,btn){
   var inp=document.getElementById('pod-url-input');
   var url=inp?inp.value.trim():'';
   if(!url||url.indexOf('vas.brt.it')<0){
-    showToast('⚠️ URL non valido — deve essere un URL di vas.brt.it','error');
+    showToast('URL non valido — deve essere un URL di vas.brt.it','error');
     return;
   }
   var dlg2=document.getElementById('pod-url-dialog');
   if(dlg2) dlg2.remove();
-  // Carica direttamente nel browser (usa i cookie BRT dell'utente)
-  var img=new Image();
-  img.crossOrigin='anonymous';
-  img.onload=function(){
-    // Converti in base64 tramite canvas
-    var canvas=document.createElement('canvas');
-    canvas.width=img.naturalWidth; canvas.height=img.naturalHeight;
-    canvas.getContext('2d').drawImage(img,0,0);
-    try{
-      var dataUrl=canvas.toDataURL('image/jpeg',0.9);
-      showPodSidebar(dataUrl,'image/jpeg',d?d.tn:'',d?d.podUrl:url);
-      showToast('✅ POD caricato!');
-    }catch(e){
-      // Canvas bloccato da CORS — apri direttamente in nuova tab
-      showToast('⚠️ CORS bloccato — apertura diretta in nuova tab');
-      window.open(url,'_blank');
-    }
-  };
-  img.onerror=function(){
-    // Fallback: mostra direttamente come img src (funziona se l'utente è loggato su BRT)
-    showPodSidebar(url,'image/jpeg',d?d.tn:'',d?d.podUrl:url);
-    showToast('✅ POD caricato (URL diretto)');
-  };
-  img.src=url;
+  // URL tempimages = link diretto JPG pubblico, nessun login richiesto
+  var isTempImg=url.indexOf('tempimages')>=0;
+  if(isTempImg){
+    // Mostra direttamente come img src — funziona senza login
+    showPodSidebar(url,'image/jpeg',d?d.tn:'POD',d?d.podUrl:url);
+    showToast('POD caricato!');
+  } else {
+    // URL pagina BRT con sessione — prova caricamento diretto
+    var img=new Image();
+    img.onload=function(){showPodSidebar(url,'image/jpeg',d?d.tn:'POD',d?d.podUrl:url);showToast('POD caricato!');};
+    img.onerror=function(){showPodSidebar(url,'image/jpeg',d?d.tn:'POD',d?d.podUrl:url);showToast('POD caricato (URL diretto)');};
+    img.src=url;
+  }
 }
 
 document.addEventListener('click',function(e){
