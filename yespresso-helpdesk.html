@@ -4063,7 +4063,11 @@ async function sendReply(){
       // Gestione allegati tramite transaction
       var _txId=null;
       var _attachInput=document.getElementById("reply-attachment");
-      if(_attachInput&&_attachInput.files&&_attachInput.files.length>0){
+      // Controlla se c'è un POD da allegare
+      var _podDataUrl=window._podAttachment&&Object.values(window._podAttachment)[0];
+      var _hasPod=_podDataUrl&&_podDataUrl.startsWith('data:');
+      var _hasFiles=_attachInput&&_attachInput.files&&_attachInput.files.length>0;
+      if(_hasFiles||_hasPod){
         try{
           var _txRes=await proxyFetch(PROXY+"/api/v1/transactions",{
             method:"POST",
@@ -4075,8 +4079,24 @@ async function sendReply(){
             _txId=_txData.ID||_txData.id;
             if(_txId){
               var _fd=new FormData();
-              for(var _fi=0;_fi<_attachInput.files.length;_fi++){
-                _fd.append("attachments",_attachInput.files[_fi]);
+              // Allegati normali
+              if(_hasFiles){
+                for(var _fi=0;_fi<_attachInput.files.length;_fi++){
+                  _fd.append("attachments",_attachInput.files[_fi]);
+                }
+              }
+              // Immagine POD come file
+              if(_hasPod){
+                var _podBase64=_podDataUrl.split(',')[1];
+                var _podMime=_podDataUrl.split(';')[0].split(':')[1]||'image/jpeg';
+                var _podExt=_podMime.includes('png')?'png':'jpg';
+                var _podBytes=atob(_podBase64);
+                var _podArr=new Uint8Array(_podBytes.length);
+                for(var _pi=0;_pi<_podBytes.length;_pi++) _podArr[_pi]=_podBytes.charCodeAt(_pi);
+                var _podBlob=new Blob([_podArr],{type:_podMime});
+                var _podFile=new File([_podBlob],'POD_consegna.'+_podExt,{type:_podMime});
+                _fd.append("attachments",_podFile);
+                console.log('[POD] Allegato immagine POD come file: POD_consegna.'+_podExt);
               }
               await proxyFetch(PROXY+"/api/v1/transactions/"+_txId+"/attachments",{
                 method:"POST",
@@ -4098,6 +4118,11 @@ async function sendReply(){
       console.log("✅ Messaggio inviato via PATCH ticket");
       var _ai=document.getElementById("reply-attachment");if(_ai){_ai.value="";}
       var _an=document.getElementById("attach-name");if(_an){_an.textContent="";}
+      // Reset POD attachment dopo invio
+      if(window._podAttachment){window._podAttachment={};
+        var _podBtn=document.querySelector("[id^='pod-al-']");
+        if(_podBtn){_podBtn.textContent="📎 Aggiungi Allegato";_podBtn.style.background="#8e44ad";}
+      }
       // Reset toggle privato dopo invio
       var ptBtn=document.getElementById("private-toggle");
       if(ptBtn&&ptBtn.dataset.private==="1"){togglePrivateMode();}
@@ -11151,28 +11176,35 @@ function loadPodFromUrl(btnId,btn){
   var inp=document.getElementById('pod-url-input');
   var url=inp?inp.value.trim():'';
   if(!url||url.indexOf('vas.brt.it')<0){
-    showToast('⚠️ URL non valido — deve essere https://vas.brt.it/tempimages/...','error');
+    showToast('⚠️ URL non valido — deve essere un URL di vas.brt.it','error');
     return;
   }
-  if(btn){btn.textContent='⏳ Carico...';btn.disabled=true;}
-  proxyFetch(PROXY+'/brt/pod-image?url='+encodeURIComponent(url))
-    .then(function(r){return r.json();})
-    .then(function(j){
-      var dlg2=document.getElementById('pod-url-dialog');
-      if(dlg2) dlg2.remove();
-      if(j&&j.ok){
-        showPodSidebar('data:'+j.mime+';base64,'+j.data,j.mime,d?d.tn:'',d?d.podUrl:url);
-        showToast('✅ POD caricato!');
-      } else {
-        showToast('⚠️ '+(j&&j.error?j.error:'Errore download POD'),'error');
-        if(btn){btn.textContent='📥 Carica POD';btn.disabled=false;}
-      }
-    })
-    .catch(function(e){
-      var dlg3=document.getElementById('pod-url-dialog');
-      if(dlg3) dlg3.remove();
-      showToast('⚠️ Errore: '+e.message,'error');
-    });
+  var dlg2=document.getElementById('pod-url-dialog');
+  if(dlg2) dlg2.remove();
+  // Carica direttamente nel browser (usa i cookie BRT dell'utente)
+  var img=new Image();
+  img.crossOrigin='anonymous';
+  img.onload=function(){
+    // Converti in base64 tramite canvas
+    var canvas=document.createElement('canvas');
+    canvas.width=img.naturalWidth; canvas.height=img.naturalHeight;
+    canvas.getContext('2d').drawImage(img,0,0);
+    try{
+      var dataUrl=canvas.toDataURL('image/jpeg',0.9);
+      showPodSidebar(dataUrl,'image/jpeg',d?d.tn:'',d?d.podUrl:url);
+      showToast('✅ POD caricato!');
+    }catch(e){
+      // Canvas bloccato da CORS — apri direttamente in nuova tab
+      showToast('⚠️ CORS bloccato — apertura diretta in nuova tab');
+      window.open(url,'_blank');
+    }
+  };
+  img.onerror=function(){
+    // Fallback: mostra direttamente come img src (funziona se l'utente è loggato su BRT)
+    showPodSidebar(url,'image/jpeg',d?d.tn:'',d?d.podUrl:url);
+    showToast('✅ POD caricato (URL diretto)');
+  };
+  img.src=url;
 }
 
 document.addEventListener('click',function(e){
