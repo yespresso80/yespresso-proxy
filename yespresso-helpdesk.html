@@ -12621,8 +12621,11 @@ window.matprodRiceviOrdine = function(ordId){
     var allDone = ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty;});
     var someDone = ord.righe.some(function(r){return (r.qty_ricevuta||0)>0;});
     ord.stato = allDone?'ricevuto':(someDone?'parziale':'attesa');
-    // data.ordini_materiali contiene già ord aggiornato (stesso reference)
+    console.log('[MATPROD SAVE] ord.stato='+ord.stato+' righe='+JSON.stringify(ord.righe.map(function(r){return r.sku+':'+r.qty_ricevuta+'/'+r.qty;})));
+    // Forza aggiornamento esplicito nell'array prima di salvare
+    data.ordini_materiali = (data.ordini_materiali||[]).map(function(o){return o.id===ordId?ord:o;});
     matprodSaveData(data);
+    console.log('[MATPROD SAVE] Salvato localStorage. Verifica:',JSON.parse(localStorage.getItem(MATPROD_KEY)||'{}').ordini_materiali&&JSON.parse(localStorage.getItem(MATPROD_KEY)||'{}').ordini_materiali.find(function(o){return o.id===ordId;}));
     modal.remove();
     if(errori.length) showToast('⚠️ Errori: '+errori.join(', '),'error');
     else showToast('✅ Materiali ricevuti e Shopify aggiornato (sede BEST ESPRESSO)');
