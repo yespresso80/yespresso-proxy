@@ -573,7 +573,19 @@ async function syncImapAttachments() {
             
             if (fnMatch && ctMatch) {
               let filename = fnMatch[1] || fnMatch[2] || "";
-              try { filename = decodeURIComponent(filename.trim()); } catch(e) { filename = filename.trim(); }
+              filename = filename.trim();
+              // Decodifica MIME encoded-word =?utf-8?Q?...?= o =?utf-8?B?...?=
+              filename = filename.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, function(m, charset, enc, encoded) {
+                try {
+                  if (enc.toUpperCase() === 'Q') {
+                    const qp = encoded.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, function(_, h){ return String.fromCharCode(parseInt(h,16)); });
+                    return Buffer.from(qp, 'binary').toString('utf8');
+                  } else {
+                    return Buffer.from(encoded, 'base64').toString('utf8');
+                  }
+                } catch(e) { return encoded; }
+              });
+              try { filename = decodeURIComponent(filename); } catch(e) {}
               filename = filename.replace(/['"]/g,"").trim();
               const contentType = ctMatch[1].trim().toLowerCase();
               const encoding = (encMatch ? encMatch[1].trim() : "").toLowerCase();

@@ -10307,31 +10307,30 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
       }
     });
   } else {
-    // dataUrl base64 — Copia e allega direttamente
+    // dataUrl base64 — bottone copia
     const cpBtn=document.getElementById('pod-cp-'+ts);
     if(cpBtn) cpBtn.addEventListener('click',function(){
       const img=document.getElementById('pod-img-'+ts);
       const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);
-      c.toBlob(b=>navigator.clipboard.write([new ClipboardItem({'image/png':b})]).then(()=>showToast('✅ POD copiato')).catch(()=>showToast('Tasto destro → Copia immagine','error')));
-    });
-    const alBtn=document.getElementById('pod-al-'+ts);
-    if(alBtn) alBtn.addEventListener('click',async function(){
-      const btn=this;btn.disabled=true;btn.textContent='⏳ Aggiungo...';
-      const t=selectedTicket;if(!t){showToast('Nessun ticket','error');btn.disabled=false;return;}
-      const tid=t.ID||t.id;
-      try{
-        // Se base64 o URL pubblico tempimages usa img inline, altrimenti solo testo
-        const imgSrc=dataUrl.startsWith('data:')||dataUrl.indexOf('tempimages')>=0?dataUrl:null;
-        const imgTag=imgSrc?('<img src="'+imgSrc+'" style="max-width:600px" />'):'<a href="'+podUrl+'">Apri POD BRT</a>';
-        const noteBody='<p>In allegato la prova di consegna (POD) del corriere BRT per la spedizione con tracking <strong>'+tn+'</strong>.</p>'+imgTag;
-        console.log('[POD AL TICKET] tid=',tid,'body=',JSON.stringify({message:{richTextHtml:noteBody.substring(0,100)},isPrivateNote:false}));
-        const podResp=await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:false})});
-        console.log('[POD AL TICKET] risposta=',JSON.stringify(podResp).substring(0,200));
-        showToast('POD aggiunto al ticket!');
-        btn.textContent='Aggiunto';btn.style.background='#888';
-      }catch(e){console.error('[POD AL TICKET] errore:',e.message);showToast('Errore: '+e.message,'error');btn.disabled=false;btn.textContent='Aggiungi al ticket';}
+      c.toBlob(b=>navigator.clipboard.write([new ClipboardItem({'image/png':b})]).then(()=>showToast('POD copiato')).catch(()=>showToast('Tasto destro → Copia immagine','error')));
     });
   }
+  // Bottone Aggiungi al ticket — sempre attivo indipendentemente da isDirectUrl
+  const alBtn=document.getElementById('pod-al-'+ts);
+  if(alBtn) alBtn.addEventListener('click',async function(){
+    const btn=this;btn.disabled=true;btn.textContent='Aggiungo...';
+    const t=selectedTicket;if(!t){showToast('Nessun ticket','error');btn.disabled=false;return;}
+    const tid=t.ID||t.id;
+    try{
+      const imgSrc=dataUrl.startsWith('data:')||dataUrl.indexOf('tempimages')>=0?dataUrl:null;
+      const imgTag=imgSrc?('<img src="'+imgSrc+'" style="max-width:600px" />'):'<a href="'+podUrl+'">Apri POD BRT</a>';
+      const noteBody='<p>In allegato la prova di consegna (POD) del corriere BRT per la spedizione con tracking <strong>'+tn+'</strong>.</p>'+imgTag;
+      console.log('[POD AL TICKET] tid=',tid);
+      await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:false})});
+      showToast('POD aggiunto al ticket!');
+      btn.textContent='Aggiunto';btn.style.background='#888';
+    }catch(e){console.error('[POD AL TICKET]',e.message);showToast('Errore: '+e.message,'error');btn.disabled=false;btn.textContent='Aggiungi al ticket';}
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -10658,8 +10657,8 @@ function cancelShopifyOrder(orderId){
     const btn=document.querySelector('[onclick*="cancelShopifyOrder"][onclick*="'+orderId+'"]');
     if(btn){btn.textContent="Annullamento...";btn.style.pointerEvents="none";}
     try{
+      // 1. Annulla ordine
       const body={reason:"customer",email:true};
-      if(withRefund)body.refund=true;
       const res=await proxyFetch(PROXY+"/shopify/orders/"+orderId+"/cancel.json",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -10667,6 +10666,28 @@ function cancelShopifyOrder(orderId){
       });
       const data=await res.json();
       if(res.ok&&data.order){
+        // 2. Se richiesto rimborso, chiama refunds/calculate poi refunds
+        if(withRefund){
+          try{
+            // Calcola rimborso
+            const calcRes=await proxyFetch(PROXY+"/shopify/orders/"+orderId+"/refunds/calculate.json",{
+              method:"POST",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({refund:{shipping:{full_refund:true},refund_line_items:data.order.line_items.map(function(li){return {line_item_id:li.id,quantity:li.quantity,restock_type:'no_restock'};})}})
+            });
+            const calcData=await calcRes.json();
+            if(calcData.refund&&calcData.refund.transactions&&calcData.refund.transactions.length>0){
+              // Esegui rimborso
+              const refundBody={refund:{shipping:{full_refund:true},refund_line_items:calcData.refund.refund_line_items||[],transactions:calcData.refund.transactions.map(function(t){return {parent_id:t.parent_id,amount:t.amount,kind:'refund',gateway:t.gateway};}),notify:true}};
+              await proxyFetch(PROXY+"/shopify/orders/"+orderId+"/refunds.json",{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify(refundBody)
+              });
+              console.log('[REFUND] Rimborso eseguito per ordine',orderId);
+            }
+          }catch(re){console.warn('[REFUND] Errore rimborso:',re.message);showToast('Ordine annullato ma rimborso fallito: '+re.message,'error');}
+        }
         showToast("✓ Ordine #"+orderId+" annullato"+(withRefund?" e rimborsato":"")+" su Shopify");
         if(btn){btn.textContent="✓ Annullato";btn.style.color="#aaa";btn.style.pointerEvents="none";}
         // Aggiorna risposta AI con conferma annullamento invece di svuotarla
