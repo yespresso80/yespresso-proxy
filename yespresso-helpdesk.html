@@ -3660,8 +3660,6 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     html+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
       const _waPhone=(window._brtPickupData[order.id]&&window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
       if(_waPhone) html+='<br><a href="https://web.whatsapp.com/send?phone=39'+_waPhone+'" target="_blank" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp</a>';
-      const _waPhone=(window._brtPickupData[order.id]&&window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
-      if(_waPhone) html+='<br><a href="https://web.whatsapp.com/send?phone=39'+_waPhone+'" target="_blank" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp</a>';
     }
     // Credito: mostra solo per clienti sito (non Amazon/Temu/TikTok)
     const isTemuOrAmazonGen=(email||'').includes('temu')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok')||(email||'').includes('seller@orders');
