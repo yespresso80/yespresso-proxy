@@ -1180,6 +1180,8 @@ async function bulkSetStatus(status){
 
 async function bulkAssignAgent(){
   if(!selectedTicketIds.size)return;
+  // Carica agenti se non ancora disponibili
+  if(!agentsList||!agentsList.length) await loadAgentsAndTags();
   // Mostra modal selezione agente
   const modal=document.createElement("div");
   modal.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center";
@@ -3781,23 +3783,40 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
           console.log('[AI IMGS] _ticketAttachments count=',window._ticketAttachments&&window._ticketAttachments.length,'imgs validi=',imgs.length,imgs.map(i=>i.filename+' '+i.contentType+' dataLen='+i.data.length));
           if(!imgs.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
           const parts=[{type:"text",text:"Genera una risposta professionale per questo ticket. Sono allegate "+imgs.length+" foto inviate dal cliente che puoi analizzare:\n\n"+prompt}];
-          imgs.forEach(img=>{
+          // Funzione comprimi immagine via canvas (async)
+          const compressImg=function(b64,mt){return new Promise(function(res2){
+            const img3=new Image();
+            img3.onload=function(){
+              const canvas=document.createElement('canvas');
+              const maxDim=1200;
+              let w=img3.naturalWidth,h=img3.naturalHeight;
+              if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+              canvas.width=w;canvas.height=h;
+              canvas.getContext('2d').drawImage(img3,0,0,w,h);
+              res2(canvas.toDataURL('image/jpeg',0.75).split(',')[1]);
+            };
+            img3.onerror=function(){res2(b64);}; // fallback
+            img3.src='data:'+mt+';base64,'+b64;
+          });};
+          const compressedImgs=await Promise.all(imgs.map(async function(img){
             let cleanData=img.data.replace(/[^A-Za-z0-9+/=]/g,"");
             cleanData=cleanData.replace(/[0-9a-f]{10,}$/,"");
             const rem=cleanData.length%4;
             if(rem)cleanData+=("===".substring(0,4-rem));
-            // Limite 4MB base64 per immagine (le HD imgs sono già compresse)
-            if(cleanData.length>4000000){
-              console.log("[IMG] Tronco immagine da "+cleanData.length+" a 4MB");
-              cleanData=cleanData.substring(0,4000000);
-              const rem2=cleanData.length%4;if(rem2)cleanData+=("===".substring(0,4-rem2));
-            }
-            // Normalizza media_type: Claude accetta solo jpeg/png/gif/webp
             let mediaType=(img.contentType||"image/jpeg").toLowerCase().trim();
             if(mediaType==="image/jpg")mediaType="image/jpeg";
             if(!["image/jpeg","image/png","image/gif","image/webp"].includes(mediaType))mediaType="image/jpeg";
+            // Comprimi se sopra 800KB
+            if(cleanData.length>800000){
+              console.log("[IMG] Comprimo immagine da "+(cleanData.length/1024).toFixed(0)+"KB");
+              cleanData=await compressImg(cleanData,mediaType);
+              console.log("[IMG] Compressa a "+(cleanData.length/1024).toFixed(0)+"KB");
+            }
+            return {data:cleanData,mediaType:mediaType};
+          }));
+          compressedImgs.forEach(function(ci){
             try{
-              parts.push({type:"image",source:{type:"base64",media_type:mediaType,data:cleanData}});
+              parts.push({type:"image",source:{type:"base64",media_type:ci.mediaType,data:ci.data}});
             }catch(e){console.log("Skip img:",e.message);}
           });
           return parts;
