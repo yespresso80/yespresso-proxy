@@ -10326,9 +10326,23 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
       const imgTag=imgSrc?('<img src="'+imgSrc+'" style="max-width:600px" />'):'<a href="'+podUrl+'">Apri POD BRT</a>';
       const noteBody='<p>In allegato la prova di consegna (POD) del corriere BRT per la spedizione con tracking <strong>'+tn+'</strong>.</p>'+imgTag;
       console.log('[POD AL TICKET] tid=',tid);
-      await proxyFetch(PROXY+'/api/v1/tickets/'+tid,{method:'PATCH',headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},body:JSON.stringify({message:{text:'In allegato la prova di consegna (POD) BRT - Tracking: '+tn+' - Link: '+podUrl}})});
+      const podPatchBody={message:{text:'In allegato la prova di consegna (POD) BRT - Tracking: '+tn+' - Link: '+podUrl}};
+      console.log('[POD AL TICKET] body=',JSON.stringify(podPatchBody));
+      const podPatchRes=await proxyFetch(PROXY+'/api/v1/tickets/'+tid,{method:'PATCH',headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},body:JSON.stringify(podPatchBody)});
+      const podPatchData=await podPatchRes.json();
+      console.log('[POD AL TICKET] risposta=',JSON.stringify(podPatchData).substring(0,300));
       showToast('POD aggiunto al ticket!');
       btn.textContent='Aggiunto';btn.style.background='#888';
+      // Aggiorna campo risposta al cliente
+      const rt=document.getElementById('reply-text');
+      if(rt){
+        const requesterName=(selectedTicket&&selectedTicket.requester&&selectedTicket.requester.name)||'';
+        const firstName=requesterName?requesterName.split(' ')[0]:'Cliente';
+        const podMsg='Gentile '+firstName+',\n\ncome richiesto, le alleghiamo la prova di consegna (POD) del corriere BRT per la spedizione con tracking '+tn+'.\n\nPuo verificare i dettagli della consegna tramite il seguente link BRT: '+podUrl+'\n\nRestiamo a disposizione per qualsiasi chiarimento.\n\nCordiali saluti,\nIl Team Yespresso';
+        rt.value=podMsg;
+        const aa=document.getElementById('action-area');
+        if(aa)aa.style.display='block';
+      }
     }catch(e){console.error('[POD AL TICKET]',e.message);showToast('Errore: '+e.message,'error');btn.disabled=false;btn.textContent='Aggiungi al ticket';}
   });
 }
