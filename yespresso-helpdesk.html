@@ -2769,14 +2769,24 @@ async function openTicketPreview(tid){
           const fnImap=att.filename||att.name||"";
           const isImage=ctImap.startsWith("image/")||/\.(png|jpg|jpeg|gif|webp)$/i.test(fnImap);
           const isPdfImap=ctImap.includes("pdf")||/\.pdf$/i.test(fnImap);
-          const mimeImap=ctImap||"application/octet-stream";
+          // Determina MIME corretto dal nome file se il server restituisce octet-stream
+          var mimeImap=ctImap||"application/octet-stream";
+          if(mimeImap==="application/octet-stream"||mimeImap===""){
+            if(/\.xlsx$/i.test(fnImap)) mimeImap="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            else if(/\.xls$/i.test(fnImap)) mimeImap="application/vnd.ms-excel";
+            else if(/\.pdf$/i.test(fnImap)) mimeImap="application/pdf";
+            else if(/\.docx$/i.test(fnImap)) mimeImap="application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            else if(/\.doc$/i.test(fnImap)) mimeImap="application/msword";
+          }
           const dataUrl="data:"+mimeImap+";base64,"+att.data;
+          // Icona per tipo file
+          var fileIcon=/\.xlsx?$/i.test(fnImap)?'📊':/\.docx?$/i.test(fnImap)?'📝':/\.pdf$/i.test(fnImap)?'📄':'📎';
           if(isImage){
             attHtml+='<div style="margin-bottom:6px"><img src="'+dataUrl+'" style="max-width:100%;max-height:180px;border-radius:6px;cursor:pointer" onclick="openLightbox(this.src)" title="'+fnImap+'"><div style="font-size:10px;color:#888;margin-top:2px">'+fnImap+'</div></div>';
           } else if(isPdfImap){
             attHtml+='<div style="margin-bottom:6px"><embed src="'+dataUrl+'" type="application/pdf" style="width:100%;height:200px;border-radius:6px"/><div style="margin-top:2px"><a href="'+dataUrl+'" download="'+fnImap+'" style="font-size:11px;color:#1a73e8">📄 '+fnImap+'</a></div></div>';
           } else {
-            attHtml+='<a href="'+dataUrl+'" download="'+fnImap+'" style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px;color:#555;text-decoration:none;margin-bottom:4px">📎 '+fnImap+'</a>';
+            attHtml+='<a href="'+dataUrl+'" download="'+fnImap+'" style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px;color:#555;text-decoration:none;margin-bottom:4px">'+fileIcon+' '+fnImap+'</a>';
           }
         });
         attHtml+='</div>';
@@ -10254,7 +10264,7 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
   const box=document.createElement('div');box.id='pod-sidebar-box';box.className='ds-section';
   box.style.cssText='padding:12px 16px;border-bottom:1px solid #e8eaf0;background:#fdf8ff';
   box.innerHTML=
-    '<div class="ds-section-title" style="color:#8e44ad;margin-bottom:8px">📸 POD — PROVA DI CONSEGNA</div>'    +'<div style="background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden;margin-bottom:8px;text-align:center">'    +(isPdf?'<embed src="'+dataUrl+'" type="application/pdf" width="100%" style="height:200px;border:none"/>':'<img id="pod-img-'+ts+'" src="'+dataUrl+'" style="max-width:100%;max-height:220px;object-fit:contain;cursor:zoom-in" title="Clicca per espandere"/>')    +'</div>'    +(isDirectUrl?'<div style="font-size:11px;color:#8e44ad;background:#f9f0ff;border-radius:6px;padding:6px 8px;margin-bottom:8px">'      +'1. Clicca <b>Apri BRT ↗</b> per vedere il POD<br>'      +'2. Tasto destro immagine → <b>Salva immagine</b><br>'      +'3. Clicca <b>📎 Carica file</b> e seleziona il file salvato'      +'</div>':'')    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'    +'<a href="'+podUrl+'" target="_blank" style="padding:7px;background:#555;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:center;text-decoration:none">🔗 Apri BRT ↗</a>'    +'<label id="pod-file-lbl-'+ts+'" style="padding:7px;background:#8e44ad;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:center">📎 Carica file<input id="pod-file-'+ts+'" type="file" accept="image/*" style="display:none"></label>'    +(isDirectUrl?'':('<button id="pod-al-'+ts+'" style="padding:7px;background:#1a73e8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;grid-column:1/-1">📎 Aggiungi al ticket</button>'))    +'</div><div style="font-size:10px;color:#aaa;margin-top:6px">Tracking: '+tn+'</div>';
+    '<div class="ds-section-title" style="color:#8e44ad;margin-bottom:8px">📸 POD — PROVA DI CONSEGNA</div>'    +'<div style="background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden;margin-bottom:8px;text-align:center">'    +(isPdf?'<embed src="'+dataUrl+'" type="application/pdf" width="100%" style="height:200px;border:none"/>':'<img id="pod-img-'+ts+'" src="'+dataUrl+'" style="max-width:100%;max-height:220px;object-fit:contain;cursor:zoom-in" title="Clicca per espandere"/>')    +'</div>'    +(isDirectUrl?'<div style="font-size:11px;color:#8e44ad;background:#f9f0ff;border-radius:6px;padding:6px 8px;margin-bottom:8px">'      +'1. Clicca <b>Apri BRT ↗</b> per vedere il POD<br>'      +'2. Tasto destro immagine → <b>Salva immagine</b><br>'      +'3. Clicca <b>📎 Carica file</b> e seleziona il file salvato'      +'</div>':'')    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'    +'<a href="'+podUrl+'" target="_blank" style="padding:7px;background:#555;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:center;text-decoration:none">🔗 Apri BRT ↗</a>'    +'<label id="pod-file-lbl-'+ts+'" style="padding:7px;background:#8e44ad;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;text-align:center">📎 Carica file<input id="pod-file-'+ts+'" type="file" accept="image/*" style="display:none"></label>'    +'<button id="pod-al-'+ts+'" style="padding:7px;background:#1a73e8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;grid-column:1/-1;margin-top:4px">📎 Aggiungi al ticket</button>'    +'</div><div style="font-size:10px;color:#aaa;margin-top:6px">Tracking: '+tn+'</div>';
   sidebar.insertBefore(box,sidebar.firstChild);
 
   // Zoom img
