@@ -711,7 +711,9 @@ async function assignAgent(agentId){
     const agentIdVal = agentId ? String(agentId) : null;
     console.log('[ASSIGN AGENT] agentId=',agentId,'agentIdVal=',agentIdVal,'tipo=',typeof agentId);
     // Prova prima con agentID stringa, poi con ID intero se necessario
-    const body422 = agentIdVal ? {assignment:{agent:{ID:agentIdVal},team:{name:"General"}}} : {assignment:{agent:null}};
+    const teamId=window._defaultTeamId;
+    const body422 = agentIdVal ? {assignment:{agent:{ID:agentIdVal},...(teamId?{team:{ID:teamId}}:{})}} : {assignment:{agent:null}};
+    console.log("[ASSIGN AGENT] body=",JSON.stringify(body422));
     await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify(body422)});
     // Aggiorna localmente
     if(!selectedTicket.assignment)selectedTicket.assignment={};
@@ -795,13 +797,17 @@ async function saveTags(){
 
 async function loadAgentsAndTags(){
   try{
-    const [agents, tags] = await Promise.all([
+    const [agents, tags, teams] = await Promise.all([
       hdFetch("/v1/agents"),
-      hdFetch("/v1/tags")
+      hdFetch("/v1/tags"),
+      hdFetch("/v1/teams").catch(()=>[])
     ]);
     agentsList=Array.isArray(agents)?agents:[];
     tagsList=Array.isArray(tags)?tags:[];
-    console.log("✅ Agenti:",agentsList.length,"Tag:",tagsList.length);
+    window._teamsList=Array.isArray(teams)?teams:(teams&&teams.data?teams.data:[]);
+    const generalTeam=window._teamsList.find(t=>(t.name||'').toLowerCase()==='general')||window._teamsList[0];
+    window._defaultTeamId=generalTeam?(generalTeam.ID||generalTeam.id||generalTeam._id):null;
+    console.log("✅ Agenti:",agentsList.length,"Tag:",tagsList.length,"Team:",window._teamsList.length,"TeamId:",window._defaultTeamId);
   }catch(e){console.log("⚠️ loadAgentsAndTags error:",e.message);}
 }
 let currentPage=1;
@@ -3769,56 +3775,51 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     if(hdImgsToAdd.length>0)window._ticketAttachments=(window._ticketAttachments||[]).concat(hdImgsToAdd);
   }
 
+  // Prepara immagini compresse PRIMA di chiamare anthropicFetch (serve async)
+  const compressImgFn=function(b64,mt){return new Promise(function(res2){
+    const img3=new Image();
+    img3.onload=function(){
+      const canvas=document.createElement('canvas');
+      const maxDim=1200;
+      let w=img3.naturalWidth,h=img3.naturalHeight;
+      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img3,0,0,w,h);
+      res2(canvas.toDataURL('image/jpeg',0.75).split(',')[1]);
+    };
+    img3.onerror=function(){res2(b64);};
+    img3.src='data:'+mt+';base64,'+b64;
+  });};
+  const seenImgs=new Set();
+  const rawImgs=(window._ticketAttachments||[]).filter(img=>{
+    if(seenImgs.has(img.filename))return false;
+    seenImgs.add(img.filename);
+    return img.data&&img.data.length>100;
+  });
+  console.log('[AI IMGS] count=',rawImgs.length);
+  const aiImgParts=[];
+  for(const img of rawImgs){
+    let cleanData=img.data.replace(/[^A-Za-z0-9+/=]/g,'');
+    cleanData=cleanData.replace(/[0-9a-f]{10,}$/,'');
+    const rem=cleanData.length%4; if(rem)cleanData+=('==='.substring(0,4-rem));
+    let mediaType=(img.contentType||'image/jpeg').toLowerCase().trim();
+    if(mediaType==='image/jpg')mediaType='image/jpeg';
+    if(!['image/jpeg','image/png','image/gif','image/webp'].includes(mediaType))mediaType='image/jpeg';
+    if(cleanData.length>800000){
+      console.log('[IMG] Comprimo '+(cleanData.length/1024).toFixed(0)+'KB');
+      cleanData=await compressImgFn(cleanData,mediaType);
+      mediaType='image/jpeg';
+      console.log('[IMG] Compressa a '+(cleanData.length/1024).toFixed(0)+'KB');
+    }
+    aiImgParts.push({type:'image',source:{type:'base64',media_type:mediaType,data:cleanData}});
+  }
+
   try{
     const res=await anthropicFetch({model:"claude-sonnet-4-5",max_tokens:1000,
         system:getAISystemPrompt()+buildSolvedContext(selectedTicket),
         messages:[{role:"user",content:(()=>{
-          // Deduplicazione e pulizia allegati
-          const seen=new Set();
-          const imgs=(window._ticketAttachments||[]).filter(img=>{
-            if(seen.has(img.filename)){return false;}
-            seen.add(img.filename);
-            return img.data&&img.data.length>100;
-          });
-          console.log('[AI IMGS] _ticketAttachments count=',window._ticketAttachments&&window._ticketAttachments.length,'imgs validi=',imgs.length,imgs.map(i=>i.filename+' '+i.contentType+' dataLen='+i.data.length));
-          if(!imgs.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
-          const parts=[{type:"text",text:"Genera una risposta professionale per questo ticket. Sono allegate "+imgs.length+" foto inviate dal cliente che puoi analizzare:\n\n"+prompt}];
-          // Funzione comprimi immagine via canvas (async)
-          const compressImg=function(b64,mt){return new Promise(function(res2){
-            const img3=new Image();
-            img3.onload=function(){
-              const canvas=document.createElement('canvas');
-              const maxDim=1200;
-              let w=img3.naturalWidth,h=img3.naturalHeight;
-              if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
-              canvas.width=w;canvas.height=h;
-              canvas.getContext('2d').drawImage(img3,0,0,w,h);
-              res2(canvas.toDataURL('image/jpeg',0.75).split(',')[1]);
-            };
-            img3.onerror=function(){res2(b64);}; // fallback
-            img3.src='data:'+mt+';base64,'+b64;
-          });};
-          const compressedImgs=await Promise.all(imgs.map(async function(img){
-            let cleanData=img.data.replace(/[^A-Za-z0-9+/=]/g,"");
-            cleanData=cleanData.replace(/[0-9a-f]{10,}$/,"");
-            const rem=cleanData.length%4;
-            if(rem)cleanData+=("===".substring(0,4-rem));
-            let mediaType=(img.contentType||"image/jpeg").toLowerCase().trim();
-            if(mediaType==="image/jpg")mediaType="image/jpeg";
-            if(!["image/jpeg","image/png","image/gif","image/webp"].includes(mediaType))mediaType="image/jpeg";
-            // Comprimi se sopra 800KB
-            if(cleanData.length>800000){
-              console.log("[IMG] Comprimo immagine da "+(cleanData.length/1024).toFixed(0)+"KB");
-              cleanData=await compressImg(cleanData,mediaType);
-              console.log("[IMG] Compressa a "+(cleanData.length/1024).toFixed(0)+"KB");
-            }
-            return {data:cleanData,mediaType:mediaType};
-          }));
-          compressedImgs.forEach(function(ci){
-            try{
-              parts.push({type:"image",source:{type:"base64",media_type:ci.mediaType,data:ci.data}});
-            }catch(e){console.log("Skip img:",e.message);}
-          });
+          if(!aiImgParts.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
+          const parts=[{type:"text",text:"Genera una risposta professionale per questo ticket. Sono allegate "+aiImgParts.length+" foto inviate dal cliente che puoi analizzare:\n\n"+prompt},...aiImgParts];
           return parts;
         })()}]})
     if(!res){ throw new Error("529 overload — riprova tra qualche minuto"); }
