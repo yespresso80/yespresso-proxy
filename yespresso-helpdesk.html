@@ -1378,9 +1378,19 @@ function getFiltered(){
   return allTickets.filter(t=>{
     // Ricerca testo
     if(searchQuery){
-      const match=(t.subject||"").toLowerCase().includes(searchQuery)||
+      let match=(t.subject||"").toLowerCase().includes(searchQuery)||
         ((t.requester&&t.requester.name)||"").toLowerCase().includes(searchQuery)||
-        ((t.requester&&t.requester.email)||"").toLowerCase().includes(searchQuery);
+        ((t.requester&&t.requester.email)||"").toLowerCase().includes(searchQuery)||
+        (t.shortID||t.shortId||"").toLowerCase().includes(searchQuery)||
+        (t.ID||t.id||"").toLowerCase().includes(searchQuery);
+      // Ricerca nel testo dei messaggi (solo con query >=3 char per performance)
+      if(!match && searchQuery.length>=3 && t.events){
+        for(let i=0;i<t.events.length;i++){
+          const ev=t.events[i];
+          const txt=ev&&ev.message&&ev.message.text;
+          if(txt && txt.toLowerCase().includes(searchQuery)){ match=true; break; }
+        }
+      }
       if(!match)return false;
     } else {
       if(!viewFilter(t))return false;
