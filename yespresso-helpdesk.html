@@ -10249,34 +10249,52 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
   const prev=document.getElementById('pod-sidebar-box');if(prev)prev.remove();
   const sidebar=document.getElementById('detail-sidebar');if(!sidebar)return;
   const isPdf=mime&&mime.includes('pdf');const ts=tn.replace(/[^a-zA-Z0-9]/g,'_');
+  const isDirectUrl=dataUrl&&dataUrl.startsWith('http');
   const box=document.createElement('div');box.id='pod-sidebar-box';box.className='ds-section';
   box.style.cssText='padding:12px 16px;border-bottom:1px solid #e8eaf0;background:#fdf8ff';
   box.innerHTML='<div class="ds-section-title" style="color:#8e44ad;margin-bottom:8px">📸 POD — PROVA DI CONSEGNA</div>'
     +'<div style="background:#fff;border:1px solid #e8eaf0;border-radius:8px;overflow:hidden;margin-bottom:8px;text-align:center">'
     +(isPdf?'<embed src="'+dataUrl+'" type="application/pdf" width="100%" style="height:200px;border:none"/>':'<img id="pod-img-'+ts+'" src="'+dataUrl+'" style="max-width:100%;max-height:220px;object-fit:contain;cursor:zoom-in" title="Clicca per espandere"/>')
     +'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
-    +'<button id="pod-cp-'+ts+'" style="padding:7px;background:#1a73e8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">📋 Copia</button>'
-    +'<button id="pod-ur-'+ts+'" style="padding:7px;background:#e8a000;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">🔗 Aggiungi URL</button>'
-    +'<button id="pod-al-'+ts+'" style="padding:7px;background:#8e44ad;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;grid-column:1/-1">📎 Aggiungi Allegato</button>'
+    +(isDirectUrl?'':'<button id="pod-cp-'+ts+'" style="padding:7px;background:#1a73e8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">📋 Copia</button>')
+    +'<button id="pod-ur-'+ts+'" style="padding:7px;background:#e8a000;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit"'+(isDirectUrl?';grid-column:1/2':'')+'>🔗 Aggiungi URL</button>'
+    +'<button id="pod-al-'+ts+'" style="padding:7px;background:#8e44ad;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;grid-column:'+(isDirectUrl?'2/-1':'1/-1')+'">📎 Aggiungi POD al ticket</button>'
     +'</div><div style="font-size:10px;color:#aaa;margin-top:6px">Tracking: '+tn+'</div>';
   sidebar.insertBefore(box,sidebar.firstChild);
-  // Toggle zoom img
   const podImgEl=document.getElementById('pod-img-'+ts);
   if(podImgEl) podImgEl.addEventListener('click',function(){this.style.maxHeight=this.style.maxHeight==='none'?'220px':'none';});
-  document.getElementById('pod-cp-'+ts).addEventListener('click',()=>{
-    if(isPdf){showToast('Usa Aggiungi Allegato per i PDF','error');return;}
+  const cpBtn=document.getElementById('pod-cp-'+ts);
+  if(cpBtn) cpBtn.addEventListener('click',function(){
     const img=document.getElementById('pod-img-'+ts);
     const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);
     c.toBlob(b=>navigator.clipboard.write([new ClipboardItem({'image/png':b})]).then(()=>showToast('✅ POD copiato — Ctrl+V ovunque')).catch(()=>showToast('Tasto destro sull immagine → Copia','error')));
   });
-  document.getElementById('pod-ur-'+ts).addEventListener('click',()=>{
+  document.getElementById('pod-ur-'+ts).addEventListener('click',function(){
     const rb=document.getElementById('reply-body');if(!rb){showToast('Apri prima la risposta','error');return;}
     rb.value=(rb.value?rb.value+'\n\n':'')+'POD consegna: '+podUrl;rb.focus();
     showToast('✅ URL POD aggiunto nella risposta');
   });
-  document.getElementById('pod-al-'+ts).addEventListener('click',function(){
-    window._podAttachment=window._podAttachment||{};window._podAttachment[tn]=dataUrl;
-    showToast('✅ POD allegato alla risposta');this.textContent='✅ Allegato';this.style.background='#888';
+  document.getElementById('pod-al-'+ts).addEventListener('click',async function(){
+    const btn=this;btn.disabled=true;btn.textContent='⏳ Aggiungo...';
+    const t=selectedTicket;
+    if(!t){showToast('Nessun ticket selezionato','error');btn.disabled=false;btn.textContent='📎 Aggiungi POD al ticket';return;}
+    const tid=t.ID||t.id;
+    try{
+      // Aggiungi nota privata con immagine inline via HTML
+      const imgTag=isDirectUrl
+        ?('<img src="'+dataUrl+'" style="max-width:100%" /><br><a href="'+dataUrl+'">Apri POD originale ↗</a>')
+        :('<img src="'+dataUrl+'" style="max-width:100%" />');
+      const noteBody='<p><strong>📸 POD — Prova di Consegna</strong><br>Tracking: '+tn+'</p>'+imgTag;
+      await hdFetch('/v1/tickets/'+tid+'/messages',{
+        method:'POST',
+        body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:true})
+      });
+      showToast('✅ POD aggiunto al ticket come nota privata');
+      btn.textContent='✅ Aggiunto';btn.style.background='#888';
+    }catch(e){
+      showToast('⚠️ Errore: '+e.message,'error');
+      btn.disabled=false;btn.textContent='📎 Aggiungi POD al ticket';
+    }
   });
 }
 
