@@ -10324,10 +10324,12 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
         const imgSrc=dataUrl.startsWith('data:')||dataUrl.indexOf('tempimages')>=0?dataUrl:null;
         const imgTag=imgSrc?('<img src="'+imgSrc+'" style="max-width:600px" />'):'<a href="'+podUrl+'">Apri POD BRT</a>';
         const noteBody='<p>In allegato la prova di consegna (POD) del corriere BRT per la spedizione con tracking <strong>'+tn+'</strong>.</p>'+imgTag;
-        await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:false})});
+        console.log('[POD AL TICKET] tid=',tid,'body=',JSON.stringify({message:{richTextHtml:noteBody.substring(0,100)},isPrivateNote:false}));
+        const podResp=await hdFetch('/v1/tickets/'+tid+'/messages',{method:'POST',body:JSON.stringify({message:{richTextHtml:noteBody},isPrivateNote:false})});
+        console.log('[POD AL TICKET] risposta=',JSON.stringify(podResp).substring(0,200));
         showToast('POD aggiunto al ticket!');
         btn.textContent='Aggiunto';btn.style.background='#888';
-      }catch(e){showToast('Errore: '+e.message,'error');btn.disabled=false;btn.textContent='Aggiungi al ticket';}
+      }catch(e){console.error('[POD AL TICKET] errore:',e.message);showToast('Errore: '+e.message,'error');btn.disabled=false;btn.textContent='Aggiungi al ticket';}
     });
   }
 }
