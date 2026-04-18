@@ -5724,357 +5724,84 @@ function openFilippoPanel(){
       return n.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
     }
 
-    // ── Riclassificazione ──
-    // Mapping voci: regole su codice conto per raggruppamento
-    function classificaConto(c){
-      var cod=String(c.codice||'');
-      var sez=c.sezione;
-      // Conto economico
-      if(sez==='ricavi'){
-        if(cod.startsWith('40010'))return {gruppo:'vendite_prest',label:'Vendite e prestazioni'};
-        if(cod.startsWith('41101'))return {gruppo:'altri_ricavi',label:'Altri ricavi'};
-        if(cod.startsWith('42043'))return {gruppo:'rim_finali',label:'Rimanenze finali'};
-        if(cod.startsWith('44'))return {gruppo:'proventi_straord',label:'Proventi straordinari'};
-        if(cod.startsWith('30210')||cod.startsWith('30230')||cod.startsWith('31910'))return {gruppo:'rett_costi',label:'Rettifiche di costi'};
-        return {gruppo:'altri_ricavi',label:'Altri ricavi'};
-      }
-      if(sez==='costi'){
-        // 40430.* = Resi su vendite → Rettifiche di ricavi (forzato a 'costi' da sezioneDaCodice)
-        if(cod.startsWith('40430'))return {gruppo:'rett_ricavi',label:'Rettifiche di ricavi'};
-        // Acquisti
-        if(cod.startsWith('30030')||cod.startsWith('30041')||cod.startsWith('30043')||cod.startsWith('30044')||cod.startsWith('30047')||cod.startsWith('30060')||cod.startsWith('30099')||cod.startsWith('30110')||cod.startsWith('30130')||cod.startsWith('30199'))return {gruppo:'acquisti',label:'Acquisti'};
-        // Rimanenze iniziali
-        if(cod.startsWith('36'))return {gruppo:'rim_iniziali',label:'Rimanenze iniziali'};
-        // Costi per servizi
-        if(cod.startsWith('31011')||cod.startsWith('31033')||cod.startsWith('31050')||cod.startsWith('31110')||cod.startsWith('31135')||cod.startsWith('31140')||cod.startsWith('31199')||cod.startsWith('31211')||cod.startsWith('31241')||cod.startsWith('31837')||cod.startsWith('31860'))return {gruppo:'costi_servizi',label:'Costi per servizi'};
-        // Compensi e provvigioni
-        if(cod.startsWith('31310')||cod.startsWith('31340')||cod.startsWith('31370')||cod.startsWith('31710')||cod.startsWith('31720')||cod.startsWith('31725')||cod.startsWith('31730'))return {gruppo:'compensi_provv',label:'Compensi e provvigioni'};
-        // Costi per godimento beni di terzi
-        if(cod.startsWith('32'))return {gruppo:'godimento_terzi',label:'Costi per godimento beni di terzi'};
-        // Costi per il personale
-        if(cod.startsWith('33'))return {gruppo:'personale',label:'Costi per il personale'};
-        // Ammortamenti
-        if(cod.startsWith('34'))return {gruppo:'ammortamenti',label:'Ammortamenti'};
-        // Oneri diversi di gestione
-        if(cod.startsWith('35'))return {gruppo:'oneri_diversi',label:'Oneri diversi di gestione'};
-        // Oneri finanziari
-        if(cod.startsWith('37'))return {gruppo:'oneri_finanziari',label:'Oneri finanziari'};
-        return {gruppo:'altri_costi',label:'Altri costi'};
-      }
-      // Stato patrimoniale
-      if(sez==='attivo'){
-        if(cod.startsWith('11'))return {gruppo:'immob_immater',label:'Immobilizzazioni immateriali'};
-        if(cod.startsWith('12'))return {gruppo:'immob_mater',label:'Immobilizzazioni materiali'};
-        if(cod.startsWith('13'))return {gruppo:'att_finanz',label:'Attivita finanziarie non immobilizzate'};
-        if(cod.startsWith('14'))return {gruppo:'rimanenze',label:'Rimanenze'};
-        if(cod.startsWith('15'))return {gruppo:'clienti',label:'Clienti'};
-        if(cod.startsWith('16'))return {gruppo:'crediti_trib',label:'Crediti tributari'};
-        if(cod.startsWith('17440'))return {gruppo:'crediti_incassi',label:'Crediti per incassi (marketplace/PayPal/BRT)'};
-        // 17360.1 = arrotondamenti retribuzioni: va in debiti diversi passivo nonostante codice 17
-        if(cod.startsWith('17360'))return {gruppo:'_skip_to_passivo_debdiv',label:'Arrotondamenti retribuzioni'};
-        if(cod.startsWith('17'))return {gruppo:'crediti_div',label:'Crediti diversi'};
-        if(cod.startsWith('18'))return {gruppo:'liquidita',label:'Liquidita'};
-        if(cod.startsWith('19'))return {gruppo:'ratei_att',label:'Ratei e risconti attivi'};
-        return {gruppo:'altro_att',label:'Altro attivo'};
-      }
-      if(sez==='passivo'){
-        if(cod.startsWith('20'))return {gruppo:'patr_netto',label:'Patrimonio netto'};
-        if(cod.startsWith('21'))return {gruppo:'f_amm_immater',label:'F/amm. immateriali'};
-        if(cod.startsWith('22'))return {gruppo:'f_amm_mater',label:'F/amm. materiali'};
-        if(cod.startsWith('24'))return {gruppo:'tfr',label:'Fondo TFR'};
-        if(cod.startsWith('26'))return {gruppo:'altri_deb_for',label:'Altri debiti v/fornitori'};
-        if(cod.startsWith('27'))return {gruppo:'debiti_trib',label:'Debiti tributari'};
-        if(cod.startsWith('28'))return {gruppo:'debiti_div',label:'Debiti diversi'};
-        return {gruppo:'altro_pass',label:'Altro passivo'};
-      }
-      return {gruppo:'altro',label:'Altro'};
-    }
+    // ── Calcolo mese singolo e YTD dai dati piatti ──
+    // Ogni bilancio b ha campi piatti tipo sp_att_*, sp_pass_*, ce_*, sp_*_pdf, sp_utile_perdita_esercizio.
+    // Lo Stato Patrimoniale e' uno SNAPSHOT (non si fa differenza mese-su-mese).
+    // Il Conto Economico e' PROGRESSIVO: il valore del singolo mese = progressivo mese - progressivo mese-1.
 
-    // Aggrega bilancio in struttura riclassificata { ricavi:{gruppo:importo}, costi:{...}, attivo:{...}, passivo:{...} }
-    // Usa il piano dei conti italiano: 1x=attivo, 2x=passivo, 3x=costi, 4x=ricavi.
-    // NON ci fidiamo della sezione restituita dall'AI perche' puo' confondersi con layout a due colonne.
-    function sezioneDaCodice(cod,sezAI){
-      cod=String(cod||'');
-      // ── Eccezioni: codici che contabilmente stanno nella sezione opposta al primo carattere ──
-      // 30210.* = Sconti su acquisti → ricavo (rettifica di costo)
-      // 30230.* = Resi su acquisti → ricavo (rettifica di costo)
-      // 31910.* = Sconti/abbuoni/resi su costi per servizi → ricavo (rettifica di costo)
-      if(cod.startsWith('30210')||cod.startsWith('30230')||cod.startsWith('31910'))return 'ricavi';
-      // 40430.* = Resi su vendite → costo (rettifica di ricavo)
-      if(cod.startsWith('40430'))return 'costi';
-      // ── Regola standard: prima cifra del codice ──
-      var first=cod.charAt(0);
-      if(first==='1')return 'attivo';
-      if(first==='2')return 'passivo';
-      if(first==='3')return 'costi';
-      if(first==='4')return 'ricavi';
-      return sezAI||'altro';
-    }
-    // Normalizza una descrizione di subtotale per il matching (lowercase, no accenti, no punteggiatura)
-    function normSubDesc(s){
-      return String(s||'').toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-        .replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
-    }
-    // Trova un subtotale per descrizione e sezione. Ritorna l'importo o null.
-    function findSubtotale(subtotali,sezione,descrizioni){
-      if(!Array.isArray(subtotali))return null;
-      var targets=descrizioni.map(normSubDesc);
-      for(var i=0;i<subtotali.length;i++){
-        var st=subtotali[i];
-        if(st.sezione!==sezione)continue;
-        var d=normSubDesc(st.descrizione);
-        for(var j=0;j<targets.length;j++){
-          if(d===targets[j])return Number(st.importo||0);
-        }
-      }
-      return null;
-    }
-    function aggregaBilancio(bil){
-      var agg={ricavi:{},costi:{},attivo:{},passivo:{}};
-      (bil.conti||[]).forEach(function(c){
-        // Forza la sezione basandosi sul codice conto (piu' robusto dell'inferenza AI)
-        var sezReale=sezioneDaCodice(c.codice,c.sezione);
-        var cCopia={codice:c.codice,descrizione:c.descrizione,importo:c.importo,sezione:sezReale};
-        var cls=classificaConto(cCopia);
-        // Caso speciale: 17360.1 è codice attivo ma contabilmente va in debiti_div passivo
-        if(cls.gruppo==='_skip_to_passivo_debdiv'){
-          agg.passivo.debiti_div=(agg.passivo.debiti_div||0)+Number(c.importo||0);
-          return;
-        }
-        if(!agg[sezReale])agg[sezReale]={};
-        agg[sezReale][cls.gruppo]=(agg[sezReale][cls.gruppo]||0)+Number(c.importo||0);
-      });
+    // Elenco delle chiavi CE progressive che devono essere decumulate mese-su-mese
+    var CHIAVI_CE = [
+      'ce_vendite_e_prestazioni','ce_proventi_straordinari',
+      'ce_rimanenze_iniziali','ce_rimanenze_finali',
+      'ce_acquisti','ce_costi_per_servizi','ce_compensi_e_provvigioni',
+      'ce_costi_godimento_beni_terzi','ce_costi_personale',
+      'ce_oneri_diversi_gestione','ce_ammortamenti','ce_oneri_finanziari',
+      'ce_rettifiche_di_ricavi','ce_totale_ricavi_pdf','ce_totale_costi_pdf'
+    ];
+    // Elenco chiavi SP (snapshot, non si sottrae)
+    var CHIAVI_SP_SNAPSHOT = [
+      'sp_att_immobilizzazioni','sp_att_rimanenze','sp_att_clienti',
+      'sp_att_crediti_tributari','sp_att_crediti_diversi','sp_att_fornitori',
+      'sp_att_attivita_finanziarie_non_imm','sp_att_disponibilita_liquide',
+      'sp_att_ratei_risconti_attivi',
+      'sp_pass_f_amm_imm_immateriali','sp_pass_f_amm_imm_materiali',
+      'sp_pass_fondo_tfr','sp_pass_fornitori','sp_pass_altri_debiti_v_fornitori',
+      'sp_pass_debiti_tributari','sp_pass_debiti_diversi','sp_pass_patrimonio_netto',
+      'sp_totale_attivo_pdf','sp_totale_passivo_pdf','sp_utile_perdita_esercizio'
+    ];
 
-      // ── Subtotali senza codice conto (tipicamente "Clienti", "Fornitori" attivo/passivo) ──
-      var sub=bil.subtotali||[];
-
-      // ATTIVO: "Clienti" (non ha codici sottostanti nel nostro piano conti)
-      var s_clienti=findSubtotale(sub,'attivo',['Clienti']);
-      if(s_clienti!=null&&s_clienti>0){
-        // Se la somma dei codici 15xxx (clienti) e' 0, il subtotale e' l'unico valore
-        if(!agg.attivo.clienti) agg.attivo.clienti=s_clienti;
-        else if(Math.abs(s_clienti-agg.attivo.clienti)>1) agg.attivo.clienti=s_clienti;
-      }
-
-      // ATTIVO: "Fornitori" (anticipi a fornitori / note credito — senza codice)
-      var s_fornitori_a=findSubtotale(sub,'attivo',['Fornitori']);
-      if(s_fornitori_a!=null&&s_fornitori_a>0){
-        agg.attivo.fornitori_att=s_fornitori_a;
-      }
-
-      // ATTIVO: subtotali che dovrebbero coincidere con somma codici (sanity check)
-      var s_rimanenze=findSubtotale(sub,'attivo',['Rimanenze']);
-      if(s_rimanenze!=null&&Math.abs(s_rimanenze-(agg.attivo.rimanenze||0))>1){
-        agg.attivo.rimanenze=s_rimanenze;
-      }
-      var s_liq=findSubtotale(sub,'attivo',['Disponibilita liquide']);
-      if(s_liq!=null&&Math.abs(s_liq-(agg.attivo.liquidita||0))>1){
-        agg.attivo.liquidita=s_liq;
-      }
-      var s_crTrib=findSubtotale(sub,'attivo',['Crediti tributari']);
-      if(s_crTrib!=null&&Math.abs(s_crTrib-(agg.attivo.crediti_trib||0))>1){
-        agg.attivo.crediti_trib=s_crTrib;
-      }
-      // Crediti diversi: PDF li mostra come subtotale "Crediti diversi" che somma 17xxx escluso 17440 (incassi) e 17360 (deb.pers)
-      var s_crDiv=findSubtotale(sub,'attivo',['Crediti diversi']);
-      if(s_crDiv!=null&&s_crDiv>0){
-        // Il subtotale include i crediti_incassi (17440) che nel nostro sistema sono separati: li riuniamo
-        var somCurrent=(agg.attivo.crediti_div||0)+(agg.attivo.crediti_incassi||0);
-        if(Math.abs(s_crDiv-somCurrent)>1){
-          // Adottiamo il subtotale come valore totale di crediti_div + crediti_incassi
-          agg.attivo.crediti_div=s_crDiv;
-          agg.attivo.crediti_incassi=0;
-        }
-      }
-      var s_attFin=findSubtotale(sub,'attivo',['Attivita finanziarie non immobilizzate']);
-      if(s_attFin!=null&&Math.abs(s_attFin-(agg.attivo.att_finanz||0))>1){
-        agg.attivo.att_finanz=s_attFin;
-      }
-      // Immobilizzazioni immateriali/materiali: subtotali coincidenti con 11xxx / 12xxx
-      var s_immImm=findSubtotale(sub,'attivo',['Immobilizzazioni immateriali']);
-      if(s_immImm!=null&&Math.abs(s_immImm-(agg.attivo.immob_immater||0))>1){
-        agg.attivo.immob_immater=s_immImm;
-      }
-      var s_immMat=findSubtotale(sub,'attivo',['Immobilizzazioni materiali']);
-      if(s_immMat!=null&&Math.abs(s_immMat-(agg.attivo.immob_mater||0))>1){
-        agg.attivo.immob_mater=s_immMat;
-      }
-
-      // PASSIVO: "Fornitori" (subtotale senza codice — sono debiti v/fornitori generici)
-      var s_fornitori_p=findSubtotale(sub,'passivo',['Fornitori']);
-      if(s_fornitori_p!=null&&s_fornitori_p>0){
-        agg.passivo.fornitori_pass=s_fornitori_p;
-      }
-      // PASSIVO: "Altri debiti v/fornitori" coincide con somma 26xxx
-      var s_altriDebFor=findSubtotale(sub,'passivo',['Altri debiti v fornitori']);
-      if(s_altriDebFor!=null&&Math.abs(s_altriDebFor-(agg.passivo.altri_deb_for||0))>1){
-        agg.passivo.altri_deb_for=s_altriDebFor;
-      }
-      // PASSIVO: sanity check su subtotali con codici
-      var s_tfr=findSubtotale(sub,'passivo',['Fondo TFR']);
-      if(s_tfr!=null&&Math.abs(s_tfr-(agg.passivo.tfr||0))>1){
-        agg.passivo.tfr=s_tfr;
-      }
-      var s_pn=findSubtotale(sub,'passivo',['Patrimonio netto']);
-      if(s_pn!=null&&Math.abs(s_pn-(agg.passivo.patr_netto||0))>1){
-        agg.passivo.patr_netto=s_pn;
-      }
-      var s_fAmmI=findSubtotale(sub,'passivo',['Fondi ammortamento immobilizzazioni immateriali']);
-      if(s_fAmmI!=null&&Math.abs(s_fAmmI-(agg.passivo.f_amm_immater||0))>1){
-        agg.passivo.f_amm_immater=s_fAmmI;
-      }
-      var s_fAmmM=findSubtotale(sub,'passivo',['Fondi ammortamento immobilizzazioni materiali']);
-      if(s_fAmmM!=null&&Math.abs(s_fAmmM-(agg.passivo.f_amm_mater||0))>1){
-        agg.passivo.f_amm_mater=s_fAmmM;
-      }
-      var s_debTrib=findSubtotale(sub,'passivo',['Debiti tributari']);
-      if(s_debTrib!=null&&Math.abs(s_debTrib-(agg.passivo.debiti_trib||0))>1){
-        agg.passivo.debiti_trib=s_debTrib;
-      }
-      var s_debDiv=findSubtotale(sub,'passivo',['Debiti diversi']);
-      if(s_debDiv!=null&&Math.abs(s_debDiv-(agg.passivo.debiti_div||0))>1){
-        agg.passivo.debiti_div=s_debDiv;
-      }
-
-      // ── FALLBACK INTELLIGENTE ──
-      // Se il subtotale "Fornitori" passivo NON è stato estratto (o estratto come 0) ma il PDF ha
-      // un totale_passivo ufficiale maggiore della somma delle voci riclassificate, la differenza
-      // è quasi sicuramente il "Fornitori" mancante (è la voce più grande e l'unica senza codice).
-      if(bil.totali && bil.totali.totale_passivo && !agg.passivo.fornitori_pass){
-        // Somma tutte le voci passive note (esclusi utile a pareggio)
-        var sommaPassivoNoto = (agg.passivo.f_amm_immater||0) + (agg.passivo.f_amm_mater||0)
-                             + (agg.passivo.tfr||0) + (agg.passivo.altri_deb_for||0)
-                             + (agg.passivo.debiti_trib||0) + (agg.passivo.debiti_div||0)
-                             + (agg.passivo.patr_netto||0);
-        // totale_passivo PDF include anche utile d'esercizio "a pareggio" se positivo
-        var utilePareggio = (bil.totali.utile_perdita>0) ? bil.totali.utile_perdita : 0;
-        var diff = Number(bil.totali.totale_passivo) - sommaPassivoNoto - utilePareggio;
-        if(diff > 5){
-          agg.passivo.fornitori_pass = diff;
-        }
-      }
-
-      // Stesso fallback lato ATTIVO per "Fornitori" attivo (anticipi) e "Clienti"
-      if(bil.totali && bil.totali.totale_attivo){
-        // Calcola somma noto escludendo clienti E fornitori_att (le due voci ambigue)
-        var sommaAttivoNoto = (agg.attivo.immob_immater||0) + (agg.attivo.immob_mater||0)
-                            + (agg.attivo.att_finanz||0) + (agg.attivo.rimanenze||0)
-                            + (agg.attivo.crediti_trib||0)
-                            + (agg.attivo.crediti_div||0) + (agg.attivo.crediti_incassi||0)
-                            + (agg.attivo.liquidita||0)
-                            + (agg.attivo.ratei_att||0);
-        // totale_attivo PDF include anche perdita d'esercizio "a pareggio" se presente
-        var perditaPareggio = (bil.totali.utile_perdita<0) ? Math.abs(bil.totali.utile_perdita) : 0;
-        // diffA = quanto manca per raggiungere il totale PDF, e va distribuito tra clienti e fornitori_att
-        var diffA = Number(bil.totali.totale_attivo) - sommaAttivoNoto - perditaPareggio
-                   - (agg.attivo.clienti||0) - (agg.attivo.fornitori_att||0);
-
-        if(Math.abs(diffA) > 5){
-          // Se la differenza e' positiva, significa che AI non ha estratto uno dei due subtotali
-          var hasClienti = (agg.attivo.clienti||0) > 0;
-          var hasFornAtt = (agg.attivo.fornitori_att||0) > 0;
-          if(hasClienti && !hasFornAtt){
-            // Ha solo clienti, il fornitori_att manca: lo assegno alla differenza
-            agg.attivo.fornitori_att = diffA;
-          } else if(!hasClienti && hasFornAtt){
-            // Ha solo fornitori_att, clienti manca
-            agg.attivo.clienti = diffA;
-          } else if(!hasClienti && !hasFornAtt){
-            // Nessuno dei due estratto: metto la diff in fornitori_att (voce piu' grande statisticamente)
-            agg.attivo.fornitori_att = diffA;
-          }
-          // Se entrambi sono presenti ma la somma non quadra, NON tocco nulla (probabile errore AI)
-        }
-      }
-
-      return agg;
-    }
-
-    // Calcola le differenze mese per mese per il conto economico
-    // bilanciAnno = array di bilanci progressivi ordinati per mese (1..12)
-    // Restituisce array di 12 posizioni (indice 0 = gen, 11 = dic), ciascuna con { attivo, passivo, ricavi, costi, raw }
-    // ricavi/costi sono differenze (mese singolo), attivo/passivo sono snapshot (fine mese)
+    // Ritorna una struttura { raw, ce_mese, ce_ytd, sp } dove:
+    //   ce_mese = ricavi/costi del singolo mese (differenza vs mese precedente)
+    //   ce_ytd = ricavi/costi progressivi di fine mese (quelli che stanno nel PDF)
+    //   sp = snapshot di fine mese
     function calcolaMesi(bilanciAnno){
-      var mesi=new Array(12).fill(null);
-      // Ordina per mese
-      var ord=bilanciAnno.slice().sort(function(a,b){return a.mese-b.mese;});
-      var prevAgg=null;
+      var mesi = new Array(12).fill(null);
+      var ord = bilanciAnno.slice().sort(function(a,b){return a.mese-b.mese;});
+      var prev = null;
       ord.forEach(function(bil){
-        var agg=aggregaBilancio(bil);
-        var mese={raw:bil,aggCum:agg,attivo:agg.attivo,passivo:agg.passivo,ricavi:{},costi:{}};
-        // Differenze vs mese precedente (per CE)
-        if(prevAgg){
-          Object.keys(agg.ricavi).forEach(function(k){
-            mese.ricavi[k]=Number(((agg.ricavi[k]||0)-(prevAgg.ricavi[k]||0)).toFixed(2));
-          });
-          Object.keys(prevAgg.ricavi).forEach(function(k){
-            if(mese.ricavi[k]==null)mese.ricavi[k]=Number((0-(prevAgg.ricavi[k]||0)).toFixed(2));
-          });
-          Object.keys(agg.costi).forEach(function(k){
-            mese.costi[k]=Number(((agg.costi[k]||0)-(prevAgg.costi[k]||0)).toFixed(2));
-          });
-          Object.keys(prevAgg.costi).forEach(function(k){
-            if(mese.costi[k]==null)mese.costi[k]=Number((0-(prevAgg.costi[k]||0)).toFixed(2));
-          });
-        } else {
-          // Primo mese: i valori progressivi SONO i valori del mese
-          Object.keys(agg.ricavi).forEach(function(k){mese.ricavi[k]=agg.ricavi[k];});
-          Object.keys(agg.costi).forEach(function(k){mese.costi[k]=agg.costi[k];});
-        }
-        mesi[bil.mese-1]=mese;
-        prevAgg=agg;
+        var ceYTD = {};
+        var ceMese = {};
+        CHIAVI_CE.forEach(function(k){
+          var vCur = Number(bil[k]||0);
+          ceYTD[k] = vCur;
+          ceMese[k] = prev ? Number((vCur - Number(prev[k]||0)).toFixed(2)) : vCur;
+        });
+        var sp = {};
+        CHIAVI_SP_SNAPSHOT.forEach(function(k){ sp[k] = Number(bil[k]||0); });
+        mesi[bil.mese-1] = { raw:bil, ceYTD:ceYTD, ceMese:ceMese, sp:sp };
+        prev = bil;
       });
       return mesi;
     }
 
-    // Calcola KPI del conto economico seguendo ESATTAMENTE la struttura del PDF:
-    //   RICAVI: Vendite e prestazioni, Altri ricavi, Proventi straordinari, Rimanenze finali, Rettifiche di costi
-    //   COSTI: Acquisti, Rimanenze iniziali, Costi per servizi, Compensi e provvigioni,
-    //          Costi per godimento beni di terzi, Costi per il personale, Oneri diversi di gestione,
-    //          Ammortamenti, Oneri finanziari, Rettifiche di ricavi
-    //   = UTILE/PERDITA
-    function calcolaKPI(ricavi,costi,totali){
-      // RICAVI
-      // "Vendite e prestazioni" aggrega: vendite_prest (40010.*) + altri_ricavi (41101.*) + rett_costi (30210/30230/31910)
-      var venditeBase = ricavi.vendite_prest||0;
-      var altriRicaviRaw = ricavi.altri_ricavi||0;
-      var rettCostiRaw = ricavi.rett_costi||0;
-      var vendite = venditeBase + altriRicaviRaw + rettCostiRaw;
-      var proventiStraord = ricavi.proventi_straord||0;
-      var rimFinali = ricavi.rim_finali||0;
+    // Calcola KPI CE: variazione rimanenze, totali e utile partendo da un set di chiavi piatte.
+    // ceData e' o ceMese (mese singolo) o ceYTD (progressivo).
+    function calcolaKPI(ceData){
+      var vendite = ceData.ce_vendite_e_prestazioni||0;
+      var proventiStraord = ceData.ce_proventi_straordinari||0;
+      var rimFinali = ceData.ce_rimanenze_finali||0;
+      var rimIniz = ceData.ce_rimanenze_iniziali||0;
+      var acquisti = ceData.ce_acquisti||0;
+      var costiServizi = ceData.ce_costi_per_servizi||0;
+      var compensi = ceData.ce_compensi_e_provvigioni||0;
+      var godimento = ceData.ce_costi_godimento_beni_terzi||0;
+      var personale = ceData.ce_costi_personale||0;
+      var oneriDiv = ceData.ce_oneri_diversi_gestione||0;
+      var ammort = ceData.ce_ammortamenti||0;
+      var oneriFin = ceData.ce_oneri_finanziari||0;
+      var rettRicavi = ceData.ce_rettifiche_di_ricavi||0;
 
-      // COSTI
-      var acquisti = costi.acquisti||0;
-      var rimIniz = costi.rim_iniziali||0;
-      var costiServizi = costi.costi_servizi||0;
-      var compensi = costi.compensi_provv||0;
-      var godimento = costi.godimento_terzi||0;
-      var personale = costi.personale||0;
-      var oneriDiv = costi.oneri_diversi||0;
-      var ammort = costi.ammortamenti||0;
-      var oneriFin = costi.oneri_finanziari||0;
-      var rettRicavi = costi.rett_ricavi||0;
-
-      // Variazione rimanenze: se positiva (rim. finali > iniziali) e' un ricavo, se negativa un costo
+      // Variazione rimanenze: positiva = ricavo, negativa = costo
       var varRimanenze = rimFinali - rimIniz;
       var varRimRicavo = varRimanenze > 0 ? varRimanenze : 0;
       var varRimCosto = varRimanenze < 0 ? Math.abs(varRimanenze) : 0;
 
-      // Totali
       var totRicavi = vendite + proventiStraord + varRimRicavo;
       var totCosti = acquisti + varRimCosto + costiServizi + compensi + godimento + personale + oneriDiv + ammort + oneriFin + rettRicavi;
-
-      // Risultato
       var utilePerdita = totRicavi - totCosti;
-
-      // Per KPI % sui ricavi: usiamo come denominatore le vendite nette (vendite - rettifiche ricavi)
       var venditeNette = vendite - rettRicavi;
 
       return {
-        // Dettaglio per eventuale tooltip/debug:
-        venditeBase:venditeBase, altriRicaviRaw:altriRicaviRaw, rettCostiRaw:rettCostiRaw,
-        // Valori aggregati usati in tabella:
         vendite:vendite, proventiStraord:proventiStraord,
         rimFinali:rimFinali, rimIniz:rimIniz, varRimanenze:varRimanenze,
         varRimRicavo:varRimRicavo, varRimCosto:varRimCosto,
@@ -6086,80 +5813,59 @@ function openFilippoPanel(){
       };
     }
 
-    // Calcola snapshot SP seguendo ESATTAMENTE la struttura del PDF:
-    //   ATTIVO: Immobilizzazioni (al lordo), Rimanenze, Clienti, Crediti tributari,
-    //           Crediti diversi, Fornitori (anticipi), Attivita finanziarie non imm.,
-    //           Disponibilita liquide, Ratei e risconti attivi, [Perdita d'esercizio se <0]
-    //   PASSIVO: F/amm. imm. immateriali, F/amm. imm. materiali, Fondo TFR,
-    //            Fornitori, Altri debiti v/fornitori, Debiti tributari, Debiti diversi,
-    //            Patrimonio netto, [Utile d'esercizio se >0]
-    function calcolaSP(attivo,passivo,totali){
-      // ── ATTIVO ──
-      // Immobilizzazioni (al lordo): subtotale PDF "Immobilizzazioni" oppure somma 11xxx + 12xxx
-      var immobLordo = (attivo.immob_immater||0) + (attivo.immob_mater||0);
-      var rimanenze = attivo.rimanenze||0;
-      var clienti = attivo.clienti||0;
-      var creditiTrib = attivo.crediti_trib||0;
-      // Crediti diversi = tutti i 17xxx (esclusi 17360.1 che è debito personale)
-      var creditiDiv = (attivo.crediti_div||0) + (attivo.crediti_incassi||0);
-      var fornitoriAtt = attivo.fornitori_att||0; // anticipi/note credito (subtotale senza codice)
-      var attFinanz = attivo.att_finanz||0;
-      var liquidita = attivo.liquidita||0;
-      var rateiAtt = attivo.ratei_att||0;
+    // Calcola snapshot SP dai dati piatti. Risultato d'esercizio = Attivo − Passivo (somma voci).
+    function calcolaSP(spData){
+      // ATTIVO
+      var immob = spData.sp_att_immobilizzazioni||0;
+      var rimanenze = spData.sp_att_rimanenze||0;
+      var clienti = spData.sp_att_clienti||0;
+      var creditiTrib = spData.sp_att_crediti_tributari||0;
+      var creditiDiv = spData.sp_att_crediti_diversi||0;
+      var fornitoriAtt = spData.sp_att_fornitori||0;
+      var attFinanz = spData.sp_att_attivita_finanziarie_non_imm||0;
+      var liquidita = spData.sp_att_disponibilita_liquide||0;
+      var rateiAtt = spData.sp_att_ratei_risconti_attivi||0;
+      var totAtt = immob + rimanenze + clienti + creditiTrib + creditiDiv + fornitoriAtt + attFinanz + liquidita + rateiAtt;
 
-      var totAtt = immobLordo + rimanenze + clienti + creditiTrib + creditiDiv + fornitoriAtt + attFinanz + liquidita + rateiAtt;
-
-      // ── PASSIVO ──
-      var fAmmImm = passivo.f_amm_immater||0;
-      var fAmmMat = passivo.f_amm_mater||0;
-      var tfr = passivo.tfr||0;
-      var fornitoriPass = passivo.fornitori_pass||0; // subtotale senza codice "Fornitori"
-      var altriDebFor = passivo.altri_deb_for||0;    // codici 26xxx
-      var debitiTrib = passivo.debiti_trib||0;
-      var debitiDiv = passivo.debiti_div||0;          // 28xxx + 17360.1
-      var pn = passivo.patr_netto||0;
-
+      // PASSIVO
+      var fAmmImm = spData.sp_pass_f_amm_imm_immateriali||0;
+      var fAmmMat = spData.sp_pass_f_amm_imm_materiali||0;
+      var tfr = spData.sp_pass_fondo_tfr||0;
+      var fornitoriPass = spData.sp_pass_fornitori||0;
+      var altriDebFor = spData.sp_pass_altri_debiti_v_fornitori||0;
+      var debitiTrib = spData.sp_pass_debiti_tributari||0;
+      var debitiDiv = spData.sp_pass_debiti_diversi||0;
+      var pn = spData.sp_pass_patrimonio_netto||0;
       var totPass = fAmmImm + fAmmMat + tfr + fornitoriPass + altriDebFor + debitiTrib + debitiDiv + pn;
 
-      // ── Risultato d'esercizio come differenza Att − Pass ──
-      // Questa e' l'interpretazione contabile corretta: se Attivo > Passivo (escluso risultato), c'e' un utile.
-      // Se Attivo < Passivo, c'e' una perdita.
+      // Risultato = Attivo - Passivo (se +, utile; se -, perdita)
       var risultato = totAtt - totPass;
       var utileEs = risultato > 0 ? risultato : 0;
       var perditaEs = risultato < 0 ? Math.abs(risultato) : 0;
 
-      // ── Safety net (solo informativo, mostra se c'e' una differenza rispetto al PDF) ──
-      // Il PDF riporta totale_attivo e totale_passivo ufficiali che includono il risultato d'esercizio.
-      // Qui li teniamo solo per check.
-      var nonClassAtt=0, nonClassPass=0;
-      if(totali && totali.totale_attivo){
-        // totale_attivo PDF include perdita se presente (attivo + perdita = pareggio)
-        // Il nostro totAtt non la include, quindi il confronto e': totAtt_PDF = totAtt + perdita
-        var totAttPDFatteso = totAtt + perditaEs;
-        nonClassAtt = Number(totali.totale_attivo) - totAttPDFatteso;
-        if(Math.abs(nonClassAtt) <= 5) nonClassAtt = 0;
-      }
-      if(totali && totali.totale_passivo){
-        var totPassPDFatteso = totPass + utileEs;
-        nonClassPass = Number(totali.totale_passivo) - totPassPDFatteso;
-        if(Math.abs(nonClassPass) <= 5) nonClassPass = 0;
-      }
+      // Info diagnostico: differenza vs totale PDF se disponibile
+      var totAttPDF = spData.sp_totale_attivo_pdf||0;
+      var totPassPDF = spData.sp_totale_passivo_pdf||0;
+      var utilePerditaPDF = spData.sp_utile_perdita_esercizio||0;
+      // Il totale_attivo PDF include perdita, il totale_passivo include utile (a pareggio)
+      var deltaAttVsPdf = totAttPDF ? (totAttPDF - totAtt - perditaEs) : 0;
+      var deltaPassVsPdf = totPassPDF ? (totPassPDF - totPass - utileEs) : 0;
 
       return {
-        // Attivo
-        immobLordo:immobLordo, rimanenze:rimanenze, clienti:clienti, creditiTrib:creditiTrib,
+        immob:immob, rimanenze:rimanenze, clienti:clienti, creditiTrib:creditiTrib,
         creditiDiv:creditiDiv, fornitoriAtt:fornitoriAtt, attFinanz:attFinanz,
         liquidita:liquidita, rateiAtt:rateiAtt,
-        totAtt:totAtt, nonClassAtt:nonClassAtt,
-        // Passivo
+        totAtt:totAtt,
         fAmmImm:fAmmImm, fAmmMat:fAmmMat, tfr:tfr, fornitoriPass:fornitoriPass,
         altriDebFor:altriDebFor, debitiTrib:debitiTrib, debitiDiv:debitiDiv,
         pn:pn,
-        totPass:totPass, nonClassPass:nonClassPass,
-        // Risultato (calcolato come differenza)
-        risultato:risultato, utileEs:utileEs, perditaEs:perditaEs
+        totPass:totPass,
+        risultato:risultato, utileEs:utileEs, perditaEs:perditaEs,
+        totAttPDF:totAttPDF, totPassPDF:totPassPDF, utilePerditaPDF:utilePerditaPDF,
+        deltaAttVsPdf:deltaAttVsPdf, deltaPassVsPdf:deltaPassVsPdf
       };
     }
+
 
     // Render principale
     function render(){
@@ -6171,11 +5877,11 @@ function openFilippoPanel(){
       var NOMI_MESI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 
       // KPI per mese + YTD
-      var kpiMesi=mesiPresenti.map(function(i){return calcolaKPI(mesi[i].ricavi,mesi[i].costi);});
-      var spMesi=mesiPresenti.map(function(i){return calcolaSP(mesi[i].attivo||{},mesi[i].passivo||{},mesi[i].raw&&mesi[i].raw.totali);});
-      // YTD = ultimo bilancio progressivo (già cumulato)
+      var kpiMesi=mesiPresenti.map(function(i){return calcolaKPI(mesi[i].ceMese);});
+      var spMesi=mesiPresenti.map(function(i){return calcolaSP(mesi[i].sp);});
+      // YTD = ultimo bilancio progressivo (già cumulato nei dati piatti)
       var lastMese=mesiPresenti[mesiPresenti.length-1];
-      var kpiYTD=lastMese!=null?calcolaKPI(mesi[lastMese].aggCum.ricavi,mesi[lastMese].aggCum.costi,mesi[lastMese].raw&&mesi[lastMese].raw.totali):null;
+      var kpiYTD=lastMese!=null?calcolaKPI(mesi[lastMese].ceYTD):null;
 
       var html='<div style="max-width:1400px;margin:0 auto">';
       html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">';
@@ -6328,7 +6034,7 @@ function openFilippoPanel(){
         html+='</tr>';
       }
       rowSP('ATTIVO',function(){return null;},{bold:true,bg:'#e3f2fd'});
-      rowSP('Immobilizzazioni',function(s){return s.immobLordo;},{indent:true});
+      rowSP('Immobilizzazioni',function(s){return s.immob;},{indent:true});
       rowSP('Rimanenze',function(s){return s.rimanenze;},{indent:true});
       rowSP('Clienti',function(s){return s.clienti;},{indent:true});
       rowSP('Crediti tributari',function(s){return s.creditiTrib;},{indent:true});
@@ -6362,17 +6068,17 @@ function openFilippoPanel(){
       });
       html+='</tr>';
 
-      // Info "Non classificato" solo se significativo (diagnostic)
-      var showNCA=spMesi.some(function(s){return Math.abs(s.nonClassAtt||0)>5;});
-      var showNCP=spMesi.some(function(s){return Math.abs(s.nonClassPass||0)>5;});
+      // Info "Differenza vs totali PDF" solo se significativo (diagnostico)
+      var showNCA=spMesi.some(function(s){return Math.abs(s.deltaAttVsPdf||0)>5;});
+      var showNCP=spMesi.some(function(s){return Math.abs(s.deltaPassVsPdf||0)>5;});
       if(showNCA||showNCP){
         html+='<tr style="background:#fef2f2;font-size:11px;color:#92400e">';
-        html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fef2f2">⚠ Differenza vs totali PDF (non classificato)</td>';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fef2f2">⚠ Differenza vs totali PDF (diagnostico)</td>';
         mesiPresenti.forEach(function(i,ix){
           var s=spMesi[ix];
           var txt='';
-          if(Math.abs(s.nonClassAtt)>5)txt+='Att: '+fmtEur(s.nonClassAtt);
-          if(Math.abs(s.nonClassPass)>5){if(txt)txt+=' · ';txt+='Pass: '+fmtEur(s.nonClassPass);}
+          if(Math.abs(s.deltaAttVsPdf)>5)txt+='Att: '+fmtEur(s.deltaAttVsPdf);
+          if(Math.abs(s.deltaPassVsPdf)>5){if(txt)txt+=' · ';txt+='Pass: '+fmtEur(s.deltaPassVsPdf);}
           html+='<td style="text-align:right;padding:6px 10px;font-size:10px">'+txt+'</td>';
         });
         html+='</tr>';
@@ -6428,8 +6134,8 @@ function openFilippoPanel(){
             showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Errore parsing AI</div><div style="font-size:11px">'+pe.message+'<br>Risposta: '+clean.substring(0,200)+'</div>','error');
             return;
           }
-          if(!parsed||!parsed.anno||!parsed.mese||!Array.isArray(parsed.conti)){
-            showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Dati incompleti dal PDF</div><div style="font-size:12px">Manca anno, mese o elenco conti. Verifica che il PDF sia una situazione contabile progressiva.</div>','error');
+          if(!parsed||!parsed.anno||!parsed.mese){
+            showBilMsg('<div style="font-weight:700;margin-bottom:6px">❌ Dati incompleti dal PDF</div><div style="font-size:12px">Manca anno o mese. Verifica che il PDF sia una situazione contabile progressiva.</div>','error');
             return;
           }
           // Controlla duplicato stesso anno+mese
@@ -6441,18 +6147,11 @@ function openFilippoPanel(){
             }
             bilanci.splice(duplIdx,1);
           }
-          // Aggiungi id e salva
-          var nuovo={
+          // Aggiungi id e salva. Lo schema e' piatto: tutte le chiavi sp_* e ce_* stanno direttamente nel bilancio.
+          var nuovo = Object.assign({}, parsed, {
             id:'bil_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
-            anno:parsed.anno,
-            mese:parsed.mese,
-            periodo_da:parsed.periodo_da,
-            periodo_a:parsed.periodo_a,
-            societa:parsed.societa||'',
-            conti:parsed.conti,
-            totali:parsed.totali||{},
             caricato_il:new Date().toISOString()
-          };
+          });
           bilanci.push(nuovo);
           // Salva indice
           showBilMsg('<div style="font-weight:700;margin-bottom:6px">💾 Salvataggio...</div>','warning');
@@ -6468,7 +6167,7 @@ function openFilippoPanel(){
           }
           // Aggiorna lista anni disponibili
           anniDisp=[...new Set(bilanci.map(function(b){return b.anno;}))].sort(function(a,b){return b-a;});
-          showBilMsg('<div style="font-weight:700">✅ Bilancio '+nuovo.anno+'/'+String(nuovo.mese).padStart(2,'0')+' caricato</div><div style="font-size:11px;margin-top:4px">'+(nuovo.conti.length)+' conti importati</div>','success');
+          showBilMsg('<div style="font-weight:700">✅ Bilancio '+nuovo.anno+'/'+String(nuovo.mese).padStart(2,'0')+' caricato</div>','success');
           setTimeout(function(){
             var b=document.getElementById('bilancio-result-banner');
             if(b)b.remove();
