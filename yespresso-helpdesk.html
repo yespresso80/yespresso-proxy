@@ -5803,13 +5803,27 @@ function openFilippoPanel(){
     }
 
     // Aggrega bilancio in struttura riclassificata { ricavi:{gruppo:importo}, costi:{...}, attivo:{...}, passivo:{...} }
+    // Usa il piano dei conti italiano: 1x=attivo, 2x=passivo, 3x=costi, 4x=ricavi.
+    // NON ci fidiamo della sezione restituita dall'AI perche' puo' confondersi con layout a due colonne.
+    function sezioneDaCodice(cod,sezAI){
+      cod=String(cod||'');
+      var first=cod.charAt(0);
+      if(first==='1')return 'attivo';
+      if(first==='2')return 'passivo';
+      if(first==='3')return 'costi';
+      if(first==='4')return 'ricavi';
+      // Fallback: usa quella dell'AI se codice anomalo
+      return sezAI||'altro';
+    }
     function aggregaBilancio(bil){
       var agg={ricavi:{},costi:{},attivo:{},passivo:{}};
       (bil.conti||[]).forEach(function(c){
-        var cls=classificaConto(c);
-        var sez=c.sezione;
-        if(!agg[sez])agg[sez]={};
-        agg[sez][cls.gruppo]=(agg[sez][cls.gruppo]||0)+Number(c.importo||0);
+        // Forza la sezione basandosi sul codice conto (piu' robusto dell'inferenza AI)
+        var sezReale=sezioneDaCodice(c.codice,c.sezione);
+        var cCopia={codice:c.codice,descrizione:c.descrizione,importo:c.importo,sezione:sezReale};
+        var cls=classificaConto(cCopia);
+        if(!agg[sezReale])agg[sezReale]={};
+        agg[sezReale][cls.gruppo]=(agg[sezReale][cls.gruppo]||0)+Number(c.importo||0);
       });
       return agg;
     }
@@ -5889,7 +5903,7 @@ function openFilippoPanel(){
     }
 
     // Calcola snapshot SP riclassificato
-    function calcolaSP(attivo,passivo){
+    function calcolaSP(attivo,passivo,totali){
       var immobImmNet=(attivo.immob_immater||0)-(passivo.f_amm_immater||0);
       var immobMatNet=(attivo.immob_mater||0)-(passivo.f_amm_mater||0);
       var immobNette=immobImmNet+immobMatNet;
@@ -5900,19 +5914,25 @@ function openFilippoPanel(){
       var altroAtt=(attivo.att_finanz||0)+(attivo.ratei_att||0)+(attivo.altro_att||0);
       var totAttRicl=immobNette+liquidita+crediti+creditiTrib+rimanenze+altroAtt;
 
-      var pn=passivo.patr_netto||0;
+      var pnConti=passivo.patr_netto||0;
+      // Utile/perdita d'esercizio: dal PDF è a pareggio (non un conto) — lo prendiamo dai totali
+      var utilePerdita=(totali&&totali.utile_perdita!=null)?Number(totali.utile_perdita):0;
+      var pn=pnConti+utilePerdita;
       var fornitori=passivo.fornitori||0;
       var debitiTrib=passivo.debiti_trib||0;
       var debitiPers=passivo.debiti_pers||0;
       var tfr=passivo.tfr||0;
       var altroPass=passivo.altro_pass||0;
       var totPassRicl=pn+fornitori+debitiTrib+debitiPers+tfr+altroPass;
+      var quadratura=totAttRicl-totPassRicl;
 
       return {
         immobNette:immobNette, liquidita:liquidita, crediti:crediti, creditiTrib:creditiTrib, rimanenze:rimanenze, altroAtt:altroAtt,
         totAtt:totAttRicl,
-        pn:pn, fornitori:fornitori, debitiTrib:debitiTrib, debitiPers:debitiPers, tfr:tfr, altroPass:altroPass,
-        totPass:totPassRicl
+        pnConti:pnConti, utilePerdita:utilePerdita, pn:pn,
+        fornitori:fornitori, debitiTrib:debitiTrib, debitiPers:debitiPers, tfr:tfr, altroPass:altroPass,
+        totPass:totPassRicl,
+        quadratura:quadratura
       };
     }
 
@@ -5927,7 +5947,7 @@ function openFilippoPanel(){
 
       // KPI per mese + YTD
       var kpiMesi=mesiPresenti.map(function(i){return calcolaKPI(mesi[i].ricavi,mesi[i].costi);});
-      var spMesi=mesiPresenti.map(function(i){return calcolaSP(mesi[i].attivo||{},mesi[i].passivo||{});});
+      var spMesi=mesiPresenti.map(function(i){return calcolaSP(mesi[i].attivo||{},mesi[i].passivo||{},mesi[i].raw&&mesi[i].raw.totali);});
       // YTD = ultimo bilancio progressivo (già cumulato)
       var lastMese=mesiPresenti[mesiPresenti.length-1];
       var kpiYTD=lastMese!=null?calcolaKPI(mesi[lastMese].aggCum.ricavi,mesi[lastMese].aggCum.costi):null;
@@ -6085,13 +6105,26 @@ function openFilippoPanel(){
       rowSP('Altro attivo',function(s){return s.altroAtt;},{indent:true});
       rowSP('TOTALE ATTIVO RICLASSIFICATO',function(s){return s.totAtt;},{bold:true,bg:'#f8f9fc',border:true});
       rowSP('PASSIVO',function(){return null;},{bold:true,bg:'#fff3e0',border:true});
-      rowSP('Patrimonio netto',function(s){return s.pn;},{indent:true,bold:true});
+      rowSP('Patrimonio netto (capitale + riserve + utili a nuovo)',function(s){return s.pnConti;},{indent:true});
+      rowSP('Utile/Perdita d\'esercizio',function(s){return s.utilePerdita;},{indent:true});
+      rowSP('Totale Patrimonio netto',function(s){return s.pn;},{indent:true,bold:true});
       rowSP('Debiti v/fornitori',function(s){return s.fornitori;},{indent:true});
       rowSP('Debiti tributari',function(s){return s.debitiTrib;},{indent:true});
       rowSP('Debiti v/personale ed enti',function(s){return s.debitiPers;},{indent:true});
       rowSP('Fondo TFR',function(s){return s.tfr;},{indent:true});
       rowSP('Altro passivo',function(s){return s.altroPass;},{indent:true});
       rowSP('TOTALE PASSIVO RICLASSIFICATO',function(s){return s.totPass;},{bold:true,bg:'#f8f9fc',border:true});
+      // Riga quadratura: Δ = Attivo - Passivo (deve essere 0)
+      html+='<tr style="background:#fffbeb;font-weight:700">';
+      html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fffbeb;border-top:2px solid #fcd34d">Quadratura (Δ Att. − Pass.)</td>';
+      mesiPresenti.forEach(function(i,ix){
+        var d=spMesi[ix].quadratura;
+        var ok=Math.abs(d)<1; // tollero 1€ di arrotondamenti
+        var col=ok?'#166534':'#c0392b';
+        var icon=ok?'✓':'⚠';
+        html+='<td style="text-align:right;padding:6px 10px;border-top:2px solid #fcd34d;color:'+col+'">'+icon+' '+fmtEur(d)+'</td>';
+      });
+      html+='</tr>';
 
       html+='</tbody></table></div>';
 
