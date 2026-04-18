@@ -1274,6 +1274,49 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // ── MARGINI CANALE DATA (storage JSON su GitHub per margine canale) ──
+  if (req.url.startsWith('/margini-canale-data') && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url.startsWith('/margini-canale-data')) {
+    const CORS_MC = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const GH_MC_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/margini-canale-index.json';
+    async function ghMCGet() {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) return { data: [], sha: null };
+      const r = await fetch(GH_MC_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+      if (r.status === 404) return { data: [], sha: null };
+      const j = await r.json();
+      return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+    }
+    async function ghMCSave(data, sha) {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) throw new Error('GH_TOKEN non configurato');
+      const body = { message: 'update margini-canale-index', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(GH_MC_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); throw new Error('GitHub margini-canale save error: '+t.substring(0,200)); }
+    }
+    if (req.method === 'GET') {
+      try { const { data } = await ghMCGet(); res.writeHead(200, CORS_MC); res.end(JSON.stringify(data)); }
+      catch(e) { console.error('[MC GET]', e.message); res.writeHead(200, CORS_MC); res.end('[]'); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+      try {
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        const { sha } = await ghMCGet();
+        await ghMCSave(payload.margini, sha);
+        res.writeHead(200, CORS_MC); res.end(JSON.stringify({ ok: true }));
+      } catch(e) { console.error('[MC POST]', e.message); res.writeHead(500, CORS_MC); res.end(JSON.stringify({ ok: false, error: e.message })); }
+      return;
+    }
+    res.writeHead(405, CORS_MC); res.end(JSON.stringify({error:'Method not allowed'}));
+    return;
+  }
+
   // ── Verifica token su endpoint sensibili ──
   const sensitiveEndpoints = ["/brt/", "/shopify", "/anthropic", "/creditsyard/"];
   if (sensitiveEndpoints.some(function(e){ return req.url.startsWith(e); })) {

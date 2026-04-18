@@ -5328,6 +5328,8 @@ function openFilippoPanel(){
     id:'analisi_bilancio',label:'📈 Analisi Bilancio',periodo:'',custom:true,groups:[]
   },{
     id:'margine_prodotto',label:'💰 Margine Prodotto',periodo:'',custom:true,groups:[]
+  },{
+    id:'margine_canale',label:'🛒 Margine Canale',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -5403,6 +5405,7 @@ function openFilippoPanel(){
       else if(activeSec.id==='archivio_bolle') renderArchivioBolle(panel);
       else if(activeSec.id==='analisi_bilancio') renderAnalisiBilancio(panel);
       else if(activeSec.id==='margine_prodotto') renderMargineProdotto(panel);
+      else if(activeSec.id==='margine_canale') renderMargineCanale(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
@@ -6998,6 +7001,626 @@ function openFilippoPanel(){
     render();
   }
   // ── FINE MARGINE PRODOTTO ─────────────────────────────────────────────────
+
+  // ── MARGINE CANALE ──────────────────────────────────────────────────────
+  async function renderMargineCanale(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca)return;
+    ca.innerHTML='<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento dati margine canale...</div>';
+
+    var PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+
+    // Mappatura source_name -> canale
+    var SOURCE_TO_CANALE = {
+      'amazon':'AMAZON',
+      'amazon-it':'AMAZON',
+      'TEMU':'TEMU',
+      '281399066625':'TEMU',
+      'web':'SITO',
+      'shopify_draft_order':'SITO',
+      'TikTok':'TIK TOK'
+    };
+    var ESCLUDI = ['3890849','334476541953'];
+    // Provvigioni per canale (% su vendite totali)
+    var PROV_PCT = {'AMAZON':0.154,'TEMU':0.06,'TIK TOK':0.06,'SITO':0};
+    // Spedizione per ordine (tutti canali)
+    var SPEDIZIONE_PER_ORDINE = 3.5;
+    // Ordine canali nella tabella
+    var CANALI_ORDINE = ['AMAZON','SITO','TEMU','TIK TOK'];
+
+    // Carica dati dal server
+    var margini=[];
+    try{
+      var r=await fetch(PROXY+'/margini-canale-data');
+      margini=await r.json();
+      if(!Array.isArray(margini))margini=[];
+    }catch(e){margini=[];}
+
+    var anniDisp=[...new Set(margini.map(function(m){return m.anno;}))].sort(function(a,b){return b-a;});
+    if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
+    if(!window._margCanAnno || anniDisp.indexOf(window._margCanAnno)<0){
+      window._margCanAnno = anniDisp[0];
+    }
+
+    function showMCMsg(html_content, tipo){
+      var colors={'success':{'bg':'#f0fdf4','border':'#86efac','text':'#166534'},'warning':{'bg':'#fffbeb','border':'#fcd34d','text':'#92400e'},'error':{'bg':'#fef2f2','border':'#fca5a5','text':'#991b1b'}};
+      var c=colors[tipo]||colors['success'];
+      var existing=document.getElementById('margcan-result-banner');
+      if(existing)existing.remove();
+      var banner=document.createElement('div');
+      banner.id='margcan-result-banner';
+      banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;min-width:400px;max-width:700px;background:'+c.bg+';border:1.5px solid '+c.border+';border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:16px 20px;font-family:inherit';
+      banner.innerHTML='<div style="display:flex;align-items:flex-start;gap:12px"><div style="flex:1;font-size:13px;color:'+c.text+'">'+html_content+'</div><button onclick="document.getElementById(\'margcan-result-banner\').remove()" style="background:none;border:none;cursor:pointer;font-size:18px;color:'+c.text+';line-height:1;padding:0;flex-shrink:0">✕</button></div>';
+      document.body.appendChild(banner);
+    }
+
+    // Scrollbar CSS (condiviso con bilancio)
+    if(!document.getElementById('bilancio-css-inject')){
+      var st=document.createElement('style');
+      st.id='bilancio-css-inject';
+      st.textContent='.bil-scroll{overflow-x:auto;overflow-y:hidden;scrollbar-width:auto;scrollbar-color:#94a3b8 #f1f5f9}.bil-scroll::-webkit-scrollbar{height:12px;background:#f1f5f9}.bil-scroll::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:6px;border:2px solid #f1f5f9}.bil-scroll::-webkit-scrollbar-thumb:hover{background:#64748b}';
+      document.head.appendChild(st);
+    }
+
+    function fmtEur(n){
+      if(n==null||isNaN(n))return '—';
+      var abs=Math.abs(n);
+      var s=abs.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+      return n<0?'−'+s:s;
+    }
+    function fmtInt(n){
+      if(n==null||isNaN(n))return '—';
+      return Math.round(n).toLocaleString('it-IT');
+    }
+    function fmtPct(n){
+      if(n==null||isNaN(n)||!isFinite(n))return '—';
+      return n.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+    }
+
+    // ── Carica libreria SheetJS se non gia' presente ──
+    function loadScript(src){
+      return new Promise(function(res,rej){
+        if(document.querySelector('script[src="'+src+'"]'))return res();
+        var s=document.createElement('script');
+        s.src=src; s.onload=res; s.onerror=function(){rej(new Error('load fail '+src));};
+        document.head.appendChild(s);
+      });
+    }
+
+    // Parse xlsx: restituisce array di record {canale, nr_ordini, vendite_totali, vendite_nette, costo_prodotto}
+    // aggregati per canale (gestendo mapping e righe totali da escludere)
+    async function parseXlsxFatturatoCanale(file){
+      if(typeof XLSX==='undefined'){
+        await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+      }
+      var buf=await file.arrayBuffer();
+      var wb=XLSX.read(buf,{type:'array'});
+      var sh=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(sh,{defval:null});
+      // Aggrega per canale
+      var perCanale={};
+      rows.forEach(function(r){
+        var src=r['Orders / Source Name'];
+        if(src==null||src==='')return; // riga totale del report
+        var srcStr=String(src);
+        if(ESCLUDI.indexOf(srcStr)>=0)return;
+        var canale=SOURCE_TO_CANALE[srcStr];
+        if(!canale)return;
+        if(!perCanale[canale]){
+          perCanale[canale]={nr_ordini:0, vendite_totali:0, vendite_nette:0, costo_prodotto:0};
+        }
+        perCanale[canale].nr_ordini      += Number(r['Orders / Number Of Orders']||0);
+        perCanale[canale].vendite_totali += Number(r['Orders / Total Sales']||0);
+        perCanale[canale].vendite_nette  += Number(r['Orders / Net Sales']||0);
+        perCanale[canale].costo_prodotto += Number(r['Order Items / Total Cost']||0);
+      });
+      return perCanale;
+    }
+
+    // Calcola metriche derivate per un record canale
+    function calcMetriche(d, canale){
+      var nr=d.nr_ordini||0;
+      var vTot=d.vendite_totali||0;
+      var vNet=d.vendite_nette||0;
+      var cost=d.costo_prodotto||0;
+      var ordineMedio = nr>0 ? vTot/nr : 0;
+      var margine = vNet - cost;
+      var provvigioni = vTot * (PROV_PCT[canale]||0);
+      var spedizioni = nr * SPEDIZIONE_PER_ORDINE;
+      var ebit = margine - provvigioni - spedizioni;
+      return {
+        nr_ordini:nr, vendite_totali:vTot, vendite_nette:vNet, costo_prodotto:cost,
+        ordine_medio:ordineMedio, margine:margine, provvigioni:provvigioni,
+        spedizioni:spedizioni, ebit:ebit
+      };
+    }
+
+    // ── Render principale ──
+    function render(){
+      var anno=window._margCanAnno;
+      var margAnno=margini.filter(function(m){return m.anno===anno;});
+      var mesiPresenti=[...new Set(margAnno.map(function(m){return m.mese;}))].sort(function(a,b){return a-b;});
+      var NOMI_MESI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+
+      // Mappa mese -> canale -> record grezzo
+      var byMese={};
+      margAnno.forEach(function(m){
+        if(!byMese[m.mese])byMese[m.mese]={};
+        byMese[m.mese][m.canale]=m;
+      });
+
+      // Canali presenti (solo quelli con dati in almeno un mese)
+      var canaliPresenti=CANALI_ORDINE.filter(function(c){
+        return mesiPresenti.some(function(m){return byMese[m]&&byMese[m][c];});
+      });
+
+      // Helper: per (mese,canale) ritorna metriche derivate
+      function metrMC(mese,canale){
+        var raw=byMese[mese]&&byMese[mese][canale];
+        if(!raw)return null;
+        return calcMetriche(raw,canale);
+      }
+      // Totali per mese (somma canali)
+      function totaliMese(mese){
+        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,ebit:0};
+        canaliPresenti.forEach(function(c){
+          var m=metrMC(mese,c);
+          if(!m)return;
+          agg.nr_ordini+=m.nr_ordini;
+          agg.vendite_totali+=m.vendite_totali;
+          agg.vendite_nette+=m.vendite_nette;
+          agg.costo_prodotto+=m.costo_prodotto;
+          agg.margine+=m.margine;
+          agg.provvigioni+=m.provvigioni;
+          agg.spedizioni+=m.spedizioni;
+          agg.ebit+=m.ebit;
+        });
+        agg.ordine_medio=agg.nr_ordini>0?agg.vendite_totali/agg.nr_ordini:0;
+        return agg;
+      }
+      // Totali YTD per canale
+      function totaliYTDCanale(canale){
+        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,ebit:0};
+        mesiPresenti.forEach(function(mese){
+          var m=metrMC(mese,canale);
+          if(!m)return;
+          agg.nr_ordini+=m.nr_ordini;
+          agg.vendite_totali+=m.vendite_totali;
+          agg.vendite_nette+=m.vendite_nette;
+          agg.costo_prodotto+=m.costo_prodotto;
+          agg.margine+=m.margine;
+          agg.provvigioni+=m.provvigioni;
+          agg.spedizioni+=m.spedizioni;
+          agg.ebit+=m.ebit;
+        });
+        agg.ordine_medio=agg.nr_ordini>0?agg.vendite_totali/agg.nr_ordini:0;
+        return agg;
+      }
+      // Totale YTD generale
+      function totaliYTD(){
+        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,ebit:0};
+        canaliPresenti.forEach(function(c){
+          var t=totaliYTDCanale(c);
+          agg.nr_ordini+=t.nr_ordini;
+          agg.vendite_totali+=t.vendite_totali;
+          agg.vendite_nette+=t.vendite_nette;
+          agg.costo_prodotto+=t.costo_prodotto;
+          agg.margine+=t.margine;
+          agg.provvigioni+=t.provvigioni;
+          agg.spedizioni+=t.spedizioni;
+          agg.ebit+=t.ebit;
+        });
+        agg.ordine_medio=agg.nr_ordini>0?agg.vendite_totali/agg.nr_ordini:0;
+        return agg;
+      }
+
+      // Metriche definite in ordine
+      var METRICHE=[
+        {key:'vendite_totali',  label:'Vendite Totali',  w:95,  fmt:fmtEur, css:''},
+        {key:'vendite_nette',   label:'Vendite Nette',   w:95,  fmt:fmtEur, css:''},
+        {key:'nr_ordini',       label:'Nr Ordini',       w:70,  fmt:fmtInt, css:''},
+        {key:'ordine_medio',    label:'Ordine Medio',    w:80,  fmt:fmtEur, css:''},
+        {key:'costo_prodotto',  label:'Costo Prodotto',  w:95,  fmt:fmtEur, css:'color:#c0392b'},
+        {key:'margine',         label:'Margine',         w:90,  fmt:fmtEur, css:'font-weight:600'},
+        {key:'provvigioni',     label:'Provvigioni',     w:85,  fmt:fmtEur, css:'color:#c0392b'},
+        {key:'spedizioni',      label:'Spedizioni',      w:80,  fmt:fmtEur, css:'color:#c0392b'},
+        {key:'ebit',            label:'EBIT',            w:90,  fmt:fmtEur, css:'font-weight:700'}
+      ];
+
+      var vista = window._margCanVista || 'mese';
+      var COL_LABEL=180;
+      var COL_MESE=METRICHE.reduce(function(s,m){return s+m.w;},0);
+      var BG_A='#f0f2f5', BG_B='#e0e4ea';
+      var BG_A_CELL='#ffffff', BG_B_CELL='#f4f6fa';
+
+      var html='<div style="max-width:1400px;margin:0 auto">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">';
+      html+='<div><div style="font-size:22px;font-weight:700;color:#1a1a2e">🛒 Margine Canale</div>';
+      html+='<div style="font-size:12px;color:#777;margin-top:3px">Carica i file xlsx "Fatturato per canale" mensili (uno per mese). Calcolo automatico di margine, provvigioni, spedizioni e EBIT.</div></div>';
+      html+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+      html+='<label style="font-size:12px;color:#555;font-weight:600">Anno:</label>';
+      html+='<select onchange="window._margCanAnno=parseInt(this.value);window._margCanRender&&window._margCanRender()" style="padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;background:#fff">';
+      anniDisp.forEach(function(a){html+='<option value="'+a+'"'+(a===anno?' selected':'')+'>'+a+'</option>';});
+      html+='</select>';
+      html+='<button onclick="window._margCanUpload&&window._margCanUpload()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">📤 Carica XLSX canale</button>';
+      html+='</div></div>';
+
+      if(mesiPresenti.length===0){
+        html+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:30px;text-align:center;color:#92400e">';
+        html+='<div style="font-size:15px;font-weight:700;margin-bottom:8px">Nessun dato per '+anno+'</div>';
+        html+='<div style="font-size:13px;line-height:1.5">Carica i file xlsx esportati da Shopify Analytics (Fatturato per canale). Nomi file attesi: FATTURATO_X_CANALE_1_26.xlsx, FATTURATO_X_CANALE_2_26.xlsx ecc.<br>Per ogni file verrai chiesto di confermare anno e mese.</div>';
+        html+='</div></div>';
+        ca.innerHTML=html;
+        return;
+      }
+
+      // Toggle viste + mesi caricati
+      html+='<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">';
+      html+='<div style="font-size:12px;color:#555"><span style="font-weight:700">Vista:</span>';
+      ['mese','metrica','canale'].forEach(function(v,i){
+        var lab={mese:'Per mese',metrica:'Per metrica',canale:'Per canale'}[v];
+        var act=(vista===v);
+        html+=' <button onclick="window._margCanVista=\''+v+'\';window._margCanRender&&window._margCanRender()" style="background:'+(act?'#0369a1':'#fff')+';color:'+(act?'#fff':'#333')+';border:1px solid '+(act?'#0369a1':'#e0e4ea')+';border-radius:5px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-left:'+(i===0?'6':'4')+'px">'+lab+'</button>';
+      });
+      html+='</div>';
+      html+='<div style="font-size:12px;color:#555;display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+      html+='<span style="font-weight:700">Mesi caricati:</span>';
+      mesiPresenti.forEach(function(mese){
+        html+='<span style="background:#fff;border:1px solid #e0e4ea;border-radius:5px;padding:3px 8px;display:inline-flex;align-items:center;gap:6px">'+NOMI_MESI[mese-1]+' '+anno;
+        html+=' <button onclick="window._margCanDelMese&&window._margCanDelMese('+anno+','+mese+')" title="Elimina mese" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:13px;line-height:1;padding:0">✕</button></span>';
+      });
+      html+='</div></div>';
+
+      html+='<div class="bil-scroll" style="border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="border-collapse:separate;border-spacing:0;font-size:11px;background:#fff;min-width:100%">';
+
+      if(vista==='mese'){
+        // ═══════ VISTA PER MESE ═══════
+        // Riga: un canale + TOTALE
+        // Colonne: Canale | [Mese1: 9 metriche] | [Mese2: 9 metriche] | ... | [YTD: 9 metriche sticky]
+        html+='<thead>';
+        // Riga 1: header mese (colspan 9)
+        html+='<tr style="color:#333">';
+        html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_LABEL+'px;width:'+COL_LABEL+'px;z-index:4;vertical-align:middle">Canale</th>';
+        mesiPresenti.forEach(function(mese,mi){
+          var bgH=mi%2===0?BG_A:BG_B;
+          html+='<th colspan="9" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+COL_MESE+'px">'+NOMI_MESI[mese-1]+' '+anno+'</th>';
+        });
+        html+='<th colspan="9" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_MESE+'px;width:'+COL_MESE+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
+        html+='</tr>';
+        // Riga 2: metriche
+        html+='<tr style="color:#555;font-size:10px">';
+        mesiPresenti.forEach(function(mese,mi){
+          var bgH=mi%2===0?BG_A:BG_B;
+          METRICHE.forEach(function(m,k){
+            var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<th style="text-align:right;padding:4px 5px;background:'+bgH+';border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:'+m.w+'px;width:'+m.w+'px">'+m.label+'</th>';
+          });
+        });
+        // YTD sticky (non facciamo sticky le sotto-colonne, sarebbe troppo complesso; sticky solo il blocco YTD)
+        METRICHE.forEach(function(m,k){
+          var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+          html+='<th style="text-align:right;padding:4px 5px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:'+m.w+'px;width:'+m.w+'px">'+m.label+'</th>';
+        });
+        html+='</tr></thead><tbody>';
+
+        // Righe: un canale per riga
+        canaliPresenti.forEach(function(canale,ci){
+          html+='<tr>';
+          var bgLabel=ci%2===0?'#ffffff':'#fafbfc';
+          html+='<td style="padding:7px 10px;position:sticky;left:0;background:'+bgLabel+';z-index:2;border-right:1px solid #e0e4ea;font-weight:700">'+canale+'</td>';
+          mesiPresenti.forEach(function(mese,mi){
+            var bgBase=mi%2===0?BG_A_CELL:BG_B_CELL;
+            var bgCell=ci%2===0?bgBase:(mi%2===0?'#fafbfc':'#eef1f6');
+            var m=metrMC(mese,canale);
+            METRICHE.forEach(function(me,k){
+              var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
+              if(m){
+                var val=m[me.key];
+                var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':me.css;
+                html+='<td style="text-align:right;padding:5px 5px;background:'+bgCell+';'+bLeft+col+'">'+me.fmt(val)+'</td>';
+              } else {
+                html+='<td style="text-align:right;padding:5px 5px;background:'+bgCell+';color:#ccc;'+bLeft+'">—</td>';
+              }
+            });
+          });
+          // YTD
+          var ytdC=totaliYTDCanale(canale);
+          METRICHE.forEach(function(me,k){
+            var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+            var bgYTD=ci%2===0?'#e8f5e9':'#dcf0e0';
+            var val=ytdC[me.key];
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':me.css;
+            html+='<td style="text-align:right;padding:5px 5px;background:'+bgYTD+';'+bLeft+col+'">'+me.fmt(val)+'</td>';
+          });
+          html+='</tr>';
+        });
+
+        // Riga totali
+        html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+        html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8;border-right:1px solid #e0e4ea">TOTALE</td>';
+        mesiPresenti.forEach(function(mese,mi){
+          var t=totaliMese(mese);
+          METRICHE.forEach(function(me,k){
+            var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
+            var val=t[me.key];
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+            html+='<td style="text-align:right;padding:7px 5px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+col+'">'+me.fmt(val)+'</td>';
+          });
+        });
+        var tY=totaliYTD();
+        METRICHE.forEach(function(me,k){
+          var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+          var val=tY[me.key];
+          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+          html+='<td style="text-align:right;padding:7px 5px;background:#fef9c3;'+bLeft+'border-top:2px solid #94a3b8;'+col+'">'+me.fmt(val)+'</td>';
+        });
+        html+='</tr>';
+
+      } else if(vista==='metrica'){
+        // ═══════ VISTA PER METRICA ═══════
+        // Raggruppa per metrica: per ogni metrica, i mesi affiancati
+        // Riga: canale
+        // Colonne: Canale | [Metrica1: Gen|Feb|Mar|YTD] | [Metrica2: Gen|Feb|Mar|YTD] | ...
+        html+='<thead>';
+        html+='<tr style="color:#333">';
+        html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_LABEL+'px;width:'+COL_LABEL+'px;z-index:4;vertical-align:middle">Canale</th>';
+        var nMesiConYTD=mesiPresenti.length+1; // mesi + YTD
+        METRICHE.forEach(function(me,k){
+          var bgH=k%2===0?BG_A:BG_B;
+          html+='<th colspan="'+nMesiConYTD+'" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+(me.w*nMesiConYTD)+'px">'+me.label+'</th>';
+        });
+        html+='</tr>';
+        // Riga 2: nome mese (e YTD)
+        html+='<tr style="color:#555;font-size:10px">';
+        METRICHE.forEach(function(me,k){
+          var bgH=k%2===0?BG_A:BG_B;
+          mesiPresenti.forEach(function(mese,mi){
+            var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<th style="text-align:right;padding:4px 5px;background:'+bgH+';border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:'+me.w+'px">'+NOMI_MESI[mese-1]+'</th>';
+          });
+          // YTD per questa metrica
+          html+='<th style="text-align:right;padding:4px 5px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:1px dashed #86efac;min-width:'+me.w+'px;font-weight:700">YTD</th>';
+        });
+        html+='</tr></thead><tbody>';
+
+        canaliPresenti.forEach(function(canale,ci){
+          html+='<tr>';
+          var bgLabel=ci%2===0?'#ffffff':'#fafbfc';
+          html+='<td style="padding:7px 10px;position:sticky;left:0;background:'+bgLabel+';z-index:2;border-right:1px solid #e0e4ea;font-weight:700">'+canale+'</td>';
+          var ytdC=totaliYTDCanale(canale);
+          METRICHE.forEach(function(me,k){
+            var bgBase=k%2===0?BG_A_CELL:BG_B_CELL;
+            var bgCell=ci%2===0?bgBase:(k%2===0?'#fafbfc':'#eef1f6');
+            mesiPresenti.forEach(function(mese,mi){
+              var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+              var m=metrMC(mese,canale);
+              if(m){
+                var val=m[me.key];
+                var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':me.css;
+                html+='<td style="text-align:right;padding:5px 5px;background:'+bgCell+';'+bLeft+col+'">'+me.fmt(val)+'</td>';
+              } else {
+                html+='<td style="text-align:right;padding:5px 5px;background:'+bgCell+';color:#ccc;'+bLeft+'">—</td>';
+              }
+            });
+            // YTD metrica-canale
+            var val=ytdC[me.key];
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':me.css;
+            var bgY=ci%2===0?'#e8f5e9':'#dcf0e0';
+            html+='<td style="text-align:right;padding:5px 5px;background:'+bgY+';border-left:1px dashed #86efac;font-weight:700;'+col+'">'+me.fmt(val)+'</td>';
+          });
+          html+='</tr>';
+        });
+
+        // Riga totali
+        html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+        html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8;border-right:1px solid #e0e4ea">TOTALE</td>';
+        var tY=totaliYTD();
+        METRICHE.forEach(function(me,k){
+          mesiPresenti.forEach(function(mese,mi){
+            var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+            var t=totaliMese(mese);
+            var val=t[me.key];
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+            html+='<td style="text-align:right;padding:7px 5px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+col+'">'+me.fmt(val)+'</td>';
+          });
+          var val=tY[me.key];
+          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+          html+='<td style="text-align:right;padding:7px 5px;background:#fef9c3;border-left:1px dashed #86efac;border-top:2px solid #94a3b8;'+col+'">'+me.fmt(val)+'</td>';
+        });
+        html+='</tr>';
+
+      } else {
+        // ═══════ VISTA PER CANALE ═══════
+        // Righe = metriche, colonne = per ogni canale (poi TOTALE), ogni blocco canale contiene i mesi + YTD
+        html+='<thead>';
+        html+='<tr style="color:#333">';
+        html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_LABEL+'px;width:'+COL_LABEL+'px;z-index:4;vertical-align:middle">Metrica</th>';
+        var nMesiConYTD=mesiPresenti.length+1;
+        canaliPresenti.forEach(function(canale,ci){
+          var bgH=ci%2===0?BG_A:BG_B;
+          html+='<th colspan="'+nMesiConYTD+'" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+(85*nMesiConYTD)+'px">'+canale+'</th>';
+        });
+        // Totale canale
+        html+='<th colspan="'+nMesiConYTD+'" style="text-align:center;padding:6px 10px;background:#fef9c3;border-bottom:1px solid #e0e4ea;border-left:2px solid #facc15;min-width:'+(85*nMesiConYTD)+'px;font-weight:700">TOTALE</th>';
+        html+='</tr>';
+        // Riga 2: nome mese
+        html+='<tr style="color:#555;font-size:10px">';
+        canaliPresenti.forEach(function(canale,ci){
+          var bgH=ci%2===0?BG_A:BG_B;
+          mesiPresenti.forEach(function(mese,mi){
+            var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<th style="text-align:right;padding:4px 5px;background:'+bgH+';border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:85px">'+NOMI_MESI[mese-1]+'</th>';
+          });
+          html+='<th style="text-align:right;padding:4px 5px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:1px dashed #86efac;min-width:85px;font-weight:700">YTD</th>';
+        });
+        // Totale colonne mesi + YTD
+        mesiPresenti.forEach(function(mese,mi){
+          var bLeft=(mi===0)?'border-left:2px solid #facc15;':'';
+          html+='<th style="text-align:right;padding:4px 5px;background:#fef9c3;border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:85px">'+NOMI_MESI[mese-1]+'</th>';
+        });
+        html+='<th style="text-align:right;padding:4px 5px;background:#fde68a;border-bottom:1px solid #e0e4ea;border-left:1px dashed #facc15;min-width:85px;font-weight:700">YTD</th>';
+        html+='</tr></thead><tbody>';
+
+        // Righe: una per metrica
+        METRICHE.forEach(function(me,mi){
+          var bgLabel=mi%2===0?'#ffffff':'#fafbfc';
+          html+='<tr>';
+          html+='<td style="padding:7px 10px;position:sticky;left:0;background:'+bgLabel+';z-index:2;border-right:1px solid #e0e4ea;font-weight:600">'+me.label+'</td>';
+          canaliPresenti.forEach(function(canale,ci){
+            var bgBase=ci%2===0?BG_A_CELL:BG_B_CELL;
+            var bgCell=mi%2===0?bgBase:(ci%2===0?'#fafbfc':'#eef1f6');
+            var ytdC=totaliYTDCanale(canale);
+            mesiPresenti.forEach(function(mese,moi){
+              var bLeft=(moi===0)?'border-left:1px solid #e0e4ea;':'';
+              var m=metrMC(mese,canale);
+              if(m){
+                var val=m[me.key];
+                var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':me.css;
+                html+='<td style="text-align:right;padding:5px 5px;background:'+bgCell+';'+bLeft+col+'">'+me.fmt(val)+'</td>';
+              } else {
+                html+='<td style="text-align:right;padding:5px 5px;background:'+bgCell+';color:#ccc;'+bLeft+'">—</td>';
+              }
+            });
+            var val=ytdC[me.key];
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':me.css;
+            var bgY=mi%2===0?'#e8f5e9':'#dcf0e0';
+            html+='<td style="text-align:right;padding:5px 5px;background:'+bgY+';border-left:1px dashed #86efac;font-weight:700;'+col+'">'+me.fmt(val)+'</td>';
+          });
+          // Totale
+          var tY=totaliYTD();
+          mesiPresenti.forEach(function(mese,moi){
+            var bLeft=(moi===0)?'border-left:2px solid #facc15;':'';
+            var t=totaliMese(mese);
+            var val=t[me.key];
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+            html+='<td style="text-align:right;padding:5px 5px;background:#fff9e6;font-weight:700;'+bLeft+col+'">'+me.fmt(val)+'</td>';
+          });
+          var val=tY[me.key];
+          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+          html+='<td style="text-align:right;padding:5px 5px;background:#fef9c3;border-left:1px dashed #facc15;font-weight:700;'+col+'">'+me.fmt(val)+'</td>';
+          html+='</tr>';
+        });
+      }
+
+      html+='</tbody></table></div>';
+
+      html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
+      html+='<strong>Note:</strong> Le metriche derivate sono calcolate come: <b>Ordine Medio</b> = Vendite Totali / Nr Ordini · <b>Margine</b> = Vendite Nette − Costo Prodotto · <b>Provvigioni</b>: AMAZON 15,4%, TEMU e TIK TOK 6%, SITO 0% di Vendite Totali · <b>Spedizioni</b> = Nr Ordini × 3,50€ (tutti i canali) · <b>EBIT Canale</b> = Margine − Provvigioni − Spedizioni.';
+      html+=' Canali esclusi dall\'analisi: codici 3890849 e 334476541953. Source name 281399066625 è mappato come TEMU (vecchio id).';
+      html+=' Tre viste disponibili: <b>Per mese</b> (righe=canali, colonne=mese×metriche), <b>Per metrica</b> (righe=canali, colonne=metrica×mesi), <b>Per canale</b> (righe=metriche, colonne=canale×mesi).';
+      html+='</div>';
+
+      html+='</div>';
+      ca.innerHTML=html;
+    }
+    window._margCanRender=render;
+
+    // ── Upload xlsx ──
+    window._margCanUpload=function(){
+      var inp=document.createElement('input');
+      inp.type='file';
+      inp.accept='.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      inp.multiple=true;
+      inp.onchange=async function(){
+        var files=inp.files;
+        if(!files||!files.length)return;
+
+        showMCMsg('<div style="font-weight:700">⏳ Parsing '+files.length+' file xlsx...</div>','warning');
+
+        var caricati=[];
+        var errori=[];
+        for(var i=0;i<files.length;i++){
+          var f=files[i];
+          // Estrai anno/mese dal nome file: FATTURATO_X_CANALE_<M>_<YY>.xlsx
+          var fname=f.name;
+          var mm=fname.match(/(?:canale[_\s]+)?(\d{1,2})[_\s]+(\d{2,4})/i);
+          var anno=null, mese=null;
+          if(mm){
+            mese=parseInt(mm[1]);
+            var annoRaw=parseInt(mm[2]);
+            anno=annoRaw<100?(2000+annoRaw):annoRaw;
+          }
+          // Se non trovato, chiedi all'utente
+          if(!anno||!mese||mese<1||mese>12){
+            var def=new Date();
+            var ipt=prompt('File "'+fname+'": inserisci anno e mese separati da - (es. 2026-1)', def.getFullYear()+'-'+(def.getMonth()+1));
+            if(!ipt)continue;
+            var parts=ipt.split('-');
+            anno=parseInt(parts[0]); mese=parseInt(parts[1]);
+            if(isNaN(anno)||isNaN(mese)){errori.push(fname+' (data non valida)'); continue;}
+          }
+
+          try{
+            var perCanale=await parseXlsxFatturatoCanale(f);
+            // Rimuovi dati esistenti per (anno,mese)
+            margini=margini.filter(function(m){return !(m.anno===anno&&m.mese===mese);});
+            // Aggiungi un record per canale
+            Object.keys(perCanale).forEach(function(canale){
+              var d=perCanale[canale];
+              margini.push({
+                anno:anno, mese:mese, canale:canale,
+                nr_ordini:d.nr_ordini,
+                vendite_totali:d.vendite_totali,
+                vendite_nette:d.vendite_nette,
+                costo_prodotto:d.costo_prodotto
+              });
+            });
+            caricati.push(NOMI_MESI_SHORT(mese)+' '+anno+' ('+Object.keys(perCanale).length+' canali)');
+          }catch(e){
+            errori.push(fname+': '+e.message);
+          }
+        }
+
+        if(caricati.length===0){
+          showMCMsg('<div style="font-weight:700;margin-bottom:6px">❌ Nessun file caricato</div><div style="font-size:12px">'+errori.join('<br>')+'</div>','error');
+          return;
+        }
+
+        // Salva su server
+        showMCMsg('<div style="font-weight:700">💾 Salvataggio...</div>','warning');
+        try{
+          await fetch(PROXY+'/margini-canale-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({margini:margini})});
+        }catch(e){
+          showMCMsg('⚠️ Salvataggio fallito: '+e.message,'error');
+          return;
+        }
+
+        // Aggiorna anni
+        anniDisp=[...new Set(margini.map(function(m){return m.anno;}))].sort(function(a,b){return b-a;});
+        if(anniDisp.indexOf(window._margCanAnno)<0)window._margCanAnno=anniDisp[0];
+
+        var msg='<div style="font-weight:700">✅ Caricati: '+caricati.join(', ')+'</div>';
+        if(errori.length>0) msg+='<div style="font-size:11px;margin-top:6px;color:#92400e">⚠ Errori: '+errori.join('<br>')+'</div>';
+        showMCMsg(msg,'success');
+        setTimeout(function(){var e=document.getElementById('margcan-result-banner');if(e)e.remove();},4000);
+        render();
+      };
+      inp.click();
+    };
+    function NOMI_MESI_SHORT(m){return ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'][m-1];}
+
+    // ── Elimina mese ──
+    window._margCanDelMese=async function(anno,mese){
+      if(!confirm('Eliminare tutti i dati margine canale di '+NOMI_MESI_SHORT(mese)+' '+anno+'?'))return;
+      margini=margini.filter(function(m){return !(m.anno===anno&&m.mese===mese);});
+      try{
+        await fetch(PROXY+'/margini-canale-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({margini:margini})});
+        anniDisp=[...new Set(margini.map(function(m){return m.anno;}))].sort(function(a,b){return b-a;});
+        if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
+        if(anniDisp.indexOf(window._margCanAnno)<0)window._margCanAnno=anniDisp[0];
+        showMCMsg('✅ Mese eliminato','success');
+        setTimeout(function(){var e=document.getElementById('margcan-result-banner');if(e)e.remove();},2000);
+        render();
+      }catch(e){
+        showMCMsg('❌ Errore: '+e.message,'error');
+      }
+    };
+
+    render();
+  }
+  // ── FINE MARGINE CANALE ──────────────────────────────────────────────────
+
+
 
 
 
