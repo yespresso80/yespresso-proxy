@@ -5732,7 +5732,6 @@ function openFilippoPanel(){
       // Conto economico
       if(sez==='ricavi'){
         if(cod.startsWith('40010'))return {gruppo:'vendite_prest',label:'Vendite e prestazioni'};
-        if(cod.startsWith('40430'))return {gruppo:'_skip_to_costi_rett_ricavi',label:'Rettifiche di ricavi (resi su vendite)'};
         if(cod.startsWith('41101'))return {gruppo:'altri_ricavi',label:'Altri ricavi'};
         if(cod.startsWith('42043'))return {gruppo:'rim_finali',label:'Rimanenze finali'};
         if(cod.startsWith('44'))return {gruppo:'proventi_straord',label:'Proventi straordinari'};
@@ -5740,6 +5739,8 @@ function openFilippoPanel(){
         return {gruppo:'altri_ricavi',label:'Altri ricavi'};
       }
       if(sez==='costi'){
+        // 40430.* = Resi su vendite → Rettifiche di ricavi (forzato a 'costi' da sezioneDaCodice)
+        if(cod.startsWith('40430'))return {gruppo:'rett_ricavi',label:'Rettifiche di ricavi'};
         // Acquisti
         if(cod.startsWith('30030')||cod.startsWith('30041')||cod.startsWith('30043')||cod.startsWith('30044')||cod.startsWith('30047')||cod.startsWith('30060')||cod.startsWith('30099')||cod.startsWith('30110')||cod.startsWith('30130')||cod.startsWith('30199'))return {gruppo:'acquisti',label:'Acquisti'};
         // Rimanenze iniziali
@@ -5794,12 +5795,19 @@ function openFilippoPanel(){
     // NON ci fidiamo della sezione restituita dall'AI perche' puo' confondersi con layout a due colonne.
     function sezioneDaCodice(cod,sezAI){
       cod=String(cod||'');
+      // ── Eccezioni: codici che contabilmente stanno nella sezione opposta al primo carattere ──
+      // 30210.* = Sconti su acquisti → ricavo (rettifica di costo)
+      // 30230.* = Resi su acquisti → ricavo (rettifica di costo)
+      // 31910.* = Sconti/abbuoni/resi su costi per servizi → ricavo (rettifica di costo)
+      if(cod.startsWith('30210')||cod.startsWith('30230')||cod.startsWith('31910'))return 'ricavi';
+      // 40430.* = Resi su vendite → costo (rettifica di ricavo)
+      if(cod.startsWith('40430'))return 'costi';
+      // ── Regola standard: prima cifra del codice ──
       var first=cod.charAt(0);
       if(first==='1')return 'attivo';
       if(first==='2')return 'passivo';
       if(first==='3')return 'costi';
       if(first==='4')return 'ricavi';
-      // Fallback: usa quella dell'AI se codice anomalo
       return sezAI||'altro';
     }
     // Normalizza una descrizione di subtotale per il matching (lowercase, no accenti, no punteggiatura)
@@ -5832,11 +5840,6 @@ function openFilippoPanel(){
         // Caso speciale: 17360.1 è codice attivo ma contabilmente va in debiti_div passivo
         if(cls.gruppo==='_skip_to_passivo_debdiv'){
           agg.passivo.debiti_div=(agg.passivo.debiti_div||0)+Number(c.importo||0);
-          return;
-        }
-        // Caso speciale: 40430.* (resi su vendite) sono in sezione 'ricavi' nel PDF ma la mappatura utente li vuole tra i COSTI come "Rettifiche di ricavi"
-        if(cls.gruppo==='_skip_to_costi_rett_ricavi'){
-          agg.costi.rett_ricavi=(agg.costi.rett_ricavi||0)+Number(c.importo||0);
           return;
         }
         if(!agg[sezReale])agg[sezReale]={};
@@ -6173,18 +6176,20 @@ function openFilippoPanel(){
         var style=opts.bold?'font-weight:700':'';
         var bg=opts.bg||'';
         var color=opts.color||'';
+        // Se e' riga di costo, coloro il valore di rosso (senza segno meno)
+        var colorRosso=opts.costo?'color:#c0392b;':'';
         var indent=opts.indent?'padding-left:24px;':'';
         var border=opts.border?'border-top:1px solid #e0e4ea;':'';
         html+='<tr style="'+(bg?'background:'+bg+';':'')+style+';'+color+'">';
         html+='<td style="padding:6px 10px;'+indent+border+'position:sticky;left:0;background:'+(bg||'#fff')+'">'+label+'</td>';
         mesiPresenti.forEach(function(i,ix){
           var v=getter(kpiMesi[ix]);
-          html+='<td style="text-align:right;padding:6px 10px;'+border+(v<0?'color:#c0392b;':'')+'">'+fmtEur(v)+'</td>';
+          html+='<td style="text-align:right;padding:6px 10px;'+border+(v<0?'color:#c0392b;':colorRosso)+'">'+fmtEur(v)+'</td>';
         });
         var vYTD=kpiYTD?getter(kpiYTD):null;
-        html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700;'+border+(vYTD<0?'color:#c0392b;':'')+'">'+fmtEur(vYTD)+'</td>';
-        // % su ricavi netti (YTD)
-        var pct=(kpiYTD&&kpiYTD.ricaviNetti)?(vYTD/kpiYTD.ricaviNetti*100):null;
+        html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700;'+border+(vYTD<0?'color:#c0392b;':colorRosso)+'">'+fmtEur(vYTD)+'</td>';
+        // % su vendite nette (YTD)
+        var pct=(kpiYTD&&kpiYTD.venditeNette)?(vYTD/kpiYTD.venditeNette*100):null;
         html+='<td style="text-align:right;padding:6px 10px;background:#e3f2fd;color:#555;'+border+'">'+(opts.skipPct?'':fmtPct(pct))+'</td>';
         html+='</tr>';
       }
@@ -6196,18 +6201,18 @@ function openFilippoPanel(){
       rowCE('Variazione rimanenze (finali − iniziali)',function(k){return k.varRimRicavo;},{indent:true});
       rowCE('TOTALE RICAVI',function(k){return k.totRicavi;},{bold:true,bg:'#dcfce7',border:true});
       rowCE('COSTI',function(){return null;},{bold:true,bg:'#fef2f2',skipPct:true,border:true});
-      rowCE('Acquisti',function(k){return k.acquisti;},{indent:true});
+      rowCE('Acquisti',function(k){return k.acquisti;},{indent:true,costo:true});
       // Variazione rimanenze: se negativa (finali < iniziali) e' costo — mostro il valore assoluto
-      rowCE('Variazione rimanenze (iniziali − finali)',function(k){return k.varRimCosto;},{indent:true});
-      rowCE('Costi per servizi',function(k){return k.costiServizi;},{indent:true});
-      rowCE('Compensi e provvigioni',function(k){return k.compensi;},{indent:true});
-      rowCE('Costi per godimento beni di terzi',function(k){return k.godimento;},{indent:true});
-      rowCE('Costi per il personale',function(k){return k.personale;},{indent:true});
-      rowCE('Oneri diversi di gestione',function(k){return k.oneriDiv;},{indent:true});
-      rowCE('Ammortamenti',function(k){return k.ammort;},{indent:true});
-      rowCE('Oneri finanziari',function(k){return k.oneriFin;},{indent:true});
-      rowCE('Rettifiche di ricavi',function(k){return k.rettRicavi;},{indent:true});
-      rowCE('TOTALE COSTI',function(k){return k.totCosti;},{bold:true,bg:'#fee2e2',border:true});
+      rowCE('Variazione rimanenze (iniziali − finali)',function(k){return k.varRimCosto;},{indent:true,costo:true});
+      rowCE('Costi per servizi',function(k){return k.costiServizi;},{indent:true,costo:true});
+      rowCE('Compensi e provvigioni',function(k){return k.compensi;},{indent:true,costo:true});
+      rowCE('Costi per godimento beni di terzi',function(k){return k.godimento;},{indent:true,costo:true});
+      rowCE('Costi per il personale',function(k){return k.personale;},{indent:true,costo:true});
+      rowCE('Oneri diversi di gestione',function(k){return k.oneriDiv;},{indent:true,costo:true});
+      rowCE('Ammortamenti',function(k){return k.ammort;},{indent:true,costo:true});
+      rowCE('Oneri finanziari',function(k){return k.oneriFin;},{indent:true,costo:true});
+      rowCE('Rettifiche di ricavi',function(k){return k.rettRicavi;},{indent:true,costo:true});
+      rowCE('TOTALE COSTI',function(k){return k.totCosti;},{bold:true,bg:'#fee2e2',border:true,costo:true});
       rowCE('UTILE / PERDITA D\'ESERCIZIO',function(k){return k.utilePerdita;},{bold:true,bg:'#fff9e6',border:true});
 
       html+='</tbody></table></div>';
