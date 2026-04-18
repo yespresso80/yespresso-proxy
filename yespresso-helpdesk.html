@@ -5937,6 +5937,41 @@ function openFilippoPanel(){
         agg.passivo.debiti_div=s_debDiv;
       }
 
+      // ── FALLBACK INTELLIGENTE ──
+      // Se il subtotale "Fornitori" passivo NON è stato estratto (o estratto come 0) ma il PDF ha
+      // un totale_passivo ufficiale maggiore della somma delle voci riclassificate, la differenza
+      // è quasi sicuramente il "Fornitori" mancante (è la voce più grande e l'unica senza codice).
+      if(bil.totali && bil.totali.totale_passivo && !agg.passivo.fornitori_pass){
+        // Somma tutte le voci passive note (esclusi utile a pareggio)
+        var sommaPassivoNoto = (agg.passivo.f_amm_immater||0) + (agg.passivo.f_amm_mater||0)
+                             + (agg.passivo.tfr||0) + (agg.passivo.altri_deb_for||0)
+                             + (agg.passivo.debiti_trib||0) + (agg.passivo.debiti_div||0)
+                             + (agg.passivo.patr_netto||0);
+        // totale_passivo PDF include anche utile d'esercizio "a pareggio" se positivo
+        var utilePareggio = (bil.totali.utile_perdita>0) ? bil.totali.utile_perdita : 0;
+        var diff = Number(bil.totali.totale_passivo) - sommaPassivoNoto - utilePareggio;
+        if(diff > 5){
+          agg.passivo.fornitori_pass = diff;
+        }
+      }
+
+      // Stesso fallback lato ATTIVO per "Fornitori" attivo (anticipi) e "Clienti"
+      if(bil.totali && bil.totali.totale_attivo){
+        var sommaAttivoNoto = (agg.attivo.immob_immater||0) + (agg.attivo.immob_mater||0)
+                            + (agg.attivo.att_finanz||0) + (agg.attivo.rimanenze||0)
+                            + (agg.attivo.clienti||0) + (agg.attivo.crediti_trib||0)
+                            + (agg.attivo.crediti_div||0) + (agg.attivo.crediti_incassi||0)
+                            + (agg.attivo.fornitori_att||0) + (agg.attivo.liquidita||0)
+                            + (agg.attivo.ratei_att||0);
+        // totale_attivo PDF include anche perdita d'esercizio "a pareggio" se presente
+        var perditaPareggio = (bil.totali.utile_perdita<0) ? Math.abs(bil.totali.utile_perdita) : 0;
+        var diffA = Number(bil.totali.totale_attivo) - sommaAttivoNoto - perditaPareggio;
+        // Se c'e' differenza attiva significativa e fornitori_att non e' stato estratto, la mettiamo li'
+        if(diffA > 5 && !agg.attivo.fornitori_att){
+          agg.attivo.fornitori_att = diffA;
+        }
+      }
+
       return agg;
     }
 
