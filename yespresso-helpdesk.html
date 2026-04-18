@@ -6705,14 +6705,22 @@ function openFilippoPanel(){
         return;
       }
 
-      // Elenco mesi caricati con pulsante elimina
-      html+='<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#555;display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
-      html+='<span style="font-weight:700">Mesi caricati '+anno+':</span>';
+      // Toggle vista: "mese" (raggruppa per mese) o "metrica" (raggruppa per metrica)
+      var vista = window._margineVista || 'mese';
+      html+='<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">';
+      html+='<div style="font-size:12px;color:#555"><span style="font-weight:700">Vista:</span>';
+      html+=' <button onclick="window._margineVista=\'mese\';window._margineRender&&window._margineRender()" style="background:'+(vista==='mese'?'#0369a1':'#fff')+';color:'+(vista==='mese'?'#fff':'#333')+';border:1px solid '+(vista==='mese'?'#0369a1':'#e0e4ea')+';border-radius:5px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Per mese</button>';
+      html+=' <button onclick="window._margineVista=\'metrica\';window._margineRender&&window._margineRender()" style="background:'+(vista==='metrica'?'#0369a1':'#fff')+';color:'+(vista==='metrica'?'#fff':'#333')+';border:1px solid '+(vista==='metrica'?'#0369a1':'#e0e4ea')+';border-radius:5px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-left:4px">Per metrica</button>';
+      html+='</div>';
+
+      // Mesi caricati (chip) a destra nel box toggle
+      html+='<div style="font-size:12px;color:#555;display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+      html+='<span style="font-weight:700">Mesi caricati:</span>';
       mesiPresenti.forEach(function(mese){
         html+='<span style="background:#fff;border:1px solid #e0e4ea;border-radius:5px;padding:3px 8px;display:inline-flex;align-items:center;gap:6px">'+NOMI_MESI[mese-1]+' '+anno;
         html+=' <button onclick="window._margineDelMese&&window._margineDelMese('+anno+','+mese+')" title="Elimina mese" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:13px;line-height:1;padding:0">✕</button></span>';
       });
-      html+='</div>';
+      html+='</div></div>';
 
       // ── TABELLA MARGINI ──
       // Larghezza colonne: prodotto 220, per ogni mese 5 sottocolonne (qty 60, valore 80, costo 80, marg% 60, marg€ 80 = 360),
@@ -6721,94 +6729,192 @@ function openFilippoPanel(){
       var COL_YTD=360;
       var COL_MESE=360;
 
+      // Colori alternanza per blocchi mese
+      var BG_MESE_A='#f0f2f5';   // grigio chiaro (header)
+      var BG_MESE_B='#e0e4ea';   // grigio piu' scuro (header)
+      var BG_MESE_A_CELL='#ffffff'; // bianco (celle dati)
+      var BG_MESE_B_CELL='#f4f6fa'; // grigio chiaro (celle dati)
+
+      // Metriche definizione condivisa (per entrambe le viste)
+      var METRICHE=[
+        {key:'qty',     label:'Qty',     w:60, fmt:fmtInt, css:''},
+        {key:'valore',  label:'Valore',  w:80, fmt:fmtEur, css:''},
+        {key:'costo',   label:'Costo',   w:80, fmt:fmtEur, css:'color:#c0392b'},
+        {key:'margine_pct',label:'Marg %', w:60, fmt:fmtPct, css:'font-weight:600'},
+        {key:'margine_eur',label:'Marg €', w:80, fmt:fmtEur, css:'font-weight:600'}
+      ];
+
+      // Restituisce lo stile sticky per le 5 celle YTD (destra), cumulando dalla destra
+      function stickyRightCSS(metricIdx, metricheList){
+        var cumulW=0;
+        for(var i=metricheList.length-1; i>metricIdx; i--) cumulW+=metricheList[i].w;
+        return 'position:sticky;right:'+cumulW+'px;z-index:2;';
+      }
+
       html+='<div class="bil-scroll" style="border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="border-collapse:separate;border-spacing:0;font-size:11px;background:#fff;min-width:100%">';
 
-      // Header 2 righe: top = mesi, bottom = metriche
-      html+='<thead>';
-      // Riga 1: Prodotto | Mesi (colspan 5 ognuno) | YTD (colspan 5)
-      html+='<tr style="color:#333">';
-      html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_PROD+'px;width:'+COL_PROD+'px;z-index:4;vertical-align:middle">Prodotto</th>';
-      mesiPresenti.forEach(function(mese){
-        html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:#f0f2f5;border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+COL_MESE+'px;width:'+COL_MESE+'px;top:0;z-index:3">'+NOMI_MESI[mese-1]+' '+anno+'</th>';
-      });
-      html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_YTD+'px;width:'+COL_YTD+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
-      html+='</tr>';
-      // Riga 2: metriche per ogni mese
-      html+='<tr style="color:#555;font-size:10px">';
-      mesiPresenti.forEach(function(mese,mi){
-        var bLeft=mi===0?'border-left:1px solid #e0e4ea':'';
-        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea;'+bLeft+'">Qty</th>';
-        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Valore</th>';
-        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Costo</th>';
-        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Marg %</th>';
-        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Marg €</th>';
-      });
-      // YTD sottocolonne (sticky right)
-      // Per farle sticky tutte e 5, uso position:sticky con right calcolato
-      // Larghezze: Qty 60, Valore 80, Costo 80, Marg% 60, Marg€ 80 (tot 360)
-      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;position:sticky;right:'+(80+60+80+80)+'px;top:28px;z-index:3;min-width:60px;width:60px">Qty</th>';
-      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:'+(80+60+80)+'px;top:28px;z-index:3;min-width:80px;width:80px">Valore</th>';
-      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:'+(80+60)+'px;top:28px;z-index:3;min-width:80px;width:80px">Costo</th>';
-      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:'+(80)+'px;top:28px;z-index:3;min-width:60px;width:60px">Marg %</th>';
-      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:0;top:28px;z-index:3;min-width:80px;width:80px">Marg €</th>';
-      html+='</tr>';
-      html+='</thead><tbody>';
-
-      // Righe prodotti
-      prodOrdinati.forEach(function(prod,pi){
-        var bgRiga=pi%2===0?'#fff':'#fafbfc';
-        var ytd=calcYTD(prod);
-        html+='<tr>';
-        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2;border-right:1px solid #e0e4ea;font-size:11px">'+prod+'</td>';
+      if(vista==='mese'){
+        // ═══════ VISTA PER MESE ═══════
+        // Header riga 1: Prodotto | [Mese 1 colspan 5] | [Mese 2 colspan 5] ... | YTD colspan 5
+        html+='<thead>';
+        html+='<tr style="color:#333">';
+        html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_PROD+'px;width:'+COL_PROD+'px;z-index:4;vertical-align:middle">Prodotto</th>';
         mesiPresenti.forEach(function(mese,mi){
-          var d=byProd[prod][mese];
-          var bLeft=mi===0?'border-left:1px solid #e0e4ea':'';
-          if(d){
-            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';'+bLeft+'">'+fmtInt(d.qty)+'</td>';
-            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+'">'+fmtEur(d.valore)+'</td>';
-            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';color:#c0392b">'+fmtEur(d.costo)+'</td>';
-            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';font-weight:600">'+fmtPct(d.margine_pct)+'</td>';
-            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';font-weight:600">'+fmtEur(d.margine_eur)+'</td>';
-          } else {
-            for(var k=0;k<5;k++){
-              html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';color:#ccc;'+(k===0?bLeft:'')+'">—</td>';
-            }
-          }
+          var bgH=mi%2===0?BG_MESE_A:BG_MESE_B;
+          html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+COL_MESE+'px;width:'+COL_MESE+'px;top:0;z-index:3">'+NOMI_MESI[mese-1]+' '+anno+'</th>';
         });
-        // YTD (5 colonne, tutte sticky)
-        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80+60+80+80)+'px;z-index:2;border-left:2px solid #86efac">'+fmtInt(ytd.qty)+'</td>';
-        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80+60+80)+'px;z-index:2">'+fmtEur(ytd.valore)+'</td>';
-        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80+60)+'px;z-index:2;color:#c0392b">'+fmtEur(ytd.costo)+'</td>';
-        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80)+'px;z-index:2;font-weight:700">'+fmtPct(ytd.margine_pct)+'</td>';
-        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:0;z-index:2;font-weight:700">'+fmtEur(ytd.margine_eur)+'</td>';
+        html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_YTD+'px;width:'+COL_YTD+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
         html+='</tr>';
-      });
+        // Header riga 2: metriche per ogni mese
+        html+='<tr style="color:#555;font-size:10px">';
+        mesiPresenti.forEach(function(mese,mi){
+          var bgH=mi%2===0?BG_MESE_A:BG_MESE_B;
+          METRICHE.forEach(function(m,k){
+            var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<th style="text-align:right;padding:4px 6px;background:'+bgH+';border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:'+m.w+'px;width:'+m.w+'px">'+m.label+'</th>';
+          });
+        });
+        METRICHE.forEach(function(m,k){
+          var st=stickyRightCSS(k,METRICHE);
+          var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+          html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;'+bLeft+st+'top:28px;z-index:3;min-width:'+m.w+'px;width:'+m.w+'px">'+m.label+'</th>';
+        });
+        html+='</tr>';
+        html+='</thead><tbody>';
 
-      // Riga totali
-      html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
-      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8;border-right:1px solid #e0e4ea">TOTALE</td>';
-      mesiPresenti.forEach(function(mese,mi){
-        var t=totaliMese(mese);
-        var bLeft=mi===0?'border-left:1px solid #e0e4ea':'';
-        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+'">'+fmtInt(t.qty)+'</td>';
-        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtEur(t.valore)+'</td>';
-        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8;color:#c0392b">'+fmtEur(t.costo)+'</td>';
-        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtPct(t.margine_pct)+'</td>';
-        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtEur(t.margine_eur)+'</td>';
-      });
-      var tY=totaliYTD();
-      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80+60+80+80)+'px;z-index:2;border-left:2px solid #86efac;border-top:2px solid #94a3b8">'+fmtInt(tY.qty)+'</td>';
-      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80+60+80)+'px;z-index:2;border-top:2px solid #94a3b8">'+fmtEur(tY.valore)+'</td>';
-      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80+60)+'px;z-index:2;color:#c0392b;border-top:2px solid #94a3b8">'+fmtEur(tY.costo)+'</td>';
-      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80)+'px;z-index:2;border-top:2px solid #94a3b8">'+fmtPct(tY.margine_pct)+'</td>';
-      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:0;z-index:2;border-top:2px solid #94a3b8">'+fmtEur(tY.margine_eur)+'</td>';
-      html+='</tr>';
+        // Righe prodotti
+        prodOrdinati.forEach(function(prod,pi){
+          var ytd=calcYTD(prod);
+          html+='<tr>';
+          var bgProdCell=pi%2===0?'#ffffff':'#fafbfc';
+          html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgProdCell+';z-index:2;border-right:1px solid #e0e4ea;font-size:11px">'+prod+'</td>';
+          mesiPresenti.forEach(function(mese,mi){
+            var d=byProd[prod][mese];
+            var bgBase=mi%2===0?BG_MESE_A_CELL:BG_MESE_B_CELL;
+            // Sfuma riga alterna (pi) sul colore base del mese
+            var bgCell=pi%2===0?bgBase:(mi%2===0?'#fafbfc':'#eef1f6');
+            METRICHE.forEach(function(m,k){
+              var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
+              if(d){
+                html+='<td style="text-align:right;padding:5px 6px;background:'+bgCell+';'+bLeft+m.css+'">'+m.fmt(d[m.key])+'</td>';
+              } else {
+                html+='<td style="text-align:right;padding:5px 6px;background:'+bgCell+';color:#ccc;'+bLeft+'">—</td>';
+              }
+            });
+          });
+          // YTD (5 colonne sticky)
+          METRICHE.forEach(function(m,k){
+            var st=stickyRightCSS(k,METRICHE);
+            var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+            var bgYTD=pi%2===0?'#e8f5e9':'#dcf0e0';
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgYTD+';'+bLeft+st+(k>=3?'font-weight:700;':'')+(m.key==='costo'?'color:#c0392b;':'')+'">'+m.fmt(ytd[m.key])+'</td>';
+          });
+          html+='</tr>';
+        });
+
+        // Riga totali
+        html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+        html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8;border-right:1px solid #e0e4ea">TOTALE</td>';
+        mesiPresenti.forEach(function(mese,mi){
+          var t=totaliMese(mese);
+          METRICHE.forEach(function(m,k){
+            var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+(m.key==='costo'?'color:#c0392b;':'')+'">'+m.fmt(t[m.key])+'</td>';
+          });
+        });
+        var tY=totaliYTD();
+        METRICHE.forEach(function(m,k){
+          var st=stickyRightCSS(k,METRICHE);
+          var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+          html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;'+bLeft+st+'border-top:2px solid #94a3b8;'+(m.key==='costo'?'color:#c0392b;':'')+'">'+m.fmt(tY[m.key])+'</td>';
+        });
+        html+='</tr>';
+
+      } else {
+        // ═══════ VISTA PER METRICA ═══════
+        // Header riga 1: Prodotto | [Qty colspan N] | [Valore colspan N] | [Costo colspan N] | [Marg % colspan N] | [Marg € colspan N] | YTD colspan 5
+        // Qui i blocchi top sono per METRICA, e dentro ci sono i mesi
+        var COL_METR_GROUP_W={qty:60, valore:80, costo:80, margine_pct:60, margine_eur:80};
+        html+='<thead>';
+        html+='<tr style="color:#333">';
+        html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_PROD+'px;width:'+COL_PROD+'px;z-index:4;vertical-align:middle">Prodotto</th>';
+        METRICHE.forEach(function(m,k){
+          var bgH=k%2===0?BG_MESE_A:BG_MESE_B;
+          var nMesi=mesiPresenti.length;
+          html+='<th colspan="'+nMesi+'" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+(COL_METR_GROUP_W[m.key]*nMesi)+'px">'+m.label+'</th>';
+        });
+        html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_YTD+'px;width:'+COL_YTD+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
+        html+='</tr>';
+        // Riga 2: per ogni metrica le N colonne dei mesi, poi YTD 5 metriche
+        html+='<tr style="color:#555;font-size:10px">';
+        METRICHE.forEach(function(m,k){
+          var bgH=k%2===0?BG_MESE_A:BG_MESE_B;
+          mesiPresenti.forEach(function(mese,mi){
+            var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<th style="text-align:right;padding:4px 6px;background:'+bgH+';border-bottom:1px solid #e0e4ea;'+bLeft+'min-width:'+COL_METR_GROUP_W[m.key]+'px">'+NOMI_MESI[mese-1]+'</th>';
+          });
+        });
+        METRICHE.forEach(function(m,k){
+          var st=stickyRightCSS(k,METRICHE);
+          var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+          html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;'+bLeft+st+'top:28px;z-index:3;min-width:'+m.w+'px;width:'+m.w+'px">'+m.label+'</th>';
+        });
+        html+='</tr>';
+        html+='</thead><tbody>';
+
+        prodOrdinati.forEach(function(prod,pi){
+          var ytd=calcYTD(prod);
+          html+='<tr>';
+          var bgProdCell=pi%2===0?'#ffffff':'#fafbfc';
+          html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgProdCell+';z-index:2;border-right:1px solid #e0e4ea;font-size:11px">'+prod+'</td>';
+          METRICHE.forEach(function(m,k){
+            var bgBase=k%2===0?BG_MESE_A_CELL:BG_MESE_B_CELL;
+            var bgCell=pi%2===0?bgBase:(k%2===0?'#fafbfc':'#eef1f6');
+            mesiPresenti.forEach(function(mese,mi){
+              var d=byProd[prod][mese];
+              var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+              if(d){
+                html+='<td style="text-align:right;padding:5px 6px;background:'+bgCell+';'+bLeft+m.css+'">'+m.fmt(d[m.key])+'</td>';
+              } else {
+                html+='<td style="text-align:right;padding:5px 6px;background:'+bgCell+';color:#ccc;'+bLeft+'">—</td>';
+              }
+            });
+          });
+          // YTD
+          METRICHE.forEach(function(m,k){
+            var st=stickyRightCSS(k,METRICHE);
+            var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+            var bgYTD=pi%2===0?'#e8f5e9':'#dcf0e0';
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgYTD+';'+bLeft+st+(k>=3?'font-weight:700;':'')+(m.key==='costo'?'color:#c0392b;':'')+'">'+m.fmt(ytd[m.key])+'</td>';
+          });
+          html+='</tr>';
+        });
+
+        // Riga totali
+        html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+        html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8;border-right:1px solid #e0e4ea">TOTALE</td>';
+        METRICHE.forEach(function(m,k){
+          mesiPresenti.forEach(function(mese,mi){
+            var t=totaliMese(mese);
+            var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
+            html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+(m.key==='costo'?'color:#c0392b;':'')+'">'+m.fmt(t[m.key])+'</td>';
+          });
+        });
+        var tYm=totaliYTD();
+        METRICHE.forEach(function(m,k){
+          var st=stickyRightCSS(k,METRICHE);
+          var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
+          html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;'+bLeft+st+'border-top:2px solid #94a3b8;'+(m.key==='costo'?'color:#c0392b;':'')+'">'+m.fmt(tYm[m.key])+'</td>';
+        });
+        html+='</tr>';
+      }
 
       html+='</tbody></table></div>';
 
       html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
-      html+='<strong>Note:</strong> Le 5 sottocolonne per ogni mese sono: Qty venduta, Valore (fatturato netto), Costo (COGS), Margine %, Margine €.';
-      html+=' La colonna prodotto e la colonna YTD restano fisse durante lo scroll orizzontale sui mesi.';
+      html+='<strong>Note:</strong> Le 5 metriche sono: Qty venduta, Valore (fatturato netto), Costo (COGS), Margine %, Margine €.';
+      html+=' Usa i pulsanti "Per mese" / "Per metrica" per alternare le due viste.';
+      html+=' La colonna prodotto e la colonna YTD restano fisse durante lo scroll orizzontale.';
       html+=' Il Margine YTD € è calcolato come somma dei margini mensili; il Margine YTD % come Margine € / Valore.';
       html+=' Sono inclusi solo i prodotti presenti nella sezione Fabbisogno (i prodotti Shopify senza corrispondenza vengono ignorati).';
       html+='</div>';
