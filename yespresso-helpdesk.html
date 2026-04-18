@@ -5326,6 +5326,8 @@ function openFilippoPanel(){
     id:'archivio_bolle',label:'📁 Archivio Bolle',periodo:'',custom:true,groups:[]
   },{
     id:'analisi_bilancio',label:'📈 Analisi Bilancio',periodo:'',custom:true,groups:[]
+  },{
+    id:'margine_prodotto',label:'💰 Margine Prodotto',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -5400,6 +5402,7 @@ function openFilippoPanel(){
       else if(activeSec.id==='sandbox_ai') renderSandboxAI(panel);
       else if(activeSec.id==='archivio_bolle') renderArchivioBolle(panel);
       else if(activeSec.id==='analisi_bilancio') renderAnalisiBilancio(panel);
+      else if(activeSec.id==='margine_prodotto') renderMargineProdotto(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
@@ -6147,6 +6150,8 @@ function openFilippoPanel(){
       var kpiYTD=lastMese!=null?calcolaKPI(mesi[lastMese].ceYTD):null;
       var headers=['Voce'].concat(mesiPresenti.map(function(i){return NOMI_MESI[i]+' '+anno;}));
       headers.push('YTD');
+      // Header senza YTD per lo Stato Patrimoniale (che e' solo snapshot mensile)
+      var headersSP=['Voce'].concat(mesiPresenti.map(function(i){return NOMI_MESI[i]+' '+anno;}));
 
       // CE
       var rowsCE=[];
@@ -6200,12 +6205,11 @@ function openFilippoPanel(){
       addPctRow('Oneri finanziari %',function(k){return k.oneriFin;});
       addPctRow('Utile / Perdita %',function(k){return k.utilePerdita;});
 
-      // SP
+      // SP (senza colonna YTD: non ha senso per lo snapshot di fine mese)
       var rowsSP=[];
       function addSPRow(label,getter){
         var row=[label];
         mesiPresenti.forEach(function(i,ix){row.push(getter(spMesi[ix])||0);});
-        row.push(''); // no YTD in SP
         rowsSP.push(row);
       }
       rowsSP.push(['ATTIVO']);
@@ -6232,10 +6236,9 @@ function openFilippoPanel(){
       // Riga risultato
       var rowRis=['RISULTATO D\'ESERCIZIO (Att − Pass)'];
       mesiPresenti.forEach(function(i,ix){rowRis.push(spMesi[ix].risultato||0);});
-      rowRis.push('');
       rowsSP.push(rowRis);
 
-      return {anno:anno, headers:headers, ce:rowsCE, pct:rowsPct, sp:rowsSP};
+      return {anno:anno, headers:headers, headersSP:headersSP, ce:rowsCE, pct:rowsPct, sp:rowsSP};
     }
 
     // ── Export Excel ──
@@ -6253,8 +6256,8 @@ function openFilippoPanel(){
         // Foglio Indicatori
         var wsPct=XLSX.utils.aoa_to_sheet([data.headers].concat(data.pct));
         XLSX.utils.book_append_sheet(wb,wsPct,'Indicatori %');
-        // Foglio SP
-        var wsSP=XLSX.utils.aoa_to_sheet([data.headers].concat(data.sp));
+        // Foglio SP (senza colonna YTD)
+        var wsSP=XLSX.utils.aoa_to_sheet([data.headersSP].concat(data.sp));
         XLSX.utils.book_append_sheet(wb,wsSP,'Stato Patrimoniale');
         XLSX.writeFile(wb,'bilancio_'+data.anno+'.xlsx');
         showBilMsg('<div style="font-weight:700">✅ Excel scaricato</div>','success');
@@ -6315,7 +6318,7 @@ function openFilippoPanel(){
         doc.setFontSize(14); doc.setFont('helvetica','bold');
         doc.text('Stato Patrimoniale '+data.anno,40,30);
         doc.autoTable({
-          startY:50, head:[data.headers], body:prepRows(data.sp),
+          startY:50, head:[data.headersSP], body:prepRows(data.sp),
           styles:{fontSize:7,cellPadding:3}, headStyles:{fillColor:[240,242,245],textColor:[50,50,50],fontStyle:'bold'},
           columnStyles:{0:{cellWidth:160,halign:'left'}}, theme:'grid'
         });
@@ -6430,6 +6433,467 @@ function openFilippoPanel(){
     render();
   }
   // ── FINE ANALISI BILANCIO ────────────────────────────────────────────────
+
+  // ── MARGINE PRODOTTO ───────────────────────────────────────────────────
+  async function renderMargineProdotto(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca)return;
+    ca.innerHTML='<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento dati margine...</div>';
+
+    var PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+
+    // Lista prodotti da fabbisogno (sku = nome da visualizzare)
+    var FAB_PRODOTTI = (typeof fabProducts !== 'undefined' ? fabProducts : (typeof FAB_PRODUCTS_DEFAULT !== 'undefined' ? FAB_PRODUCTS_DEFAULT : []))
+      .map(function(p){return p.sku;});
+
+    // Mappa nomi Shopify -> sku fabbisogno
+    // Vengono mostrati SOLO prodotti nella lista fabbisogno
+    function normalizeShopifyName(s){
+      s = (s||'').toUpperCase()
+        .replace(/È/g,'E').replace(/É/g,'E').replace(/Ò/g,'O').replace(/À/g,'A')
+        .replace(/DECAFFEINATO/g,'DECA')
+        .replace(/LAVAZZA A MODO MIO/g,'A MODO MIO')
+        .replace(/CAPSULE\s+COMPATIBILI\s+/g,'')
+        .replace(/CAPSULE\s+/g,'')
+        .replace(/CIALDE\s+CARTA\s+ESE44/g,'CIALDE CARTA')
+        .replace(/ESPRESSO\s+INTENSO/g,'INTENSO')
+        .replace(/\bALLUMINIO\s+/g,'')
+        .replace(/AL\s+LIMONE/g,'LIMONE')
+        .replace(/\s+/g,' ').trim();
+      return s;
+    }
+    // Eccezioni esplicite: nome Shopify -> sku fabbisogno
+    var ECCEZIONI_MAPPING = {
+      '100 CAPSULE ALLUMINIO COMPATIBILI NESPRESSO - SUPREMO':'100 NESPRESSO - ALLUMINIO',
+      '16 CAPSULE COMPATIBILI DOLCE GUSTO - GINSENG':'16 DOLCE GUSTO - GRANGINSENG'
+    };
+    function mapShopifyToFabSku(shopifyName){
+      var upper=(shopifyName||'').toUpperCase();
+      if(ECCEZIONI_MAPPING[upper]) return ECCEZIONI_MAPPING[upper];
+      var norm=normalizeShopifyName(shopifyName);
+      // Cerca fab_sku i cui token siano tutti in norm
+      for(var i=0;i<FAB_PRODOTTI.length;i++){
+        var fab=FAB_PRODOTTI[i];
+        var tokensFab=fab.toUpperCase().split(/\s+/).filter(Boolean);
+        var allMatch=tokensFab.every(function(t){return norm.indexOf(t)>=0;});
+        if(allMatch) return fab;
+      }
+      return null; // non matchato
+    }
+
+    // Carica dati margini dal server
+    var margini=[];
+    try{
+      var r=await fetch(PROXY+'/margini-data');
+      margini=await r.json();
+      if(!Array.isArray(margini))margini=[];
+    }catch(e){margini=[];}
+
+    // Stato: anno selezionato
+    var anniDisp=[...new Set(margini.map(function(m){return m.anno;}))].sort(function(a,b){return b-a;});
+    if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
+    if(!window._margineAnno || anniDisp.indexOf(window._margineAnno)<0){
+      window._margineAnno = anniDisp[0];
+    }
+
+    function showMargMsg(html_content, tipo){
+      var colors={'success':{'bg':'#f0fdf4','border':'#86efac','text':'#166534'},'warning':{'bg':'#fffbeb','border':'#fcd34d','text':'#92400e'},'error':{'bg':'#fef2f2','border':'#fca5a5','text':'#991b1b'}};
+      var c=colors[tipo]||colors['success'];
+      var existing=document.getElementById('margine-result-banner');
+      if(existing)existing.remove();
+      var banner=document.createElement('div');
+      banner.id='margine-result-banner';
+      banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;min-width:400px;max-width:700px;background:'+c.bg+';border:1.5px solid '+c.border+';border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:16px 20px;font-family:inherit';
+      banner.innerHTML='<div style="display:flex;align-items:flex-start;gap:12px">'
+        +'<div style="flex:1;font-size:13px;color:'+c.text+'">'+html_content+'</div>'
+        +'<button onclick="document.getElementById(\'margine-result-banner\').remove()" style="background:none;border:none;cursor:pointer;font-size:18px;color:'+c.text+';line-height:1;padding:0;flex-shrink:0">✕</button>'
+        +'</div>';
+      document.body.appendChild(banner);
+    }
+
+    // Inietta CSS scrollbar (condiviso con bilancio se gia' presente)
+    if(!document.getElementById('bilancio-css-inject')){
+      var st=document.createElement('style');
+      st.id='bilancio-css-inject';
+      st.textContent = ''
+        +'.bil-scroll{overflow-x:auto;overflow-y:hidden;scrollbar-width:auto;scrollbar-color:#94a3b8 #f1f5f9}'
+        +'.bil-scroll::-webkit-scrollbar{height:12px;background:#f1f5f9}'
+        +'.bil-scroll::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:6px;border:2px solid #f1f5f9}'
+        +'.bil-scroll::-webkit-scrollbar-thumb:hover{background:#64748b}';
+      document.head.appendChild(st);
+    }
+
+    function fmtEur(n){
+      if(n==null||isNaN(n))return '—';
+      var abs=Math.abs(n);
+      var s=abs.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+      return n<0?'−'+s:s;
+    }
+    function fmtInt(n){
+      if(n==null||isNaN(n))return '—';
+      return Math.round(n).toLocaleString('it-IT');
+    }
+    function fmtPct(n){
+      if(n==null||isNaN(n)||!isFinite(n))return '—';
+      return n.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+    }
+
+    // ── Parser CSV Shopify ──
+    // Il CSV ha formato doppiamente-quotato: ogni riga e' una stringa che contiene CSV
+    function parseShopifyCSV(text){
+      var rows=[];
+      // Primo split per righe, rispettando CRLF
+      var lines=text.replace(/\r\n/g,'\n').split('\n').filter(function(l){return l.trim();});
+      for(var i=0;i<lines.length;i++){
+        var line=lines[i];
+        // La riga e' una stringa CSV interna quotata: la riga inizia con " e finisce con "
+        // Parsing manuale rispettando "" come escape
+        var cells=[];
+        var cur='';
+        var inQuote=false;
+        var j=0;
+        // Se riga inizia con " e finisce con ", facciamo parsing "doppio"
+        // Normalizziamo: rimuoviamo le virgolette esterne e decodifichiamo "" in "
+        if(line.charAt(0)==='"' && line.charAt(line.length-1)==='"'){
+          line=line.substring(1,line.length-1).replace(/""/g,'"');
+        }
+        // Ora parsing CSV standard
+        for(j=0;j<line.length;j++){
+          var ch=line.charAt(j);
+          if(ch==='"'){
+            if(inQuote && line.charAt(j+1)==='"'){cur+='"';j++;}
+            else inQuote=!inQuote;
+          } else if(ch===',' && !inQuote){
+            cells.push(cur); cur='';
+          } else {
+            cur+=ch;
+          }
+        }
+        cells.push(cur);
+        rows.push(cells);
+      }
+      return rows;
+    }
+
+    // Converte righe CSV in array di oggetti margine
+    // Header atteso: Mese, Titolo del prodotto, Venditore del prodotto, Tipo di prodotto,
+    //                Articoli venduti netti, Fatturato netto, Costo dei beni venduti, Margine lordo, Profitto lordo
+    function csvToMargini(rows){
+      if(rows.length<2) return {righe:[], nonMappati:[]};
+      var header=rows[0].map(function(h){return h.toLowerCase();});
+      var idx={
+        mese: header.findIndex(function(h){return h.indexOf('mese')>=0;}),
+        titolo: header.findIndex(function(h){return h.indexOf('titolo')>=0;}),
+        qty: header.findIndex(function(h){return h.indexOf('articoli venduti')>=0;}),
+        fatturato: header.findIndex(function(h){return h.indexOf('fatturato')>=0;}),
+        costo: header.findIndex(function(h){return h.indexOf('costo')>=0;}),
+        margineLordo: header.findIndex(function(h){return h.indexOf('margine lordo')>=0;}),
+        profitto: header.findIndex(function(h){return h.indexOf('profitto')>=0;})
+      };
+      if(idx.mese<0||idx.titolo<0||idx.qty<0||idx.fatturato<0||idx.costo<0){
+        throw new Error('CSV non ha il formato atteso (mancano colonne obbligatorie)');
+      }
+
+      var righe=[];
+      var nonMappati=[];
+      for(var r=1;r<rows.length;r++){
+        var row=rows[r];
+        if(!row||!row[idx.mese])continue;
+        var meseStr=row[idx.mese]; // es. 2026-01-01
+        var parts=meseStr.split('-');
+        if(parts.length<2)continue;
+        var anno=parseInt(parts[0]);
+        var mese=parseInt(parts[1]);
+        if(isNaN(anno)||isNaN(mese))continue;
+
+        var shopifyName=row[idx.titolo];
+        var fabSku=mapShopifyToFabSku(shopifyName);
+        if(!fabSku){
+          nonMappati.push(shopifyName);
+          continue; // Escludiamo prodotti non nel fabbisogno
+        }
+
+        var qty=parseFloat(row[idx.qty])||0;
+        var fatturato=parseFloat(row[idx.fatturato])||0;
+        var costo=parseFloat(row[idx.costo])||0;
+        var margineLordo=parseFloat(row[idx.margineLordo])||0; // frazione (es. 0.432)
+        // Profitto lordo = fatturato - costo (alcuni CSV lo portano gia')
+        var profitto=idx.profitto>=0?(parseFloat(row[idx.profitto])||0):(fatturato-costo);
+
+        righe.push({
+          anno:anno, mese:mese,
+          prodotto:fabSku,
+          qty:qty,
+          valore:fatturato,
+          costo:costo,
+          margine_eur:profitto,
+          margine_pct:margineLordo*100
+        });
+      }
+      return {righe:righe, nonMappati:nonMappati};
+    }
+
+    // ── Render principale ──
+    function render(){
+      var anno=window._margineAnno;
+      var margAnno=margini.filter(function(m){return m.anno===anno;});
+      var mesiPresenti=[...new Set(margAnno.map(function(m){return m.mese;}))].sort(function(a,b){return a-b;});
+      var NOMI_MESI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+
+      // Mappa prodotto -> mese -> {qty,valore,costo,margine_eur,margine_pct}
+      var byProd={};
+      margAnno.forEach(function(m){
+        if(!byProd[m.prodotto])byProd[m.prodotto]={};
+        byProd[m.prodotto][m.mese]=m;
+      });
+
+      // Ordine prodotti: stesso del fabbisogno (conserva ordine di FAB_PRODOTTI)
+      var prodOrdinati=FAB_PRODOTTI.filter(function(p){return byProd[p];});
+
+      // Calcolo YTD per prodotto
+      function calcYTD(prod){
+        var qty=0, valore=0, costo=0;
+        mesiPresenti.forEach(function(mese){
+          var d=byProd[prod][mese];
+          if(d){qty+=d.qty||0; valore+=d.valore||0; costo+=d.costo||0;}
+        });
+        var margineEur=valore-costo;
+        var marginePct=valore>0?(margineEur/valore*100):0;
+        return {qty:qty, valore:valore, costo:costo, margine_eur:margineEur, margine_pct:marginePct};
+      }
+
+      // Totali mese (somma tutti i prodotti per un mese)
+      function totaliMese(mese){
+        var qty=0, valore=0, costo=0;
+        prodOrdinati.forEach(function(prod){
+          var d=byProd[prod][mese];
+          if(d){qty+=d.qty||0; valore+=d.valore||0; costo+=d.costo||0;}
+        });
+        var margineEur=valore-costo;
+        var marginePct=valore>0?(margineEur/valore*100):0;
+        return {qty:qty, valore:valore, costo:costo, margine_eur:margineEur, margine_pct:marginePct};
+      }
+      function totaliYTD(){
+        var qty=0, valore=0, costo=0;
+        prodOrdinati.forEach(function(prod){
+          var y=calcYTD(prod);
+          qty+=y.qty; valore+=y.valore; costo+=y.costo;
+        });
+        var margineEur=valore-costo;
+        var marginePct=valore>0?(margineEur/valore*100):0;
+        return {qty:qty, valore:valore, costo:costo, margine_eur:margineEur, margine_pct:marginePct};
+      }
+
+      var html='<div style="max-width:1400px;margin:0 auto">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">';
+      html+='<div><div style="font-size:22px;font-weight:700;color:#1a1a2e">💰 Margine Prodotto</div>';
+      html+='<div style="font-size:12px;color:#777;margin-top:3px">Carica il report CSV "Utile lordo per prodotto" da Shopify Analytics. Vengono mostrati solo i prodotti presenti nel Fabbisogno.</div></div>';
+      html+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+      html+='<label style="font-size:12px;color:#555;font-weight:600">Anno:</label>';
+      html+='<select onchange="window._margineAnno=parseInt(this.value);window._margineRender&&window._margineRender()" style="padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;background:#fff">';
+      anniDisp.forEach(function(a){html+='<option value="'+a+'"'+(a===anno?' selected':'')+'>'+a+'</option>';});
+      html+='</select>';
+      html+='<button onclick="window._margineUpload&&window._margineUpload()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">📤 Carica CSV Shopify</button>';
+      html+='</div></div>';
+
+      if(prodOrdinati.length===0){
+        html+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:30px;text-align:center;color:#92400e">';
+        html+='<div style="font-size:15px;font-weight:700;margin-bottom:8px">Nessun dato margine per '+anno+'</div>';
+        html+='<div style="font-size:13px;line-height:1.5">Scarica il report "Utile lordo per prodotto" da Shopify Analytics come CSV e caricalo con "📤 Carica CSV Shopify".<br><br>Query ShopifyQL suggerita:<br><code style="background:#fff;padding:2px 6px;border-radius:3px;font-size:11px">FROM sales SHOW net_items_sold, net_sales, cost_of_goods_sold, gross_margin, gross_profit WHERE cost_is_recorded = \'true\' AND line_type = \'product\' GROUP BY product_title, product_vendor, product_type WITH TOTALS, GROUP_TOTALS SINCE YYYY-MM-DD UNTIL YYYY-MM-DD ORDER BY gross_profit DESC LIMIT 1000</code></div>';
+        html+='</div></div>';
+        ca.innerHTML=html;
+        return;
+      }
+
+      // Elenco mesi caricati con pulsante elimina
+      html+='<div style="background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#555;display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
+      html+='<span style="font-weight:700">Mesi caricati '+anno+':</span>';
+      mesiPresenti.forEach(function(mese){
+        html+='<span style="background:#fff;border:1px solid #e0e4ea;border-radius:5px;padding:3px 8px;display:inline-flex;align-items:center;gap:6px">'+NOMI_MESI[mese-1]+' '+anno;
+        html+=' <button onclick="window._margineDelMese&&window._margineDelMese('+anno+','+mese+')" title="Elimina mese" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:13px;line-height:1;padding:0">✕</button></span>';
+      });
+      html+='</div>';
+
+      // ── TABELLA MARGINI ──
+      // Larghezza colonne: prodotto 220, per ogni mese 5 sottocolonne (qty 60, valore 80, costo 80, marg% 60, marg€ 80 = 360),
+      //                   YTD 5 sottocolonne stesse dimensioni (360)
+      var COL_PROD=220;
+      var COL_YTD=360;
+      var COL_MESE=360;
+
+      html+='<div class="bil-scroll" style="border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="border-collapse:separate;border-spacing:0;font-size:11px;background:#fff;min-width:100%">';
+
+      // Header 2 righe: top = mesi, bottom = metriche
+      html+='<thead>';
+      // Riga 1: Prodotto | Mesi (colspan 5 ognuno) | YTD (colspan 5)
+      html+='<tr style="color:#333">';
+      html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_PROD+'px;width:'+COL_PROD+'px;z-index:4;vertical-align:middle">Prodotto</th>';
+      mesiPresenti.forEach(function(mese){
+        html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:#f0f2f5;border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+COL_MESE+'px;width:'+COL_MESE+'px;top:0;z-index:3">'+NOMI_MESI[mese-1]+' '+anno+'</th>';
+      });
+      html+='<th colspan="5" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_YTD+'px;width:'+COL_YTD+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
+      html+='</tr>';
+      // Riga 2: metriche per ogni mese
+      html+='<tr style="color:#555;font-size:10px">';
+      mesiPresenti.forEach(function(mese,mi){
+        var bLeft=mi===0?'border-left:1px solid #e0e4ea':'';
+        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea;'+bLeft+'">Qty</th>';
+        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Valore</th>';
+        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Costo</th>';
+        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Marg %</th>';
+        html+='<th style="text-align:right;padding:4px 6px;background:#f0f2f5;border-bottom:1px solid #e0e4ea">Marg €</th>';
+      });
+      // YTD sottocolonne (sticky right)
+      // Per farle sticky tutte e 5, uso position:sticky con right calcolato
+      // Larghezze: Qty 60, Valore 80, Costo 80, Marg% 60, Marg€ 80 (tot 360)
+      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;position:sticky;right:'+(80+60+80+80)+'px;top:28px;z-index:3;min-width:60px;width:60px">Qty</th>';
+      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:'+(80+60+80)+'px;top:28px;z-index:3;min-width:80px;width:80px">Valore</th>';
+      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:'+(80+60)+'px;top:28px;z-index:3;min-width:80px;width:80px">Costo</th>';
+      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:'+(80)+'px;top:28px;z-index:3;min-width:60px;width:60px">Marg %</th>';
+      html+='<th style="text-align:right;padding:4px 6px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;position:sticky;right:0;top:28px;z-index:3;min-width:80px;width:80px">Marg €</th>';
+      html+='</tr>';
+      html+='</thead><tbody>';
+
+      // Righe prodotti
+      prodOrdinati.forEach(function(prod,pi){
+        var bgRiga=pi%2===0?'#fff':'#fafbfc';
+        var ytd=calcYTD(prod);
+        html+='<tr>';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2;border-right:1px solid #e0e4ea;font-size:11px">'+prod+'</td>';
+        mesiPresenti.forEach(function(mese,mi){
+          var d=byProd[prod][mese];
+          var bLeft=mi===0?'border-left:1px solid #e0e4ea':'';
+          if(d){
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';'+bLeft+'">'+fmtInt(d.qty)+'</td>';
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+'">'+fmtEur(d.valore)+'</td>';
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';color:#c0392b">'+fmtEur(d.costo)+'</td>';
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';font-weight:600">'+fmtPct(d.margine_pct)+'</td>';
+            html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';font-weight:600">'+fmtEur(d.margine_eur)+'</td>';
+          } else {
+            for(var k=0;k<5;k++){
+              html+='<td style="text-align:right;padding:5px 6px;background:'+bgRiga+';color:#ccc;'+(k===0?bLeft:'')+'">—</td>';
+            }
+          }
+        });
+        // YTD (5 colonne, tutte sticky)
+        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80+60+80+80)+'px;z-index:2;border-left:2px solid #86efac">'+fmtInt(ytd.qty)+'</td>';
+        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80+60+80)+'px;z-index:2">'+fmtEur(ytd.valore)+'</td>';
+        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80+60)+'px;z-index:2;color:#c0392b">'+fmtEur(ytd.costo)+'</td>';
+        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:'+(80)+'px;z-index:2;font-weight:700">'+fmtPct(ytd.margine_pct)+'</td>';
+        html+='<td style="text-align:right;padding:5px 6px;background:#e8f5e9;position:sticky;right:0;z-index:2;font-weight:700">'+fmtEur(ytd.margine_eur)+'</td>';
+        html+='</tr>';
+      });
+
+      // Riga totali
+      html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8;border-right:1px solid #e0e4ea">TOTALE</td>';
+      mesiPresenti.forEach(function(mese,mi){
+        var t=totaliMese(mese);
+        var bLeft=mi===0?'border-left:1px solid #e0e4ea':'';
+        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+'">'+fmtInt(t.qty)+'</td>';
+        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtEur(t.valore)+'</td>';
+        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8;color:#c0392b">'+fmtEur(t.costo)+'</td>';
+        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtPct(t.margine_pct)+'</td>';
+        html+='<td style="text-align:right;padding:7px 6px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtEur(t.margine_eur)+'</td>';
+      });
+      var tY=totaliYTD();
+      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80+60+80+80)+'px;z-index:2;border-left:2px solid #86efac;border-top:2px solid #94a3b8">'+fmtInt(tY.qty)+'</td>';
+      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80+60+80)+'px;z-index:2;border-top:2px solid #94a3b8">'+fmtEur(tY.valore)+'</td>';
+      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80+60)+'px;z-index:2;color:#c0392b;border-top:2px solid #94a3b8">'+fmtEur(tY.costo)+'</td>';
+      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:'+(80)+'px;z-index:2;border-top:2px solid #94a3b8">'+fmtPct(tY.margine_pct)+'</td>';
+      html+='<td style="text-align:right;padding:7px 6px;background:#fef9c3;position:sticky;right:0;z-index:2;border-top:2px solid #94a3b8">'+fmtEur(tY.margine_eur)+'</td>';
+      html+='</tr>';
+
+      html+='</tbody></table></div>';
+
+      html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
+      html+='<strong>Note:</strong> Le 5 sottocolonne per ogni mese sono: Qty venduta, Valore (fatturato netto), Costo (COGS), Margine %, Margine €.';
+      html+=' La colonna prodotto e la colonna YTD restano fisse durante lo scroll orizzontale sui mesi.';
+      html+=' Il Margine YTD € è calcolato come somma dei margini mensili; il Margine YTD % come Margine € / Valore.';
+      html+=' Sono inclusi solo i prodotti presenti nella sezione Fabbisogno (i prodotti Shopify senza corrispondenza vengono ignorati).';
+      html+='</div>';
+
+      html+='</div>';
+      ca.innerHTML=html;
+    }
+    window._margineRender=render;
+
+    // ── Upload CSV Shopify ──
+    window._margineUpload=function(){
+      var inp=document.createElement('input');
+      inp.type='file';
+      inp.accept='.csv,text/csv';
+      inp.onchange=async function(){
+        var f=inp.files&&inp.files[0];
+        if(!f)return;
+        showMargMsg('<div style="font-weight:700">⏳ Lettura CSV...</div>','warning');
+        try{
+          var text=await f.text();
+          var rows=parseShopifyCSV(text);
+          var result=csvToMargini(rows);
+          if(result.righe.length===0){
+            showMargMsg('<div style="font-weight:700;margin-bottom:6px">❌ Nessun prodotto mappato</div><div style="font-size:12px">Il CSV non contiene prodotti presenti nel fabbisogno.</div>','error');
+            return;
+          }
+          // Raggruppa per (anno,mese) per sapere quali mesi vengono caricati
+          var mesiCaricati={};
+          result.righe.forEach(function(r){var k=r.anno+'-'+r.mese; mesiCaricati[k]=true;});
+
+          // Rimuovi eventuali righe esistenti per quei (anno,mese) prima di aggiungere le nuove
+          margini=margini.filter(function(m){return !mesiCaricati[m.anno+'-'+m.mese];});
+          margini=margini.concat(result.righe);
+
+          // Salva
+          showMargMsg('<div style="font-weight:700">💾 Salvataggio...</div>','warning');
+          try{
+            await fetch(PROXY+'/margini-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({margini:margini})});
+          }catch(e){
+            showMargMsg('⚠️ Salvataggio fallito: '+e.message,'error');
+            return;
+          }
+
+          // Aggiorna anno selezionato al piu' recente caricato
+          var anniCaricati=[...new Set(result.righe.map(function(r){return r.anno;}))].sort(function(a,b){return b-a;});
+          if(anniCaricati.length>0 && anniDisp.indexOf(anniCaricati[0])<0){
+            anniDisp=[...new Set(margini.map(function(m){return m.anno;}))].sort(function(a,b){return b-a;});
+            window._margineAnno=anniCaricati[0];
+          }
+
+          var nMesi=Object.keys(mesiCaricati).length;
+          var msgExtra=result.nonMappati.length>0?'<div style="font-size:11px;margin-top:6px;color:#92400e">⚠ '+result.nonMappati.length+' prodotti non in fabbisogno ignorati</div>':'';
+          showMargMsg('<div style="font-weight:700">✅ Caricati '+result.righe.length+' record ('+nMesi+' mesi)</div>'+msgExtra,'success');
+          setTimeout(function(){var e=document.getElementById('margine-result-banner');if(e)e.remove();},3500);
+          render();
+        }catch(e){
+          showMargMsg('<div style="font-weight:700;margin-bottom:6px">❌ Errore</div><div style="font-size:12px">'+e.message+'</div>','error');
+        }
+      };
+      inp.click();
+    };
+
+    // ── Elimina tutti i dati di un mese ──
+    window._margineDelMese=async function(anno,mese){
+      var NOMI_MESI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+      if(!confirm('Eliminare tutti i dati margine di '+NOMI_MESI[mese-1]+' '+anno+'?'))return;
+      margini=margini.filter(function(m){return !(m.anno===anno&&m.mese===mese);});
+      try{
+        await fetch(PROXY+'/margini-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({margini:margini})});
+        anniDisp=[...new Set(margini.map(function(m){return m.anno;}))].sort(function(a,b){return b-a;});
+        if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
+        if(anniDisp.indexOf(window._margineAnno)<0)window._margineAnno=anniDisp[0];
+        showMargMsg('✅ Mese eliminato','success');
+        setTimeout(function(){var e=document.getElementById('margine-result-banner');if(e)e.remove();},2000);
+        render();
+      }catch(e){
+        showMargMsg('❌ Errore eliminazione: '+e.message,'error');
+      }
+    };
+
+    render();
+  }
+  // ── FINE MARGINE PRODOTTO ─────────────────────────────────────────────────
+
+
 
 
 
