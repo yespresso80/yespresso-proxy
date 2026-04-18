@@ -5957,18 +5957,34 @@ function openFilippoPanel(){
 
       // Stesso fallback lato ATTIVO per "Fornitori" attivo (anticipi) e "Clienti"
       if(bil.totali && bil.totali.totale_attivo){
+        // Calcola somma noto escludendo clienti E fornitori_att (le due voci ambigue)
         var sommaAttivoNoto = (agg.attivo.immob_immater||0) + (agg.attivo.immob_mater||0)
                             + (agg.attivo.att_finanz||0) + (agg.attivo.rimanenze||0)
-                            + (agg.attivo.clienti||0) + (agg.attivo.crediti_trib||0)
+                            + (agg.attivo.crediti_trib||0)
                             + (agg.attivo.crediti_div||0) + (agg.attivo.crediti_incassi||0)
-                            + (agg.attivo.fornitori_att||0) + (agg.attivo.liquidita||0)
+                            + (agg.attivo.liquidita||0)
                             + (agg.attivo.ratei_att||0);
         // totale_attivo PDF include anche perdita d'esercizio "a pareggio" se presente
         var perditaPareggio = (bil.totali.utile_perdita<0) ? Math.abs(bil.totali.utile_perdita) : 0;
-        var diffA = Number(bil.totali.totale_attivo) - sommaAttivoNoto - perditaPareggio;
-        // Se c'e' differenza attiva significativa e fornitori_att non e' stato estratto, la mettiamo li'
-        if(diffA > 5 && !agg.attivo.fornitori_att){
-          agg.attivo.fornitori_att = diffA;
+        // diffA = quanto manca per raggiungere il totale PDF, e va distribuito tra clienti e fornitori_att
+        var diffA = Number(bil.totali.totale_attivo) - sommaAttivoNoto - perditaPareggio
+                   - (agg.attivo.clienti||0) - (agg.attivo.fornitori_att||0);
+
+        if(Math.abs(diffA) > 5){
+          // Se la differenza e' positiva, significa che AI non ha estratto uno dei due subtotali
+          var hasClienti = (agg.attivo.clienti||0) > 0;
+          var hasFornAtt = (agg.attivo.fornitori_att||0) > 0;
+          if(hasClienti && !hasFornAtt){
+            // Ha solo clienti, il fornitori_att manca: lo assegno alla differenza
+            agg.attivo.fornitori_att = diffA;
+          } else if(!hasClienti && hasFornAtt){
+            // Ha solo fornitori_att, clienti manca
+            agg.attivo.clienti = diffA;
+          } else if(!hasClienti && !hasFornAtt){
+            // Nessuno dei due estratto: metto la diff in fornitori_att (voce piu' grande statisticamente)
+            agg.attivo.fornitori_att = diffA;
+          }
+          // Se entrambi sono presenti ma la somma non quadra, NON tocco nulla (probabile errore AI)
         }
       }
 
