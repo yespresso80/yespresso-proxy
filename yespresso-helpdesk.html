@@ -5918,36 +5918,39 @@ function openFilippoPanel(){
 
       // ── TABELLA CONTO ECONOMICO ──
       html+='<div style="font-size:16px;font-weight:700;margin:18px 0 8px;color:#1a1a2e">CONTO ECONOMICO (valori per singolo mese)</div>';
-      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">';
-      html+='<thead><tr style="background:#f0f2f5;color:#333">';
-      html+='<th style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;background:#f0f2f5;min-width:260px">Voce</th>';
+      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px;background:#fff">';
+      html+='<thead><tr style="color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:200px;width:200px;max-width:200px;z-index:3">Voce</th>';
       mesiPresenti.forEach(function(i){
-        html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;min-width:90px">'+NOMI_MESI[i]+'</th>';
+        html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#f0f2f5;min-width:95px">'+NOMI_MESI[i]+'</th>';
       });
-      html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#e8f5e9;min-width:100px;font-weight:700">YTD</th>';
-      html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#e3f2fd;min-width:70px">% ric.</th>';
+      html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#d9f0e1;min-width:100px;width:100px;font-weight:700;position:sticky;right:70px;top:0;z-index:3;border-left:2px solid #86efac">YTD</th>';
+      html+='<th style="text-align:right;padding:8px 10px;border-bottom:1px solid #e0e4ea;background:#d6e9f6;min-width:70px;width:70px;position:sticky;right:0;top:0;z-index:3">% ric.</th>';
       html+='</tr></thead><tbody>';
 
       function rowCE(label,getter,opts){
         opts=opts||{};
         var style=opts.bold?'font-weight:700':'';
-        var bg=opts.bg||'';
+        var bgRiga=opts.bg||'#fff';
         var color=opts.color||'';
         // Se e' riga di costo, coloro il valore di rosso (senza segno meno)
         var colorRosso=opts.costo?'color:#c0392b;':'';
         var indent=opts.indent?'padding-left:24px;':'';
         var border=opts.border?'border-top:1px solid #e0e4ea;':'';
-        html+='<tr style="'+(bg?'background:'+bg+';':'')+style+';'+color+'">';
-        html+='<td style="padding:6px 10px;'+indent+border+'position:sticky;left:0;background:'+(bg||'#fff')+'">'+label+'</td>';
+        // Se riga costi/totali ha bg specifico, le celle sticky YTD/% devono mantenerlo (non trasparente)
+        var bgYTD=opts.bg?opts.bg:'#e8f5e9';
+        var bgPct=opts.bg?opts.bg:'#e3f2fd';
+        html+='<tr style="'+style+';'+color+'">';
+        html+='<td style="padding:6px 10px;'+indent+border+'position:sticky;left:0;background:'+bgRiga+';z-index:2">'+label+'</td>';
         mesiPresenti.forEach(function(i,ix){
           var v=getter(kpiMesi[ix]);
-          html+='<td style="text-align:right;padding:6px 10px;'+border+(v<0?'color:#c0392b;':colorRosso)+'">'+fmtEur(v)+'</td>';
+          html+='<td style="text-align:right;padding:6px 10px;background:'+bgRiga+';'+border+(v<0?'color:#c0392b;':colorRosso)+'">'+fmtEur(v)+'</td>';
         });
         var vYTD=kpiYTD?getter(kpiYTD):null;
-        html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700;'+border+(vYTD<0?'color:#c0392b;':colorRosso)+'">'+fmtEur(vYTD)+'</td>';
+        html+='<td style="text-align:right;padding:6px 10px;background:'+bgYTD+';font-weight:700;'+border+(vYTD<0?'color:#c0392b;':colorRosso)+';position:sticky;right:70px;z-index:2;border-left:2px solid #86efac">'+fmtEur(vYTD)+'</td>';
         // % su vendite nette (YTD)
         var pct=(kpiYTD&&kpiYTD.venditeNette)?(vYTD/kpiYTD.venditeNette*100):null;
-        html+='<td style="text-align:right;padding:6px 10px;background:#e3f2fd;color:#555;'+border+'">'+(opts.skipPct?'':fmtPct(pct))+'</td>';
+        html+='<td style="text-align:right;padding:6px 10px;background:'+bgPct+';color:#555;'+border+';position:sticky;right:0;z-index:2">'+(opts.skipPct?'':fmtPct(pct))+'</td>';
         html+='</tr>';
       }
 
@@ -5976,24 +5979,26 @@ function openFilippoPanel(){
 
       // ── KPI % ──
       html+='<div style="font-size:16px;font-weight:700;margin:24px 0 8px;color:#1a1a2e">INDICATORI % (su vendite nette del periodo)</div>';
-      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">';
-      html+='<thead><tr style="background:#f0f2f5;color:#333">';
-      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;background:#f0f2f5;min-width:260px">Indicatore</th>';
-      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;min-width:90px">'+NOMI_MESI[i]+'</th>';});
-      html+='<th style="text-align:right;padding:8px 10px;background:#e8f5e9;min-width:100px;font-weight:700">YTD</th>';
+      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px;background:#fff">';
+      html+='<thead><tr style="color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;top:0;background:#f0f2f5;min-width:200px;width:200px;max-width:200px;z-index:3">Indicatore</th>';
+      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;background:#f0f2f5;min-width:95px">'+NOMI_MESI[i]+'</th>';});
+      html+='<th style="text-align:right;padding:8px 10px;background:#d9f0e1;min-width:100px;width:100px;font-weight:700;position:sticky;right:0;top:0;z-index:3;border-left:2px solid #86efac">YTD</th>';
       html+='</tr></thead><tbody>';
 
       function rowPct(label,getter,opts){
         opts=opts||{};
-        var bg=opts.bold?'background:#f8f9fc;font-weight:700;':'';
-        html+='<tr style="'+bg+'"><td style="padding:6px 10px;position:sticky;left:0;background:'+(opts.bold?'#f8f9fc':'#fff')+';">'+label+'</td>';
+        var bgRiga=opts.bold?'#f8f9fc':'#fff';
+        var bgYTD=opts.bold?'#d9f0e1':'#e8f5e9';
+        var style=opts.bold?'font-weight:700;':'';
+        html+='<tr style="'+style+'"><td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2">'+label+'</td>';
         mesiPresenti.forEach(function(i,ix){
           var k=kpiMesi[ix];
           var v=k.venditeNette?getter(k)/k.venditeNette*100:null;
-          html+='<td style="text-align:right;padding:6px 10px">'+fmtPct(v)+'</td>';
+          html+='<td style="text-align:right;padding:6px 10px;background:'+bgRiga+'">'+fmtPct(v)+'</td>';
         });
         var vY=(kpiYTD&&kpiYTD.venditeNette)?getter(kpiYTD)/kpiYTD.venditeNette*100:null;
-        html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700">'+fmtPct(vY)+'</td></tr>';
+        html+='<td style="text-align:right;padding:6px 10px;background:'+bgYTD+';font-weight:700;position:sticky;right:0;z-index:2;border-left:2px solid #86efac">'+fmtPct(vY)+'</td></tr>';
       }
       // Margine lordo = vendite nette - acquisti + variazione rimanenze (positiva aumenta il margine, negativa lo riduce)
       rowPct('Margine lordo %',function(k){return k.venditeNette-k.acquisti+k.varRimanenze;},{bold:true});
@@ -6014,22 +6019,22 @@ function openFilippoPanel(){
 
       // ── STATO PATRIMONIALE ──
       html+='<div style="font-size:16px;font-weight:700;margin:24px 0 8px;color:#1a1a2e">STATO PATRIMONIALE (saldi fine mese)</div>';
-      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">';
-      html+='<thead><tr style="background:#f0f2f5;color:#333">';
-      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;background:#f0f2f5;min-width:260px">Voce</th>';
-      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;min-width:100px">'+NOMI_MESI[i]+'</th>';});
+      html+='<div style="overflow-x:auto;border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px;background:#fff">';
+      html+='<thead><tr style="color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;top:0;background:#f0f2f5;min-width:200px;width:200px;max-width:200px;z-index:3">Voce</th>';
+      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;background:#f0f2f5;min-width:110px">'+NOMI_MESI[i]+'</th>';});
       html+='</tr></thead><tbody>';
 
       function rowSP(label,getter,opts){
         opts=opts||{};
-        var style=opts.bold?'font-weight:700':'';
+        var style=opts.bold?'font-weight:700;':'';
         var bg=opts.bg||'#fff';
         var border=opts.border?'border-top:1px solid #e0e4ea;':'';
-        html+='<tr style="background:'+bg+';'+style+'">';
-        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bg+';'+(opts.indent?'padding-left:24px;':'')+border+'">'+label+'</td>';
+        html+='<tr style="'+style+'">';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bg+';z-index:2;'+(opts.indent?'padding-left:24px;':'')+border+'">'+label+'</td>';
         mesiPresenti.forEach(function(i,ix){
           var v=getter(spMesi[ix]);
-          html+='<td style="text-align:right;padding:6px 10px;'+border+(v<0?'color:#c0392b;':'')+'">'+fmtEur(v)+'</td>';
+          html+='<td style="text-align:right;padding:6px 10px;background:'+bg+';'+border+(v<0?'color:#c0392b;':'')+'">'+fmtEur(v)+'</td>';
         });
         html+='</tr>';
       }
@@ -6058,13 +6063,13 @@ function openFilippoPanel(){
 
       // Riga risultato d'esercizio: calcolato come differenza Attivo - Passivo
       // Se positivo -> Utile (in verde), se negativo -> Perdita (in rosso)
-      html+='<tr style="background:#fff9e6;font-weight:700">';
-      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;border-top:2px solid #fcd34d">RISULTATO D\'ESERCIZIO (Attivo − Passivo)</td>';
+      html+='<tr style="font-weight:700">';
+      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #fcd34d">RISULTATO D\'ESERCIZIO (Attivo − Passivo)</td>';
       mesiPresenti.forEach(function(i,ix){
         var r=spMesi[ix].risultato;
         var col=r>=0?'#166534':'#c0392b';
         var label=r>=0?'Utile':'Perdita';
-        html+='<td style="text-align:right;padding:8px 10px;border-top:2px solid #fcd34d;color:'+col+'">'+label+' '+fmtEur(r)+'</td>';
+        html+='<td style="text-align:right;padding:8px 10px;background:#fff9e6;border-top:2px solid #fcd34d;color:'+col+'">'+label+' '+fmtEur(r)+'</td>';
       });
       html+='</tr>';
 
@@ -6072,14 +6077,14 @@ function openFilippoPanel(){
       var showNCA=spMesi.some(function(s){return Math.abs(s.deltaAttVsPdf||0)>5;});
       var showNCP=spMesi.some(function(s){return Math.abs(s.deltaPassVsPdf||0)>5;});
       if(showNCA||showNCP){
-        html+='<tr style="background:#fef2f2;font-size:11px;color:#92400e">';
-        html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fef2f2">⚠ Differenza vs totali PDF (diagnostico)</td>';
+        html+='<tr style="font-size:11px;color:#92400e">';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fef2f2;z-index:2">⚠ Differenza vs totali PDF (diagnostico)</td>';
         mesiPresenti.forEach(function(i,ix){
           var s=spMesi[ix];
           var txt='';
           if(Math.abs(s.deltaAttVsPdf)>5)txt+='Att: '+fmtEur(s.deltaAttVsPdf);
           if(Math.abs(s.deltaPassVsPdf)>5){if(txt)txt+=' · ';txt+='Pass: '+fmtEur(s.deltaPassVsPdf);}
-          html+='<td style="text-align:right;padding:6px 10px;font-size:10px">'+txt+'</td>';
+          html+='<td style="text-align:right;padding:6px 10px;background:#fef2f2;font-size:10px">'+txt+'</td>';
         });
         html+='</tr>';
       }
