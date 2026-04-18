@@ -5815,6 +5815,26 @@ function openFilippoPanel(){
       // Fallback: usa quella dell'AI se codice anomalo
       return sezAI||'altro';
     }
+    // Normalizza una descrizione di subtotale per il matching (lowercase, no accenti, no punteggiatura)
+    function normSubDesc(s){
+      return String(s||'').toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+        .replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+    }
+    // Trova un subtotale per descrizione e sezione. Ritorna l'importo o null.
+    function findSubtotale(subtotali,sezione,descrizioni){
+      if(!Array.isArray(subtotali))return null;
+      var targets=descrizioni.map(normSubDesc);
+      for(var i=0;i<subtotali.length;i++){
+        var st=subtotali[i];
+        if(st.sezione!==sezione)continue;
+        var d=normSubDesc(st.descrizione);
+        for(var j=0;j<targets.length;j++){
+          if(d===targets[j])return Number(st.importo||0);
+        }
+      }
+      return null;
+    }
     function aggregaBilancio(bil){
       var agg={ricavi:{},costi:{},attivo:{},passivo:{}};
       (bil.conti||[]).forEach(function(c){
@@ -5825,6 +5845,53 @@ function openFilippoPanel(){
         if(!agg[sezReale])agg[sezReale]={};
         agg[sezReale][cls.gruppo]=(agg[sezReale][cls.gruppo]||0)+Number(c.importo||0);
       });
+      // Sovrascrivi gruppi con i subtotali del PDF se presenti (sono la "verita' ufficiale" del PDF)
+      var sub=bil.subtotali||[];
+
+      // ── SEZIONE PASSIVO ──
+      // "Fornitori" (aggregato senza codice) e "Altri debiti v/fornitori" (26xxx) sono subtotali
+      // SEPARATI e vanno SOMMATI per ottenere il totale debiti v/fornitori della voce riclassificata.
+      // "Fornitori" del PDF e' un aggregato senza codice conto e non e' nei 'conti', quindi
+      // lo aggiungiamo al gruppo 'fornitori' che al momento contiene solo i codici 26xxx.
+      var s_fornitori_p=findSubtotale(sub,'passivo',['Fornitori']);
+      if(s_fornitori_p!=null&&s_fornitori_p>0){
+        agg.passivo.fornitori=(agg.passivo.fornitori||0)+s_fornitori_p;
+      }
+      // "Fondo TFR" e "Patrimonio netto" sono invece aggregati che coincidono con la somma
+      // dei codici sottostanti (24xxx per TFR, 20xxx per PN), quindi se presenti li usiamo
+      // come sanity check ma senza raddoppiare.
+      var s_tfr=findSubtotale(sub,'passivo',['Fondo TFR']);
+      if(s_tfr!=null&&Math.abs(s_tfr-(agg.passivo.tfr||0))>1){
+        // Se c'e' una differenza notevole, preferiamo il subtotale del PDF
+        agg.passivo.tfr=s_tfr;
+      }
+      var s_pn=findSubtotale(sub,'passivo',['Patrimonio netto']);
+      if(s_pn!=null&&Math.abs(s_pn-(agg.passivo.patr_netto||0))>1){
+        agg.passivo.patr_netto=s_pn;
+      }
+
+      // ── SEZIONE ATTIVO ──
+      // "Clienti" e "Fornitori" in sezione attivo sono subtotali SENZA codice conto sottostante.
+      // Vanno sommati alla voce riclassificata corrispondente.
+      var s_clienti=findSubtotale(sub,'attivo',['Clienti']);
+      if(s_clienti!=null&&s_clienti>0){
+        agg.attivo.clienti=(agg.attivo.clienti||0)+s_clienti;
+      }
+      var s_fornitori_a=findSubtotale(sub,'attivo',['Fornitori']);
+      if(s_fornitori_a!=null&&s_fornitori_a>0){
+        // In attivo "Fornitori" sono anticipi / note credito da fornitori -> credito diverso
+        agg.attivo.crediti_div=(agg.attivo.crediti_div||0)+s_fornitori_a;
+      }
+      // Sanity check sui subtotali che coincidono con somma codici
+      var s_rimanenze=findSubtotale(sub,'attivo',['Rimanenze']);
+      if(s_rimanenze!=null&&Math.abs(s_rimanenze-(agg.attivo.rimanenze||0))>1){
+        agg.attivo.rimanenze=s_rimanenze;
+      }
+      var s_liq=findSubtotale(sub,'attivo',['Disponibilita liquide','Disponibilita liquidie']);
+      if(s_liq!=null&&Math.abs(s_liq-(agg.attivo.liquidita||0))>1){
+        agg.attivo.liquidita=s_liq;
+      }
+
       return agg;
     }
 
@@ -5924,6 +5991,40 @@ function openFilippoPanel(){
       var tfr=passivo.tfr||0;
       var altroPass=passivo.altro_pass||0;
       var totPassRicl=pn+fornitori+debitiTrib+debitiPers+tfr+altroPass;
+
+      // ── Riquadro di sicurezza ──
+      // Se il PDF ha totale_attivo e totale_passivo "ufficiali", calcoliamo la differenza
+      // e la mettiamo in una voce "Non classificato" per garantire la quadratura con il PDF.
+      // Il totale PDF include i fondi ammortamento, che nella riclassificazione vengono
+      // dedotti dall'attivo (immobilizzazioni nette). Quindi:
+      //   totAttNettoPDF = totale_attivo_PDF - F_amm_imm - F_amm_mat
+      //   totPassNettoPDF = totale_passivo_PDF - F_amm_imm - F_amm_mat - (perdita negativa gia inclusa nei totali)
+      var fAmmImm=passivo.f_amm_immater||0;
+      var fAmmMat=passivo.f_amm_mater||0;
+      var nonClassAtt=0, nonClassPass=0;
+      if(totali&&totali.totale_attivo){
+        var totAttPDF=Number(totali.totale_attivo)-fAmmImm-fAmmMat;
+        nonClassAtt=totAttPDF-totAttRicl;
+        // Solo se la differenza e' significativa (>5€) e positiva (conto mancante)
+        if(Math.abs(nonClassAtt)>5) {
+          altroAtt+=nonClassAtt;
+          totAttRicl=totAttPDF;
+        } else {
+          nonClassAtt=0;
+        }
+      }
+      if(totali&&totali.totale_passivo){
+        // Il totale_passivo del PDF gia' include la perdita/utile d'esercizio (riga a pareggio)
+        var totPassPDF=Number(totali.totale_passivo)-fAmmImm-fAmmMat;
+        nonClassPass=totPassPDF-totPassRicl;
+        if(Math.abs(nonClassPass)>5) {
+          altroPass+=nonClassPass;
+          totPassRicl=totPassPDF;
+        } else {
+          nonClassPass=0;
+        }
+      }
+
       var quadratura=totAttRicl-totPassRicl;
 
       return {
@@ -5932,7 +6033,8 @@ function openFilippoPanel(){
         pnConti:pnConti, utilePerdita:utilePerdita, pn:pn,
         fornitori:fornitori, debitiTrib:debitiTrib, debitiPers:debitiPers, tfr:tfr, altroPass:altroPass,
         totPass:totPassRicl,
-        quadratura:quadratura
+        quadratura:quadratura,
+        nonClassAtt:nonClassAtt, nonClassPass:nonClassPass
       };
     }
 
