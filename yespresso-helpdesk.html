@@ -5982,12 +5982,13 @@ function openFilippoPanel(){
     //   = UTILE/PERDITA
     function calcolaKPI(ricavi,costi,totali){
       // RICAVI
-      var vendite = ricavi.vendite_prest||0;
-      var altriRicavi = ricavi.altri_ricavi||0;
+      // "Vendite e prestazioni" aggrega: vendite_prest (40010.*) + altri_ricavi (41101.*) + rett_costi (30210/30230/31910)
+      var venditeBase = ricavi.vendite_prest||0;
+      var altriRicaviRaw = ricavi.altri_ricavi||0;
+      var rettCostiRaw = ricavi.rett_costi||0;
+      var vendite = venditeBase + altriRicaviRaw + rettCostiRaw;
       var proventiStraord = ricavi.proventi_straord||0;
       var rimFinali = ricavi.rim_finali||0;
-      var rettCosti = ricavi.rett_costi||0;
-      var totRicavi = vendite + altriRicavi + proventiStraord + rimFinali + rettCosti;
 
       // COSTI
       var acquisti = costi.acquisti||0;
@@ -6000,19 +6001,31 @@ function openFilippoPanel(){
       var ammort = costi.ammortamenti||0;
       var oneriFin = costi.oneri_finanziari||0;
       var rettRicavi = costi.rett_ricavi||0;
-      var totCosti = acquisti + rimIniz + costiServizi + compensi + godimento + personale + oneriDiv + ammort + oneriFin + rettRicavi;
+
+      // Variazione rimanenze: se positiva (rim. finali > iniziali) e' un ricavo, se negativa un costo
+      var varRimanenze = rimFinali - rimIniz;
+      var varRimRicavo = varRimanenze > 0 ? varRimanenze : 0;
+      var varRimCosto = varRimanenze < 0 ? Math.abs(varRimanenze) : 0;
+
+      // Totali
+      var totRicavi = vendite + proventiStraord + varRimRicavo;
+      var totCosti = acquisti + varRimCosto + costiServizi + compensi + godimento + personale + oneriDiv + ammort + oneriFin + rettRicavi;
 
       // Risultato
       var utilePerdita = totRicavi - totCosti;
 
       // Per KPI % sui ricavi: usiamo come denominatore le vendite nette (vendite - rettifiche ricavi)
-      // cosi le percentuali sono piu' leggibili di farle su "totale ricavi" che include rimanenze iniziali/finali
       var venditeNette = vendite - rettRicavi;
 
       return {
-        vendite:vendite, altriRicavi:altriRicavi, proventiStraord:proventiStraord,
-        rimFinali:rimFinali, rettCosti:rettCosti, totRicavi:totRicavi,
-        acquisti:acquisti, rimIniz:rimIniz, costiServizi:costiServizi, compensi:compensi,
+        // Dettaglio per eventuale tooltip/debug:
+        venditeBase:venditeBase, altriRicaviRaw:altriRicaviRaw, rettCostiRaw:rettCostiRaw,
+        // Valori aggregati usati in tabella:
+        vendite:vendite, proventiStraord:proventiStraord,
+        rimFinali:rimFinali, rimIniz:rimIniz, varRimanenze:varRimanenze,
+        varRimRicavo:varRimRicavo, varRimCosto:varRimCosto,
+        totRicavi:totRicavi,
+        acquisti:acquisti, costiServizi:costiServizi, compensi:compensi,
         godimento:godimento, personale:personale, oneriDiv:oneriDiv, ammort:ammort,
         oneriFin:oneriFin, rettRicavi:rettRicavi, totCosti:totCosti,
         utilePerdita:utilePerdita, venditeNette:venditeNette
@@ -6040,12 +6053,7 @@ function openFilippoPanel(){
       var liquidita = attivo.liquidita||0;
       var rateiAtt = attivo.ratei_att||0;
 
-      // Utile/perdita d'esercizio: se perdita (negativo) va in ATTIVO, se utile in PASSIVO
-      var utilePerdita = (totali && totali.utile_perdita!=null) ? Number(totali.utile_perdita) : 0;
-      var perditaEs = utilePerdita < 0 ? Math.abs(utilePerdita) : 0;
-      var utileEs = utilePerdita > 0 ? utilePerdita : 0;
-
-      var totAtt = immobLordo + rimanenze + clienti + creditiTrib + creditiDiv + fornitoriAtt + attFinanz + liquidita + rateiAtt + perditaEs;
+      var totAtt = immobLordo + rimanenze + clienti + creditiTrib + creditiDiv + fornitoriAtt + attFinanz + liquidita + rateiAtt;
 
       // ── PASSIVO ──
       var fAmmImm = passivo.f_amm_immater||0;
@@ -6057,44 +6065,45 @@ function openFilippoPanel(){
       var debitiDiv = passivo.debiti_div||0;          // 28xxx + 17360.1
       var pn = passivo.patr_netto||0;
 
-      var totPass = fAmmImm + fAmmMat + tfr + fornitoriPass + altriDebFor + debitiTrib + debitiDiv + pn + utileEs;
+      var totPass = fAmmImm + fAmmMat + tfr + fornitoriPass + altriDebFor + debitiTrib + debitiDiv + pn;
 
-      // ── Safety net: allinea ai totali ufficiali del PDF ──
-      // Se il PDF riporta totale_attivo e totale_passivo ufficiali, qualsiasi differenza
-      // viene scaricata in "Non classificato" cosi la quadratura e' sempre esatta.
+      // ── Risultato d'esercizio come differenza Att − Pass ──
+      // Questa e' l'interpretazione contabile corretta: se Attivo > Passivo (escluso risultato), c'e' un utile.
+      // Se Attivo < Passivo, c'e' una perdita.
+      var risultato = totAtt - totPass;
+      var utileEs = risultato > 0 ? risultato : 0;
+      var perditaEs = risultato < 0 ? Math.abs(risultato) : 0;
+
+      // ── Safety net (solo informativo, mostra se c'e' una differenza rispetto al PDF) ──
+      // Il PDF riporta totale_attivo e totale_passivo ufficiali che includono il risultato d'esercizio.
+      // Qui li teniamo solo per check.
       var nonClassAtt=0, nonClassPass=0;
       if(totali && totali.totale_attivo){
-        nonClassAtt = Number(totali.totale_attivo) - totAtt;
-        if(Math.abs(nonClassAtt) > 5){
-          totAtt = Number(totali.totale_attivo);
-        } else {
-          nonClassAtt = 0;
-        }
+        // totale_attivo PDF include perdita se presente (attivo + perdita = pareggio)
+        // Il nostro totAtt non la include, quindi il confronto e': totAtt_PDF = totAtt + perdita
+        var totAttPDFatteso = totAtt + perditaEs;
+        nonClassAtt = Number(totali.totale_attivo) - totAttPDFatteso;
+        if(Math.abs(nonClassAtt) <= 5) nonClassAtt = 0;
       }
       if(totali && totali.totale_passivo){
-        nonClassPass = Number(totali.totale_passivo) - totPass;
-        if(Math.abs(nonClassPass) > 5){
-          totPass = Number(totali.totale_passivo);
-        } else {
-          nonClassPass = 0;
-        }
+        var totPassPDFatteso = totPass + utileEs;
+        nonClassPass = Number(totali.totale_passivo) - totPassPDFatteso;
+        if(Math.abs(nonClassPass) <= 5) nonClassPass = 0;
       }
-
-      var quadratura = totAtt - totPass;
 
       return {
         // Attivo
         immobLordo:immobLordo, rimanenze:rimanenze, clienti:clienti, creditiTrib:creditiTrib,
         creditiDiv:creditiDiv, fornitoriAtt:fornitoriAtt, attFinanz:attFinanz,
-        liquidita:liquidita, rateiAtt:rateiAtt, perditaEs:perditaEs,
+        liquidita:liquidita, rateiAtt:rateiAtt,
         totAtt:totAtt, nonClassAtt:nonClassAtt,
         // Passivo
         fAmmImm:fAmmImm, fAmmMat:fAmmMat, tfr:tfr, fornitoriPass:fornitoriPass,
         altriDebFor:altriDebFor, debitiTrib:debitiTrib, debitiDiv:debitiDiv,
-        pn:pn, utileEs:utileEs,
+        pn:pn,
         totPass:totPass, nonClassPass:nonClassPass,
-        // Check
-        quadratura:quadratura, utilePerdita:utilePerdita
+        // Risultato (calcolato come differenza)
+        risultato:risultato, utileEs:utileEs, perditaEs:perditaEs
       };
     }
 
@@ -6182,14 +6191,14 @@ function openFilippoPanel(){
 
       rowCE('RICAVI',function(){return null;},{bold:true,bg:'#e8f5e9',skipPct:true});
       rowCE('Vendite e prestazioni',function(k){return k.vendite;},{indent:true});
-      rowCE('Altri ricavi',function(k){return k.altriRicavi;},{indent:true});
       rowCE('Proventi straordinari',function(k){return k.proventiStraord;},{indent:true});
-      rowCE('Rimanenze finali',function(k){return k.rimFinali;},{indent:true});
-      rowCE('Rettifiche di costi',function(k){return k.rettCosti;},{indent:true});
+      // Variazione rimanenze: se positiva (finali > iniziali) e' ricavo
+      rowCE('Variazione rimanenze (finali − iniziali)',function(k){return k.varRimRicavo;},{indent:true});
       rowCE('TOTALE RICAVI',function(k){return k.totRicavi;},{bold:true,bg:'#dcfce7',border:true});
       rowCE('COSTI',function(){return null;},{bold:true,bg:'#fef2f2',skipPct:true,border:true});
       rowCE('Acquisti',function(k){return k.acquisti;},{indent:true});
-      rowCE('Rimanenze iniziali',function(k){return k.rimIniz;},{indent:true});
+      // Variazione rimanenze: se negativa (finali < iniziali) e' costo — mostro il valore assoluto
+      rowCE('Variazione rimanenze (iniziali − finali)',function(k){return k.varRimCosto;},{indent:true});
       rowCE('Costi per servizi',function(k){return k.costiServizi;},{indent:true});
       rowCE('Compensi e provvigioni',function(k){return k.compensi;},{indent:true});
       rowCE('Costi per godimento beni di terzi',function(k){return k.godimento;},{indent:true});
@@ -6224,9 +6233,8 @@ function openFilippoPanel(){
         var vY=(kpiYTD&&kpiYTD.venditeNette)?getter(kpiYTD)/kpiYTD.venditeNette*100:null;
         html+='<td style="text-align:right;padding:6px 10px;background:#e8f5e9;font-weight:700">'+fmtPct(vY)+'</td></tr>';
       }
-      // Margini derivati dalle voci PDF: vendite nette = vendite - rettifiche ricavi
-      // Margine lordo = vendite nette - (acquisti + rimIniz - rimFinali)  [costo del venduto]
-      rowPct('Margine lordo %',function(k){return k.venditeNette-(k.acquisti+k.rimIniz-k.rimFinali);},{bold:true});
+      // Margine lordo = vendite nette - acquisti + variazione rimanenze (positiva aumenta il margine, negativa lo riduce)
+      rowPct('Margine lordo %',function(k){return k.venditeNette-k.acquisti+k.varRimanenze;},{bold:true});
       rowPct('Costi per servizi %',function(k){return k.costiServizi;});
       rowPct('Compensi e provvigioni %',function(k){return k.compensi;});
       rowPct('Costi per il personale %',function(k){return k.personale;});
@@ -6273,16 +6281,6 @@ function openFilippoPanel(){
       rowSP('Attività finanziarie non immobilizzate',function(s){return s.attFinanz;},{indent:true});
       rowSP('Disponibilità liquide',function(s){return s.liquidita;},{indent:true,bold:true});
       rowSP('Ratei e risconti attivi',function(s){return s.rateiAtt;},{indent:true});
-      // Perdita d'esercizio: solo se utilePerdita < 0
-      var showPerdita=spMesi.some(function(s){return s.perditaEs>0;});
-      if(showPerdita){
-        rowSP('Perdita d\'esercizio',function(s){return s.perditaEs;},{indent:true,color:'color:#c0392b'});
-      }
-      // Non classificato attivo (safety net)
-      var showNCA=spMesi.some(function(s){return Math.abs(s.nonClassAtt||0)>5;});
-      if(showNCA){
-        rowSP('⚠ Non classificato (attivo)',function(s){return s.nonClassAtt;},{indent:true,color:'color:#92400e'});
-      }
       rowSP('TOTALE ATTIVO',function(s){return s.totAtt;},{bold:true,bg:'#f8f9fc',border:true});
 
       rowSP('PASSIVO',function(){return null;},{bold:true,bg:'#fff3e0',border:true});
@@ -6294,36 +6292,45 @@ function openFilippoPanel(){
       rowSP('Debiti tributari',function(s){return s.debitiTrib;},{indent:true});
       rowSP('Debiti diversi',function(s){return s.debitiDiv;},{indent:true});
       rowSP('Patrimonio netto',function(s){return s.pn;},{indent:true,bold:true});
-      // Utile d'esercizio: solo se utilePerdita > 0
-      var showUtile=spMesi.some(function(s){return s.utileEs>0;});
-      if(showUtile){
-        rowSP('Utile d\'esercizio',function(s){return s.utileEs;},{indent:true,color:'color:#166534'});
-      }
-      var showNCP=spMesi.some(function(s){return Math.abs(s.nonClassPass||0)>5;});
-      if(showNCP){
-        rowSP('⚠ Non classificato (passivo)',function(s){return s.nonClassPass;},{indent:true,color:'color:#92400e'});
-      }
       rowSP('TOTALE PASSIVO',function(s){return s.totPass;},{bold:true,bg:'#f8f9fc',border:true});
-      // Riga quadratura: Δ = Attivo - Passivo (deve essere 0)
-      html+='<tr style="background:#fffbeb;font-weight:700">';
-      html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fffbeb;border-top:2px solid #fcd34d">Quadratura (Δ Att. − Pass.)</td>';
+
+      // Riga risultato d'esercizio: calcolato come differenza Attivo - Passivo
+      // Se positivo -> Utile (in verde), se negativo -> Perdita (in rosso)
+      html+='<tr style="background:#fff9e6;font-weight:700">';
+      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;border-top:2px solid #fcd34d">RISULTATO D\'ESERCIZIO (Attivo − Passivo)</td>';
       mesiPresenti.forEach(function(i,ix){
-        var d=spMesi[ix].quadratura;
-        var ok=Math.abs(d)<1; // tollero 1€ di arrotondamenti
-        var col=ok?'#166534':'#c0392b';
-        var icon=ok?'✓':'⚠';
-        html+='<td style="text-align:right;padding:6px 10px;border-top:2px solid #fcd34d;color:'+col+'">'+icon+' '+fmtEur(d)+'</td>';
+        var r=spMesi[ix].risultato;
+        var col=r>=0?'#166534':'#c0392b';
+        var label=r>=0?'Utile':'Perdita';
+        html+='<td style="text-align:right;padding:8px 10px;border-top:2px solid #fcd34d;color:'+col+'">'+label+' '+fmtEur(r)+'</td>';
       });
       html+='</tr>';
+
+      // Info "Non classificato" solo se significativo (diagnostic)
+      var showNCA=spMesi.some(function(s){return Math.abs(s.nonClassAtt||0)>5;});
+      var showNCP=spMesi.some(function(s){return Math.abs(s.nonClassPass||0)>5;});
+      if(showNCA||showNCP){
+        html+='<tr style="background:#fef2f2;font-size:11px;color:#92400e">';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fef2f2">⚠ Differenza vs totali PDF (non classificato)</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var s=spMesi[ix];
+          var txt='';
+          if(Math.abs(s.nonClassAtt)>5)txt+='Att: '+fmtEur(s.nonClassAtt);
+          if(Math.abs(s.nonClassPass)>5){if(txt)txt+=' · ';txt+='Pass: '+fmtEur(s.nonClassPass);}
+          html+='<td style="text-align:right;padding:6px 10px;font-size:10px">'+txt+'</td>';
+        });
+        html+='</tr>';
+      }
 
       html+='</tbody></table></div>';
 
       html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
-      html+='<strong>Note:</strong> Lo Stato Patrimoniale segue la struttura esatta del PDF (immobilizzazioni al lordo, fondi ammortamento separati nel passivo).';
-      html+=' Utile o perdita d\'esercizio compaiono solo se presenti (utile nel passivo, perdita nell\'attivo).';
-      html+=' I valori del conto economico mostrati nelle colonne mensili sono differenze tra progressivo del mese e del mese precedente (valore del singolo mese).';
+      html+='<strong>Note:</strong> Lo Stato Patrimoniale segue la struttura del PDF (immobilizzazioni al lordo, fondi ammortamento separati nel passivo).';
+      html+=' Il Risultato d\'esercizio è calcolato come Attivo − Passivo: se positivo è utile, se negativo è perdita.';
+      html+=' Nel Conto Economico mostriamo solo la variazione rimanenze (finali − iniziali): se positiva va nei ricavi, se negativa va nei costi.';
+      html+=' I valori delle colonne mensili sono le differenze tra progressivo del mese e mese precedente (valore del singolo mese).';
       html+=' La colonna YTD è il progressivo da inizio anno all\'ultimo mese caricato.';
-      html+=' La colonna % è calcolata sul totale YTD dei ricavi netti.';
+      html+=' La colonna % è calcolata sulle vendite nette YTD.';
       html+='</div>';
 
       html+='</div>';
