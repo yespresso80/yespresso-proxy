@@ -1077,6 +1077,13 @@ async function brtRestPost(path, body) {
         + '  "sp_att_disponibilita_liquide": 984920.03,\n'
         + '  "sp_att_ratei_risconti_attivi": 1355.68,\n'
         + '\n'
+        + '  "sp_cred_inc_brt": 0,\n'
+        + '  "sp_cred_inc_paypal": 0,\n'
+        + '  "sp_cred_inc_amazon": 0,\n'
+        + '  "sp_cred_inc_shopify": 0,\n'
+        + '  "sp_cred_inc_temu": 0,\n'
+        + '  "sp_cred_inc_tiktok": 0,\n'
+        + '\n'
         + '  "sp_pass_f_amm_imm_immateriali": 26820.63,\n'
         + '  "sp_pass_f_amm_imm_materiali": 48003.02,\n'
         + '  "sp_pass_fondo_tfr": 35148.06,\n'
@@ -1119,6 +1126,15 @@ async function brtRestPost(path, body) {
         + '- sp_att_attivita_finanziarie_non_imm = subtotale "Attivita finanziarie non immobilizzate" (somma codici 13xxx)\n'
         + '- sp_att_disponibilita_liquide = subtotale "Disponibilita liquide" (somma codici 18xxx: banca, PayPal, cassa, assegni)\n'
         + '- sp_att_ratei_risconti_attivi = subtotale "Ratei e risconti attivi" (somma codici 19xxx)\n'
+        + '\n'
+        + 'CREDITI PER INCASSI (dettaglio sottoconti di "Crediti diversi", codici 17440.x) — cerca nelle righe con codice specifico:\n'
+        + '- sp_cred_inc_brt = valore riga codice 17440.2 "Crediti per incassi in contrassegno BRT" (0 se assente)\n'
+        + '- sp_cred_inc_paypal = valore riga codice 17440.4 "Crediti per incassi paypal" (0 se assente)\n'
+        + '- sp_cred_inc_amazon = valore riga codice 17440.5 "Crediti per incassi amazon seller" (0 se assente)\n'
+        + '- sp_cred_inc_shopify = valore riga codice 17440.6 "Crediti per incassi shopify" (0 se assente)\n'
+        + '- sp_cred_inc_temu = valore riga codice 17440.8 "Crediti per incassi temu" (0 se assente)\n'
+        + '- sp_cred_inc_tiktok = valore riga codice 17440.9 "Crediti per incassi tik tok" (0 se assente)\n'
+        + 'IMPORTANTE: questi valori NON sono subtotali separati, sono GIA inclusi dentro "Crediti diversi" (sp_att_crediti_diversi). Li estraiamo come DETTAGLIO informativo, non come voce aggiuntiva.\n'
         + '\n'
         + 'STATO PATRIMONIALE PASSIVO — cerca questi subtotali:\n'
         + '- sp_pass_f_amm_imm_immateriali = subtotale "Fondi ammortamento immobilizzazioni immateriali" (somma codici 21xxx)\n'
@@ -1314,6 +1330,49 @@ async function brtRestPost(path, body) {
       return;
     }
     res.writeHead(405, CORS_MC); res.end(JSON.stringify({error:'Method not allowed'}));
+    return;
+  }
+
+  // ── FCF MANUALI DATA (valori manuali per calcolo flusso di cassa libero) ──
+  if (req.url.startsWith('/fcf-manuali-data') && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url.startsWith('/fcf-manuali-data')) {
+    const CORS_FCF = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const GH_FCF_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/fcf-manuali-index.json';
+    async function ghFcfGet() {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) return { data: {}, sha: null };
+      const r = await fetch(GH_FCF_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+      if (r.status === 404) return { data: {}, sha: null };
+      const j = await r.json();
+      return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+    }
+    async function ghFcfSave(data, sha) {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) throw new Error('GH_TOKEN non configurato');
+      const body = { message: 'update fcf-manuali-index', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(GH_FCF_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); throw new Error('GitHub fcf save error: '+t.substring(0,200)); }
+    }
+    if (req.method === 'GET') {
+      try { const { data } = await ghFcfGet(); res.writeHead(200, CORS_FCF); res.end(JSON.stringify(data)); }
+      catch(e) { console.error('[FCF GET]', e.message); res.writeHead(200, CORS_FCF); res.end('{}'); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+      try {
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        const { sha } = await ghFcfGet();
+        await ghFcfSave(payload.fcf, sha);
+        res.writeHead(200, CORS_FCF); res.end(JSON.stringify({ ok: true }));
+      } catch(e) { console.error('[FCF POST]', e.message); res.writeHead(500, CORS_FCF); res.end(JSON.stringify({ ok: false, error: e.message })); }
+      return;
+    }
+    res.writeHead(405, CORS_FCF); res.end(JSON.stringify({error:'Method not allowed'}));
     return;
   }
 

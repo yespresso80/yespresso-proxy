@@ -5718,6 +5718,34 @@ function openFilippoPanel(){
       if(!Array.isArray(bilanci))bilanci=[];
     }catch(e){bilanci=[];}
 
+    // Carica valori manuali FCF (Debiti Concordati + crediti piattaforme rilevati)
+    // Formato: { "2026-1": {debiti_concordati, amazon_reale, temu_reale, tiktok_reale}, ... }
+    var fcfManuali={};
+    try{
+      var rF=await fetch(PROXY+'/fcf-manuali-data');
+      fcfManuali=await rF.json();
+      if(typeof fcfManuali!=='object'||fcfManuali===null||Array.isArray(fcfManuali))fcfManuali={};
+    }catch(e){fcfManuali={};}
+
+    function fcfKey(anno,mese){return anno+'-'+mese;}
+    function fcfGet(anno,mese,field){
+      var k=fcfKey(anno,mese);
+      return fcfManuali[k] && fcfManuali[k][field]!=null ? Number(fcfManuali[k][field]) : 0;
+    }
+    async function fcfSave(anno,mese,field,value){
+      var k=fcfKey(anno,mese);
+      if(!fcfManuali[k])fcfManuali[k]={};
+      var num=parseFloat(String(value).replace(/\./g,'').replace(',','.'));
+      if(isNaN(num))num=0;
+      fcfManuali[k][field]=num;
+      try{
+        await fetch(PROXY+'/fcf-manuali-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fcf:fcfManuali})});
+      }catch(e){
+        console.error('[FCF save]',e);
+      }
+    }
+    window._fcfSave=fcfSave;
+
     // Stato: anno selezionato (default = anno corrente, o ultimo anno con dati)
     var anniDisp=[...new Set(bilanci.map(function(b){return b.anno;}))].sort(function(a,b){return b-a;});
     if(anniDisp.length===0)anniDisp=[new Date().getFullYear()];
@@ -5775,7 +5803,10 @@ function openFilippoPanel(){
       'sp_pass_f_amm_imm_immateriali','sp_pass_f_amm_imm_materiali',
       'sp_pass_fondo_tfr','sp_pass_fornitori','sp_pass_altri_debiti_v_fornitori',
       'sp_pass_debiti_tributari','sp_pass_debiti_diversi','sp_pass_patrimonio_netto',
-      'sp_totale_attivo_pdf','sp_totale_passivo_pdf','sp_utile_perdita_esercizio'
+      'sp_totale_attivo_pdf','sp_totale_passivo_pdf','sp_utile_perdita_esercizio',
+      // Dettaglio crediti per incassi (sottoconti di sp_att_crediti_diversi, codici 17440.x)
+      'sp_cred_inc_brt','sp_cred_inc_paypal','sp_cred_inc_amazon',
+      'sp_cred_inc_shopify','sp_cred_inc_temu','sp_cred_inc_tiktok'
     ];
 
     // Ritorna una struttura { raw, ce_mese, ce_ytd, sp } dove:
@@ -6125,6 +6156,246 @@ function openFilippoPanel(){
 
       html+='</tbody></table></div>';
 
+      // ── TABELLA CREDITI PER INCASSI ──
+      // Dettaglio dei sottoconti 17440.x (inclusi dentro "Crediti diversi")
+      html+='<div style="font-size:16px;font-weight:700;margin:24px 0 8px;color:#1a1a2e">💳 CREDITI PER INCASSI (dettaglio sottoconti 17440.x)</div>';
+      html+='<div style="font-size:12px;color:#777;margin-bottom:10px">Dettaglio dei crediti da piattaforme e-commerce e corrieri. Questi valori sono già inclusi dentro "Crediti diversi" dello Stato Patrimoniale sopra.</div>';
+      html+='<div class="bil-scroll" style="border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px;background:#fff">';
+      html+='<thead><tr style="color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;top:0;background:#f0f2f5;min-width:240px;width:240px;max-width:240px;z-index:3;border-bottom:1px solid #e0e4ea">Voce</th>';
+      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;background:#f0f2f5;min-width:110px;border-bottom:1px solid #e0e4ea">'+NOMI_MESI[i]+'</th>';});
+      html+='</tr></thead><tbody>';
+
+      var CRED_INC_ROWS = [
+        {key:'sp_cred_inc_brt',     label:'BRT (contrassegno)',    codice:'17440.2'},
+        {key:'sp_cred_inc_paypal',  label:'PayPal',                codice:'17440.4'},
+        {key:'sp_cred_inc_amazon',  label:'Amazon Seller',         codice:'17440.5'},
+        {key:'sp_cred_inc_shopify', label:'Shopify',               codice:'17440.6'},
+        {key:'sp_cred_inc_temu',    label:'Temu',                  codice:'17440.8'},
+        {key:'sp_cred_inc_tiktok',  label:'TikTok',                codice:'17440.9'}
+      ];
+      CRED_INC_ROWS.forEach(function(row,ri){
+        var bgRiga=ri%2===0?'#ffffff':'#fafbfc';
+        html+='<tr>';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2;font-size:12px">'+row.label+' <span style="color:#aaa;font-size:10px">['+row.codice+']</span></td>';
+        mesiPresenti.forEach(function(i,ix){
+          // Accedo direttamente al bilancio raw perché sp contiene le chiavi piatte
+          var bil=mesi[i]&&mesi[i].raw;
+          var v=bil?Number(bil[row.key]||0):0;
+          html+='<td style="text-align:right;padding:6px 10px;background:'+bgRiga+';'+(v===0?'color:#ccc':'')+'">'+fmtEur(v)+'</td>';
+        });
+        html+='</tr>';
+      });
+      // Riga totale crediti per incassi
+      html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8">TOTALE CREDITI PER INCASSI</td>';
+      mesiPresenti.forEach(function(i,ix){
+        var bil=mesi[i]&&mesi[i].raw;
+        var tot=0;
+        CRED_INC_ROWS.forEach(function(row){tot+=bil?Number(bil[row.key]||0):0;});
+        html+='<td style="text-align:right;padding:8px 10px;background:#fff9e6;border-top:2px solid #94a3b8">'+fmtEur(tot)+'</td>';
+      });
+      html+='</tr>';
+      html+='</tbody></table></div>';
+
+      // ── TABELLA FLUSSO DI CASSA LIBERO ──
+      html+='<div style="font-size:16px;font-weight:700;margin:24px 0 8px;color:#1a1a2e">💶 FLUSSO DI CASSA LIBERO (snapshot fine mese)</div>';
+      html+='<div style="font-size:12px;color:#777;margin-bottom:10px">Crediti per incassi + Disponibilità liquide + Crediti tributari + Rimanenze + Debiti concordati ± Rettifica crediti piattaforme − Fornitori − Altri debiti v/fornitori − Debiti tributari − Debiti diversi</div>';
+      html+='<div class="bil-scroll" style="border:1px solid #e0e4ea;border-radius:10px;position:relative"><table style="min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px;background:#fff">';
+      html+='<thead><tr style="color:#333">';
+      html+='<th style="text-align:left;padding:8px 10px;position:sticky;left:0;top:0;background:#f0f2f5;min-width:280px;width:280px;max-width:280px;z-index:3;border-bottom:1px solid #e0e4ea">Voce</th>';
+      mesiPresenti.forEach(function(i){html+='<th style="text-align:right;padding:8px 10px;background:#f0f2f5;min-width:130px;border-bottom:1px solid #e0e4ea">'+NOMI_MESI[i]+'</th>';});
+      html+='</tr></thead><tbody>';
+
+      // Helper: per ogni mese calcola le componenti e il totale
+      function calcFCF(ix){
+        var meseNum=mesiPresenti[ix]; // numero mese 1..12
+        var sp=spMesi[ix];
+        var bil=mesi[meseNum]&&mesi[meseNum].raw;
+        // Crediti per incassi da bilancio (totale dei 6 sottoconti)
+        var credInc=0;
+        var credIncAmazonBil=0, credIncTemuBil=0, credIncTiktokBil=0;
+        if(bil){
+          ['sp_cred_inc_brt','sp_cred_inc_paypal','sp_cred_inc_amazon','sp_cred_inc_shopify','sp_cred_inc_temu','sp_cred_inc_tiktok'].forEach(function(k){
+            credInc+=Number(bil[k]||0);
+          });
+          credIncAmazonBil=Number(bil['sp_cred_inc_amazon']||0);
+          credIncTemuBil=Number(bil['sp_cred_inc_temu']||0);
+          credIncTiktokBil=Number(bil['sp_cred_inc_tiktok']||0);
+        }
+        // Valori manuali dal server
+        var debitiConcordati=fcfGet(anno,meseNum,'debiti_concordati');
+        var amazonReale=fcfGet(anno,meseNum,'amazon_reale');
+        var temuReale=fcfGet(anno,meseNum,'temu_reale');
+        var tiktokReale=fcfGet(anno,meseNum,'tiktok_reale');
+        // Rettifica = (somma rilevata piattaforme) − (somma in bilancio)
+        // Se positiva: i crediti reali sono superiori a quelli in bilancio → si aggiunge
+        // Se negativa: i crediti reali sono inferiori → si sottrae
+        var sommaRilevata=amazonReale+temuReale+tiktokReale;
+        var sommaBilancio=credIncAmazonBil+credIncTemuBil+credIncTiktokBil;
+        // La rettifica viene applicata SOLO se almeno uno dei 3 reali e' stato inserito (!=0 tutti insieme)
+        var rettifica=(amazonReale||temuReale||tiktokReale)?(sommaRilevata-sommaBilancio):0;
+
+        var totale =
+            credInc
+          + (sp.liquidita||0)
+          + (sp.creditiTrib||0)
+          + (sp.rimanenze||0)
+          + debitiConcordati
+          + rettifica
+          - (sp.fornitoriPass||0)
+          - (sp.altriDebFor||0)
+          - (sp.debitiTrib||0)
+          - (sp.debitiDiv||0);
+
+        return {
+          credInc:credInc,
+          liquidita:sp.liquidita||0,
+          creditiTrib:sp.creditiTrib||0,
+          rimanenze:sp.rimanenze||0,
+          debitiConcordati:debitiConcordati,
+          amazonReale:amazonReale, temuReale:temuReale, tiktokReale:tiktokReale,
+          credIncAmazonBil:credIncAmazonBil, credIncTemuBil:credIncTemuBil, credIncTiktokBil:credIncTiktokBil,
+          sommaRilevata:sommaRilevata, sommaBilancio:sommaBilancio,
+          rettifica:rettifica,
+          fornitori:sp.fornitoriPass||0,
+          altriDebFor:sp.altriDebFor||0,
+          debitiTrib:sp.debitiTrib||0,
+          debitiDiv:sp.debitiDiv||0,
+          totale:totale
+        };
+      }
+
+      // Helper per riga input editabile
+      function cellInput(meseNum,field,value){
+        var k=fcfKey(anno,meseNum)+'-'+field;
+        var vStr=value?value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2}):'';
+        return '<input type="text" id="fcf-'+k+'" value="'+vStr+'" onblur="window._fcfSave&&window._fcfSave('+anno+','+meseNum+',\''+field+'\',this.value).then(function(){window._bilancioRender&&window._bilancioRender()})" style="width:100%;text-align:right;border:1px solid #cbd5e1;border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;background:#fffbeb;box-sizing:border-box">';
+      }
+
+      // Righe dati da bilancio (non editabili)
+      var FCF_BIL_ROWS = [
+        {label:'Crediti per incassi (da bilancio)',  getter:function(f){return f.credInc;},     segno:'+'},
+        {label:'Disponibilità liquide',              getter:function(f){return f.liquidita;},   segno:'+'},
+        {label:'Crediti tributari',                  getter:function(f){return f.creditiTrib;}, segno:'+'},
+        {label:'Rimanenze',                          getter:function(f){return f.rimanenze;},   segno:'+'}
+      ];
+      FCF_BIL_ROWS.forEach(function(row,ri){
+        var bgRiga=ri%2===0?'#ffffff':'#fafbfc';
+        html+='<tr>';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2;font-size:12px">'
+          +'<span style="color:#16a34a;font-weight:700;margin-right:6px">'+row.segno+'</span>'+row.label+'</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var v=row.getter(calcFCF(ix));
+          html+='<td style="text-align:right;padding:6px 10px;background:'+bgRiga+'">'+fmtEur(v)+'</td>';
+        });
+        html+='</tr>';
+      });
+
+      // Riga Debiti Concordati (editabile manualmente)
+      html+='<tr>';
+      html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fef3c7;z-index:2;font-size:12px">'
+        +'<span style="color:#16a34a;font-weight:700;margin-right:6px">+</span>'
+        +'<span style="color:#92400e">✏️ Debiti Concordati</span></td>';
+      mesiPresenti.forEach(function(i,ix){
+        var meseNum=mesiPresenti[ix];
+        var v=fcfGet(anno,meseNum,'debiti_concordati');
+        html+='<td style="padding:3px 6px;background:#fef3c7">'+cellInput(meseNum,'debiti_concordati',v)+'</td>';
+      });
+      html+='</tr>';
+
+      // Sezione rettifica crediti piattaforme (header)
+      html+='<tr>';
+      html+='<td colspan="'+(mesiPresenti.length+1)+'" style="padding:5px 10px;background:#e0f2fe;font-size:11px;font-weight:700;color:#0c4a6e;position:sticky;left:0;z-index:2;border-top:1px solid #bae6fd">🔄 Rettifica crediti piattaforme (inserisci i crediti REALI, la differenza vs bilancio viene calcolata)</td>';
+      html+='</tr>';
+
+      // Righe reali manuali
+      var PLAT_ROWS=[
+        {label:'Amazon Seller (reale)',field:'amazon_reale',bilKey:'credIncAmazonBil'},
+        {label:'Temu (reale)',         field:'temu_reale',  bilKey:'credIncTemuBil'},
+        {label:'TikTok (reale)',       field:'tiktok_reale',bilKey:'credIncTiktokBil'}
+      ];
+      PLAT_ROWS.forEach(function(row,ri){
+        var bgRiga='#f0f9ff';
+        html+='<tr>';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2;font-size:12px;color:#0c4a6e">'
+          +'<span style="color:#888;margin-right:6px">&nbsp;&nbsp;</span>'
+          +'✏️ '+row.label+'</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var meseNum=mesiPresenti[ix];
+          var v=fcfGet(anno,meseNum,row.field);
+          html+='<td style="padding:3px 6px;background:'+bgRiga+'">'+cellInput(meseNum,row.field,v)+'</td>';
+        });
+        html+='</tr>';
+      });
+
+      // Riga rettifica calcolata (somma reale − somma bilancio)
+      html+='<tr style="font-size:11px">';
+      html+='<td style="padding:6px 10px;position:sticky;left:0;background:#e0f2fe;z-index:2;color:#0c4a6e">'
+        +'<span style="color:#999;font-weight:700;margin-right:6px">±</span>'
+        +'Rettifica (Σ reali − Σ bilancio)</td>';
+      mesiPresenti.forEach(function(i,ix){
+        var f=calcFCF(ix);
+        var v=f.rettifica;
+        var col=v>=0?'#166534':'#c0392b';
+        var sign=v>0?'+':'';
+        html+='<td style="text-align:right;padding:6px 10px;background:#e0f2fe;color:'+col+';font-weight:600">'+(v===0?'—':sign+fmtEur(v))+'</td>';
+      });
+      html+='</tr>';
+
+      // Righe negative (debiti da bilancio)
+      var FCF_NEG_ROWS = [
+        {label:'Fornitori',                getter:function(f){return f.fornitori;}},
+        {label:'Altri debiti v/fornitori', getter:function(f){return f.altriDebFor;}},
+        {label:'Debiti tributari',         getter:function(f){return f.debitiTrib;}},
+        {label:'Debiti diversi',           getter:function(f){return f.debitiDiv;}}
+      ];
+      FCF_NEG_ROWS.forEach(function(row,ri){
+        var bgRiga=ri%2===0?'#ffffff':'#fafbfc';
+        html+='<tr>';
+        html+='<td style="padding:6px 10px;position:sticky;left:0;background:'+bgRiga+';z-index:2;font-size:12px">'
+          +'<span style="color:#c0392b;font-weight:700;margin-right:6px">−</span>'+row.label+'</td>';
+        mesiPresenti.forEach(function(i,ix){
+          var v=row.getter(calcFCF(ix));
+          html+='<td style="text-align:right;padding:6px 10px;background:'+bgRiga+';color:#c0392b">'+fmtEur(v)+'</td>';
+        });
+        html+='</tr>';
+      });
+
+      // Riga FLUSSO DI CASSA LIBERO totale
+      html+='<tr style="font-weight:700;border-top:2px solid #94a3b8">';
+      html+='<td style="padding:8px 10px;position:sticky;left:0;background:#fff9e6;z-index:2;border-top:2px solid #94a3b8">FLUSSO DI CASSA LIBERO</td>';
+      mesiPresenti.forEach(function(i,ix){
+        var f=calcFCF(ix);
+        var col=f.totale>=0?'#166534':'#c0392b';
+        html+='<td style="text-align:right;padding:8px 10px;background:#fff9e6;border-top:2px solid #94a3b8;color:'+col+'">'+fmtEur(f.totale)+'</td>';
+      });
+      html+='</tr>';
+
+      // Riga variazione mese su mese (Δ)
+      html+='<tr style="font-weight:600;font-size:11px">';
+      html+='<td style="padding:6px 10px;position:sticky;left:0;background:#fffbeb;z-index:2;color:#555">Δ vs mese precedente</td>';
+      mesiPresenti.forEach(function(i,ix){
+        if(ix===0){
+          html+='<td style="text-align:right;padding:6px 10px;background:#fffbeb;color:#ccc">—</td>';
+        } else {
+          var fCur=calcFCF(ix);
+          var fPrev=calcFCF(ix-1);
+          var delta=fCur.totale-fPrev.totale;
+          var col=delta>=0?'#166534':'#c0392b';
+          var arrow=delta>=0?'▲':'▼';
+          html+='<td style="text-align:right;padding:6px 10px;background:#fffbeb;color:'+col+'">'+arrow+' '+fmtEur(delta)+'</td>';
+        }
+      });
+      html+='</tr>';
+
+      html+='</tbody></table></div>';
+
+      // Hint editabilità
+      html+='<div style="margin-top:8px;font-size:11px;color:#92400e;background:#fffbeb;border:1px dashed #fcd34d;border-radius:6px;padding:8px 12px">';
+      html+='✏️ Le celle con sfondo giallo/azzurro sono <b>modificabili</b>: clicca, inserisci il valore in formato italiano (es. <code>12.345,67</code> o <code>12345.67</code>) e premi TAB o clicca fuori per salvare automaticamente su GitHub.';
+      html+='</div>';
+
       html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
       html+='<strong>Note:</strong> Lo Stato Patrimoniale segue la struttura del PDF (immobilizzazioni al lordo, fondi ammortamento separati nel passivo).';
       html+=' Il Risultato d\'esercizio è calcolato come Attivo − Passivo: se positivo è utile, se negativo è perdita.';
@@ -6241,7 +6512,87 @@ function openFilippoPanel(){
       mesiPresenti.forEach(function(i,ix){rowRis.push(spMesi[ix].risultato||0);});
       rowsSP.push(rowRis);
 
-      return {anno:anno, headers:headers, headersSP:headersSP, ce:rowsCE, pct:rowsPct, sp:rowsSP};
+      // Crediti per incassi (dettaglio sottoconti 17440.x)
+      var rowsCredInc=[];
+      var CRED_INC = [
+        {key:'sp_cred_inc_brt',     label:'BRT (contrassegno) [17440.2]'},
+        {key:'sp_cred_inc_paypal',  label:'PayPal [17440.4]'},
+        {key:'sp_cred_inc_amazon',  label:'Amazon Seller [17440.5]'},
+        {key:'sp_cred_inc_shopify', label:'Shopify [17440.6]'},
+        {key:'sp_cred_inc_temu',    label:'Temu [17440.8]'},
+        {key:'sp_cred_inc_tiktok',  label:'TikTok [17440.9]'}
+      ];
+      CRED_INC.forEach(function(ci){
+        var row=[ci.label];
+        mesiPresenti.forEach(function(i,ix){var bil=mesi[i]&&mesi[i].raw;row.push(bil?Number(bil[ci.key]||0):0);});
+        rowsCredInc.push(row);
+      });
+      // Totale
+      var rowTotCI=['TOTALE CREDITI PER INCASSI'];
+      mesiPresenti.forEach(function(i,ix){
+        var bil=mesi[i]&&mesi[i].raw;
+        var t=0;
+        CRED_INC.forEach(function(ci){t+=bil?Number(bil[ci.key]||0):0;});
+        rowTotCI.push(t);
+      });
+      rowsCredInc.push(rowTotCI);
+
+      // Flusso di Cassa Libero
+      var rowsFCF=[];
+      function fcfForMonth(ix){
+        var meseNum=mesiPresenti[ix];
+        var sp=spMesi[ix];
+        var bil=mesi[meseNum]&&mesi[meseNum].raw;
+        var credInc=0;
+        var credIncAmazonBil=0, credIncTemuBil=0, credIncTiktokBil=0;
+        if(bil){
+          ['sp_cred_inc_brt','sp_cred_inc_paypal','sp_cred_inc_amazon','sp_cred_inc_shopify','sp_cred_inc_temu','sp_cred_inc_tiktok'].forEach(function(k){credInc+=Number(bil[k]||0);});
+          credIncAmazonBil=Number(bil['sp_cred_inc_amazon']||0);
+          credIncTemuBil=Number(bil['sp_cred_inc_temu']||0);
+          credIncTiktokBil=Number(bil['sp_cred_inc_tiktok']||0);
+        }
+        var debitiConcordati=fcfGet(anno,meseNum,'debiti_concordati');
+        var amazonReale=fcfGet(anno,meseNum,'amazon_reale');
+        var temuReale=fcfGet(anno,meseNum,'temu_reale');
+        var tiktokReale=fcfGet(anno,meseNum,'tiktok_reale');
+        var sommaRilevata=amazonReale+temuReale+tiktokReale;
+        var sommaBilancio=credIncAmazonBil+credIncTemuBil+credIncTiktokBil;
+        var rettifica=(amazonReale||temuReale||tiktokReale)?(sommaRilevata-sommaBilancio):0;
+        return {
+          credInc:credInc, liquidita:sp.liquidita||0, creditiTrib:sp.creditiTrib||0, rimanenze:sp.rimanenze||0,
+          debitiConcordati:debitiConcordati, rettifica:rettifica,
+          amazonReale:amazonReale, temuReale:temuReale, tiktokReale:tiktokReale,
+          fornitori:sp.fornitoriPass||0, altriDebFor:sp.altriDebFor||0, debitiTrib:sp.debitiTrib||0, debitiDiv:sp.debitiDiv||0,
+          totale:(credInc + (sp.liquidita||0) + (sp.creditiTrib||0) + (sp.rimanenze||0)
+                 + debitiConcordati + rettifica
+                 - (sp.fornitoriPass||0) - (sp.altriDebFor||0) - (sp.debitiTrib||0) - (sp.debitiDiv||0))
+        };
+      }
+      var FCF_EXPORT = [
+        ['+ Crediti per incassi (bilancio)', 'credInc'],
+        ['+ Disponibilità liquide', 'liquidita'],
+        ['+ Crediti tributari', 'creditiTrib'],
+        ['+ Rimanenze', 'rimanenze'],
+        ['+ Debiti Concordati (manuale)', 'debitiConcordati'],
+        ['  Amazon Seller reale', 'amazonReale'],
+        ['  Temu reale', 'temuReale'],
+        ['  TikTok reale', 'tiktokReale'],
+        ['± Rettifica crediti piattaforme', 'rettifica'],
+        ['− Fornitori', 'fornitori'],
+        ['− Altri debiti v/fornitori', 'altriDebFor'],
+        ['− Debiti tributari', 'debitiTrib'],
+        ['− Debiti diversi', 'debitiDiv']
+      ];
+      FCF_EXPORT.forEach(function(f){
+        var row=[f[0]];
+        mesiPresenti.forEach(function(i,ix){row.push(fcfForMonth(ix)[f[1]]);});
+        rowsFCF.push(row);
+      });
+      var rowFCFTot=['FLUSSO DI CASSA LIBERO'];
+      mesiPresenti.forEach(function(i,ix){rowFCFTot.push(fcfForMonth(ix).totale);});
+      rowsFCF.push(rowFCFTot);
+
+      return {anno:anno, headers:headers, headersSP:headersSP, ce:rowsCE, pct:rowsPct, sp:rowsSP, credInc:rowsCredInc, fcf:rowsFCF};
     }
 
     // ── Export Excel ──
@@ -6262,6 +6613,12 @@ function openFilippoPanel(){
         // Foglio SP (senza colonna YTD)
         var wsSP=XLSX.utils.aoa_to_sheet([data.headersSP].concat(data.sp));
         XLSX.utils.book_append_sheet(wb,wsSP,'Stato Patrimoniale');
+        // Foglio Crediti per Incassi (usa stesso header SP senza YTD)
+        var wsCI=XLSX.utils.aoa_to_sheet([data.headersSP].concat(data.credInc));
+        XLSX.utils.book_append_sheet(wb,wsCI,'Crediti per Incassi');
+        // Foglio Flusso di Cassa Libero
+        var wsFCF=XLSX.utils.aoa_to_sheet([data.headersSP].concat(data.fcf));
+        XLSX.utils.book_append_sheet(wb,wsFCF,'Flusso di Cassa');
         XLSX.writeFile(wb,'bilancio_'+data.anno+'.xlsx');
         showBilMsg('<div style="font-weight:700">✅ Excel scaricato</div>','success');
         setTimeout(function(){var e=document.getElementById('bilancio-result-banner');if(e)e.remove();},2000);
@@ -6324,6 +6681,26 @@ function openFilippoPanel(){
           startY:50, head:[data.headersSP], body:prepRows(data.sp),
           styles:{fontSize:7,cellPadding:3}, headStyles:{fillColor:[240,242,245],textColor:[50,50,50],fontStyle:'bold'},
           columnStyles:{0:{cellWidth:160,halign:'left'}}, theme:'grid'
+        });
+
+        // Crediti per Incassi (sotto SP)
+        var yCI=doc.lastAutoTable.finalY+20;
+        doc.setFontSize(11); doc.setFont('helvetica','bold');
+        doc.text('CREDITI PER INCASSI (dettaglio sottoconti 17440.x)',40,yCI);
+        doc.autoTable({
+          startY:yCI+8, head:[data.headersSP], body:prepRows(data.credInc),
+          styles:{fontSize:7,cellPadding:3}, headStyles:{fillColor:[240,242,245],textColor:[50,50,50],fontStyle:'bold'},
+          columnStyles:{0:{cellWidth:180,halign:'left'}}, theme:'grid'
+        });
+
+        // Flusso di Cassa Libero
+        var yFCF=doc.lastAutoTable.finalY+20;
+        doc.setFontSize(11); doc.setFont('helvetica','bold');
+        doc.text('FLUSSO DI CASSA LIBERO',40,yFCF);
+        doc.autoTable({
+          startY:yFCF+8, head:[data.headersSP], body:prepRows(data.fcf),
+          styles:{fontSize:7,cellPadding:3}, headStyles:{fillColor:[240,242,245],textColor:[50,50,50],fontStyle:'bold'},
+          columnStyles:{0:{cellWidth:180,halign:'left'}}, theme:'grid'
         });
 
         doc.save('bilancio_'+data.anno+'.pdf');
@@ -7025,6 +7402,8 @@ function openFilippoPanel(){
     var PROV_PCT = {'AMAZON':0.154,'TEMU':0.06,'TIK TOK':0.06,'SITO':0};
     // Spedizione per ordine (tutti canali)
     var SPEDIZIONE_PER_ORDINE = 3.5;
+    // Costi aziendali mensili totali, ripartiti tra canali proporzionalmente al nr ordini
+    var COSTI_AZIENDALI_MENSILI = 23000;
     // Ordine canali nella tabella
     var CANALI_ORDINE = ['AMAZON','SITO','TEMU','TIK TOK'];
 
@@ -7117,8 +7496,10 @@ function openFilippoPanel(){
       return perCanale;
     }
 
-    // Calcola metriche derivate per un record canale
-    function calcMetriche(d, canale){
+    // Calcola metriche derivate per un record canale.
+    // costoAziendalePerOrdine = quota di costi aziendali mensili per singolo ordine
+    //                           (COSTI_AZIENDALI_MENSILI / nr_ordini_totali_mese)
+    function calcMetriche(d, canale, costoAziendalePerOrdine){
       var nr=d.nr_ordini||0;
       var vTot=d.vendite_totali||0;
       var vNet=d.vendite_nette||0;
@@ -7127,11 +7508,12 @@ function openFilippoPanel(){
       var margine = vNet - cost;
       var provvigioni = vTot * (PROV_PCT[canale]||0);
       var spedizioni = nr * SPEDIZIONE_PER_ORDINE;
-      var ebit = margine - provvigioni - spedizioni;
+      var costiAziendali = nr * (costoAziendalePerOrdine||0);
+      var ebit = margine - provvigioni - spedizioni - costiAziendali;
       return {
         nr_ordini:nr, vendite_totali:vTot, vendite_nette:vNet, costo_prodotto:cost,
         ordine_medio:ordineMedio, margine:margine, provvigioni:provvigioni,
-        spedizioni:spedizioni, ebit:ebit
+        spedizioni:spedizioni, costi_aziendali:costiAziendali, ebit:ebit
       };
     }
 
@@ -7154,15 +7536,27 @@ function openFilippoPanel(){
         return mesiPresenti.some(function(m){return byMese[m]&&byMese[m][c];});
       });
 
+      // Pre-calcola il costo aziendale per ordine di ciascun mese
+      // (i costi aziendali 23.000€ vanno ripartiti tra i canali in base al nr ordini del mese)
+      var costoAziendalePerOrdineMese={};
+      mesiPresenti.forEach(function(mese){
+        var nrOrdTot=0;
+        canaliPresenti.forEach(function(c){
+          var raw=byMese[mese]&&byMese[mese][c];
+          if(raw)nrOrdTot+=Number(raw.nr_ordini||0);
+        });
+        costoAziendalePerOrdineMese[mese]=nrOrdTot>0?(COSTI_AZIENDALI_MENSILI/nrOrdTot):0;
+      });
+
       // Helper: per (mese,canale) ritorna metriche derivate
       function metrMC(mese,canale){
         var raw=byMese[mese]&&byMese[mese][canale];
         if(!raw)return null;
-        return calcMetriche(raw,canale);
+        return calcMetriche(raw,canale,costoAziendalePerOrdineMese[mese]||0);
       }
       // Totali per mese (somma canali)
       function totaliMese(mese){
-        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,ebit:0};
+        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,costi_aziendali:0,ebit:0};
         canaliPresenti.forEach(function(c){
           var m=metrMC(mese,c);
           if(!m)return;
@@ -7173,6 +7567,7 @@ function openFilippoPanel(){
           agg.margine+=m.margine;
           agg.provvigioni+=m.provvigioni;
           agg.spedizioni+=m.spedizioni;
+          agg.costi_aziendali+=m.costi_aziendali;
           agg.ebit+=m.ebit;
         });
         agg.ordine_medio=agg.nr_ordini>0?agg.vendite_totali/agg.nr_ordini:0;
@@ -7180,7 +7575,7 @@ function openFilippoPanel(){
       }
       // Totali YTD per canale
       function totaliYTDCanale(canale){
-        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,ebit:0};
+        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,costi_aziendali:0,ebit:0};
         mesiPresenti.forEach(function(mese){
           var m=metrMC(mese,canale);
           if(!m)return;
@@ -7191,6 +7586,7 @@ function openFilippoPanel(){
           agg.margine+=m.margine;
           agg.provvigioni+=m.provvigioni;
           agg.spedizioni+=m.spedizioni;
+          agg.costi_aziendali+=m.costi_aziendali;
           agg.ebit+=m.ebit;
         });
         agg.ordine_medio=agg.nr_ordini>0?agg.vendite_totali/agg.nr_ordini:0;
@@ -7198,7 +7594,7 @@ function openFilippoPanel(){
       }
       // Totale YTD generale
       function totaliYTD(){
-        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,ebit:0};
+        var agg={nr_ordini:0,vendite_totali:0,vendite_nette:0,costo_prodotto:0,ordine_medio:0,margine:0,provvigioni:0,spedizioni:0,costi_aziendali:0,ebit:0};
         canaliPresenti.forEach(function(c){
           var t=totaliYTDCanale(c);
           agg.nr_ordini+=t.nr_ordini;
@@ -7208,6 +7604,7 @@ function openFilippoPanel(){
           agg.margine+=t.margine;
           agg.provvigioni+=t.provvigioni;
           agg.spedizioni+=t.spedizioni;
+          agg.costi_aziendali+=t.costi_aziendali;
           agg.ebit+=t.ebit;
         });
         agg.ordine_medio=agg.nr_ordini>0?agg.vendite_totali/agg.nr_ordini:0;
@@ -7224,6 +7621,7 @@ function openFilippoPanel(){
         {key:'margine',         label:'Margine',         w:90,  fmt:fmtEur, css:'font-weight:600'},
         {key:'provvigioni',     label:'Provvigioni',     w:85,  fmt:fmtEur, css:'color:#c0392b'},
         {key:'spedizioni',      label:'Spedizioni',      w:80,  fmt:fmtEur, css:'color:#c0392b'},
+        {key:'costi_aziendali', label:'Costi Aziend.',   w:90,  fmt:fmtEur, css:'color:#c0392b'},
         {key:'ebit',            label:'EBIT',            w:90,  fmt:fmtEur, css:'font-weight:700'}
       ];
 
@@ -7283,9 +7681,9 @@ function openFilippoPanel(){
         html+='<th rowspan="2" style="text-align:left;padding:8px 10px;border-bottom:1px solid #e0e4ea;position:sticky;left:0;top:0;background:#f0f2f5;min-width:'+COL_LABEL+'px;width:'+COL_LABEL+'px;z-index:4;vertical-align:middle">Canale</th>';
         mesiPresenti.forEach(function(mese,mi){
           var bgH=mi%2===0?BG_A:BG_B;
-          html+='<th colspan="9" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+COL_MESE+'px">'+NOMI_MESI[mese-1]+' '+anno+'</th>';
+          html+='<th colspan="10" style="text-align:center;padding:6px 10px;background:'+bgH+';border-bottom:1px solid #e0e4ea;border-left:1px solid #e0e4ea;min-width:'+COL_MESE+'px">'+NOMI_MESI[mese-1]+' '+anno+'</th>';
         });
-        html+='<th colspan="9" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_MESE+'px;width:'+COL_MESE+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
+        html+='<th colspan="10" style="text-align:center;padding:6px 10px;background:#d9f0e1;border-bottom:1px solid #e0e4ea;border-left:2px solid #86efac;min-width:'+COL_MESE+'px;width:'+COL_MESE+'px;position:sticky;right:0;top:0;z-index:4;font-weight:700">YTD</th>';
         html+='</tr>';
         // Riga 2: metriche
         html+='<tr style="color:#555;font-size:10px">';
@@ -7343,7 +7741,7 @@ function openFilippoPanel(){
           METRICHE.forEach(function(me,k){
             var bLeft=(k===0)?'border-left:1px solid #e0e4ea;':'';
             var val=t[me.key];
-            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni'||me.key==='costi_aziendali')?'color:#c0392b;':'';
             html+='<td style="text-align:right;padding:7px 5px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+col+'">'+me.fmt(val)+'</td>';
           });
         });
@@ -7351,7 +7749,7 @@ function openFilippoPanel(){
         METRICHE.forEach(function(me,k){
           var bLeft=(k===0)?'border-left:2px solid #86efac;':'';
           var val=tY[me.key];
-          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni'||me.key==='costi_aziendali')?'color:#c0392b;':'';
           html+='<td style="text-align:right;padding:7px 5px;background:#fef9c3;'+bLeft+'border-top:2px solid #94a3b8;'+col+'">'+me.fmt(val)+'</td>';
         });
         html+='</tr>';
@@ -7420,11 +7818,11 @@ function openFilippoPanel(){
             var bLeft=(mi===0)?'border-left:1px solid #e0e4ea;':'';
             var t=totaliMese(mese);
             var val=t[me.key];
-            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni'||me.key==='costi_aziendali')?'color:#c0392b;':'';
             html+='<td style="text-align:right;padding:7px 5px;background:#fff9e6;border-top:2px solid #94a3b8;'+bLeft+col+'">'+me.fmt(val)+'</td>';
           });
           var val=tY[me.key];
-          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni'||me.key==='costi_aziendali')?'color:#c0392b;':'';
           html+='<td style="text-align:right;padding:7px 5px;background:#fef9c3;border-left:1px dashed #86efac;border-top:2px solid #94a3b8;'+col+'">'+me.fmt(val)+'</td>';
         });
         html+='</tr>';
@@ -7492,11 +7890,11 @@ function openFilippoPanel(){
             var bLeft=(moi===0)?'border-left:2px solid #facc15;':'';
             var t=totaliMese(mese);
             var val=t[me.key];
-            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+            var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni'||me.key==='costi_aziendali')?'color:#c0392b;':'';
             html+='<td style="text-align:right;padding:5px 5px;background:#fff9e6;font-weight:700;'+bLeft+col+'">'+me.fmt(val)+'</td>';
           });
           var val=tY[me.key];
-          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni')?'color:#c0392b;':'';
+          var col=(me.key==='ebit'&&val<0)?'color:#c0392b;':(me.key==='costo_prodotto'||me.key==='provvigioni'||me.key==='spedizioni'||me.key==='costi_aziendali')?'color:#c0392b;':'';
           html+='<td style="text-align:right;padding:5px 5px;background:#fef9c3;border-left:1px dashed #facc15;font-weight:700;'+col+'">'+me.fmt(val)+'</td>';
           html+='</tr>';
         });
@@ -7505,7 +7903,7 @@ function openFilippoPanel(){
       html+='</tbody></table></div>';
 
       html+='<div style="margin-top:14px;font-size:11px;color:#888;line-height:1.6">';
-      html+='<strong>Note:</strong> Le metriche derivate sono calcolate come: <b>Ordine Medio</b> = Vendite Totali / Nr Ordini · <b>Margine</b> = Vendite Nette − Costo Prodotto · <b>Provvigioni</b>: AMAZON 15,4%, TEMU e TIK TOK 6%, SITO 0% di Vendite Totali · <b>Spedizioni</b> = Nr Ordini × 3,50€ (tutti i canali) · <b>EBIT Canale</b> = Margine − Provvigioni − Spedizioni.';
+      html+='<strong>Note:</strong> Le metriche derivate sono calcolate come: <b>Ordine Medio</b> = Vendite Totali / Nr Ordini · <b>Margine</b> = Vendite Nette − Costo Prodotto · <b>Provvigioni</b>: AMAZON 15,4%, TEMU e TIK TOK 6%, SITO 0% di Vendite Totali · <b>Spedizioni</b> = Nr Ordini × 3,50€ (tutti i canali) · <b>Costi Aziendali</b> = 23.000€/mese ripartiti per canale in base al numero di ordini (costo/ordine del mese × ordini canale) · <b>EBIT Canale</b> = Margine − Provvigioni − Spedizioni − Costi Aziendali.';
       html+=' Canali esclusi dall\'analisi: codici 3890849 e 334476541953. Source name 281399066625 è mappato come TEMU (vecchio id).';
       html+=' Tre viste disponibili: <b>Per mese</b> (righe=canali, colonne=mese×metriche), <b>Per metrica</b> (righe=canali, colonne=metrica×mesi), <b>Per canale</b> (righe=metriche, colonne=canale×mesi).';
       html+='</div>';
