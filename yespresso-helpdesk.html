@@ -12857,20 +12857,28 @@ function waBuildContext(order, orderId){
 function waRenderTemplate(testo, ctx){
   if(!testo)return '';
   var out=testo;
+  console.log('[WA-RENDER] INPUT testo:',testo);
+  console.log('[WA-RENDER] context.link_ticket =',ctx.link_ticket,' | context._if_ticket =',ctx._if_ticket);
   // 1. Blocchi condizionali {if_xxx}...{/if_xxx}
   var BLOCKS=['if_amazon','if_temu','if_tiktok','if_marketplace','if_sito','if_ticket','if_tracking','if_fermopoint'];
   BLOCKS.forEach(function(bk){
     var re=new RegExp('\\{'+bk+'\\}([\\s\\S]*?)\\{/'+bk+'\\}','g');
     var flag=ctx['_'+bk];
+    var prev=out;
     out=out.replace(re,function(_,inner){return flag?inner:'';});
+    if(prev!==out) console.log('[WA-RENDER] blocco',bk,'flag=',flag,'→ sostituito');
   });
+  console.log('[WA-RENDER] dopo blocchi condizionali:',out);
   // 2. Placeholder semplici {xxx}
   out=out.replace(/\{(\w+)\}/g,function(_,k){
-    if(ctx[k]==null)return '';
-    return String(ctx[k]);
+    var val=ctx[k];
+    console.log('[WA-RENDER] placeholder {'+k+'} → ',val);
+    if(val==null)return '';
+    return String(val);
   });
   // 3. Pulisce righe vuote consecutive
   out=out.replace(/\n{3,}/g,'\n\n').trim();
+  console.log('[WA-RENDER] OUTPUT finale:',out);
   return out;
 }
 
@@ -12928,34 +12936,30 @@ function waOpenMenu(orderId, phone, anchorEl){
     console.log('[WA] anchor rect:',rect,'viewport:',window.innerWidth,'x',window.innerHeight);
   var menu=document.createElement('div');
   menu.id='wa-dropdown';
-  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);width:280px;max-width:280px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
+  // Uso !important su width/box-sizing per evitare che CSS esterni alterino le dimensioni
+  menu.style.cssText='position:fixed !important;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);width:280px !important;max-width:280px !important;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box !important;padding:0 !important;margin:0 !important';
 
-  // ── Posizionamento: forza il menu SEMPRE dentro il viewport ──
-  var WMENU=280, MARG=12;
-  // Calcola altezza stimata
+  // ── Posizionamento con RIGHT invece di LEFT ──
+  // Il browser stava piazzando il menu con width 350 invece di 280 (CSS ereditato),
+  // causando overflow a destra. Uso RIGHT:12px così il bordo destro del menu è
+  // SEMPRE a 12px dal bordo destro viewport, indipendentemente dalla larghezza.
+  var MARG=12;
   var estimatedH=40 + (templates.length*42) + 34 + 4;
   var HMENU=Math.min(estimatedH, Math.floor(window.innerHeight*0.7));
-
-  // LEFT: ancorato al bordo destro del viewport con margine fisso
-  // Questo garantisce che il menu sia SEMPRE interamente visibile
-  var left=window.innerWidth-WMENU-MARG;
-  if(left<MARG) left=MARG; // viewport molto piccolo
 
   // TOP: preferenza sopra il bottone, altrimenti sotto, altrimenti fisso in alto
   var top;
   if(rect.top-HMENU-6>=MARG){
-    // c'è spazio sopra il bottone
     top=rect.top-HMENU-6;
   } else if(rect.bottom+HMENU+6<=window.innerHeight-MARG){
-    // c'è spazio sotto
     top=rect.bottom+6;
   } else {
-    // non c'è spazio né sopra né sotto: centrato verticalmente sul bottone
     top=Math.max(MARG, Math.min(rect.top, window.innerHeight-HMENU-MARG));
   }
 
   menu.style.top=top+'px';
-  menu.style.left=left+'px';
+  menu.style.right=MARG+'px'; // ancoraggio al bordo destro viewport
+  menu.style.left='auto';     // niente left, così right ha la precedenza
 
   var html='';
   // Voce: apri chat vuota
@@ -12982,7 +12986,7 @@ function waOpenMenu(orderId, phone, anchorEl){
 
   menu.innerHTML=html;
   document.body.appendChild(menu);
-  console.log('[WA] menu inserito nel DOM, top=',top,'left=',left);
+  console.log('[WA] menu inserito nel DOM, top=',top,'right=',MARG);
 
   // Log diagnostico: verifica se il menu è davvero visibile
   setTimeout(function(){
