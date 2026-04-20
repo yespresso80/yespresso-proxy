@@ -1118,32 +1118,37 @@ async function loadTickets(){
     renderTable();
 
     // ── DEEP LINK TICKET: apre automaticamente un ticket se presente ?ticket=XXX ──
+    // Il parametro può essere sia shortID breve (EL7OMP) che UUID (44c6789...)
     if(window._ticketDaAprire && !window._ticketDaAprireProcessato){
       window._ticketDaAprireProcessato=true;
       var tidDeep=window._ticketDaAprire;
-      var foundT=tickets.find(function(t){return (t.ID||t.id)===tidDeep;});
+      // Cerca per shortID OPPURE ID OPPURE id
+      var foundT=tickets.find(function(t){
+        return t.shortID===tidDeep || t.ID===tidDeep || t.id===tidDeep;
+      });
       if(foundT){
-        console.log('[DEEP LINK] Apro ticket '+tidDeep+' (già in lista)');
-        setTimeout(function(){selectTicket(tidDeep);},300);
+        // selectTicket() cerca in base a t.ID||t.id, quindi passo l'UUID del ticket
+        var tidToSelect=foundT.ID||foundT.id||tidDeep;
+        console.log('[DEEP LINK] Apro ticket '+tidDeep+' (shortID='+foundT.shortID+', UUID='+tidToSelect+')');
+        setTimeout(function(){selectTicket(tidToSelect);},300);
       } else {
         // Ticket non in lista locale → lo carico dall'API
+        // L'API HelpDesk accetta sia shortID che UUID nel path /v1/tickets/{id}
         console.log('[DEEP LINK] Ticket '+tidDeep+' non in lista, fetch da API...');
         (async function(){
           try{
             var fullT=await hdFetch('/v1/tickets/'+encodeURIComponent(tidDeep));
             if(fullT && (fullT.ID||fullT.id)){
-              console.log('[DEEP LINK] Ticket trovato via API, lo inserisco in lista');
-              // Normalizza il ticket e inseriscilo in cima alla lista
+              console.log('[DEEP LINK] Ticket trovato via API (shortID='+(fullT.shortID||'')+'), lo inserisco in lista');
               tickets.unshift(fullT);
-              // Re-render e seleziona
               renderTable();
-              setTimeout(function(){selectTicket(tidDeep);},200);
+              var tidToSelect=fullT.ID||fullT.id;
+              setTimeout(function(){selectTicket(tidToSelect);},200);
             } else {
               throw new Error('Ticket non restituito dall\'API');
             }
           }catch(apiErr){
             console.error('[DEEP LINK] Errore fetch ticket:',apiErr);
-            // Banner informativo
             var banner=document.createElement('div');
             banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 20px;font-size:13px;color:#92400e;box-shadow:0 4px 12px rgba(0,0,0,.15)';
             banner.innerHTML='⚠ Ticket <b>'+tidDeep+'</b> non trovato. Potrebbe essere stato chiuso o eliminato. <button onclick="this.parentNode.remove()" style="background:none;border:none;cursor:pointer;margin-left:10px;color:#92400e">✕</button>';
@@ -12821,16 +12826,16 @@ function waBuildContext(order, orderId){
   // Ticket corrente (se aperto): selectedTicket è variabile LOCALE del file,
   // non su window — quindi la referenziamo direttamente (e fallback a window per sicurezza)
   var _curTkt=(typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
-  // Preferisco sempre il codice breve (ID maiuscolo, es. "EL7OMP") all'UUID (id minuscolo).
-  // Il codice breve è quello usato dall'UI di HelpDesk per i link pubblici.
-  var tidBreve=_curTkt?(_curTkt.ID||''):'';
-  var tidUuid=_curTkt?(_curTkt.id||''):'';
+  // HelpDesk.com usa 2 campi per il ticket:
+  //   shortID → codice breve leggibile (es. "EL7OMP")  ← preferito per link/hashtag
+  //   ID      → UUID interno (es. "44c67893-5111-...")  ← usato internamente
+  var tidBreve=_curTkt?(_curTkt.shortID||''):'';
+  var tidUuid=_curTkt?(_curTkt.ID||_curTkt.id||''):'';
   var tid=tidBreve||tidUuid;
-  // Per il LINK usiamo preferibilmente il codice breve (più leggibile, più corto)
   var tidPerLink=tidBreve||tidUuid;
   var linkTicket=tidPerLink?('https://yespresso-proxy.onrender.com/?ticket='+encodeURIComponent(tidPerLink)):'';
   var ticketHashtag=tid?('#'+tid):'';
-  if(_curTkt) console.log('[WA] ticket corrente: ID(breve)=',tidBreve,'id(uuid)=',tidUuid,'-> uso per link:',tidPerLink);
+  if(_curTkt) console.log('[WA] ticket: shortID=',tidBreve,'UUID=',tidUuid,'-> link usa:',tidPerLink);
 
   return {
     nome:nomePrimo, nome_completo:nomeCompleto,
@@ -12978,6 +12983,19 @@ function waOpenMenu(orderId, phone, anchorEl){
   menu.innerHTML=html;
   document.body.appendChild(menu);
   console.log('[WA] menu inserito nel DOM, top=',top,'left=',left);
+
+  // Log diagnostico: verifica se il menu è davvero visibile
+  setTimeout(function(){
+    var r=menu.getBoundingClientRect();
+    var vis=(r.width>0 && r.height>0 && r.top<window.innerHeight && r.left<window.innerWidth && r.bottom>0 && r.right>0);
+    console.log('[WA] menu verifica visibilità: rect=',r,' visibile=',vis);
+    // Controlla se qualcosa lo copre
+    var elAtCenter=document.elementFromPoint(r.left+r.width/2, r.top+20);
+    console.log('[WA] elemento al centro top del menu:',elAtCenter,' è dentro il menu?',menu.contains(elAtCenter));
+    if(!menu.contains(elAtCenter)){
+      console.warn('[WA] ⚠ Il menu è coperto da un altro elemento:',elAtCenter);
+    }
+  },100);
 
   // Chiudi cliccando fuori
   setTimeout(function(){
