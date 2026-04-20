@@ -845,8 +845,8 @@ function waResolveTemplate(testo, ctx){
 function waOpenChat(phone, msg){
   if(!phone) return;
   var num = String(phone).replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
-  var url = 'https://web.whatsapp.com/send?phone=39'+num;
-  if(msg) url += '&text='+encodeURIComponent(msg);
+  var url = 'https://wa.me/39'+num;
+  if(msg) url += '?text='+encodeURIComponent(msg);
   window.open(url,'_blank');
 }
 
@@ -13132,14 +13132,14 @@ function waOpenMenu(orderId, phone, anchorEl){
   var rect=anchorEl.getBoundingClientRect();
   var menu=document.createElement('div');
   menu.id='wa-dropdown';
-  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);min-width:280px;width:320px;max-height:70vh;overflow-y:auto;font-family:inherit;font-size:13px';
+  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:260px;max-width:260px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
 
   // Posizionamento intelligente:
   // - preferenza: sotto l'anchor, allineato a destra (right-aligned)
   //   perché il bottone WA sta nella sidebar destra degli ordini
   // - se non c'è spazio sotto, sopra
   // - se l'anchor è vicino al bordo destro, allinea il menu al bordo destro del viewport con margine
-  var WMENU=320, HMENU=420, MARG=10;
+  var WMENU=260, HMENU=420, MARG=10;
   var top=rect.bottom+6;
   if(top+HMENU>window.innerHeight-MARG) top=Math.max(MARG, rect.top-HMENU-6);
   // Posiziona il menu in modo che il suo bordo DESTRO coincida col bordo destro dell'anchor
@@ -13154,26 +13154,26 @@ function waOpenMenu(orderId, phone, anchorEl){
 
   var html='';
   // Voce: apri chat vuota
-  html+='<div onclick="window._waApriChat(\''+phone+'\',\''+orderId+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:10px;color:#333" onmouseover="this.style.background=\'#f0fdf4\'" onmouseout="this.style.background=\'\'">';
-  html+='<span style="font-size:16px">👁</span><span>Apri chat (vedi messaggi)</span></div>';
+  html+='<div onclick="window._waApriChat(\''+phone+'\',\''+orderId+'\')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:8px;color:#333;font-size:12px" onmouseover="this.style.background=\'#f0fdf4\'" onmouseout="this.style.background=\'\'">';
+  html+='<span style="font-size:14px;flex-shrink:0">👁</span><span>Apri chat (vedi messaggi)</span></div>';
 
   // Template
   if(templates.length===0){
-    html+='<div style="padding:14px;color:#999;font-size:12px;text-align:center">Nessun template configurato.</div>';
+    html+='<div style="padding:14px;color:#999;font-size:11px;text-align:center">Nessun template configurato.</div>';
   } else {
     templates.forEach(function(t,idx){
       var em=t.emoji||'💬';
       var nm=(t.nome||'Template').replace(/"/g,'&quot;');
-      html+='<div onclick="window._waInviaTemplate(\''+t.id+'\',\''+phone+'\',\''+orderId+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;display:flex;align-items:flex-start;gap:10px" onmouseover="this.style.background=\'#f0f9ff\'" onmouseout="this.style.background=\'\'">';
-      html+='<span style="font-size:16px;flex-shrink:0">'+em+'</span>';
-      html+='<span style="color:#333;line-height:1.4">'+nm+'</span>';
+      html+='<div onclick="window._waInviaTemplate(\''+t.id+'\',\''+phone+'\',\''+orderId+'\')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f2f5;display:flex;align-items:flex-start;gap:8px" onmouseover="this.style.background=\'#f0f9ff\'" onmouseout="this.style.background=\'\'">';
+      html+='<span style="font-size:14px;flex-shrink:0;margin-top:1px">'+em+'</span>';
+      html+='<span style="color:#333;line-height:1.3;font-size:12px;word-break:break-word;overflow-wrap:break-word">'+nm+'</span>';
       html+='</div>';
     });
   }
 
   // Separatore + voce gestione
-  html+='<div onclick="window._waApriGestione()" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;background:#fafbfc;color:#555;font-size:12px" onmouseover="this.style.background=\'#f0f2f5\'" onmouseout="this.style.background=\'#fafbfc\'">';
-  html+='<span>⚙️</span><span>Gestisci template...</span></div>';
+  html+='<div onclick="window._waApriGestione()" style="padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;background:#fafbfc;color:#555;font-size:11px" onmouseover="this.style.background=\'#f0f2f5\'" onmouseout="this.style.background=\'#fafbfc\'">';
+  html+='<span style="font-size:13px">⚙️</span><span>Gestisci template...</span></div>';
 
   menu.innerHTML=html;
   document.body.appendChild(menu);
@@ -13200,7 +13200,7 @@ window.waButtonHtml=function(orderId, phone){
 window._waApriChat=function(phone, orderId){
   var menu=document.getElementById('wa-dropdown');
   if(menu)menu.remove();
-  window.open('https://web.whatsapp.com/send?phone=39'+phone,'_blank');
+  window.open('https://wa.me/39'+phone,'_blank');
 };
 
 // Invia un template specifico
@@ -13213,7 +13213,7 @@ window._waInviaTemplate=async function(templateId, phone, orderId){
   var ctx=waBuildContext(order, orderId);
   var testo=waRenderTemplate(tpl.testo||'', ctx);
   // Apri WhatsApp Web con messaggio precompilato
-  var url='https://web.whatsapp.com/send?phone=39'+phone+'&text='+encodeURIComponent(testo);
+  var url='https://wa.me/39'+phone+'?text='+encodeURIComponent(testo);
   window.open(url,'_blank');
   // Log invio
   var entry={
