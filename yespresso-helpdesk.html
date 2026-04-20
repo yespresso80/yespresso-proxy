@@ -13132,13 +13132,23 @@ function waOpenMenu(orderId, phone, anchorEl){
   var rect=anchorEl.getBoundingClientRect();
   var menu=document.createElement('div');
   menu.id='wa-dropdown';
-  menu.style.cssText='position:fixed;z-index:100000;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);min-width:280px;max-width:340px;max-height:70vh;overflow-y:auto;font-family:inherit;font-size:13px';
+  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);min-width:280px;width:320px;max-height:70vh;overflow-y:auto;font-family:inherit;font-size:13px';
 
-  // Posizionamento: sotto all'anchor, ma se non ci sta verso l'alto
+  // Posizionamento intelligente:
+  // - preferenza: sotto l'anchor, allineato a destra (right-aligned)
+  //   perché il bottone WA sta nella sidebar destra degli ordini
+  // - se non c'è spazio sotto, sopra
+  // - se l'anchor è vicino al bordo destro, allinea il menu al bordo destro del viewport con margine
+  var WMENU=320, HMENU=420, MARG=10;
   var top=rect.bottom+6;
-  var left=rect.left;
-  if(top+400>window.innerHeight)top=Math.max(20,rect.top-400);
-  if(left+320>window.innerWidth)left=window.innerWidth-330;
+  if(top+HMENU>window.innerHeight-MARG) top=Math.max(MARG, rect.top-HMENU-6);
+  // Posiziona il menu in modo che il suo bordo DESTRO coincida col bordo destro dell'anchor
+  var left=rect.right-WMENU;
+  // Se va fuori a sinistra (anchor piccolo vicino al bordo sinistro), allinea a sinistra dell'anchor
+  if(left<MARG) left=Math.min(rect.left, window.innerWidth-WMENU-MARG);
+  // Se comunque esce a destra, forza dentro il viewport
+  if(left+WMENU>window.innerWidth-MARG) left=window.innerWidth-WMENU-MARG;
+  if(left<MARG) left=MARG;
   menu.style.top=top+'px';
   menu.style.left=left+'px';
 
