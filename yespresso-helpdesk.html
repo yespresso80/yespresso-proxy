@@ -13136,19 +13136,25 @@ function waOpenMenu(orderId, phone, anchorEl){
   var rect=anchorEl.getBoundingClientRect();
   var menu=document.createElement('div');
   menu.id='wa-dropdown';
-  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:260px;max-width:260px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
+  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 -8px 24px rgba(0,0,0,.2);width:280px;max-width:280px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
 
-  // Posizionamento intelligente:
-  // - preferenza: sotto l'anchor, allineato a destra (right-aligned)
-  //   perché il bottone WA sta nella sidebar destra degli ordini
-  // - se non c'è spazio sotto, sopra
-  // - se l'anchor è vicino al bordo destro, allinea il menu al bordo destro del viewport con margine
-  var WMENU=260, HMENU=420, MARG=10;
-  var top=rect.bottom+6;
-  if(top+HMENU>window.innerHeight-MARG) top=Math.max(MARG, rect.top-HMENU-6);
-  // Posiziona il menu in modo che il suo bordo DESTRO coincida col bordo destro dell'anchor
+  // ── Posizionamento: il menu si apre SOPRA il bottone ──
+  // Allineato al bordo destro del bottone, espansione verso sinistra
+  var WMENU=280, MARG=10;
+  // Stima altezza: ~40px apri chat + ~42px per ogni template + ~34px gestione
+  var estimatedH=40 + (templates.length*42) + 34 + 4; // +bordi
+  var HMENU=Math.min(estimatedH, Math.floor(window.innerHeight*0.7));
+  // Top: il bordo BASSO del menu coincide con il bordo ALTO del bottone (con un gap di 6px)
+  var top=rect.top-HMENU-6;
+  // Se va fuori dall'alto (menu troppo alto), apri verso il basso
+  if(top<MARG){
+    top=rect.bottom+6;
+    // E se anche sotto non ci sta, fissa in alto con margine
+    if(top+HMENU>window.innerHeight-MARG) top=MARG;
+  }
+  // Left: allineato al bordo destro del bottone
   var left=rect.right-WMENU;
-  // Se va fuori a sinistra (anchor piccolo vicino al bordo sinistro), allinea a sinistra dell'anchor
+  // Se va fuori a sinistra, fallback a rect.left
   if(left<MARG) left=Math.min(rect.left, window.innerWidth-WMENU-MARG);
   // Se comunque esce a destra, forza dentro il viewport
   if(left+WMENU>window.innerWidth-MARG) left=window.innerWidth-WMENU-MARG;
