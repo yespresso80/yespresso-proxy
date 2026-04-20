@@ -1122,38 +1122,53 @@ async function loadTickets(){
     if(window._ticketDaAprire && !window._ticketDaAprireProcessato){
       window._ticketDaAprireProcessato=true;
       var tidDeep=window._ticketDaAprire;
-      // Cerca per shortID OPPURE ID OPPURE id
+      console.log('[DEEP LINK] Parametro ricevuto:',tidDeep);
+
+      // Cerca prima nella lista locale
       var foundT=tickets.find(function(t){
         return t.shortID===tidDeep || t.ID===tidDeep || t.id===tidDeep;
       });
       if(foundT){
-        // selectTicket() cerca in base a t.ID||t.id, quindi passo l'UUID del ticket
         var tidToSelect=foundT.ID||foundT.id||tidDeep;
-        console.log('[DEEP LINK] Apro ticket '+tidDeep+' (shortID='+foundT.shortID+', UUID='+tidToSelect+')');
+        console.log('[DEEP LINK] Trovato in lista (shortID='+foundT.shortID+'), apro ticket');
         setTimeout(function(){selectTicket(tidToSelect);},300);
       } else {
-        // Ticket non in lista locale → lo carico dall'API
-        // L'API HelpDesk accetta sia shortID che UUID nel path /v1/tickets/{id}
-        console.log('[DEEP LINK] Ticket '+tidDeep+' non in lista, fetch da API...');
+        // Non in lista locale. Popola la barra di ricerca col codice
+        // così l'utente vede subito il ticket filtrato e può cliccarlo.
+        console.log('[DEEP LINK] Non in lista, popolo barra di ricerca con:',tidDeep);
+        var searchInput=document.getElementById('sidebar-search');
+        if(searchInput){
+          searchInput.value=tidDeep;
+          if(typeof applySearch==='function'){
+            applySearch(); // triggera la ricerca API su HelpDesk
+          }
+          // Scroll della barra in vista per feedback visivo
+          searchInput.scrollIntoView({behavior:'smooth',block:'center'});
+          // Banner informativo
+          var banner=document.createElement('div');
+          banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#dbeafe;border:1.5px solid #60a5fa;border-radius:10px;padding:12px 20px;font-size:13px;color:#1e40af;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+          banner.innerHTML='🔍 Ricerca in corso per <b>'+tidDeep+'</b>. Clicca sul ticket nella lista per aprirlo. <button onclick="this.parentNode.remove()" style="background:none;border:none;cursor:pointer;margin-left:10px;color:#1e40af">✕</button>';
+          document.body.appendChild(banner);
+          setTimeout(function(){if(banner.parentNode)banner.remove();},8000);
+        }
+        // In parallelo, tenta anche fetch API diretto per aprire subito se trovato
         (async function(){
           try{
             var fullT=await hdFetch('/v1/tickets/'+encodeURIComponent(tidDeep));
             if(fullT && (fullT.ID||fullT.id)){
-              console.log('[DEEP LINK] Ticket trovato via API (shortID='+(fullT.shortID||'')+'), lo inserisco in lista');
-              tickets.unshift(fullT);
-              renderTable();
+              console.log('[DEEP LINK] API ha risposto (shortID='+(fullT.shortID||'')+'), apro il ticket');
+              // Controllo se il ticket è già in lista (potrebbe essere arrivato nel frattempo)
+              var already=tickets.find(function(t){return (t.ID||t.id)===(fullT.ID||fullT.id);});
+              if(!already){
+                tickets.unshift(fullT);
+                renderTable();
+              }
               var tidToSelect=fullT.ID||fullT.id;
-              setTimeout(function(){selectTicket(tidToSelect);},200);
-            } else {
-              throw new Error('Ticket non restituito dall\'API');
+              setTimeout(function(){selectTicket(tidToSelect);},300);
             }
           }catch(apiErr){
-            console.error('[DEEP LINK] Errore fetch ticket:',apiErr);
-            var banner=document.createElement('div');
-            banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 20px;font-size:13px;color:#92400e;box-shadow:0 4px 12px rgba(0,0,0,.15)';
-            banner.innerHTML='⚠ Ticket <b>'+tidDeep+'</b> non trovato. Potrebbe essere stato chiuso o eliminato. <button onclick="this.parentNode.remove()" style="background:none;border:none;cursor:pointer;margin-left:10px;color:#92400e">✕</button>';
-            document.body.appendChild(banner);
-            setTimeout(function(){if(banner.parentNode)banner.remove();},8000);
+            // Silenzioso: la barra di ricerca è già stata popolata, l'utente vedrà i risultati
+            console.log('[DEEP LINK] Fetch API fallita, ma ricerca popolata:',apiErr.message);
           }
         })();
       }

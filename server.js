@@ -44,25 +44,25 @@ const DEFAULT_WA_TEMPLATES = [
     id: 'tpl_stato_spedizione',
     nome: 'Stato spedizione',
     emoji: '🚚',
-    testo: 'Ciao {nome}, ecco l\'aggiornamento sulla spedizione del tuo ordine {ordine}:\n\n{if_tracking}📍 Tracking BRT: {link_tracking}{/if_tracking}\n{if_fermopoint}📍 Punto di ritiro:\n{punto_ritiro}{/if_fermopoint}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+    testo: 'Ciao {nome}, ecco l\'aggiornamento sulla spedizione del tuo ordine {ordine}:\n\n{if_tracking}📍 Tracking BRT: {link_tracking}{/if_tracking}\n{if_fermopoint}📍 Punto di ritiro:\n{punto_ritiro}{/if_fermopoint}\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
   },
   {
     id: 'tpl_rispedito_corretto',
     nome: 'Rispedito prodotto corretto',
     emoji: '🔄',
-    testo: 'Ciao {nome}, abbiamo appena rispedito il prodotto corretto per l\'ordine {ordine}.\n\n{if_tracking}Puoi seguire la nuova spedizione qui: {link_tracking}{/if_tracking}\n\nLa consegna è prevista nei prossimi 2-3 giorni lavorativi.\nCi scusiamo ancora per il disguido.\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+    testo: 'Ciao {nome}, abbiamo appena rispedito il prodotto corretto per l\'ordine {ordine}.\n\n{if_tracking}Puoi seguire la nuova spedizione qui: {link_tracking}{/if_tracking}\n\nLa consegna è prevista nei prossimi 2-3 giorni lavorativi.\nCi scusiamo ancora per il disguido.\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
   },
   {
     id: 'tpl_prenotato_ritiro',
     nome: 'Prenotato ritiro BRT',
     emoji: '📮',
-    testo: 'Ciao {nome}, abbiamo prenotato il ritiro BRT per l\'ordine {ordine}.\n\nIl corriere passerà nei prossimi giorni lavorativi all\'indirizzo da te indicato. Ti chiediamo di:\n• Avere il pacco già pronto e sigillato\n• Applicare l\'etichetta di reso (se fornita)\n• Attendere il passaggio del corriere\n\n{if_tracking}Riferimento ritiro: {tracking}{/if_tracking}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+    testo: 'Ciao {nome}, abbiamo prenotato il ritiro BRT per l\'ordine {ordine}.\n\nIl corriere passerà nei prossimi giorni lavorativi all\'indirizzo da te indicato. Ti chiediamo di:\n• Avere il pacco già pronto e sigillato\n• Applicare l\'etichetta di reso (se fornita)\n• Attendere il passaggio del corriere\n\n{if_tracking}Riferimento ritiro: {tracking}{/if_tracking}\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
   },
   {
     id: 'tpl_punto_ritiro',
     nome: 'Punto di ritiro',
     emoji: '📍',
-    testo: 'Ciao {nome}, il tuo pacco {ordine} è disponibile presso il seguente punto di ritiro:\n\n{punto_ritiro}\n\n{if_tracking}Puoi verificare i dettagli della spedizione qui: {link_tracking}{/if_tracking}\n\nTi chiediamo di ritirarlo entro la data di scadenza indicata, portando con te un documento d\'identità.\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+    testo: 'Ciao {nome}, il tuo pacco {ordine} è disponibile presso il seguente punto di ritiro:\n\n{punto_ritiro}\n\n{if_tracking}Puoi verificare i dettagli della spedizione qui: {link_tracking}{/if_tracking}\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nTi chiediamo di ritirarlo entro la data di scadenza indicata, portando con te un documento d\'identità.\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
   }
 ];
 
