@@ -13136,29 +13136,32 @@ function waOpenMenu(orderId, phone, anchorEl){
   var rect=anchorEl.getBoundingClientRect();
   var menu=document.createElement('div');
   menu.id='wa-dropdown';
-  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 -8px 24px rgba(0,0,0,.2);width:280px;max-width:280px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
+  menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);width:280px;max-width:280px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
 
-  // ── Posizionamento: il menu si apre SOPRA il bottone ──
-  // Allineato al bordo destro del bottone, espansione verso sinistra
-  var WMENU=280, MARG=10;
-  // Stima altezza: ~40px apri chat + ~42px per ogni template + ~34px gestione
-  var estimatedH=40 + (templates.length*42) + 34 + 4; // +bordi
+  // ── Posizionamento: forza il menu SEMPRE dentro il viewport ──
+  var WMENU=280, MARG=12;
+  // Calcola altezza stimata
+  var estimatedH=40 + (templates.length*42) + 34 + 4;
   var HMENU=Math.min(estimatedH, Math.floor(window.innerHeight*0.7));
-  // Top: il bordo BASSO del menu coincide con il bordo ALTO del bottone (con un gap di 6px)
-  var top=rect.top-HMENU-6;
-  // Se va fuori dall'alto (menu troppo alto), apri verso il basso
-  if(top<MARG){
+
+  // LEFT: ancorato al bordo destro del viewport con margine fisso
+  // Questo garantisce che il menu sia SEMPRE interamente visibile
+  var left=window.innerWidth-WMENU-MARG;
+  if(left<MARG) left=MARG; // viewport molto piccolo
+
+  // TOP: preferenza sopra il bottone, altrimenti sotto, altrimenti fisso in alto
+  var top;
+  if(rect.top-HMENU-6>=MARG){
+    // c'è spazio sopra il bottone
+    top=rect.top-HMENU-6;
+  } else if(rect.bottom+HMENU+6<=window.innerHeight-MARG){
+    // c'è spazio sotto
     top=rect.bottom+6;
-    // E se anche sotto non ci sta, fissa in alto con margine
-    if(top+HMENU>window.innerHeight-MARG) top=MARG;
+  } else {
+    // non c'è spazio né sopra né sotto: centrato verticalmente sul bottone
+    top=Math.max(MARG, Math.min(rect.top, window.innerHeight-HMENU-MARG));
   }
-  // Left: allineato al bordo destro del bottone
-  var left=rect.right-WMENU;
-  // Se va fuori a sinistra, fallback a rect.left
-  if(left<MARG) left=Math.min(rect.left, window.innerWidth-WMENU-MARG);
-  // Se comunque esce a destra, forza dentro il viewport
-  if(left+WMENU>window.innerWidth-MARG) left=window.innerWidth-WMENU-MARG;
-  if(left<MARG) left=MARG;
+
   menu.style.top=top+'px';
   menu.style.left=left+'px';
 
