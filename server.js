@@ -56,7 +56,7 @@ const DEFAULT_WA_TEMPLATES = [
     id: 'tpl_prenotato_ritiro',
     nome: 'Prenotato ritiro BRT',
     emoji: '📮',
-    testo: 'Ciao {nome}, abbiamo prenotato il ritiro BRT per l\'ordine {ordine}.\n\nIl corriere passerà nei prossimi giorni lavorativi all\'indirizzo da te indicato. Ti chiediamo di:\n• Avere il pacco già pronto e sigillato\n• Applicare l\'etichetta di reso (se fornita)\n• Attendere il passaggio del corriere\n\n{if_tracking}Riferimento ritiro: {tracking}{/if_tracking}\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+    testo: 'Ciao {nome}, abbiamo prenotato il ritiro BRT per l\'ordine {ordine}.\n\nIl corriere passerà nei prossimi giorni lavorativi all\'indirizzo da te indicato. Ti chiediamo di:\n• Avere il pacco già pronto e sigillato\n• Applicare l\'etichetta di reso (se fornita)\n• Attendere il passaggio del corriere\n\n{if_ritiro_brt}N. prenotazione: {ritiro_brt}{/if_ritiro_brt}\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
   },
   {
     id: 'tpl_punto_ritiro',

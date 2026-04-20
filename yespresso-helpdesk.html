@@ -8332,11 +8332,12 @@ function openFilippoPanel(){
       html+='<b>Marketplace:</b> <code>{ordine_amazon}</code> <code>{ordine_temu}</code> <code>{ordine_tiktok}</code> <code>{ordine_marketplace}</code> (auto)<br>';
       html+='<b>Tracking:</b> <code>{tracking}</code> <code>{link_tracking}</code><br>';
       html+='<b>Punto ritiro:</b> <code>{punto_ritiro}</code><br>';
+      html+='<b>Ritiro BRT:</b> <code>{ritiro_brt}</code> (numero prenotazione, estratto dalla nota ordine)<br>';
       html+='<b>Ticket:</b> <code>{ticket}</code> <code>{ticket_hashtag}</code> <code>{link_ticket}</code><br>';
       html+='<b>Blocchi condizionali</b> (compaiono solo se il dato è presente):<br>';
       html+='<code>{if_amazon}...{/if_amazon}</code> <code>{if_temu}...{/if_temu}</code> <code>{if_tiktok}...{/if_tiktok}</code><br>';
       html+='<code>{if_marketplace}...{/if_marketplace}</code> <code>{if_sito}...{/if_sito}</code><br>';
-      html+='<code>{if_ticket}...{/if_ticket}</code> <code>{if_tracking}...{/if_tracking}</code> <code>{if_fermopoint}...{/if_fermopoint}</code>';
+      html+='<code>{if_ticket}...{/if_ticket}</code> <code>{if_tracking}...{/if_tracking}</code> <code>{if_fermopoint}...{/if_fermopoint}</code> <code>{if_ritiro_brt}...{/if_ritiro_brt}</code>';
       html+='</div></details>';
 
       if(templates.length===0){
@@ -12838,6 +12839,13 @@ function waBuildContext(order, orderId){
   var linkTracking=tracking?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspedizione_par.htm&Nspediz='+encodeURIComponent(tracking)):'';
   // Punto ritiro
   var puntoRitiro=((window._fermopointAddrMap||{})[orderId])||'';
+  // Numero prenotazione ritiro BRT (estratto dalla nota ordine dopo la prenotazione)
+  var ritiroBrt='';
+  var orderNote=(order&&order.note)||'';
+  if(orderNote){
+    var rbMatch=orderNote.match(/N\.?\s*prenotazione\s*BRT:?\s*(\d+)/i);
+    if(rbMatch) ritiroBrt=rbMatch[1];
+  }
   // Ticket corrente (se aperto): selectedTicket è variabile LOCALE del file,
   // non su window — quindi la referenziamo direttamente (e fallback a window per sicurezza)
   var _curTkt=(typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
@@ -12858,13 +12866,15 @@ function waBuildContext(order, orderId){
     ordine_amazon:ordineAmazon, ordine_temu:ordineTemu, ordine_tiktok:ordineTiktok, ordine_marketplace:ordineMarketplace,
     tracking:tracking, link_tracking:linkTracking,
     punto_ritiro:puntoRitiro,
+    ritiro_brt:ritiroBrt,
     ticket:tid, ticket_hashtag:ticketHashtag, link_ticket:linkTicket,
     // Flag condizionali
     _if_amazon:!!ordineAmazon, _if_temu:!!ordineTemu, _if_tiktok:!!ordineTiktok,
     _if_marketplace:!!(ordineAmazon||ordineTemu||ordineTiktok),
     _if_sito:canale==='Sito',
     _if_ticket:!!tid, _if_tracking:!!tracking,
-    _if_fermopoint:!!puntoRitiro
+    _if_fermopoint:!!puntoRitiro,
+    _if_ritiro_brt:!!ritiroBrt
   };
 }
 
@@ -12875,7 +12885,7 @@ function waRenderTemplate(testo, ctx){
   console.log('[WA-RENDER] INPUT testo:',testo);
   console.log('[WA-RENDER] context.link_ticket =',ctx.link_ticket,' | context._if_ticket =',ctx._if_ticket);
   // 1. Blocchi condizionali {if_xxx}...{/if_xxx}
-  var BLOCKS=['if_amazon','if_temu','if_tiktok','if_marketplace','if_sito','if_ticket','if_tracking','if_fermopoint'];
+  var BLOCKS=['if_amazon','if_temu','if_tiktok','if_marketplace','if_sito','if_ticket','if_tracking','if_fermopoint','if_ritiro_brt'];
   BLOCKS.forEach(function(bk){
     var re=new RegExp('\\{'+bk+'\\}([\\s\\S]*?)\\{/'+bk+'\\}','g');
     var flag=ctx['_'+bk];
@@ -13761,8 +13771,8 @@ function openBrtPickup(orderId){
       if(result&&result.ormReservationNumber){
         statusEl.style.color="#2a9d60";
         statusEl.textContent="Ritiro prenotato! N. prenotazione: "+result.ormReservationNumber+" - Data: "+(result.collectionDate||collDate);
-        // Nota Shopify — usa numero ordine originale completo
-        var notaRitiro="Effettuato ritiro il "+collDate+" per "+motivo;
+        // Nota Shopify — include numero prenotazione BRT e data
+        var notaRitiro="Effettuato ritiro il "+(result.collectionDate||collDate)+" per "+motivo+" - N. prenotazione BRT: "+result.ormReservationNumber;
         try{
           await proxyFetch(PROXY+"/shopify/orders/"+orderId+".json",{
             method:"PUT",
