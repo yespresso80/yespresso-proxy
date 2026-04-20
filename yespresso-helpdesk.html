@@ -12927,10 +12927,30 @@ window._waOpenMenu=waOpenMenu;
 
 // HTML del bottone WhatsApp con freccetta dropdown (sostituisce il vecchio link semplice)
 window.waButtonHtml=function(orderId, phone){
-  var btnId='wa-btn-'+orderId+'-'+Math.floor(Math.random()*100000);
   var safePhone=String(phone||'').replace(/[^0-9]/g,'');
-  return '<a id="'+btnId+'" href="javascript:void(0)" onclick="event.preventDefault();event.stopPropagation();console.log(\'[WA] click bottone order=\','+JSON.stringify(orderId)+',\'phone=\','+JSON.stringify(safePhone)+');if(typeof window._waOpenMenu===\'function\'){window._waOpenMenu('+JSON.stringify(String(orderId))+','+JSON.stringify(safePhone)+',this);}else{console.error(\'[WA] _waOpenMenu non definito\');}return false;" style="color:#25d366;font-weight:600;text-decoration:none;cursor:pointer">💬 WhatsApp ▾</a>';
+  var safeOrder=String(orderId||'').replace(/[^a-zA-Z0-9_-]/g,'');
+  // Uso data-attributes + event delegation globale per evitare problemi di escaping
+  return '<a href="javascript:void(0)" class="wa-btn-trigger" data-wa-order="'+safeOrder+'" data-wa-phone="'+safePhone+'" style="color:#25d366;font-weight:600;text-decoration:none;cursor:pointer">💬 WhatsApp ▾</a>';
 };
+
+// Event delegation globale: intercetta click sui bottoni WA ovunque siano
+if(!window._waDelegationInstalled){
+  window._waDelegationInstalled=true;
+  document.addEventListener('click',function(ev){
+    var trigger=ev.target.closest&&ev.target.closest('.wa-btn-trigger');
+    if(!trigger)return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var orderId=trigger.getAttribute('data-wa-order');
+    var phone=trigger.getAttribute('data-wa-phone');
+    console.log('[WA] click bottone order=',orderId,'phone=',phone);
+    if(typeof window._waOpenMenu==='function'){
+      window._waOpenMenu(orderId, phone, trigger);
+    } else {
+      console.error('[WA] _waOpenMenu non definito');
+    }
+  }, true); // capture:true per intercettare prima di altri handler
+}
 
 // Apre chat senza messaggio
 window._waApriChat=function(phone, orderId){
