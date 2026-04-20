@@ -672,6 +672,42 @@ const AVATAR_COLORS = ["#e53935","#1e88e5","#43a047","#8e24aa","#fb8c00","#00897
 let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="", selectedTicketIds=new Set();
 let agentsList=[], tagsList=[];
 
+// ═══════════════════════════════════════════════════════════════════════
+// WHATSAPP: EVENT DELEGATION INSTALLATO SUBITO (prima di qualsiasi altra cosa)
+// Questo garantisce che anche se poi ci sono errori nel codice sottostante,
+// il click sul bottone WA viene comunque intercettato.
+// ═══════════════════════════════════════════════════════════════════════
+(function(){
+  if(window._waDelegationInstalled)return;
+  window._waDelegationInstalled=true;
+  document.addEventListener('click',function(ev){
+    try{
+      var el=ev.target;
+      if(!el)return;
+      if(el.nodeType===3) el=el.parentElement;
+      if(!el||typeof el.closest!=='function')return;
+      var trigger=el.closest('.wa-btn-trigger');
+      if(!trigger)return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var orderId=trigger.getAttribute('data-wa-order');
+      var phone=trigger.getAttribute('data-wa-phone');
+      console.log('[WA-BOOT] click bottone order=',orderId,'phone=',phone);
+      if(typeof window._waOpenMenu==='function'){
+        window._waOpenMenu(orderId, phone, trigger);
+      } else {
+        // Fallback: se _waOpenMenu non è ancora pronto, apri almeno chat vuota
+        console.warn('[WA-BOOT] _waOpenMenu non disponibile, apro chat vuota');
+        var num=String(phone||'').replace(/[^0-9]/g,'');
+        if(num) window.open('https://wa.me/39'+num,'_blank');
+      }
+    }catch(err){
+      console.error('[WA-BOOT] Errore nel click handler:',err);
+    }
+  }, true);
+  console.log('[WA-BOOT] Event delegation installato');
+})();
+
 
 
 function openAgentEditor(){
@@ -12785,9 +12821,16 @@ function waBuildContext(order, orderId){
   // Ticket corrente (se aperto): selectedTicket è variabile LOCALE del file,
   // non su window — quindi la referenziamo direttamente (e fallback a window per sicurezza)
   var _curTkt=(typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
-  var tid=(_curTkt&&(_curTkt.ID||_curTkt.id))||'';
-  var linkTicket=tid?('https://yespresso-proxy.onrender.com/?ticket='+encodeURIComponent(tid)):'';
+  // Preferisco sempre il codice breve (ID maiuscolo, es. "EL7OMP") all'UUID (id minuscolo).
+  // Il codice breve è quello usato dall'UI di HelpDesk per i link pubblici.
+  var tidBreve=_curTkt?(_curTkt.ID||''):'';
+  var tidUuid=_curTkt?(_curTkt.id||''):'';
+  var tid=tidBreve||tidUuid;
+  // Per il LINK usiamo preferibilmente il codice breve (più leggibile, più corto)
+  var tidPerLink=tidBreve||tidUuid;
+  var linkTicket=tidPerLink?('https://yespresso-proxy.onrender.com/?ticket='+encodeURIComponent(tidPerLink)):'';
   var ticketHashtag=tid?('#'+tid):'';
+  if(_curTkt) console.log('[WA] ticket corrente: ID(breve)=',tidBreve,'id(uuid)=',tidUuid,'-> uso per link:',tidPerLink);
 
   return {
     nome:nomePrimo, nome_completo:nomeCompleto,
@@ -12960,36 +13003,7 @@ window.waButtonHtml=function(orderId, phone){
   return '<a href="javascript:void(0)" class="wa-btn-trigger" data-wa-order="'+safeOrder+'" data-wa-phone="'+safePhone+'" style="color:#25d366;font-weight:600;text-decoration:none;cursor:pointer">💬 WhatsApp ▾</a>';
 };
 
-// Event delegation globale: intercetta click sui bottoni WA ovunque siano
-// Installato subito (lo script è in fondo al body quindi document è pronto)
-(function installWaDelegation(){
-  if(window._waDelegationInstalled)return;
-  window._waDelegationInstalled=true;
-  document.addEventListener('click',function(ev){
-    try{
-      // Ricerca robusta dell'elemento trigger (ev.target potrebbe essere text node)
-      var el=ev.target;
-      if(!el||el.nodeType===3)el=el.parentElement;
-      if(!el||typeof el.closest!=='function')return;
-      var trigger=el.closest('.wa-btn-trigger');
-      if(!trigger)return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      var orderId=trigger.getAttribute('data-wa-order');
-      var phone=trigger.getAttribute('data-wa-phone');
-      console.log('[WA] click bottone order=',orderId,'phone=',phone);
-      if(typeof window._waOpenMenu==='function'){
-        window._waOpenMenu(orderId, phone, trigger);
-      } else {
-        console.error('[WA] _waOpenMenu non definito');
-        alert('Errore WhatsApp: menu non disponibile. Ricarica la pagina.');
-      }
-    }catch(err){
-      console.error('[WA] Errore click handler:',err);
-    }
-  }, true);
-  console.log('[WA] Event delegation installato');
-})();
+// Event delegation WhatsApp: già installato in cima allo script (subito dopo le dichiarazioni base).
 
 // Apre chat senza messaggio
 window._waApriChat=function(phone, orderId){
