@@ -672,6 +672,285 @@ const AVATAR_COLORS = ["#e53935","#1e88e5","#43a047","#8e24aa","#fb8c00","#00897
 let tickets=[], selectedTicket=null, sentTickets=new Set(), currentView="tohandle", searchQuery="", selectedTicketIds=new Set();
 let agentsList=[], tagsList=[];
 
+// ══════════════════════════════════════════════════════════════════════════
+// MODULO WHATSAPP — template, resolver placeholder, menu dropdown, log invii
+// ══════════════════════════════════════════════════════════════════════════
+window._waTemplates = null;   // cache template (caricati lazy da /whatsapp-templates)
+window._waLog = null;         // cache log invii (caricati lazy da /whatsapp-log)
+window._waLogSet = new Set(); // set di ticket_id con invio WhatsApp recente (<48h)
+
+// Carica template (una sola volta)
+async function waLoadTemplates(){
+  if(window._waTemplates) return window._waTemplates;
+  try{
+    const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    const r=await fetch(PROXY+'/whatsapp-templates');
+    const data=await r.json();
+    if(Array.isArray(data) && data.length>0){
+      window._waTemplates=data;
+    } else {
+      window._waTemplates=[];
+    }
+  }catch(e){
+    console.error('[WA] load templates error:',e);
+    window._waTemplates=[];
+  }
+  return window._waTemplates;
+}
+
+// Salva template
+async function waSaveTemplates(templates){
+  const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+  await fetch(PROXY+'/whatsapp-templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templates:templates})});
+  window._waTemplates=templates;
+}
+
+// Carica log invii (una sola volta)
+async function waLoadLog(){
+  if(window._waLog) return window._waLog;
+  try{
+    const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    const r=await fetch(PROXY+'/whatsapp-log');
+    const data=await r.json();
+    window._waLog = Array.isArray(data) ? data : [];
+    // Popola set di ticket con invio < 48h
+    var cutoff = Date.now() - 48*3600*1000;
+    window._waLogSet = new Set();
+    window._waLog.forEach(function(e){
+      if(e.ts && new Date(e.ts).getTime() > cutoff && e.ticket){
+        window._waLogSet.add(e.ticket);
+      }
+    });
+  }catch(e){
+    console.error('[WA] load log error:',e);
+    window._waLog=[];
+    window._waLogSet=new Set();
+  }
+  return window._waLog;
+}
+
+// Registra invio (log)
+async function waLogInvio(ticket_id, ordine, template_id, template_nome){
+  const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+  var entry = {
+    ticket: ticket_id||'',
+    ordine: ordine||'',
+    template_id: template_id||'',
+    template_nome: template_nome||'',
+    ts: new Date().toISOString(),
+    agente: (window._hdAgente||'')
+  };
+  // Aggiorna cache locale
+  if(!window._waLog) window._waLog = [];
+  window._waLog.push(entry);
+  if(ticket_id) window._waLogSet.add(ticket_id);
+  // Salva su server (fire-and-forget)
+  try{
+    await fetch(PROXY+'/whatsapp-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entry:entry})});
+  }catch(e){ console.error('[WA] log invio error:',e); }
+}
+
+// Costruisce i dati ordine per il resolver dei placeholder
+function waBuildContextDatiOrdine(orderId){
+  var ctx = {
+    nome: '', nome_completo: '', ordine: '', canale: '',
+    ordine_amazon: '', ordine_temu: '', ordine_tiktok: '', ordine_marketplace: '',
+    tracking: '', link_tracking: '',
+    punto_ritiro: '',
+    ticket: '', ticket_hashtag: '', link_ticket: ''
+  };
+  // Dati da _brtPickupData (popolato in sidebar)
+  var bpd = (window._brtPickupData||{})[orderId] || {};
+  ctx.tracking = bpd.tn || '';
+  if(ctx.tracking) ctx.link_tracking = 'https://vas.brt.it/vas/sped_det_show.htm?referer=sped_numero.htm&Nspediz='+ctx.tracking;
+  if(bpd.name){
+    ctx.nome_completo = bpd.name.trim();
+    ctx.nome = ctx.nome_completo.split(/\s+/)[0] || '';
+  }
+  ctx.ordine = bpd.orderName || '';
+  // Dati da order completo (se in cache)
+  var order = (window._temuOrderData||{})[orderId] || null;
+  if(!order && window._lastShopifyOrder && window._lastShopifyOrder.id===orderId) order = window._lastShopifyOrder;
+  if(order){
+    if(!ctx.ordine) ctx.ordine = order.name || ('#'+(order.order_number||''));
+    // Marketplace IDs da note_attributes
+    var attrs = order.note_attributes || [];
+    var amzAttr = attrs.find(function(a){return a.name==='Amazon Order Id';});
+    var temuAttr = attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id','order_id','Marketplace Order Id'].indexOf(a.name)>=0;});
+    var ttAttr = attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value && a.value.length>10;});
+    ctx.ordine_amazon = amzAttr ? amzAttr.value : '';
+    ctx.ordine_temu = temuAttr ? temuAttr.value : '';
+    ctx.ordine_tiktok = ttAttr ? ttAttr.value : '';
+    // Determina canale
+    if(ctx.ordine_amazon){ ctx.canale='Amazon'; ctx.ordine_marketplace=ctx.ordine_amazon; }
+    else if(ctx.ordine_temu){ ctx.canale='Temu'; ctx.ordine_marketplace=ctx.ordine_temu; }
+    else if(ctx.ordine_tiktok){ ctx.canale='TikTok'; ctx.ordine_marketplace=ctx.ordine_tiktok; }
+    else { ctx.canale='Sito'; ctx.ordine_marketplace=''; }
+  } else {
+    ctx.canale='Sito';
+  }
+  // Punto di ritiro (da _fermopointAddrMap se presente)
+  var fpAddr = (window._fermopointAddrMap||{})[orderId] || '';
+  ctx.punto_ritiro = fpAddr;
+  // Ticket corrente
+  if(selectedTicket){
+    var tid = selectedTicket.ID || selectedTicket.id;
+    if(tid){
+      ctx.ticket = tid;
+      ctx.ticket_hashtag = '#'+tid;
+      ctx.link_ticket = 'https://yespresso-proxy.onrender.com/?ticket='+encodeURIComponent(tid);
+    }
+  }
+  return ctx;
+}
+
+// Risolve placeholder e blocchi condizionali in un template
+function waResolveTemplate(testo, ctx){
+  if(!testo) return '';
+  var out = testo;
+
+  // 1. Blocchi condizionali {if_XXX}...{/if_XXX}
+  //    Regole: blocchi rimossi se la condizione è falsa, altrimenti contenuto mantenuto
+  var condizioni = {
+    if_amazon:      !!ctx.ordine_amazon,
+    if_temu:        !!ctx.ordine_temu,
+    if_tiktok:      !!ctx.ordine_tiktok,
+    if_marketplace: !!(ctx.ordine_amazon||ctx.ordine_temu||ctx.ordine_tiktok),
+    if_sito:        !(ctx.ordine_amazon||ctx.ordine_temu||ctx.ordine_tiktok),
+    if_ticket:      !!ctx.ticket,
+    if_tracking:    !!ctx.tracking,
+    if_fermopoint:  !!ctx.punto_ritiro
+  };
+  Object.keys(condizioni).forEach(function(cond){
+    var re = new RegExp('\\{'+cond+'\\}([\\s\\S]*?)\\{/'+cond+'\\}','g');
+    out = out.replace(re, condizioni[cond] ? '$1' : '');
+  });
+
+  // 2. Placeholder semplici
+  Object.keys(ctx).forEach(function(k){
+    var re = new RegExp('\\{'+k+'\\}','g');
+    out = out.replace(re, ctx[k]||'');
+  });
+
+  // 3. Rimuovi eventuali placeholder rimasti non risolti (es. {xxxx})
+  out = out.replace(/\{[a-z_]+\}/g,'');
+
+  // 4. Pulizia: righe vuote consecutive → massimo una riga vuota
+  out = out.replace(/\n{3,}/g,'\n\n').trim();
+
+  return out;
+}
+
+// Apre WhatsApp con telefono + messaggio (o chat vuota se msg='')
+function waOpenChat(phone, msg){
+  if(!phone) return;
+  var num = String(phone).replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
+  var url = 'https://web.whatsapp.com/send?phone=39'+num;
+  if(msg) url += '&text='+encodeURIComponent(msg);
+  window.open(url,'_blank');
+}
+
+// Apre menu dropdown WhatsApp (costruisce HTML e lo mostra sotto il pulsante)
+async function waOpenMenu(evt, orderId, phone){
+  evt.preventDefault(); evt.stopPropagation();
+  var templates = await waLoadTemplates();
+  // Chiudi eventuali menu già aperti
+  var existing=document.getElementById('wa-menu-popup');
+  if(existing){ existing.remove(); return; }
+
+  var menu=document.createElement('div');
+  menu.id='wa-menu-popup';
+  menu.style.cssText='position:fixed;z-index:99999;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);min-width:280px;max-width:340px;padding:4px 0;font-family:inherit;font-size:13px';
+  var html='';
+  // Voce 1: Apri chat vuota
+  html+='<div class="wa-menu-item" data-action="open-empty" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;color:#333;border-bottom:1px solid #f0f2f5"><span style="font-size:16px">👁</span>Apri chat (senza messaggio)</div>';
+  // Voce separatore
+  if(templates.length>0){
+    html+='<div style="padding:6px 14px;font-size:10px;color:#999;font-weight:700;text-transform:uppercase;background:#f8f9fc">Template</div>';
+    templates.forEach(function(t){
+      var emo = t.emoji ? '<span style="font-size:15px">'+t.emoji+'</span>' : '<span style="font-size:15px">💬</span>';
+      html+='<div class="wa-menu-item" data-action="tpl" data-tpl-id="'+t.id+'" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;color:#333">'+emo+'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(t.nome||'Template senza nome')+'</span></div>';
+    });
+  }
+  // Voce "gestisci template"
+  html+='<div class="wa-menu-item" data-action="manage" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;color:#555;border-top:1px solid #f0f2f5;font-size:12px"><span style="font-size:14px">⚙️</span>Gestisci template...</div>';
+  menu.innerHTML=html;
+
+  // Posizionamento rispetto al click (sotto il pulsante)
+  var rect = (evt.currentTarget||evt.target).getBoundingClientRect();
+  menu.style.top = (rect.bottom+4) + 'px';
+  menu.style.left = Math.min(window.innerWidth-340, Math.max(10, rect.left)) + 'px';
+  document.body.appendChild(menu);
+
+  // Hover effect
+  menu.querySelectorAll('.wa-menu-item').forEach(function(el){
+    el.onmouseover = function(){ el.style.background='#f0f7ff'; };
+    el.onmouseout = function(){ el.style.background='#fff'; };
+  });
+
+  // Click su voce
+  menu.onclick = async function(e){
+    var el = e.target.closest('.wa-menu-item');
+    if(!el) return;
+    var action = el.getAttribute('data-action');
+    menu.remove();
+    if(action==='open-empty'){
+      waOpenChat(phone, '');
+      return;
+    }
+    if(action==='manage'){
+      // Apre pannello Filippo → Template WhatsApp
+      if(typeof openFilippoPanel==='function'){
+        openFilippoPanel('whatsapp_templates');
+      } else {
+        alert('Pannello Filippo non disponibile in questa vista.');
+      }
+      return;
+    }
+    if(action==='tpl'){
+      var tid = el.getAttribute('data-tpl-id');
+      var t = templates.find(function(x){return x.id===tid;});
+      if(!t){ return; }
+      var ctx = waBuildContextDatiOrdine(orderId);
+      var msg = waResolveTemplate(t.testo||'', ctx);
+      if(!msg){ alert('Il template risulta vuoto dopo la risoluzione dei placeholder.'); return; }
+      waOpenChat(phone, msg);
+      // Log invio
+      var ticketId = selectedTicket ? (selectedTicket.ID||selectedTicket.id) : '';
+      waLogInvio(ticketId, ctx.ordine, t.id, t.nome);
+      return;
+    }
+  };
+
+  // Chiudi cliccando fuori
+  setTimeout(function(){
+    document.addEventListener('click', function closeMenu(e){
+      if(!menu.contains(e.target)){
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    });
+  }, 10);
+}
+window.waOpenMenu = waOpenMenu;
+window.waOpenChat = waOpenChat;
+
+// Helper: genera HTML del pulsante WhatsApp con dropdown per orderId
+// Restituisce la stringa HTML (senza <br>) da iniettare nelle sidebar
+function waButtonHtml(orderId, phone){
+  if(!phone) return '';
+  var btnId='wa-btn-'+orderId+'-'+Math.random().toString(36).substring(2,8);
+  return '<a href="#" onclick="window.waOpenMenu(event,\''+orderId+'\',\''+String(phone).replace(/\'/g,"")+'\')" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp ▾</a>';
+}
+window.waButtonHtml = waButtonHtml;
+
+// Carica log all'avvio (background, non blocca)
+setTimeout(function(){ waLoadLog(); }, 500);
+
+// ══════════════════════════════════════════════════════════════════════════
+// FINE MODULO WHATSAPP
+// ══════════════════════════════════════════════════════════════════════════
+
 
 function openAgentEditor(){
   if(!selectedTicket)return;
@@ -1079,6 +1358,26 @@ async function loadTickets(){
     currentPage=1;
     updateBadges();
     renderTable();
+
+    // ── DEEP LINK TICKET: apre automaticamente un ticket se presente ?ticket=XXX ──
+    if(window._ticketDaAprire && !window._ticketDaAprireProcessato){
+      window._ticketDaAprireProcessato=true;
+      var tidDeep=window._ticketDaAprire;
+      var foundT=tickets.find(function(t){return (t.ID||t.id)===tidDeep;});
+      if(foundT){
+        console.log('[DEEP LINK] Apro ticket '+tidDeep+' da URL');
+        setTimeout(function(){selectTicket(tidDeep);},300);
+      } else {
+        console.log('[DEEP LINK] Ticket '+tidDeep+' non trovato nella lista corrente');
+        // Banner informativo
+        var banner=document.createElement('div');
+        banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 20px;font-size:13px;color:#92400e;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+        banner.innerHTML='⚠ Ticket <b>'+tidDeep+'</b> non trovato nella lista. Cambia filtro o vista per trovarlo. <button onclick="this.parentNode.remove()" style="background:none;border:none;cursor:pointer;margin-left:10px;color:#92400e">✕</button>';
+        document.body.appendChild(banner);
+        setTimeout(function(){if(banner.parentNode)banner.remove();},8000);
+      }
+    }
+
     const now=new Date().toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});
     countEl.textContent=(tickets.length)+" ticket · aggiornato "+now;
 
@@ -1461,12 +1760,22 @@ function renderTable(){
         : _isProcessed
           ? '<span title="Risolto automaticamente dall\'AI" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#16a34a;margin-left:5px;vertical-align:middle;flex-shrink:0"></span>'
           : '';
+    // Icona WA se c'è invio recente < 48h per questo ticket
+    var _waRecent=(typeof waTicketHasRecent==='function')?waTicketHasRecent(tid):null;
+    var _waIcon='';
+    if(_waRecent){
+      var _waDate=new Date(_waRecent.ts);
+      var _hoursAgo=Math.floor((Date.now()-_waDate.getTime())/(1000*60*60));
+      var _waWhen=_hoursAgo<1?'poco fa':_hoursAgo===1?'1h fa':_hoursAgo+'h fa';
+      var _waTip='WhatsApp: '+(_waRecent.template_nome||'Template')+' ('+_waWhen+')';
+      _waIcon=' <span title="'+_waTip.replace(/"/g,'&quot;')+'" style="color:#25d366;font-size:11px;margin-left:2px">💬</span>';
+    }
     return `<div class="ticket-row${isActive?" active":""}" onclick="selectTicket('${tid}')">
       <div class="tr-check"><input type="checkbox" ${selectedTicketIds.has(tid)?"checked":""} onclick="event.stopPropagation();toggleBulkSelect('${tid}',this)"/></div>
       <div class="tr-requester">
         <div class="tr-avatar" style="background:${avatarColor(name)}">${initials(name)}</div>
         <div class="tr-req-info">
-          <div class="tr-req-name" style="display:flex;align-items:center">${name}${isSent?' <span style="color:#2a9d60;font-size:10px">✓</span>':""}${_actionDot}</div>
+          <div class="tr-req-name" style="display:flex;align-items:center">${name}${isSent?' <span style="color:#2a9d60;font-size:10px">✓</span>':""}${_actionDot}${_waIcon}</div>
           <div class="tr-req-email">${email}</div>
         </div>
       </div>
@@ -1927,7 +2236,7 @@ async function selectTicket(tid){
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
       const _waPhone=(window._brtPickupData[order.id]&&window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
-      if(_waPhone) html2+='<br><a href="https://web.whatsapp.com/send?phone=39'+_waPhone+'" target="_blank" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp</a>';
+      if(_waPhone) html2+='<br>'+window.waButtonHtml(order.id, _waPhone);
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
         renderTopProduct(order);
         if(order){window._lastShopifyOrder=order;}
@@ -2044,7 +2353,7 @@ async function selectTicket(tid){
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
       const _waPhone=(window._brtPickupData[order.id]&&window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
-      if(_waPhone) html2+='<br><a href="https://web.whatsapp.com/send?phone=39'+_waPhone+'" target="_blank" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp</a>';
+      if(_waPhone) html2+='<br>'+window.waButtonHtml(order.id, _waPhone);
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
         renderTopProduct(order);
         if(order){window._lastShopifyOrder=order;}
@@ -2321,7 +2630,7 @@ function renderMessageHtml(text, attachments){
         html2+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
         html2+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
       const _waPhone=(window._brtPickupData[order.id]&&window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
-      if(_waPhone) html2+='<br><a href="https://web.whatsapp.com/send?phone=39'+_waPhone+'" target="_blank" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp</a>';
+      if(_waPhone) html2+='<br>'+window.waButtonHtml(order.id, _waPhone);
         oArea.innerHTML='<div class="order-info-box">'+html2+'</div>';
         renderTopProduct(order);
         if(order){window._lastShopifyOrder=order;}
@@ -3669,7 +3978,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       html+='<br><span onclick="openBrtPickup(\''+order.id+'\')" style="color:#c0392b;font-weight:600;cursor:pointer;text-decoration:underline">📦 Prenota Ritiro BRT</span>';
     html+='<br><span onclick="openBrtContact(\''+order.id+'\')" style="color:#1a73e8;font-weight:600;cursor:pointer;text-decoration:underline">📞 Contatta BRT</span>';
       const _waPhone=(window._brtPickupData[order.id]&&window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
-      if(_waPhone) html+='<br><a href="https://web.whatsapp.com/send?phone=39'+_waPhone+'" target="_blank" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp</a>';
+      if(_waPhone) html+='<br>'+window.waButtonHtml(order.id, _waPhone);
     }
     // Credito: mostra solo per clienti sito (non Amazon/Temu/TikTok)
     const isTemuOrAmazonGen=(email||'').includes('temu')||(email||'').includes('marketplace.amazon')||(email||'').includes('tiktok')||(email||'').includes('seller@orders');
@@ -5330,6 +5639,8 @@ function openFilippoPanel(){
     id:'margine_prodotto',label:'💰 Margine Prodotto',periodo:'',custom:true,groups:[]
   },{
     id:'margine_canale',label:'🛒 Margine Canale',periodo:'',custom:true,groups:[]
+  },{
+    id:'whatsapp_templates',label:'💬 Template WhatsApp',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
   var panel=document.createElement('div');
@@ -5406,6 +5717,8 @@ function openFilippoPanel(){
       else if(activeSec.id==='analisi_bilancio') renderAnalisiBilancio(panel);
       else if(activeSec.id==='margine_prodotto') renderMargineProdotto(panel);
       else if(activeSec.id==='margine_canale') renderMargineCanale(panel);
+      else if(activeSec.id==='whatsapp_templates') renderWhatsappTemplates(panel);
+      else if(activeSec.id==='whatsapp_templates') renderWhatsappTemplates(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
@@ -8159,6 +8472,191 @@ function openFilippoPanel(){
     render();
   }
   // ── FINE MARGINE CANALE ──────────────────────────────────────────────────
+
+  // ── TEMPLATE WHATSAPP (pannello CRUD) ───────────────────────────────────
+  async function renderWhatsappTemplates(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca)return;
+    ca.innerHTML='<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento template WhatsApp...</div>';
+    var PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+
+    // Carica templates
+    var templates=[];
+    try{
+      var r=await fetch(PROXY+'/whatsapp-templates');
+      templates=await r.json();
+      if(!Array.isArray(templates))templates=[];
+    }catch(e){templates=[];}
+
+    function saveAll(){
+      return fetch(PROXY+'/whatsapp-templates',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({templates:templates})
+      }).then(function(r){
+        // Aggiorna cache globale
+        window._waTemplates=templates.slice();
+        return r.ok;
+      });
+    }
+
+    function newId(){
+      return 'tpl_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    }
+
+    function showMsg(text, tipo){
+      var colors={'success':{'bg':'#f0fdf4','border':'#86efac','text':'#166534'},'error':{'bg':'#fef2f2','border':'#fca5a5','text':'#991b1b'}};
+      var c=colors[tipo]||colors['success'];
+      var existing=document.getElementById('wa-tpl-msg');
+      if(existing)existing.remove();
+      var banner=document.createElement('div');
+      banner.id='wa-tpl-msg';
+      banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:'+c.bg+';border:1.5px solid '+c.border+';border-radius:10px;padding:10px 18px;font-size:13px;color:'+c.text+';box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:inherit';
+      banner.textContent=text;
+      document.body.appendChild(banner);
+      setTimeout(function(){if(banner.parentNode)banner.remove();},2500);
+    }
+
+    function render(){
+      var html='<div style="max-width:1100px;margin:0 auto">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">';
+      html+='<div><div style="font-size:22px;font-weight:700;color:#1a1a2e">💬 Template WhatsApp</div>';
+      html+='<div style="font-size:12px;color:#777;margin-top:3px">Messaggi pre-impostati disponibili nel menu WhatsApp delle sidebar ordine. I template sono condivisi tra tutti i dispositivi.</div></div>';
+      html+='<button onclick="window._waTplAdd&&window._waTplAdd()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">+ Nuovo template</button>';
+      html+='</div>';
+
+      // Placeholder info card
+      html+='<details style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:12px;color:#0c4a6e">';
+      html+='<summary style="cursor:pointer;font-weight:700">📖 Placeholder disponibili (clicca per espandere)</summary>';
+      html+='<div style="margin-top:10px;line-height:1.8">';
+      html+='<b>Cliente:</b> <code>{nome}</code> <code>{nome_completo}</code><br>';
+      html+='<b>Ordine:</b> <code>{ordine}</code> <code>{canale}</code><br>';
+      html+='<b>Marketplace:</b> <code>{ordine_amazon}</code> <code>{ordine_temu}</code> <code>{ordine_tiktok}</code> <code>{ordine_marketplace}</code> (auto)<br>';
+      html+='<b>Tracking:</b> <code>{tracking}</code> <code>{link_tracking}</code><br>';
+      html+='<b>Punto ritiro:</b> <code>{punto_ritiro}</code><br>';
+      html+='<b>Ticket:</b> <code>{ticket}</code> <code>{ticket_hashtag}</code> <code>{link_ticket}</code><br>';
+      html+='<b>Blocchi condizionali</b> (compaiono solo se il dato è presente):<br>';
+      html+='<code>{if_amazon}...{/if_amazon}</code> <code>{if_temu}...{/if_temu}</code> <code>{if_tiktok}...{/if_tiktok}</code><br>';
+      html+='<code>{if_marketplace}...{/if_marketplace}</code> <code>{if_sito}...{/if_sito}</code><br>';
+      html+='<code>{if_ticket}...{/if_ticket}</code> <code>{if_tracking}...{/if_tracking}</code> <code>{if_fermopoint}...{/if_fermopoint}</code>';
+      html+='</div></details>';
+
+      if(templates.length===0){
+        html+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:30px;text-align:center;color:#92400e">';
+        html+='<div style="font-size:15px;font-weight:700;margin-bottom:8px">Nessun template</div>';
+        html+='<div style="font-size:13px">Clicca "+ Nuovo template" per crearne uno.</div>';
+        html+='</div>';
+        html+='</div>';
+        ca.innerHTML=html;
+        return;
+      }
+
+      // Lista template
+      html+='<div style="display:flex;flex-direction:column;gap:14px">';
+      templates.forEach(function(t,idx){
+        var em=(t.emoji||'💬').replace(/"/g,'&quot;');
+        var nm=(t.nome||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        var tx=(t.testo||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        html+='<div data-idx="'+idx+'" style="background:#fff;border:1px solid #e0e4ea;border-radius:10px;padding:16px 18px">';
+        html+='<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">';
+        html+='<input type="text" value="'+em+'" data-field="emoji" style="width:50px;font-size:18px;text-align:center;border:1px solid #e0e4ea;border-radius:6px;padding:6px;font-family:inherit">';
+        html+='<input type="text" value="'+nm+'" data-field="nome" placeholder="Nome template" style="flex:1;font-size:14px;font-weight:600;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-family:inherit">';
+        html+='<button onclick="window._waTplMoveUp&&window._waTplMoveUp('+idx+')" title="Sposta su" '+(idx===0?'disabled':'')+' style="background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 9px;cursor:pointer;font-size:13px;color:'+(idx===0?'#ccc':'#555')+'">▲</button>';
+        html+='<button onclick="window._waTplMoveDown&&window._waTplMoveDown('+idx+')" title="Sposta giù" '+(idx===templates.length-1?'disabled':'')+' style="background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:6px 9px;cursor:pointer;font-size:13px;color:'+(idx===templates.length-1?'#ccc':'#555')+'">▼</button>';
+        html+='<button onclick="window._waTplDelete&&window._waTplDelete('+idx+')" title="Elimina" style="background:#fff;border:1px solid #fca5a5;border-radius:6px;padding:6px 9px;cursor:pointer;font-size:13px;color:#991b1b">🗑</button>';
+        html+='</div>';
+        html+='<textarea data-field="testo" placeholder="Testo del messaggio con placeholder..." style="width:100%;min-height:140px;font-family:inherit;font-size:12px;border:1px solid #e0e4ea;border-radius:6px;padding:8px 10px;resize:vertical;box-sizing:border-box;line-height:1.5">'+tx+'</textarea>';
+        html+='</div>';
+      });
+      html+='</div>';
+
+      // Pulsante salva globale
+      html+='<div style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px">';
+      html+='<button onclick="window._waTplReload&&window._waTplReload()" style="background:#fff;border:1px solid #e0e4ea;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer">↻ Annulla modifiche</button>';
+      html+='<button onclick="window._waTplSaveAll&&window._waTplSaveAll()" style="background:#0369a1;color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">💾 Salva tutto</button>';
+      html+='</div>';
+
+      html+='</div>';
+      ca.innerHTML=html;
+    }
+
+    // Leggi i valori correnti degli input e aggiorna templates[]
+    function readInputs(){
+      var cards=ca.querySelectorAll('[data-idx]');
+      cards.forEach(function(card){
+        var idx=parseInt(card.getAttribute('data-idx'));
+        var t=templates[idx];
+        if(!t)return;
+        var inps=card.querySelectorAll('[data-field]');
+        inps.forEach(function(inp){
+          var field=inp.getAttribute('data-field');
+          t[field]=inp.value;
+        });
+      });
+    }
+
+    window._waTplAdd=function(){
+      readInputs();
+      templates.push({id:newId(), nome:'Nuovo template', emoji:'💬', testo:'Ciao {nome}, ...'});
+      render();
+    };
+    window._waTplDelete=function(idx){
+      var t=templates[idx];
+      if(!t)return;
+      if(!confirm('Eliminare il template "'+(t.nome||'senza nome')+'"? L\'operazione non è reversibile (a meno di ricaricare la pagina).'))return;
+      readInputs();
+      templates.splice(idx,1);
+      render();
+    };
+    window._waTplMoveUp=function(idx){
+      if(idx===0)return;
+      readInputs();
+      var tmp=templates[idx-1];templates[idx-1]=templates[idx];templates[idx]=tmp;
+      render();
+    };
+    window._waTplMoveDown=function(idx){
+      if(idx>=templates.length-1)return;
+      readInputs();
+      var tmp=templates[idx+1];templates[idx+1]=templates[idx];templates[idx]=tmp;
+      render();
+    };
+    window._waTplReload=async function(){
+      if(!confirm('Annullare tutte le modifiche non salvate?'))return;
+      try{
+        var r=await fetch(PROXY+'/whatsapp-templates');
+        templates=await r.json();
+        if(!Array.isArray(templates))templates=[];
+        render();
+        showMsg('✅ Template ricaricati','success');
+      }catch(e){
+        showMsg('❌ Errore: '+e.message,'error');
+      }
+    };
+    window._waTplSaveAll=async function(){
+      readInputs();
+      // Valida: ogni template deve avere id, nome, testo
+      for(var i=0;i<templates.length;i++){
+        var t=templates[i];
+        if(!t.id)t.id=newId();
+        if(!t.nome||!t.nome.trim()){showMsg('❌ Template #'+(i+1)+': nome mancante','error');return;}
+        if(!t.testo||!t.testo.trim()){showMsg('❌ Template "'+t.nome+'": testo mancante','error');return;}
+        if(!t.emoji)t.emoji='💬';
+      }
+      try{
+        var ok=await saveAll();
+        if(ok){
+          showMsg('✅ Template salvati ('+templates.length+')','success');
+        } else {
+          showMsg('❌ Errore salvataggio','error');
+        }
+      }catch(e){
+        showMsg('❌ Errore: '+e.message,'error');
+      }
+    };
+
+    render();
+  }
+  // ── FINE TEMPLATE WHATSAPP ─────────────────────────────────────────────
 
 
 
@@ -12475,6 +12973,270 @@ loadSolvedExamples();
 loadAgentsAndTags();
 // Sync indicatore auto-risposta all'avvio
 setTimeout(function(){ if(typeof _syncAutoReplyToggle==='function') _syncAutoReplyToggle(); }, 500);
+
+// ═══════════════════════════════════════════════════════════════════════
+// SISTEMA TEMPLATE WHATSAPP
+// ═══════════════════════════════════════════════════════════════════════
+window._waTemplates=[];
+window._waLog=[];
+
+async function loadWaTemplates(){
+  try{
+    const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    const r=await fetch(PROXY+'/whatsapp-templates');
+    const j=await r.json();
+    window._waTemplates=Array.isArray(j)?j:[];
+    console.log('[WA] Caricati '+window._waTemplates.length+' template');
+  }catch(e){
+    console.error('[WA] Errore caricamento template:',e);
+    window._waTemplates=[];
+  }
+}
+async function loadWaLog(){
+  try{
+    const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    const r=await fetch(PROXY+'/whatsapp-log');
+    const j=await r.json();
+    window._waLog=Array.isArray(j)?j:[];
+    console.log('[WA] Caricati '+window._waLog.length+' log invii');
+  }catch(e){
+    console.error('[WA] Errore caricamento log:',e);
+    window._waLog=[];
+  }
+}
+loadWaTemplates();
+loadWaLog();
+
+// Determina canale di un ordine
+function waGetCanale(order){
+  if(!order||!order.note_attributes)return 'Sito';
+  var attrs=order.note_attributes||[];
+  if(attrs.find(function(a){return a.name==='Amazon Order Id';}))return 'Amazon';
+  if(attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id','Marketplace Order Id'].indexOf(a.name)>=0;}))return 'Temu';
+  if(attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0;}))return 'TikTok';
+  return 'Sito';
+}
+
+// Costruisce il contesto (placeholder values) per un ordine + ticket
+function waBuildContext(order, orderId){
+  var bp=(window._brtPickupData||{})[orderId]||{};
+  var canale=waGetCanale(order);
+  // Nome
+  var nomeCompleto=bp.name||'';
+  var nomePrimo=nomeCompleto.split(' ')[0]||'';
+  // Ordine Shopify
+  var ordineNum=bp.orderName||'';
+  // Marketplace IDs
+  var attrs=(order&&order.note_attributes)||[];
+  var amzAttr=attrs.find(function(a){return a.name==='Amazon Order Id';});
+  var temuAttr=attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id','Marketplace Order Id'].indexOf(a.name)>=0;});
+  var tiktokAttr=attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0;});
+  var ordineAmazon=amzAttr?amzAttr.value:'';
+  var ordineTemu=temuAttr?temuAttr.value:'';
+  var ordineTiktok=tiktokAttr?tiktokAttr.value:'';
+  var ordineMarketplace=ordineAmazon||ordineTemu||ordineTiktok||'';
+  // Tracking BRT
+  var tracking=bp.tn||'';
+  var linkTracking=tracking?('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspedizione_par.htm&Nspediz='+encodeURIComponent(tracking)):'';
+  // Punto ritiro
+  var puntoRitiro=((window._fermopointAddrMap||{})[orderId])||'';
+  // Ticket corrente (se aperto)
+  var tid=(window.selectedTicket&&(window.selectedTicket.ID||window.selectedTicket.id))||'';
+  var linkTicket=tid?('https://yespresso-proxy.onrender.com/?ticket='+encodeURIComponent(tid)):'';
+  var ticketHashtag=tid?('#'+tid):'';
+
+  return {
+    nome:nomePrimo, nome_completo:nomeCompleto,
+    ordine:ordineNum, canale:canale,
+    ordine_amazon:ordineAmazon, ordine_temu:ordineTemu, ordine_tiktok:ordineTiktok, ordine_marketplace:ordineMarketplace,
+    tracking:tracking, link_tracking:linkTracking,
+    punto_ritiro:puntoRitiro,
+    ticket:tid, ticket_hashtag:ticketHashtag, link_ticket:linkTicket,
+    // Flag condizionali
+    _if_amazon:!!ordineAmazon, _if_temu:!!ordineTemu, _if_tiktok:!!ordineTiktok,
+    _if_marketplace:!!(ordineAmazon||ordineTemu||ordineTiktok),
+    _if_sito:canale==='Sito',
+    _if_ticket:!!tid, _if_tracking:!!tracking,
+    _if_fermopoint:!!puntoRitiro
+  };
+}
+
+// Sostituisce placeholder e blocchi condizionali
+function waRenderTemplate(testo, ctx){
+  if(!testo)return '';
+  var out=testo;
+  // 1. Blocchi condizionali {if_xxx}...{/if_xxx}
+  var BLOCKS=['if_amazon','if_temu','if_tiktok','if_marketplace','if_sito','if_ticket','if_tracking','if_fermopoint'];
+  BLOCKS.forEach(function(bk){
+    var re=new RegExp('\\{'+bk+'\\}([\\s\\S]*?)\\{/'+bk+'\\}','g');
+    var flag=ctx['_'+bk];
+    out=out.replace(re,function(_,inner){return flag?inner:'';});
+  });
+  // 2. Placeholder semplici {xxx}
+  out=out.replace(/\{(\w+)\}/g,function(_,k){
+    if(ctx[k]==null)return '';
+    return String(ctx[k]);
+  });
+  // 3. Pulisce righe vuote consecutive
+  out=out.replace(/\n{3,}/g,'\n\n').trim();
+  return out;
+}
+
+// Salva log invio template su server
+async function waSaveLog(entry){
+  try{
+    const PROXY=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    await fetch(PROXY+'/whatsapp-log',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({entry:entry})
+    });
+    // Aggiorna anche cache locale
+    window._waLog=window._waLog||[];
+    window._waLog.unshift(entry);
+    if(window._waLog.length>500)window._waLog=window._waLog.slice(0,500);
+  }catch(e){
+    console.error('[WA] Errore save log:',e);
+  }
+}
+
+// Controlla se ticket ha invio WA recente (< 48h)
+function waTicketHasRecent(ticketId){
+  if(!ticketId)return null;
+  var log=window._waLog||[];
+  var cutoff=Date.now()-48*60*60*1000;
+  for(var i=0;i<log.length;i++){
+    var e=log[i];
+    if(e.ticket===ticketId && new Date(e.ts).getTime()>cutoff){
+      return e;
+    }
+  }
+  return null;
+}
+
+// Apre il menu dropdown WhatsApp
+function waOpenMenu(orderId, phone, anchorEl){
+  var order=(window._temuOrderData||{})[orderId] || window._lastShopifyOrder;
+  if(!order||order.id!=orderId){
+    // prova a ricaricare da temu data
+    order=(window._temuOrderData||{})[orderId];
+  }
+  if(!order) order=window._lastShopifyOrder;
+  var ctx=waBuildContext(order, orderId);
+  var templates=window._waTemplates||[];
+
+  // Rimuovi eventuale menu aperto
+  var existing=document.getElementById('wa-dropdown');
+  if(existing){existing.remove();return;}
+
+  var rect=anchorEl.getBoundingClientRect();
+  var menu=document.createElement('div');
+  menu.id='wa-dropdown';
+  menu.style.cssText='position:fixed;z-index:100000;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);min-width:280px;max-width:340px;max-height:70vh;overflow-y:auto;font-family:inherit;font-size:13px';
+
+  // Posizionamento: sotto all'anchor, ma se non ci sta verso l'alto
+  var top=rect.bottom+6;
+  var left=rect.left;
+  if(top+400>window.innerHeight)top=Math.max(20,rect.top-400);
+  if(left+320>window.innerWidth)left=window.innerWidth-330;
+  menu.style.top=top+'px';
+  menu.style.left=left+'px';
+
+  var html='';
+  // Voce: apri chat vuota
+  html+='<div onclick="window._waApriChat(\''+phone+'\',\''+orderId+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:10px;color:#333" onmouseover="this.style.background=\'#f0fdf4\'" onmouseout="this.style.background=\'\'">';
+  html+='<span style="font-size:16px">👁</span><span>Apri chat (vedi messaggi)</span></div>';
+
+  // Template
+  if(templates.length===0){
+    html+='<div style="padding:14px;color:#999;font-size:12px;text-align:center">Nessun template configurato.</div>';
+  } else {
+    templates.forEach(function(t,idx){
+      var em=t.emoji||'💬';
+      var nm=(t.nome||'Template').replace(/"/g,'&quot;');
+      html+='<div onclick="window._waInviaTemplate(\''+t.id+'\',\''+phone+'\',\''+orderId+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;display:flex;align-items:flex-start;gap:10px" onmouseover="this.style.background=\'#f0f9ff\'" onmouseout="this.style.background=\'\'">';
+      html+='<span style="font-size:16px;flex-shrink:0">'+em+'</span>';
+      html+='<span style="color:#333;line-height:1.4">'+nm+'</span>';
+      html+='</div>';
+    });
+  }
+
+  // Separatore + voce gestione
+  html+='<div onclick="window._waApriGestione()" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;background:#fafbfc;color:#555;font-size:12px" onmouseover="this.style.background=\'#f0f2f5\'" onmouseout="this.style.background=\'#fafbfc\'">';
+  html+='<span>⚙️</span><span>Gestisci template...</span></div>';
+
+  menu.innerHTML=html;
+  document.body.appendChild(menu);
+
+  // Chiudi cliccando fuori
+  setTimeout(function(){
+    document.addEventListener('click',function waCloseMenu(ev){
+      if(!menu.contains(ev.target)&&ev.target!==anchorEl){
+        menu.remove();
+        document.removeEventListener('click',waCloseMenu);
+      }
+    });
+  },50);
+}
+window._waOpenMenu=waOpenMenu;
+
+// HTML del bottone WhatsApp con freccetta dropdown (sostituisce il vecchio link semplice)
+window.waButtonHtml=function(orderId, phone){
+  var btnId='wa-btn-'+orderId+'-'+Math.floor(Math.random()*100000);
+  return '<a id="'+btnId+'" href="javascript:void(0)" onclick="event.stopPropagation();window._waOpenMenu(\''+orderId+'\',\''+phone+'\',this);return false" style="color:#25d366;font-weight:600;text-decoration:none">💬 WhatsApp ▾</a>';
+};
+
+// Apre chat senza messaggio
+window._waApriChat=function(phone, orderId){
+  var menu=document.getElementById('wa-dropdown');
+  if(menu)menu.remove();
+  window.open('https://web.whatsapp.com/send?phone=39'+phone,'_blank');
+};
+
+// Invia un template specifico
+window._waInviaTemplate=async function(templateId, phone, orderId){
+  var menu=document.getElementById('wa-dropdown');
+  if(menu)menu.remove();
+  var tpl=(window._waTemplates||[]).find(function(t){return t.id===templateId;});
+  if(!tpl)return;
+  var order=(window._temuOrderData||{})[orderId] || window._lastShopifyOrder;
+  var ctx=waBuildContext(order, orderId);
+  var testo=waRenderTemplate(tpl.testo||'', ctx);
+  // Apri WhatsApp Web con messaggio precompilato
+  var url='https://web.whatsapp.com/send?phone=39'+phone+'&text='+encodeURIComponent(testo);
+  window.open(url,'_blank');
+  // Log invio
+  var entry={
+    ts:new Date().toISOString(),
+    ticket:ctx.ticket||'',
+    ordine:ctx.ordine||'',
+    orderId:orderId,
+    template_id:templateId,
+    template_nome:tpl.nome||'',
+    phone:phone
+  };
+  waSaveLog(entry);
+  // Se c'è un ticket aperto, aggiorna subito l'indicatore di invio recente
+  if(ctx.ticket) setTimeout(renderTable,500);
+};
+
+window._waApriGestione=function(){
+  var menu=document.getElementById('wa-dropdown');
+  if(menu)menu.remove();
+  // Apri pannello Filippo alla voce whatsapp_templates
+  if(typeof openFilippo==='function'){
+    openFilippo();
+    setTimeout(function(){
+      var btns=document.querySelectorAll('.filippo-nav-item');
+      for(var i=0;i<btns.length;i++){
+        if((btns[i].textContent||'').indexOf('Template WhatsApp')>=0){btns[i].click();break;}
+      }
+    },300);
+  } else {
+    alert('Vai su Attività Filippo → 💬 Template WhatsApp per gestire i template.');
+  }
+};
+// ═══════════════════════════════════════════════════════════════════════
 
 // ── Polling stato auto-risposta dal server ──
 var _autoReplyStatus = { needsAction: new Set(), blocked: new Set(), processed: new Set() };

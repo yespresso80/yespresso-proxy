@@ -17,6 +17,55 @@ const IMAP_PASSWORD = process.env.IMAP_PASSWORD || "";
 const IMAP_HOST = "imap.ionos.it";
 const IMAP_PORT = 993;
 
+// ── TEMPLATE WHATSAPP DI DEFAULT ────────────────────────────────────────
+// Usati se whatsapp-templates.json non esiste ancora su GitHub.
+// Dopo la prima modifica dal pannello Filippo, i template diventano editabili
+// e vengono salvati su GitHub sovrascrivendo questi default.
+const DEFAULT_WA_TEMPLATES = [
+  {
+    id: 'tpl_problema_prodotto',
+    nome: 'Problema prodotto — invia foto/video',
+    emoji: '📸',
+    testo: 'Ciao {nome}, abbiamo ricevuto la tua segnalazione sull\'ordine {ordine}.\n\nPer poterti aiutare al meglio, potresti inviarci:\n• Una foto del prodotto\n• Un breve video che mostri il difetto\n• Una foto della busta con lotto e scadenza (se capsule)\n\nCosì possiamo valutare rapidamente la soluzione migliore.\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nGrazie! ☕\nYespresso'
+  },
+  {
+    id: 'tpl_indirizzo_incompleto',
+    nome: 'Indirizzo inesistente/incompleto',
+    emoji: '🏠',
+    testo: 'Ciao {nome}, il corriere BRT non è riuscito a consegnare l\'ordine {ordine} perché l\'indirizzo risulta inesistente o incompleto.\n\nPotresti confermarci i dati completi di consegna:\n• Via e numero civico\n• CAP e città\n• Eventuale riferimento (scala, interno, nome sul citofono)\n• Numero di telefono attivo\n\nAppena riceviamo i dati aggiornati comunichiamo subito al corriere.\n{if_tracking}Tracking: {link_tracking}{/if_tracking}\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nGrazie!\nYespresso ☕'
+  },
+  {
+    id: 'tpl_errore_spedizione_foto',
+    nome: 'Errore spedizione — foto scatola/etichetta',
+    emoji: '📦',
+    testo: 'Ciao {nome}, ci dispiace per l\'inconveniente con l\'ordine {ordine}.\n\nPer verificare velocemente cosa è successo, potresti inviarci:\n• Foto della scatola ricevuta (intera)\n• Foto dell\'etichetta BRT incollata sulla scatola\n• Foto del contenuto aperto\n\nAppena riceviamo le foto procediamo con la soluzione.\n{if_ticket}Rif. ticket: {link_ticket}{/if_ticket}\n\nGrazie per la pazienza!\nYespresso ☕'
+  },
+  {
+    id: 'tpl_stato_spedizione',
+    nome: 'Stato spedizione',
+    emoji: '🚚',
+    testo: 'Ciao {nome}, ecco l\'aggiornamento sulla spedizione del tuo ordine {ordine}:\n\n{if_tracking}📍 Tracking BRT: {link_tracking}{/if_tracking}\n{if_fermopoint}📍 Punto di ritiro:\n{punto_ritiro}{/if_fermopoint}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+  },
+  {
+    id: 'tpl_rispedito_corretto',
+    nome: 'Rispedito prodotto corretto',
+    emoji: '🔄',
+    testo: 'Ciao {nome}, abbiamo appena rispedito il prodotto corretto per l\'ordine {ordine}.\n\n{if_tracking}Puoi seguire la nuova spedizione qui: {link_tracking}{/if_tracking}\n\nLa consegna è prevista nei prossimi 2-3 giorni lavorativi.\nCi scusiamo ancora per il disguido.\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+  },
+  {
+    id: 'tpl_prenotato_ritiro',
+    nome: 'Prenotato ritiro BRT',
+    emoji: '📮',
+    testo: 'Ciao {nome}, abbiamo prenotato il ritiro BRT per l\'ordine {ordine}.\n\nIl corriere passerà nei prossimi giorni lavorativi all\'indirizzo da te indicato. Ti chiediamo di:\n• Avere il pacco già pronto e sigillato\n• Applicare l\'etichetta di reso (se fornita)\n• Attendere il passaggio del corriere\n\n{if_tracking}Riferimento ritiro: {tracking}{/if_tracking}\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+  },
+  {
+    id: 'tpl_punto_ritiro',
+    nome: 'Punto di ritiro',
+    emoji: '📍',
+    testo: 'Ciao {nome}, il tuo pacco {ordine} è disponibile presso il seguente punto di ritiro:\n\n{punto_ritiro}\n\n{if_tracking}Puoi verificare i dettagli della spedizione qui: {link_tracking}{/if_tracking}\n\nTi chiediamo di ritirarlo entro la data di scadenza indicata, portando con te un documento d\'identità.\n\nYespresso ☕\n\n⚠️ Questo non è un canale di assistenza — per rispondere scrivi a assistenza@yespresso.it'
+  }
+];
+
 console.log("[INIT] ANTHROPIC_KEY presente:", !!ANTHROPIC_KEY);
 console.log("[INIT] SHOPIFY_TOKEN presente:", !!SHOPIFY_TOKEN);
 console.log("[INIT] IMAP_USER:", IMAP_USER);
@@ -865,27 +914,44 @@ const server = http.createServer(async function(req, res) {
   if (req.url === "/health" || req.url === "/ping") { res.writeHead(200); res.end("OK"); return; }
 
   // ── Login reso-magazzino ──
-  if (req.url === "/hd-login" && req.method === "POST") {
+  if (req.url.startsWith("/hd-login") && req.method === "POST") {
     let body = "";
     req.on("data", c => body += c);
     req.on("end", () => {
       const params = new URLSearchParams(body);
       const pwd = params.get("pwd") || "";
+      // Recupera next dall'URL query string (opzionale)
+      let nextUrl = "/";
+      try {
+        const urlObj = new URL(req.url, 'http://localhost');
+        const next = urlObj.searchParams.get("next");
+        if (next && next.startsWith("/") && !next.startsWith("//")) nextUrl = next;
+      } catch(e) {}
       if (pwd === SITE_PASSWORD) {
         res.writeHead(302, {
           "Set-Cookie": "hd_auth=" + SITE_PASSWORD + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400",
-          "Location": "/"
+          "Location": nextUrl
         });
       } else {
-        res.writeHead(302, { "Location": "/hd-login?err=1" });
+        const errLoc = "/hd-login?err=1" + (nextUrl !== "/" ? "&next=" + encodeURIComponent(nextUrl) : "");
+        res.writeHead(302, { "Location": errLoc });
       }
       res.end();
     });
     return;
   }
-  if (req.url === "/hd-login") {
+  if (req.url.startsWith("/hd-login")) {
+    // Inietta next nel form action per preservarlo
+    let loginHtml = LOGIN_PAGE;
+    try {
+      const urlObj = new URL(req.url, 'http://localhost');
+      const next = urlObj.searchParams.get("next");
+      if (next && next.startsWith("/") && !next.startsWith("//")) {
+        loginHtml = loginHtml.replace('action="/hd-login"', 'action="/hd-login?next=' + encodeURIComponent(next) + '"');
+      }
+    } catch(e) {}
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(LOGIN_PAGE);
+    res.end(loginHtml);
     return;
   }
 
@@ -934,9 +1000,11 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html") {
+  if (req.url === "/" || req.url === "/index.html" || req.url === "/yespresso-helpdesk.html" || req.url.startsWith("/?ticket=") || req.url.startsWith("/?")) {
     if (!checkAuth(req)) {
-      res.writeHead(302, { "Location": "/hd-login" });
+      // Preserva parametri URL nel redirect al login (es. ?ticket=XXX)
+      const loginUrl = "/hd-login" + (req.url.includes("?") ? "?next=" + encodeURIComponent(req.url) : "");
+      res.writeHead(302, { "Location": loginUrl });
       res.end();
       return;
     }
@@ -947,6 +1015,15 @@ const server = http.createServer(async function(req, res) {
       let html = data.toString('utf8');
       html = html.replace('{{HD_TOKEN}}', HD_TOKEN);
       html = html.replace('{{PROXY_TOKEN}}', PROXY_TOKEN);
+      // Estrai parametro ticket dall'URL se presente
+      let ticketParam = '';
+      try {
+        const urlObj = new URL(req.url, 'http://localhost');
+        ticketParam = (urlObj.searchParams.get('ticket') || '').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 32);
+      } catch(e) {}
+      // Inietta script con deep-link ticket prima di </head>
+      const injection = '<script>window._ticketDaAprire=' + (ticketParam ? JSON.stringify(ticketParam) : 'null') + ';</script>';
+      html = html.replace('</head>', injection + '</head>');
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html);
     });
@@ -1373,6 +1450,104 @@ async function brtRestPost(path, body) {
       return;
     }
     res.writeHead(405, CORS_FCF); res.end(JSON.stringify({error:'Method not allowed'}));
+    return;
+  }
+
+  // ── WHATSAPP TEMPLATES (storage JSON su GitHub per template messaggi) ──
+  if (req.url.startsWith('/whatsapp-templates') && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url.startsWith('/whatsapp-templates')) {
+    const CORS_WT = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const GH_WT_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/whatsapp-templates.json';
+    async function ghWTGet() {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) return { data: null, sha: null };
+      const r = await fetch(GH_WT_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+      if (r.status === 404) return { data: null, sha: null };
+      const j = await r.json();
+      return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+    }
+    async function ghWTSave(data, sha) {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) throw new Error('GH_TOKEN non configurato');
+      const body = { message: 'update whatsapp-templates', content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(GH_WT_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); throw new Error('GitHub whatsapp-templates save error: '+t.substring(0,200)); }
+    }
+    if (req.method === 'GET') {
+      try {
+        const { data } = await ghWTGet();
+        // Se non esiste ancora il file, restituisci i template di default
+        if (!data || !Array.isArray(data)) {
+          res.writeHead(200, CORS_WT); res.end(JSON.stringify(DEFAULT_WA_TEMPLATES));
+        } else {
+          res.writeHead(200, CORS_WT); res.end(JSON.stringify(data));
+        }
+      } catch(e) { console.error('[WT GET]', e.message); res.writeHead(200, CORS_WT); res.end(JSON.stringify(DEFAULT_WA_TEMPLATES)); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+      try {
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        const { sha } = await ghWTGet();
+        await ghWTSave(payload.templates, sha);
+        res.writeHead(200, CORS_WT); res.end(JSON.stringify({ ok: true }));
+      } catch(e) { console.error('[WT POST]', e.message); res.writeHead(500, CORS_WT); res.end(JSON.stringify({ ok: false, error: e.message })); }
+      return;
+    }
+    res.writeHead(405, CORS_WT); res.end(JSON.stringify({error:'Method not allowed'}));
+    return;
+  }
+
+  // ── WHATSAPP LOG (storico invii template WhatsApp) ──
+  if (req.url.startsWith('/whatsapp-log') && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url.startsWith('/whatsapp-log')) {
+    const CORS_WL = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const GH_WL_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/whatsapp-log.json';
+    async function ghWLGet() {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) return { data: [], sha: null };
+      const r = await fetch(GH_WL_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+      if (r.status === 404) return { data: [], sha: null };
+      const j = await r.json();
+      return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')), sha: j.sha };
+    }
+    async function ghWLSave(data, sha) {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) throw new Error('GH_TOKEN non configurato');
+      const body = { message: 'update whatsapp-log', content: Buffer.from(JSON.stringify(data)).toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(GH_WL_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); throw new Error('GitHub whatsapp-log save error: '+t.substring(0,200)); }
+    }
+    if (req.method === 'GET') {
+      try { const { data } = await ghWLGet(); res.writeHead(200, CORS_WL); res.end(JSON.stringify(data)); }
+      catch(e) { console.error('[WL GET]', e.message); res.writeHead(200, CORS_WL); res.end('[]'); }
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+      try {
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        // payload: { entry: {ticket, ordine, template, ts, agente} } → append
+        const { data, sha } = await ghWLGet();
+        var arr = Array.isArray(data) ? data : [];
+        if (payload.entry) arr.push(payload.entry);
+        // Mantieni solo gli ultimi 500 invii per non esplodere
+        if (arr.length > 500) arr = arr.slice(arr.length - 500);
+        await ghWLSave(arr, sha);
+        res.writeHead(200, CORS_WL); res.end(JSON.stringify({ ok: true }));
+      } catch(e) { console.error('[WL POST]', e.message); res.writeHead(500, CORS_WL); res.end(JSON.stringify({ ok: false, error: e.message })); }
+      return;
+    }
+    res.writeHead(405, CORS_WL); res.end(JSON.stringify({error:'Method not allowed'}));
     return;
   }
 
