@@ -1019,7 +1019,7 @@ const server = http.createServer(async function(req, res) {
       let ticketParam = '';
       try {
         const urlObj = new URL(req.url, 'http://localhost');
-        ticketParam = (urlObj.searchParams.get('ticket') || '').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 32);
+        ticketParam = (urlObj.searchParams.get('ticket') || '').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 64);
       } catch(e) {}
       // Inietta script con deep-link ticket prima di </head>
       const injection = '<script>window._ticketDaAprire=' + (ticketParam ? JSON.stringify(ticketParam) : 'null') + ';</script>';

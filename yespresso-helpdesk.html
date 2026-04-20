@@ -1087,16 +1087,34 @@ async function loadTickets(){
       var tidDeep=window._ticketDaAprire;
       var foundT=tickets.find(function(t){return (t.ID||t.id)===tidDeep;});
       if(foundT){
-        console.log('[DEEP LINK] Apro ticket '+tidDeep+' da URL');
+        console.log('[DEEP LINK] Apro ticket '+tidDeep+' (già in lista)');
         setTimeout(function(){selectTicket(tidDeep);},300);
       } else {
-        console.log('[DEEP LINK] Ticket '+tidDeep+' non trovato nella lista corrente');
-        // Banner informativo
-        var banner=document.createElement('div');
-        banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 20px;font-size:13px;color:#92400e;box-shadow:0 4px 12px rgba(0,0,0,.15)';
-        banner.innerHTML='⚠ Ticket <b>'+tidDeep+'</b> non trovato nella lista. Cambia filtro o vista per trovarlo. <button onclick="this.parentNode.remove()" style="background:none;border:none;cursor:pointer;margin-left:10px;color:#92400e">✕</button>';
-        document.body.appendChild(banner);
-        setTimeout(function(){if(banner.parentNode)banner.remove();},8000);
+        // Ticket non in lista locale → lo carico dall'API
+        console.log('[DEEP LINK] Ticket '+tidDeep+' non in lista, fetch da API...');
+        (async function(){
+          try{
+            var fullT=await hdFetch('/v1/tickets/'+encodeURIComponent(tidDeep));
+            if(fullT && (fullT.ID||fullT.id)){
+              console.log('[DEEP LINK] Ticket trovato via API, lo inserisco in lista');
+              // Normalizza il ticket e inseriscilo in cima alla lista
+              tickets.unshift(fullT);
+              // Re-render e seleziona
+              renderTable();
+              setTimeout(function(){selectTicket(tidDeep);},200);
+            } else {
+              throw new Error('Ticket non restituito dall\'API');
+            }
+          }catch(apiErr){
+            console.error('[DEEP LINK] Errore fetch ticket:',apiErr);
+            // Banner informativo
+            var banner=document.createElement('div');
+            banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 20px;font-size:13px;color:#92400e;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+            banner.innerHTML='⚠ Ticket <b>'+tidDeep+'</b> non trovato. Potrebbe essere stato chiuso o eliminato. <button onclick="this.parentNode.remove()" style="background:none;border:none;cursor:pointer;margin-left:10px;color:#92400e">✕</button>';
+            document.body.appendChild(banner);
+            setTimeout(function(){if(banner.parentNode)banner.remove();},8000);
+          }
+        })();
       }
     }
 
@@ -12842,20 +12860,24 @@ function waTicketHasRecent(ticketId){
 
 // Apre il menu dropdown WhatsApp
 function waOpenMenu(orderId, phone, anchorEl){
-  var order=(window._temuOrderData||{})[orderId] || window._lastShopifyOrder;
-  if(!order||order.id!=orderId){
-    // prova a ricaricare da temu data
-    order=(window._temuOrderData||{})[orderId];
-  }
-  if(!order) order=window._lastShopifyOrder;
-  var ctx=waBuildContext(order, orderId);
-  var templates=window._waTemplates||[];
+  try{
+    console.log('[WA] waOpenMenu chiamato order=',orderId,'phone=',phone,'anchor=',anchorEl);
+    var order=(window._temuOrderData||{})[orderId] || window._lastShopifyOrder;
+    if(!order||order.id!=orderId){
+      order=(window._temuOrderData||{})[orderId];
+    }
+    if(!order) order=window._lastShopifyOrder;
+    var ctx=waBuildContext(order, orderId);
+    console.log('[WA] context costruito:',ctx);
+    var templates=window._waTemplates||[];
+    console.log('[WA] templates disponibili:',templates.length);
 
-  // Rimuovi eventuale menu aperto
-  var existing=document.getElementById('wa-dropdown');
-  if(existing){existing.remove();return;}
+    // Rimuovi eventuale menu aperto
+    var existing=document.getElementById('wa-dropdown');
+    if(existing){existing.remove();return;}
 
-  var rect=anchorEl.getBoundingClientRect();
+    var rect=anchorEl.getBoundingClientRect();
+    console.log('[WA] anchor rect:',rect,'viewport:',window.innerWidth,'x',window.innerHeight);
   var menu=document.createElement('div');
   menu.id='wa-dropdown';
   menu.style.cssText='position:fixed;z-index:2147483647;background:#fff;border:1px solid #e0e4ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);width:280px;max-width:280px;max-height:70vh;overflow-y:auto;overflow-x:hidden;font-family:inherit;font-size:12px;box-sizing:border-box';
@@ -12912,6 +12934,7 @@ function waOpenMenu(orderId, phone, anchorEl){
 
   menu.innerHTML=html;
   document.body.appendChild(menu);
+  console.log('[WA] menu inserito nel DOM, top=',top,'left=',left);
 
   // Chiudi cliccando fuori
   setTimeout(function(){
@@ -12922,6 +12945,10 @@ function waOpenMenu(orderId, phone, anchorEl){
       }
     });
   },50);
+  }catch(err){
+    console.error('[WA] Errore waOpenMenu:',err,err.stack);
+    alert('Errore apertura menu WhatsApp:\n'+err.message+'\n\nVedi console per dettagli.');
+  }
 }
 window._waOpenMenu=waOpenMenu;
 
@@ -12934,23 +12961,35 @@ window.waButtonHtml=function(orderId, phone){
 };
 
 // Event delegation globale: intercetta click sui bottoni WA ovunque siano
-if(!window._waDelegationInstalled){
+// Installato subito (lo script è in fondo al body quindi document è pronto)
+(function installWaDelegation(){
+  if(window._waDelegationInstalled)return;
   window._waDelegationInstalled=true;
   document.addEventListener('click',function(ev){
-    var trigger=ev.target.closest&&ev.target.closest('.wa-btn-trigger');
-    if(!trigger)return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    var orderId=trigger.getAttribute('data-wa-order');
-    var phone=trigger.getAttribute('data-wa-phone');
-    console.log('[WA] click bottone order=',orderId,'phone=',phone);
-    if(typeof window._waOpenMenu==='function'){
-      window._waOpenMenu(orderId, phone, trigger);
-    } else {
-      console.error('[WA] _waOpenMenu non definito');
+    try{
+      // Ricerca robusta dell'elemento trigger (ev.target potrebbe essere text node)
+      var el=ev.target;
+      if(!el||el.nodeType===3)el=el.parentElement;
+      if(!el||typeof el.closest!=='function')return;
+      var trigger=el.closest('.wa-btn-trigger');
+      if(!trigger)return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var orderId=trigger.getAttribute('data-wa-order');
+      var phone=trigger.getAttribute('data-wa-phone');
+      console.log('[WA] click bottone order=',orderId,'phone=',phone);
+      if(typeof window._waOpenMenu==='function'){
+        window._waOpenMenu(orderId, phone, trigger);
+      } else {
+        console.error('[WA] _waOpenMenu non definito');
+        alert('Errore WhatsApp: menu non disponibile. Ricarica la pagina.');
+      }
+    }catch(err){
+      console.error('[WA] Errore click handler:',err);
     }
-  }, true); // capture:true per intercettare prima di altri handler
-}
+  }, true);
+  console.log('[WA] Event delegation installato');
+})();
 
 // Apre chat senza messaggio
 window._waApriChat=function(phone, orderId){
