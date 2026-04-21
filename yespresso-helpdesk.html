@@ -18528,7 +18528,7 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
   // Costruisci mappa: chiave SKU → {nome, righe:[{ordine, fornitore, dataOrd, dataCons, ord, ric, res, stato}]}
   var perArt = {};
   openOrds.forEach(function(o){
-    (o.righe||[]).forEach(function(r){
+    (o.righe||[]).forEach(function(r, rigaIdx){
       var qOrd = r.qty_ordinata || r.qty || 0;
       var qRic = r.qty_ricevuta || 0;
       var qRes = qOrd - qRic;
@@ -18559,6 +18559,7 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
 
       perArt[key].righe.push({
         ordId: o.id,
+        rigaIdx: rigaIdx, // indice della riga nell'ordine originale (dal forEach)
         skuShopify: r.sku_shopify || r.sku || '',
         numero: o.numero_ordine || ('ORD-' + (o.id||'')),
         fornitore: o.fornitore || '—',
@@ -18681,8 +18682,6 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
         statoLbl = '—'; statoColor = '#888'; statoBg = 'transparent';
       }
       var ordIdEsc = String(r.ordId).replace(/'/g,"\\'");
-      var skuShopEsc = String(r.skuShopify||'').replace(/'/g,"\\'");
-      var dataConsEsc = String(r.dataCons||'').replace(/'/g,"\\'");
       h += '<tr style="background:'+bg+'">'+
         '<td style="'+tdS+';font-weight:600">'+escHtml(r.numero)+'</td>'+
         '<td style="'+tdS+'">'+escHtml(r.fornitore)+'</td>'+
@@ -18693,8 +18692,8 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
         '<td style="'+tdR+';font-weight:700;color:#dc2626">'+r.qRes.toLocaleString('it-IT')+'</td>'+
         '<td style="'+tdC+'"><span style="background:'+statoBg+';color:'+statoColor+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap">'+statoLbl+'</span></td>'+
         '<td style="'+tdC+';white-space:nowrap">'+
-          '<button onclick="_fabArtEditRiga(\''+ordIdEsc+'\',\''+skuShopEsc+'\',\''+dataConsEsc+'\')" title="Modifica riga" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✏️</button>'+
-          '<button onclick="_fabArtDeleteRiga(\''+ordIdEsc+'\',\''+skuShopEsc+'\',\''+dataConsEsc+'\')" title="Elimina riga" style="font-size:11px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px" title="Elimina solo questa riga">✕</button>'+
+          '<button onclick="_fabArtEditRiga(\''+ordIdEsc+'\','+r.rigaIdx+')" title="Modifica riga" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✏️</button>'+
+          '<button onclick="_fabArtDeleteRiga(\''+ordIdEsc+'\','+r.rigaIdx+')" title="Elimina riga" style="font-size:11px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✕</button>'+
           '<button onclick="fabEditOrdine(\''+ordIdEsc+'\')" title="Modifica intero ordine" style="font-size:11px;background:#f3e8ff;border:1px solid #d8b4fe;color:#7e22ce;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600">⚙️</button>'+
         '</td>'+
       '</tr>';
@@ -18757,16 +18756,15 @@ window._fabArtFilter = function(q){
 // ═══════════════════════════════════════════════════════════════════
 // Modifica singola riga: modal mini per cambiare qty e data consegna
 // ═══════════════════════════════════════════════════════════════════
-window._fabArtEditRiga = function(ordId, skuShop, dataCons){
+window._fabArtEditRiga = function(ordId, rigaIdx){
   var ord = fabOrdini.find(function(o){return String(o.id)===String(ordId);});
   if(!ord){ showToast('Ordine non trovato','error'); return; }
-  var rigIdx = (ord.righe||[]).findIndex(function(r){
-    var rSku = String(r.sku_shopify||r.sku||'');
-    var rData = String(r.data_cons_riga||'');
-    return rSku===String(skuShop) && (rData===String(dataCons) || (!rData && !dataCons));
-  });
-  if(rigIdx<0){ showToast('Riga non trovata','error'); return; }
-  var rig = ord.righe[rigIdx];
+  var idx = parseInt(rigaIdx);
+  if(isNaN(idx) || idx<0 || idx >= (ord.righe||[]).length){
+    showToast('Riga non trovata (indice '+rigaIdx+')','error');
+    return;
+  }
+  var rig = ord.righe[idx];
 
   var existing = document.getElementById('fab-art-riga-modal');
   if(existing) existing.remove();
@@ -18832,22 +18830,21 @@ window._fabArtEditRiga = function(ordId, skuShop, dataCons){
 // ═══════════════════════════════════════════════════════════════════
 // Elimina singola riga ordine (se l'ordine ha solo questa riga, elimina l'ordine)
 // ═══════════════════════════════════════════════════════════════════
-window._fabArtDeleteRiga = function(ordId, skuShop, dataCons){
+window._fabArtDeleteRiga = function(ordId, rigaIdx){
   var ord = fabOrdini.find(function(o){return String(o.id)===String(ordId);});
   if(!ord){ showToast('Ordine non trovato','error'); return; }
-  var rigIdx = (ord.righe||[]).findIndex(function(r){
-    var rSku = String(r.sku_shopify||r.sku||'');
-    var rData = String(r.data_cons_riga||'');
-    return rSku===String(skuShop) && (rData===String(dataCons) || (!rData && !dataCons));
-  });
-  if(rigIdx<0){ showToast('Riga non trovata','error'); return; }
-  var rig = ord.righe[rigIdx];
+  var idx = parseInt(rigaIdx);
+  if(isNaN(idx) || idx<0 || idx >= (ord.righe||[]).length){
+    showToast('Riga non trovata (indice '+rigaIdx+')','error');
+    return;
+  }
+  var rig = ord.righe[idx];
   if((rig.qty_ricevuta||0) > 0){
     if(!confirm('⚠ Questa riga ha già ricevuto '+rig.qty_ricevuta+' unità. Eliminarla comunque?')) return;
   } else {
     if(!confirm('Eliminare questa riga dall\'ordine?\n\n'+(rig.sku||rig.sku_shopify||'')+'\nQtà: '+rig.qty_ordinata)) return;
   }
-  ord.righe.splice(rigIdx, 1);
+  ord.righe.splice(idx, 1);
   // Se non ci sono più righe, elimina tutto l'ordine
   if(ord.righe.length === 0){
     if(confirm('L\'ordine non ha più righe. Vuoi eliminarlo completamente?')){
