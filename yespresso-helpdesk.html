@@ -2902,8 +2902,10 @@ function parseBrtGiacenzaEmail(text){
   const dataApert = t.match(/in\s+data\s+(\d{2}\/\d{2}\/\d{4})/i);
   if(dataApert) out.dataApertura = dataApert[1];
 
-  // Motivo (es. "motivo: 016 DESTINATARIO RIMANDA LO SVINCOLO AL")
-  const motivo = t.match(/motivo\s*:\s*(\d{3})\s+([A-Z][A-Z\s]+?)(?:\n|Gli\s+estremi)/i);
+  // Motivo (es. "motivo: 016 DESTINATARIO RIMANDA LO SVINCOLO AL"
+  // oppure "022 INDIRIZZO INDICATO SUL DDT INESISTENTE/INCOMPLETO")
+  // Accetta anche /, numeri, punti, apostrofi e altri separatori
+  const motivo = t.match(/motivo\s*:\s*(\d{3})\s+([A-Z][A-Z0-9\s\/\.\-',]+?)(?:\n|Gli\s+estremi)/i);
   if(motivo){
     out.motivoCod = motivo[1];
     out.motivoDesc = motivo[2].trim().replace(/\s+AL\s*$/i,'').trim();

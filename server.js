@@ -1030,6 +1030,34 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
+  // ═══ MOBILE VERSION — URL /m ═══
+  if (req.url === "/m" || req.url === "/m/" || req.url === "/yespresso-mobile.html" || req.url.startsWith("/m?") || req.url.startsWith("/m/?")) {
+    if (!checkAuth(req)) {
+      const loginUrl = "/hd-login?next=" + encodeURIComponent(req.url);
+      res.writeHead(302, { "Location": loginUrl });
+      res.end();
+      return;
+    }
+    const filePath = path.join(__dirname, "yespresso-mobile.html");
+    fs.readFile(filePath, function(err, data) {
+      if (err) { res.writeHead(404); res.end("File mobile non trovato"); return; }
+      let html = data.toString('utf8');
+      html = html.replace('{{HD_TOKEN}}', HD_TOKEN);
+      html = html.replace('{{PROXY_TOKEN}}', PROXY_TOKEN);
+      // Estrai parametro ticket dall'URL
+      let ticketParam = '';
+      try {
+        const urlObj = new URL(req.url, 'http://localhost');
+        ticketParam = (urlObj.searchParams.get('ticket') || '').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 64);
+      } catch(e) {}
+      const injection = '<script>window._ticketDaAprire=' + (ticketParam ? JSON.stringify(ticketParam) : 'null') + ';</script>';
+      html = html.replace('</head>', injection + '</head>');
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+    });
+    return;
+  }
+
   if (req.url.startsWith("/shopify/callback")) { res.writeHead(200); res.end("OK"); return; }
 
 

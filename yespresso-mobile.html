@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#6d28d9">
+<title>Yespresso HelpDesk Mobile</title>
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin:0; padding:0; height:100%; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f5f7fa; color:#1a1a2e; overscroll-behavior:none; }
+body { display:flex; flex-direction:column; height:100vh; height:100dvh; }
+
+/* Header */
+.m-header { background:#fef3c7; padding:10px 14px; border-bottom:1px solid #fcd34d; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; position:sticky; top:0; z-index:100; }
+.m-header-title { font-weight:600; color:#713f12; font-size:14px; display:flex; align-items:center; gap:8px; }
+.m-header-btn { background:none; border:none; color:#92400e; font-size:16px; cursor:pointer; padding:4px 8px; font-weight:600; }
+.m-logout { background:none; border:none; color:#92400e; font-size:12px; cursor:pointer; padding:4px 8px; }
+
+/* Search bar */
+.m-search { background:#f8f9fc; padding:8px 12px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.m-search input { flex:1; padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; font-size:13px; font-family:inherit; outline:none; background:#fff; }
+.m-search input:focus { border-color:#6d28d9; }
+
+/* Counter bar */
+.m-counter { padding:8px 14px; background:#e8f0fe; border-bottom:1px solid #bfdbfe; font-size:12px; color:#1a4b8f; font-weight:500; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.m-counter-refresh { background:none; border:none; color:#1a4b8f; font-size:14px; cursor:pointer; padding:0 4px; }
+
+/* Content area */
+.m-content { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; background:#fff; }
+
+/* Ticket list */
+.m-ticket-row { padding:12px 14px; border-bottom:1px solid #f0f2f5; background:#fff; cursor:pointer; transition:background .15s; }
+.m-ticket-row:active { background:#f8f9fc; }
+.m-ticket-row.active { background:#f0f4ff; border-left:3px solid #6d28d9; padding-left:11px; }
+.m-ticket-head { display:flex; align-items:flex-start; gap:10px; margin-bottom:4px; }
+.m-avatar { width:32px; height:32px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; flex-shrink:0; }
+.m-ticket-info { flex:1; min-width:0; }
+.m-ticket-name-row { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.m-ticket-name { font-size:13px; font-weight:600; color:#1a1a2e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.m-ticket-time { font-size:10px; color:#888; flex-shrink:0; }
+.m-ticket-subj { font-size:11px; color:#666; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.m-ticket-badges { display:flex; gap:5px; margin-top:6px; margin-left:42px; flex-wrap:wrap; }
+.m-badge { padding:2px 7px; border-radius:10px; font-size:10px; font-weight:500; white-space:nowrap; }
+.m-badge-amazon { background:#fff4e0; color:#a64500; }
+.m-badge-temu { background:#fff8f0; color:#c04400; }
+.m-badge-sito { background:#f0fdf4; color:#166534; }
+.m-badge-brt { background:#fff7ed; color:#c2410c; }
+.m-badge-thread { background:#e8f0fe; color:#1a4b8f; }
+.m-badge-open { background:#fee; color:#c04040; }
+.m-badge-pending { background:#fff8e1; color:#d97706; }
+
+/* Empty state */
+.m-empty { padding:60px 20px; text-align:center; color:#aaa; font-size:13px; }
+
+/* Loading */
+.m-loading { padding:40px 20px; text-align:center; color:#888; font-size:12px; }
+.m-spinner { display:inline-block; width:24px; height:24px; border:3px solid #e5e7eb; border-top-color:#6d28d9; border-radius:50%; animation:spin 0.8s linear infinite; margin-bottom:10px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Detail view */
+.m-detail-header { background:#fff; padding:10px 12px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:50; }
+.m-back { background:none; border:none; color:#1a73e8; font-size:22px; cursor:pointer; padding:0; font-weight:500; line-height:1; }
+.m-detail-title { flex:1; min-width:0; }
+.m-detail-name { font-size:13px; font-weight:600; color:#1a1a2e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.m-detail-sub { font-size:10px; color:#888; margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Order info box */
+.m-order-box { background:#fff; padding:10px 12px; border-bottom:1px solid #e5e7eb; }
+.m-order-card { background:#f8f9fc; border-radius:8px; padding:9px 10px; margin-bottom:6px; }
+.m-order-label { font-size:9px; color:#888; font-weight:500; text-transform:uppercase; margin-bottom:2px; }
+.m-order-value { font-size:12px; color:#1a1a2e; font-weight:500; font-family:ui-monospace,Menlo,monospace; }
+.m-order-badges { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+.m-order-badge { padding:8px; border-radius:6px; font-size:10px; font-weight:500; text-align:center; text-decoration:none; }
+
+/* Summary AI box */
+.m-summary { padding:11px 12px; background:#fefbf3; border-bottom:1px solid #e5e7eb; }
+.m-summary-label { font-size:9px; color:#92400e; font-weight:500; text-transform:uppercase; margin-bottom:4px; display:flex; align-items:center; gap:4px; }
+.m-summary-text { font-size:13px; color:#1a1a2e; line-height:1.5; }
+
+/* Last message box */
+.m-lastmsg { padding:10px 12px; background:#fff; border-bottom:1px solid #e5e7eb; }
+.m-lastmsg-label { font-size:9px; color:#888; font-weight:500; text-transform:uppercase; margin-bottom:4px; display:flex; align-items:center; justify-content:space-between; }
+.m-lastmsg-link { background:none; border:none; color:#1a73e8; font-size:10px; font-weight:500; cursor:pointer; padding:0; }
+.m-lastmsg-text { font-size:13px; color:#1a1a2e; line-height:1.5; white-space:pre-wrap; word-wrap:break-word; }
+
+/* Attachments thumbnails */
+.m-attach { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.m-attach-thumb { width:60px; height:60px; border-radius:6px; border:1px solid #ddd; cursor:pointer; overflow:hidden; position:relative; background:#f0f2f5; }
+.m-attach-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.m-attach-count { position:absolute; bottom:3px; right:3px; background:rgba(0,0,0,0.6); color:#fff; font-size:9px; padding:1px 4px; border-radius:3px; }
+
+/* Reply area */
+.m-reply { padding:12px; background:#fff; border-top:1px solid #e5e7eb; }
+.m-reply-textarea { width:100%; min-height:120px; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; font-size:14px; line-height:1.5; resize:none; font-family:inherit; color:#1a1a2e; outline:none; }
+.m-reply-textarea:focus { border-color:#6d28d9; }
+
+/* AI generated banner */
+.m-ai-banner { padding:8px 12px; background:#f0fdf4; border-bottom:1px solid #86efac; font-size:11px; color:#166534; display:flex; align-items:center; gap:6px; }
+
+/* Footer actions */
+.m-footer { background:#fff; border-top:1px solid #e5e7eb; padding:10px 12px; display:flex; gap:8px; flex-shrink:0; }
+.m-footer-btn { padding:12px 14px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; color:#6b7280; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; min-height:44px; }
+.m-footer-btn-primary { flex:1; background:#6d28d9; color:#fff; border:none; }
+.m-footer-btn-success { flex:1; background:#16a34a; color:#fff; border:none; }
+
+/* Action buttons row */
+.m-action-row { padding:4px 12px 8px; display:flex; gap:6px; background:#fff; border-top:1px solid #f0f2f5; }
+.m-action-btn { flex:1; background:#fff; color:#1a1a2e; border:1px solid #e5e7eb; border-radius:8px; padding:9px; font-size:11px; font-weight:500; cursor:pointer; font-family:inherit; min-height:38px; }
+.m-action-btn-suggest { background:#f3e8ff; color:#7e22ce; border:1.5px solid #d8b4fe; }
+
+/* Login screen */
+.m-login { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; height:100dvh; padding:20px; background:linear-gradient(180deg,#fef3c7 0%,#fff 40%); }
+.m-login-logo { font-size:40px; margin-bottom:12px; }
+.m-login-title { font-size:20px; font-weight:600; color:#1a1a2e; margin-bottom:4px; }
+.m-login-sub { font-size:12px; color:#888; margin-bottom:30px; }
+.m-login-form { width:100%; max-width:320px; display:flex; flex-direction:column; gap:12px; }
+.m-login-input { padding:14px 16px; border:1px solid #e5e7eb; border-radius:10px; font-size:15px; font-family:inherit; outline:none; }
+.m-login-input:focus { border-color:#6d28d9; }
+.m-login-btn { padding:14px; background:#6d28d9; color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:500; cursor:pointer; font-family:inherit; min-height:48px; }
+.m-login-error { color:#dc2626; font-size:12px; text-align:center; margin-top:4px; min-height:16px; }
+
+/* Toast */
+.m-toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:#1a1a2e; color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; z-index:10000; box-shadow:0 4px 16px rgba(0,0,0,0.3); animation:toast-in 0.2s ease-out; }
+.m-toast-success { background:#16a34a; }
+.m-toast-error { background:#dc2626; }
+@keyframes toast-in { from { opacity:0; transform:translate(-50%,20px); } to { opacity:1; transform:translate(-50%,0); } }
+
+/* Image viewer */
+.m-img-viewer { position:fixed; inset:0; background:#000; z-index:10000; display:flex; flex-direction:column; }
+.m-img-viewer-header { padding:12px 16px; display:flex; align-items:center; justify-content:space-between; }
+.m-img-viewer-close { background:none; border:none; color:#fff; font-size:24px; cursor:pointer; }
+.m-img-viewer-counter { color:#fff; font-size:12px; opacity:0.8; }
+.m-img-viewer-body { flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.m-img-viewer-body img { max-width:100%; max-height:100%; object-fit:contain; }
+.m-img-viewer-nav { padding:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.m-img-nav-btn { background:rgba(255,255,255,0.1); color:#fff; border:none; padding:10px 20px; border-radius:8px; font-size:14px; cursor:pointer; min-height:44px; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// Yespresso HelpDesk Mobile — Fase 1
+// ═══════════════════════════════════════════════════════════════════
+const HD_TOKEN = "{{HD_TOKEN}}";
+const PROXY_TOKEN = "{{PROXY_TOKEN}}";
+const PROXY = location.origin;
+
+// State globale
+const state = {
+  loggedIn: false,
+  tickets: [],
+  currentTicket: null,
+  currentTicketFull: null,
+  shopifyOrder: null,
+  view: 'login', // 'login' | 'list' | 'detail'
+  loading: false,
+  aiReply: '',
+  aiSummary: '',
+  searchQuery: '',
+  sending: false
+};
+
+// Status labels
+const STATUS_LABELS = { open:'Open', pending:'Pending', solved:'Solved', closed:'Closed' };
+
+// ═══ UTILS ═══
+function $(id){ return document.getElementById(id); }
+function h(str){ return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function avatarColor(name){
+  const colors=['#c084fc','#86efac','#fda4af','#93c5fd','#fcd34d','#a78bfa','#67e8f9'];
+  let hash=0;
+  for(let i=0;i<(name||'').length;i++) hash=((hash<<5)-hash)+name.charCodeAt(i);
+  return colors[Math.abs(hash)%colors.length];
+}
+function initials(name){
+  if(!name) return '?';
+  const parts=name.trim().split(/\s+/);
+  if(parts.length===1) return parts[0].substring(0,2).toUpperCase();
+  return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
+}
+function timeAgo(ts){
+  if(!ts) return '';
+  const d=new Date(ts); if(isNaN(d.getTime())) return '';
+  const diff=Date.now()-d.getTime();
+  const m=Math.floor(diff/60000);
+  if(m<1) return 'ora';
+  if(m<60) return m+'m';
+  const hrs=Math.floor(m/60);
+  if(hrs<24) return hrs+'h';
+  const days=Math.floor(hrs/24);
+  if(days<7) return days+'g';
+  return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
+}
+function srcLabel(email){
+  email=(email||'').toLowerCase();
+  if(email.includes('marketplace.amazon')||email.includes('donotreply@amazon')) return {lbl:'Amazon',cls:'m-badge-amazon'};
+  if(email.includes('temu')||email.includes('seller@orders')) return {lbl:'Temu',cls:'m-badge-temu'};
+  if(email.includes('tiktok')) return {lbl:'TikTok',cls:'m-badge-temu'};
+  if(email.includes('brt.it')||email.includes('vasnoreply')) return {lbl:'BRT',cls:'m-badge-brt'};
+  return {lbl:'Sito',cls:'m-badge-sito'};
+}
+
+function showToast(msg, type){
+  const existing=document.querySelector('.m-toast');
+  if(existing) existing.remove();
+  const t=document.createElement('div');
+  t.className='m-toast'+(type==='success'?' m-toast-success':type==='error'?' m-toast-error':'');
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),3000);
+}
+
+// ═══ API WRAPPER ═══
+async function hdFetch(path, opts){
+  opts=opts||{};
+  opts.headers=Object.assign({
+    'Authorization':'Basic '+HD_TOKEN,
+    'Content-Type':'application/json',
+    'User-Agent':'Yespresso/1.0'
+  },opts.headers||{});
+  const res=await fetch(PROXY+'/api/v1'+path,opts);
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const txt=await res.text();
+  return txt?JSON.parse(txt):null;
+}
+
+async function shopifyGet(path){
+  try{
+    const res=await fetch(PROXY+'/shopify/'+path);
+    if(!res.ok) return null;
+    return await res.json();
+  }catch(e){ console.warn('[Shopify]',e.message); return null; }
+}
+
+async function anthropicFetch(body){
+  const res=await fetch(PROXY+'/anthropic/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  return res;
+}
+
+// ═══ LOGIN ═══
+function checkLogin(){
+  // Se il server serve la pagina significa che siamo già autenticati via cookie
+  // Però verifichiamo provando una chiamata API
+  return hdFetch('/tickets?pageSize=1').then(()=>true).catch(()=>false);
+}
+
+function renderLogin(){
+  $('app').innerHTML =
+    '<div class="m-login">'+
+      '<div class="m-login-logo">📱</div>'+
+      '<div class="m-login-title">Yespresso HelpDesk</div>'+
+      '<div class="m-login-sub">Versione mobile</div>'+
+      '<form class="m-login-form" onsubmit="return doLogin(event)" action="/hd-login?next=%2Fm" method="POST">'+
+        '<input class="m-login-input" type="password" name="pwd" id="login-pass" placeholder="Password" autocomplete="current-password" required autofocus>'+
+        '<button class="m-login-btn" type="submit">Accedi</button>'+
+        '<div class="m-login-error" id="login-err"></div>'+
+      '</form>'+
+    '</div>';
+  setTimeout(()=>$('login-pass')?.focus(),100);
+}
+
+async function doLogin(ev){
+  ev.preventDefault();
+  const pwd=$('login-pass').value;
+  const err=$('login-err');
+  err.textContent='';
+  try{
+    const res=await fetch(PROXY+'/hd-login?next=%2Fm',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'pwd='+encodeURIComponent(pwd),
+      credentials:'include',
+      redirect:'manual'
+    });
+    // Se il login riesce il server setta cookie e fa redirect → ricarichiamo la pagina
+    // (fetch non segue redirect se redirect:'manual')
+    location.href='/m';
+  }catch(e){
+    // In caso di errore di rete, comunque proviamo a ricaricare la pagina
+    // perché il cookie potrebbe essere stato settato
+    location.href='/m';
+  }
+  return false;
+}
+
+async function doLogout(){
+  try{
+    await fetch(PROXY+'/hd-logout',{method:'POST'});
+  }catch(e){}
+  state.loggedIn=false;
+  state.tickets=[];
+  state.currentTicket=null;
+  renderLogin();
+}
+
+// ═══ LOAD TICKETS ═══
+async function loadTickets(){
+  state.view='list';
+  state.loading=true;
+  renderList();
+  try{
+    // Carica ticket Open + Pending in parallelo
+    const [openRes, pendingRes] = await Promise.all([
+      hdFetch('/tickets?pageSize=50&page=1&status=open&sortBy=lastMessageAt&order=desc').catch(()=>[]),
+      hdFetch('/tickets?pageSize=50&page=1&status=pending&sortBy=lastMessageAt&order=desc').catch(()=>[])
+    ]);
+    const openList=Array.isArray(openRes)?openRes:(openRes&&(openRes.tickets||openRes.data)||[]);
+    const pendingList=Array.isArray(pendingRes)?pendingRes:(pendingRes&&(pendingRes.tickets||pendingRes.data)||[]);
+    state.tickets=[...openList,...pendingList];
+    // Dedupe
+    const seen=new Set();
+    state.tickets=state.tickets.filter(t=>{
+      const id=t.ID||t.id;
+      if(seen.has(id)) return false;
+      seen.add(id); return true;
+    });
+    // Ordina per data più recente
+    state.tickets.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
+  }catch(e){
+    console.error('[loadTickets]',e);
+    showToast('Errore caricamento: '+e.message,'error');
+  }
+  state.loading=false;
+  renderList();
+}
+
+// ═══ RENDER LIST ═══
+function renderList(){
+  // Applica compattazione Amazon stesso ordine
+  const amzGroups={};
+  state.tickets.forEach(t=>{
+    const email=(t.requester&&t.requester.email)||'';
+    if(!email.includes('marketplace.amazon')) return;
+    const m=(t.subject||'').match(/(\d{3}-\d{7}-\d{7})/);
+    if(!m) return;
+    const key=email+'|'+m[1];
+    if(!amzGroups[key]) amzGroups[key]=[];
+    amzGroups[key].push(t);
+  });
+  const hidden=new Set();
+  const groupInfo={};
+  Object.keys(amzGroups).forEach(k=>{
+    const grp=amzGroups[k];
+    if(grp.length<=1) return;
+    grp.sort((a,b)=>new Date(b.lastMessageAt||b.updatedAt||0)-new Date(a.lastMessageAt||a.updatedAt||0));
+    const main=grp.find(g=>g.status==='open'||g.status==='pending')||grp[0];
+    const mainId=main.ID||main.id;
+    grp.forEach(g=>{if((g.ID||g.id)!==mainId) hidden.add(g.ID||g.id);});
+    groupInfo[mainId]={size:grp.length, orderNum:k.split('|')[1]};
+  });
+
+  let visible=state.tickets.filter(t=>!hidden.has(t.ID||t.id));
+
+  // Applica search
+  if(state.searchQuery){
+    const q=state.searchQuery.toLowerCase();
+    visible=visible.filter(t=>
+      (t.subject||'').toLowerCase().includes(q) ||
+      ((t.requester&&t.requester.name)||'').toLowerCase().includes(q) ||
+      ((t.requester&&t.requester.email)||'').toLowerCase().includes(q)
+    );
+  }
+
+  let html=
+    '<div class="m-header">'+
+      '<div class="m-header-title">📱 Yespresso Mobile</div>'+
+      '<button class="m-logout" onclick="doLogout()">Esci</button>'+
+    '</div>'+
+    '<div class="m-search">'+
+      '<input type="text" id="search-input" placeholder="Cerca per nome, email, oggetto..." value="'+h(state.searchQuery)+'" oninput="onSearchInput(this.value)">'+
+    '</div>'+
+    '<div class="m-counter">'+
+      '<span>'+(state.loading?'⏳ Caricamento...':visible.length+' ticket'+(visible.length!==1?'s':'')+' aperti')+'</span>'+
+      '<button class="m-counter-refresh" onclick="loadTickets()">🔄</button>'+
+    '</div>'+
+    '<div class="m-content" id="content">';
+
+  if(state.loading){
+    html+='<div class="m-loading"><div class="m-spinner"></div>Caricamento ticket...</div>';
+  } else if(!visible.length){
+    html+='<div class="m-empty">'+(state.searchQuery?'Nessun ticket per "'+h(state.searchQuery)+'"':'Nessun ticket aperto 🎉')+'</div>';
+  } else {
+    visible.forEach(t=>{
+      const tid=t.ID||t.id;
+      const name=(t.requester&&t.requester.name)||(t.requester&&t.requester.email)||'Cliente';
+      const email=(t.requester&&t.requester.email)||'';
+      const src=srcLabel(email);
+      const time=timeAgo(t.lastMessageAt||t.updatedAt);
+      const gi=groupInfo[tid];
+      const amzBadge=gi?'<span class="m-badge m-badge-thread">🔗 +'+(gi.size-1)+'</span>':'';
+      const statusBadge=t.status==='pending'?'<span class="m-badge m-badge-pending">⏳ Pending</span>':'<span class="m-badge m-badge-open">● Open</span>';
+      html+=
+        '<div class="m-ticket-row" onclick="openTicket(\''+tid+'\')">'+
+          '<div class="m-ticket-head">'+
+            '<div class="m-avatar" style="background:'+avatarColor(name)+'">'+initials(name)+'</div>'+
+            '<div class="m-ticket-info">'+
+              '<div class="m-ticket-name-row">'+
+                '<div class="m-ticket-name">'+h(name)+'</div>'+
+                '<div class="m-ticket-time">'+time+'</div>'+
+              '</div>'+
+              '<div class="m-ticket-subj">'+h(t.subject||'Senza oggetto')+'</div>'+
+            '</div>'+
+          '</div>'+
+          '<div class="m-ticket-badges">'+
+            '<span class="m-badge '+src.cls+'">'+src.lbl+'</span>'+
+            amzBadge+
+            statusBadge+
+          '</div>'+
+        '</div>';
+    });
+  }
+
+  html+='</div>';
+  $('app').innerHTML=html;
+}
+
+function onSearchInput(val){
+  state.searchQuery=val;
+  renderList();
+  // Mantieni focus sull'input
+  setTimeout(()=>{
+    const inp=$('search-input');
+    if(inp) inp.focus();
+  },0);
+}
+
+// ═══ OPEN TICKET ═══
+async function openTicket(tid){
+  state.view='detail';
+  state.currentTicket=state.tickets.find(t=>(t.ID||t.id)===tid);
+  state.currentTicketFull=null;
+  state.shopifyOrder=null;
+  state.aiReply='';
+  state.aiSummary='';
+  state.sending=false;
+  renderDetail();
+
+  try{
+    // Carica dettaglio completo + ordine Shopify in parallelo
+    const [full, order] = await Promise.all([
+      hdFetch('/tickets/'+tid).catch(e=>{console.warn('[full ticket]',e); return null;}),
+      fetchShopifyOrderFromTicket(state.currentTicket).catch(e=>{console.warn('[shopify]',e); return null;})
+    ]);
+    state.currentTicketFull=full;
+    state.shopifyOrder=order;
+    renderDetail();
+    // Genera riassunto AI in background
+    generateSummary();
+  }catch(e){
+    showToast('Errore: '+e.message,'error');
+  }
+}
+
+// Cerca ordine Shopify dal subject del ticket
+async function fetchShopifyOrderFromTicket(t){
+  if(!t) return null;
+  const subj=t.subject||'';
+  const email=(t.requester&&t.requester.email)||'';
+  const msgText=(t.events&&t.events[0]&&t.events[0].message&&t.events[0].message.text)||'';
+  // Cerca numero ordine
+  let orderNum='';
+  // Pattern Shopify: #NNNNNNN
+  const shopMatch=(subj+' '+msgText).match(/#(\d{6,})/);
+  if(shopMatch) orderNum=shopMatch[1];
+  // Se non trovato, prova email
+  if(!orderNum && email && !email.includes('marketplace.amazon') && !email.includes('temu') && !email.includes('brt')){
+    const d=await shopifyGet('orders.json?email='+encodeURIComponent(email)+'&status=any&limit=5');
+    if(d&&d.orders&&d.orders.length){
+      // Prendi il più recente
+      return d.orders.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
+    }
+  }
+  if(orderNum){
+    const d=await shopifyGet('orders.json?name=%23'+orderNum+'&status=any');
+    if(d&&d.orders&&d.orders.length) return d.orders[0];
+  }
+  return null;
+}
+
+// ═══ GENERATE AI SUMMARY ═══
+async function generateSummary(){
+  const t=state.currentTicketFull||state.currentTicket;
+  if(!t||!t.events) return;
+  // Prendi ultimo messaggio cliente
+  const custMsgs=t.events.filter(e=>e.message&&e.message.text&&e.author&&e.author.type!=='agent');
+  const agentMsgs=t.events.filter(e=>e.message&&e.message.text&&e.author&&e.author.type==='agent');
+  if(!custMsgs.length) return;
+  const lastCust=custMsgs[custMsgs.length-1].message.text.substring(0,1000);
+  const ourReplies=agentMsgs.slice(-3).map(e=>e.message.text.substring(0,300)).join(' || ');
+  const prompt='Sintetizza in 2 righe MASSIMO cosa chiede il cliente e cosa abbiamo già fatto. Stile telegrafico, italiano, riga 1 = richiesta cliente, riga 2 = cosa abbiamo già detto. Non usare liste.\n\nUltimo msg cliente: '+lastCust+'\n\nNostre risposte precedenti: '+(ourReplies||'nessuna');
+  try{
+    const res=await anthropicFetch({
+      model:'claude-sonnet-4-5',
+      max_tokens:150,
+      messages:[{role:'user',content:prompt}]
+    });
+    if(!res.ok) return;
+    const data=await res.json();
+    const summary=(data.content&&data.content[0]&&data.content[0].text)||'';
+    state.aiSummary=summary;
+    const el=$('summary-text');
+    if(el) el.textContent=summary;
+  }catch(e){
+    console.warn('[summary]',e);
+  }
+}
+
+// ═══ GENERATE AI REPLY ═══
+async function generateReply(){
+  const t=state.currentTicketFull||state.currentTicket;
+  if(!t) return;
+  state.sending=true;
+  renderDetail();
+
+  try{
+    const custMsgs=(t.events||[]).filter(e=>e.message&&e.message.text);
+    const thread=custMsgs.map(e=>{
+      const isAgent=e.author&&e.author.type==='agent';
+      const role=isAgent?'AGENTE':'CLIENTE';
+      return role+': '+e.message.text.substring(0,1000);
+    }).join('\n---\n');
+
+    const order=state.shopifyOrder;
+    let orderCtx='';
+    if(order){
+      orderCtx='\n\nORDINE SHOPIFY: '+order.name+' · €'+order.total_price+' · stato: '+(order.fulfillment_status||'non spedito');
+      if(order.shipping_address) orderCtx+=' · destinatario: '+order.shipping_address.name+', '+order.shipping_address.address1+' '+order.shipping_address.city;
+    }
+
+    const email=(t.requester&&t.requester.email)||'';
+    const src=srcLabel(email);
+
+    const prompt='Sei un assistente clienti di Yespresso (caffè e capsule). Rispondi al cliente in modo professionale, cordiale e preciso. Mantieni la risposta SINTETICA (adatta a mobile) ma completa. NON usare link esterni se il canale è Amazon.\n\nCANALE: '+src.lbl+orderCtx+'\n\nTHREAD:\n'+thread+'\n\nGenera una risposta professionale in italiano:';
+
+    const res=await anthropicFetch({
+      model:'claude-sonnet-4-5',
+      max_tokens:1000,
+      messages:[{role:'user',content:prompt}]
+    });
+    if(!res.ok){ throw new Error('HTTP '+res.status); }
+    const data=await res.json();
+    const reply=(data.content&&data.content[0]&&data.content[0].text)||'';
+    state.aiReply=reply;
+    state.sending=false;
+    renderDetail();
+    showToast('Risposta AI generata','success');
+  }catch(e){
+    state.sending=false;
+    renderDetail();
+    showToast('Errore AI: '+e.message,'error');
+  }
+}
+
+// ═══ REFORMULATE AI REPLY ═══
+async function reformulateReply(){
+  const currentText=$('reply-textarea')?.value||state.aiReply;
+  if(!currentText.trim()){ showToast('Genera prima una risposta','error'); return; }
+  const hints=prompt('Suggerimenti per riformulare:\n(es. tono più formale, più breve, aggiungi scuse)');
+  if(!hints) return;
+  state.sending=true;
+  renderDetail();
+  try{
+    const p='Riformula questa risposta email seguendo questi suggerimenti: '+hints+'\n\nRisposta originale:\n'+currentText+'\n\nRispondi SOLO con la risposta riformulata.';
+    const res=await anthropicFetch({
+      model:'claude-sonnet-4-5',
+      max_tokens:1000,
+      messages:[{role:'user',content:p}]
+    });
+    const data=await res.json();
+    state.aiReply=(data.content&&data.content[0]&&data.content[0].text)||currentText;
+    state.sending=false;
+    renderDetail();
+    showToast('Riformulato','success');
+  }catch(e){
+    state.sending=false;
+    renderDetail();
+    showToast('Errore: '+e.message,'error');
+  }
+}
+
+// ═══ SEND REPLY ═══
+async function sendReply(){
+  const t=state.currentTicket;
+  if(!t) return;
+  const tid=t.ID||t.id;
+  const message=$('reply-textarea')?.value.trim();
+  if(!message){ showToast('Scrivi una risposta','error'); return; }
+  state.sending=true;
+  renderDetail();
+  try{
+    // Invia messaggio
+    const res=await fetch(PROXY+'/api/v1/tickets/'+tid,{
+      method:'PATCH',
+      headers:{
+        'Authorization':'Basic '+HD_TOKEN,
+        'Content-Type':'application/json',
+        'User-Agent':'Yespresso/1.0'
+      },
+      body:JSON.stringify({message:{text:message}})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    // Cambia stato a solved
+    try{
+      await hdFetch('/tickets/'+tid,{method:'PATCH',body:JSON.stringify({status:'solved'})});
+      t.status='solved';
+    }catch(e){
+      console.warn('[solved]',e);
+    }
+    showToast('Risposta inviata','success');
+    // Torna alla lista
+    setTimeout(()=>{
+      state.view='list';
+      state.currentTicket=null;
+      // Rimuovi ticket dalla lista locale
+      state.tickets=state.tickets.filter(tk=>(tk.ID||tk.id)!==tid);
+      renderList();
+    },500);
+  }catch(e){
+    state.sending=false;
+    renderDetail();
+    showToast('Errore invio: '+e.message,'error');
+  }
+}
+
+// ═══ BACK TO LIST ═══
+function backToList(){
+  state.view='list';
+  state.currentTicket=null;
+  state.currentTicketFull=null;
+  renderList();
+}
+
+// ═══ RENDER DETAIL ═══
+function renderDetail(){
+  const t=state.currentTicketFull||state.currentTicket;
+  if(!t){ renderList(); return; }
+  const name=(t.requester&&t.requester.name)||(t.requester&&t.requester.email)||'Cliente';
+  const email=(t.requester&&t.requester.email)||'';
+  const src=srcLabel(email);
+  const order=state.shopifyOrder;
+
+  // Ultimo messaggio cliente
+  const events=(t.events||[]).filter(e=>e.message&&e.message.text);
+  const custMsgs=events.filter(e=>e.author&&e.author.type!=='agent');
+  const lastCustMsg=custMsgs.length?custMsgs[custMsgs.length-1]:null;
+  const lastMsgText=lastCustMsg?lastCustMsg.message.text:'(nessun messaggio cliente)';
+  const lastMsgTime=lastCustMsg?timeAgo(lastCustMsg.date||lastCustMsg.createdAt):'';
+
+  // Attachments (solo dall'ultimo messaggio cliente)
+  const attachments=[];
+  if(lastCustMsg){
+    const msgAtts=Array.isArray(lastCustMsg.message.attachments)?lastCustMsg.message.attachments:[];
+    const evAtts=Array.isArray(lastCustMsg.attachments)?lastCustMsg.attachments:[];
+    [...msgAtts,...evAtts].forEach(a=>{
+      const url=a.url||a.href||'';
+      const ct=(a.contentType||a.type||a.mimeType||'').toLowerCase();
+      if(url && (ct.startsWith('image/')||/\.(jpe?g|png|gif|webp)(\?|$)/i.test(url))){
+        attachments.push({url,name:a.name||a.filename||'foto'});
+      }
+    });
+  }
+
+  // Info ordine
+  let orderBox='';
+  if(order){
+    const shipStatus=(order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].shipment_status)||'';
+    const fStatusMap={delivered:'✓ Consegnato',in_transit:'🚚 In transito',out_for_delivery:'🛵 In consegna',attempted_delivery:'⚠ Tentativo',ready_for_pickup:'📬 Pronto ritiro',failure:'❌ Problema'};
+    const statusLbl=order.cancelled_at?'❌ Annullato':(fStatusMap[shipStatus]||(order.fulfillment_status==='fulfilled'?'✓ Spedito':'⏳ Non spedito'));
+    const statusBg=order.cancelled_at?'#fee2e2':shipStatus==='delivered'?'#f0fdf4':shipStatus==='failure'?'#fee2e2':shipStatus==='ready_for_pickup'?'#fef3c7':'#fff7ed';
+    const statusColor=order.cancelled_at?'#991b1b':shipStatus==='delivered'?'#166534':shipStatus==='failure'?'#991b1b':shipStatus==='ready_for_pickup'?'#854d0e':'#c2410c';
+    const shopifyAdminUrl='https://admin.shopify.com/store/yespresso-1/orders/'+order.id;
+    const tn=(order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].tracking_number)||'';
+    const brtUrl=tn?'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn:'';
+
+    orderBox='<div class="m-order-box">'+
+      '<div class="m-order-card" style="display:flex;align-items:center;justify-content:space-between">'+
+        '<div>'+
+          '<div class="m-order-label">Ordine</div>'+
+          '<div class="m-order-value">'+h(order.name||'#'+order.order_number)+'</div>'+
+        '</div>'+
+        '<a href="'+h(shopifyAdminUrl)+'" target="_blank" style="background:#1a73e8;color:#fff;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:500;text-decoration:none">🛍 Shopify ↗</a>'+
+      '</div>'+
+      '<div class="m-order-badges">'+
+        '<div class="m-order-badge" style="background:'+statusBg+';color:'+statusColor+'">'+
+          '<div style="font-size:9px;color:#888;font-weight:400;margin-bottom:1px">Consegna</div>'+
+          h(statusLbl)+
+        '</div>'+
+        (tn?'<a href="'+h(brtUrl)+'" target="_blank" class="m-order-badge" style="background:#fff7ed;color:#c2410c">'+
+          '<div style="font-size:9px;color:#888;font-weight:400;margin-bottom:1px">BRT</div>'+
+          '📦 '+h(tn.slice(-8))+' ↗'+
+        '</a>':'<div class="m-order-badge" style="background:#f0f2f5;color:#888"><div style="font-size:9px;margin-bottom:1px">BRT</div>—</div>')+
+      '</div>'+
+    '</div>';
+  }
+
+  // Summary AI box
+  const summaryHtml=
+    '<div class="m-summary">'+
+      '<div class="m-summary-label">✨ Riassunto AI</div>'+
+      '<div class="m-summary-text" id="summary-text">'+(state.aiSummary?h(state.aiSummary):'<em style="color:#aaa">Generazione in corso...</em>')+'</div>'+
+    '</div>';
+
+  // Last message box
+  const multiMsg=events.length>1?'<button class="m-lastmsg-link" onclick="viewFullThread()">👁 Thread ('+events.length+')</button>':'';
+  const attachHtml=attachments.length?
+    '<div class="m-attach">'+attachments.map((a,i)=>
+      '<div class="m-attach-thumb" onclick="openImageViewer('+i+')">'+
+        '<img src="'+h(a.url)+'" alt="foto" loading="lazy">'+
+        '<div class="m-attach-count">'+(i+1)+'/'+attachments.length+'</div>'+
+      '</div>'
+    ).join('')+'</div>':'';
+  window._currentAttachments=attachments;
+
+  const lastMsgBox=
+    '<div class="m-lastmsg">'+
+      '<div class="m-lastmsg-label">'+
+        '<span>Ultimo messaggio'+(lastMsgTime?' · '+h(lastMsgTime):'')+'</span>'+
+        multiMsg+
+      '</div>'+
+      '<div class="m-lastmsg-text">'+h(lastMsgText)+'</div>'+
+      attachHtml+
+    '</div>';
+
+  // Reply area + footer
+  let replySection='';
+  if(state.aiReply){
+    replySection=
+      '<div class="m-ai-banner">✨ <span>Risposta AI generata · puoi modificarla</span></div>'+
+      '<div class="m-reply">'+
+        '<textarea class="m-reply-textarea" id="reply-textarea" placeholder="Modifica la risposta...">'+h(state.aiReply)+'</textarea>'+
+      '</div>'+
+      '<div class="m-action-row">'+
+        '<button class="m-action-btn m-action-btn-suggest" onclick="reformulateReply()"'+(state.sending?' disabled':'')+'>💡 Suggerimenti</button>'+
+        '<button class="m-action-btn" onclick="openQuickReplies()">📋 Rapide</button>'+
+      '</div>'+
+      '<div class="m-footer">'+
+        '<button class="m-footer-btn" onclick="backToList()">Annulla</button>'+
+        '<button class="m-footer-btn-success" onclick="sendReply()"'+(state.sending?' disabled':'')+'>'+(state.sending?'Invio...':'✓ Invia & chiudi')+'</button>'+
+      '</div>';
+  } else {
+    replySection=
+      '<div class="m-footer">'+
+        '<button class="m-footer-btn" onclick="backToList()">Indietro</button>'+
+        '<button class="m-footer-btn-primary" onclick="generateReply()"'+(state.sending?' disabled':'')+'>'+(state.sending?'⏳ Genero...':'✨ Genera risposta AI')+'</button>'+
+      '</div>';
+  }
+
+  $('app').innerHTML=
+    '<div class="m-detail-header">'+
+      '<button class="m-back" onclick="backToList()">←</button>'+
+      '<div class="m-detail-title">'+
+        '<div class="m-detail-name">'+h(name)+'</div>'+
+        '<div class="m-detail-sub">'+h(src.lbl)+' · '+h(t.subject||'')+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="m-content">'+
+      (order?orderBox:'')+
+      summaryHtml+
+      lastMsgBox+
+    '</div>'+
+    replySection;
+}
+
+// ═══ FULL THREAD VIEW ═══
+function viewFullThread(){
+  const t=state.currentTicketFull||state.currentTicket;
+  if(!t) return;
+  const events=(t.events||[]).filter(e=>e.message&&e.message.text);
+  let html='<div class="m-detail-header">'+
+    '<button class="m-back" onclick="renderDetail()">←</button>'+
+    '<div class="m-detail-title"><div class="m-detail-name">Thread completo</div><div class="m-detail-sub">'+events.length+' messaggi</div></div>'+
+  '</div>'+
+  '<div class="m-content" style="padding:12px">';
+  events.forEach(e=>{
+    const isAgent=e.author&&e.author.type==='agent';
+    const bg=isAgent?'#f0fdf4':'#f0f4ff';
+    const border=isAgent?'#16a34a':'#1a73e8';
+    const role=isAgent?'Agente':'Cliente';
+    const time=timeAgo(e.date||e.createdAt);
+    html+='<div style="background:'+bg+';border-left:3px solid '+border+';border-radius:6px;padding:10px 12px;margin-bottom:8px">'+
+      '<div style="font-size:10px;color:#888;font-weight:500;margin-bottom:4px;display:flex;justify-content:space-between">'+
+        '<span>'+role+'</span><span>'+h(time)+'</span>'+
+      '</div>'+
+      '<div style="font-size:13px;color:#1a1a2e;line-height:1.5;white-space:pre-wrap;word-wrap:break-word">'+h(e.message.text)+'</div>'+
+    '</div>';
+  });
+  html+='</div>';
+  $('app').innerHTML=html;
+}
+
+// ═══ IMAGE VIEWER ═══
+let _imgViewerIdx=0;
+function openImageViewer(idx){
+  _imgViewerIdx=idx;
+  renderImageViewer();
+}
+function renderImageViewer(){
+  const atts=window._currentAttachments||[];
+  if(!atts.length) return;
+  const a=atts[_imgViewerIdx];
+  let existing=document.getElementById('img-viewer');
+  if(existing) existing.remove();
+  const v=document.createElement('div');
+  v.className='m-img-viewer';
+  v.id='img-viewer';
+  v.innerHTML=
+    '<div class="m-img-viewer-header">'+
+      '<div class="m-img-viewer-counter">'+(_imgViewerIdx+1)+' / '+atts.length+'</div>'+
+      '<button class="m-img-viewer-close" onclick="closeImageViewer()">×</button>'+
+    '</div>'+
+    '<div class="m-img-viewer-body"><img src="'+h(a.url)+'" alt="foto"></div>'+
+    (atts.length>1?'<div class="m-img-viewer-nav">'+
+      '<button class="m-img-nav-btn" onclick="prevImage()"'+(_imgViewerIdx===0?' disabled':'')+'>‹ Prec.</button>'+
+      '<a href="'+h(a.url)+'" target="_blank" download class="m-img-nav-btn" style="text-decoration:none;display:inline-block">⬇ Scarica</a>'+
+      '<button class="m-img-nav-btn" onclick="nextImage()"'+(_imgViewerIdx===atts.length-1?' disabled':'')+'>Succ. ›</button>'+
+    '</div>':'<div class="m-img-viewer-nav"><a href="'+h(a.url)+'" target="_blank" download class="m-img-nav-btn" style="text-decoration:none;flex:1;text-align:center">⬇ Scarica</a></div>');
+  document.body.appendChild(v);
+}
+function closeImageViewer(){
+  const v=document.getElementById('img-viewer');
+  if(v) v.remove();
+}
+function prevImage(){
+  if(_imgViewerIdx>0){ _imgViewerIdx--; renderImageViewer(); }
+}
+function nextImage(){
+  const atts=window._currentAttachments||[];
+  if(_imgViewerIdx<atts.length-1){ _imgViewerIdx++; renderImageViewer(); }
+}
+
+// ═══ QUICK REPLIES (Fase 1 = alert informativo) ═══
+function openQuickReplies(){
+  showToast('Risposte rapide disponibili nella Fase 2','error');
+}
+
+// ═══ INIT ═══
+async function init(){
+  // Check login provando una chiamata API
+  try{
+    await hdFetch('/tickets?pageSize=1');
+    state.loggedIn=true;
+    // Se c'è un ticket nel deep link, aprilo
+    if(window._ticketDaAprire){
+      await loadTickets();
+      // Cerca ticket matching
+      setTimeout(()=>{
+        const t=state.tickets.find(tk=>
+          (tk.shortID||tk.shortId||'').toLowerCase()===String(window._ticketDaAprire).toLowerCase() ||
+          (tk.ID||tk.id)===window._ticketDaAprire
+        );
+        if(t) openTicket(t.ID||t.id);
+      },500);
+    } else {
+      await loadTickets();
+    }
+  }catch(e){
+    state.loggedIn=false;
+    renderLogin();
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>
