@@ -9413,7 +9413,6 @@ function renderOrdiniRitardo(ignored, panel, ignored2) {
   }
 
   // Raccoglie tutte le righe ricevute in ritardo
-  // Raggruppa per mese basato su data_cons_richiesta (non data di ricezione)
   var ritardi = {}; // key: YYYY-MM
   var fmtD = function(s) {
     if (!s) return '—';
@@ -9422,35 +9421,44 @@ function renderOrdiniRitardo(ignored, panel, ignored2) {
   };
   var mesiLabel = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 
+  // Mappatura SKU display -> SKU Shopify (da fabProducts)
+  var fabProds = (typeof fabProducts !== 'undefined' && Array.isArray(fabProducts)) ? fabProducts : [];
+  var skuToShopify = {}; // chiave: sku display (r.sku), valore: sku_shopify
+  fabProds.forEach(function(p){
+    if(p && p.sku && p.sku_shopify) skuToShopify[p.sku] = p.sku_shopify;
+  });
+
   ordini.forEach(function(ord) {
     if (ord.stato === 'annullato') return;
     (ord.righe || []).forEach(function(r) {
       var qtyRic = r.qty_ricevuta || 0;
-      if (!qtyRic) return; // niente ricevuto, salta
+      if (!qtyRic) return;
       var dataRic = r.data_ricezione_effettiva;
-      if (!dataRic) return; // nessuna data ricezione salvata
+      if (!dataRic) return;
       var dataCons = (r.data_cons_riga || ord.data_consegna_prevista || '').substring(0, 10);
       if (!dataCons) return;
-      if (dataRic <= dataCons) return; // in tempo, non in ritardo
+      if (dataRic <= dataCons) return;
 
-      // In ritardo: aggrega per mese della data consegna richiesta
-      var meseKey = dataCons.substring(0, 7); // YYYY-MM
+      var meseKey = dataCons.substring(0, 7);
       if (!ritardi[meseKey]) ritardi[meseKey] = [];
 
-      // Calcola quante unità sono in ritardo (parziale o totale)
       var qtaOrdinata = r.qty_ordinata || r.qty || 0;
-      var qtaInRitardo = Math.min(qtyRic, qtaOrdinata); // non più di quanto ordinato
+      var qtaInRitardo = Math.min(qtyRic, qtaOrdinata);
+      var skuDisp = r.sku || r.sku_shopify || '—';
+      var skuShop = skuToShopify[skuDisp] || r.sku_shopify || skuDisp;
 
       ritardi[meseKey].push({
         numero:    ord.numero_ordine || ('ORD-' + (ord.id || '')),
         dataOrd:   ord.data_ordine || '—',
-        sku:       r.sku || r.sku_shopify || '—',
+        sku:       skuDisp,
+        skuShopify: skuShop,
         prodotto:  r.nome_prodotto || r.nome || r.sku || '—',
         fornitore: ord.fornitore || '—',
         qtaRitardo: qtaInRitardo,
         dataCons:  dataCons,
         dataRic:   dataRic,
-        giorni:    Math.round((new Date(dataRic) - new Date(dataCons)) / 86400000)
+        giorni:    Math.round((new Date(dataRic) - new Date(dataCons)) / 86400000),
+        costo:     null // popolato dopo da Shopify
       });
     });
   });
@@ -9458,61 +9466,95 @@ function renderOrdiniRitardo(ignored, panel, ignored2) {
   var mesiOrdinati = Object.keys(ritardi).sort().reverse();
   var totRitardi = mesiOrdinati.reduce(function(s, k) { return s + ritardi[k].length; }, 0);
 
-  var thS = 'background:#1F3864;color:#fff;font-weight:700;font-size:10px;padding:6px 8px;border:1px solid #2E75B6;text-align:left;white-space:nowrap';
-  var tdS = 'font-size:11px;padding:5px 8px;border:1px solid #e0e4ea;vertical-align:top';
-  var tdR = tdS + ';text-align:right';
-  var tdC = tdS + ';text-align:center';
+  // Lista unica fornitori per filtro
+  var allFornitori = new Set();
+  mesiOrdinati.forEach(function(m){ ritardi[m].forEach(function(r){ allFornitori.add(r.fornitore); }); });
+  var fornArr = Array.from(allFornitori).sort();
 
-  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">' +
-    '<div style="font-size:18px;font-weight:700;color:#1F3864">⏰ Ordini in Ritardo</div>' +
-    '<div style="font-size:12px;color:#888">Consegne effettuate oltre la data prevista — aggregate per mese di consegna richiesta</div>' +
-  '</div>';
+  // Carica filtri da sessione (non persistenti)
+  window._ritardiFiltri = window._ritardiFiltri || {mesi:new Set(mesiOrdinati), fornitori:new Set(fornArr)};
 
-  if (!mesiOrdinati.length) {
-    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:32px;text-align:center;max-width:800px">' +
-      '<div style="font-size:28px;margin-bottom:8px">✅</div>' +
-      '<div style="font-size:14px;font-weight:700;color:#166534">Nessun ritardo rilevato!</div>' +
-      '<div style="font-size:12px;color:#888;margin-top:4px">Tutti gli ordini ricevuti sono stati consegnati in tempo.</div>' +
-    '</div>';
-  } else {
-    html += '<div style="font-size:12px;color:#888;margin-bottom:16px">Totale righe in ritardo: <strong>' + totRitardi + '</strong></div>';
+  // Esponi struttura per export
+  window._ritardiData = ritardi;
+  window._ritardiMesi = mesiOrdinati;
+  window._ritardiFornArr = fornArr;
+  window._mesiLabel = mesiLabel;
 
-    mesiOrdinati.forEach(function(meseKey) {
+  // ── FUNZIONE DI RENDERING TABELLE ──
+  window._ritardiRender = function(){
+    var filtri = window._ritardiFiltri;
+    var thS = 'background:#1F3864;color:#fff;font-weight:700;font-size:10px;padding:6px 8px;border:1px solid #2E75B6;text-align:left;white-space:nowrap';
+    var tdS = 'font-size:11px;padding:5px 8px;border:1px solid #e0e4ea;vertical-align:top';
+    var tdR = tdS + ';text-align:right';
+    var tdC = tdS + ';text-align:center';
+    var euro=function(v){return v==null?'—':('€'+(Math.round(v*100)/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2}));};
+
+    var container = document.getElementById('ritardi-tables-container');
+    if(!container) return;
+
+    var html = '';
+    var totPenaleGlobale = 0;
+    var totRigheFiltrate = 0;
+
+    mesiOrdinati.forEach(function(meseKey){
+      if(!filtri.mesi.has(meseKey)) return;
+      var righe = ritardi[meseKey].filter(function(r){return filtri.fornitori.has(r.fornitore);});
+      if(!righe.length) return;
+
       var parts = meseKey.split('-');
       var label = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
-      var righe = ritardi[meseKey];
 
       // Raggruppa per fornitore
       var fornitori = {};
-      righe.forEach(function(r) {
-        if (!fornitori[r.fornitore]) fornitori[r.fornitore] = [];
+      righe.forEach(function(r){
+        if(!fornitori[r.fornitore]) fornitori[r.fornitore]=[];
         fornitori[r.fornitore].push(r);
       });
 
-      html += '<div style="margin-bottom:24px;max-width:900px">' +
-        '<div style="font-size:14px;font-weight:700;color:#dc2626;margin-bottom:10px;padding:8px 14px;background:#fff5f5;border-left:4px solid #dc2626;border-radius:0 8px 8px 0">' +
-          '📅 ' + label + ' — ' + righe.length + ' riga' + (righe.length !== 1 ? 'e' : '') + ' in ritardo' +
+      // Totale penale del mese
+      var totPenaleMese = righe.reduce(function(s,r){
+        return s + (r.costo==null ? 0 : r.costo * 0.05 * r.qtaRitardo);
+      },0);
+      totPenaleGlobale += totPenaleMese;
+      totRigheFiltrate += righe.length;
+
+      html += '<div style="margin-bottom:24px;max-width:1100px">' +
+        '<div style="font-size:14px;font-weight:700;color:#dc2626;margin-bottom:10px;padding:8px 14px;background:#fff5f5;border-left:4px solid #dc2626;border-radius:0 8px 8px 0;display:flex;justify-content:space-between;align-items:center">' +
+          '<span>📅 ' + label + ' — ' + righe.length + ' riga' + (righe.length !== 1 ? 'e' : '') + ' in ritardo</span>' +
+          '<span style="font-size:13px">Penale tot: <strong>'+euro(totPenaleMese)+'</strong></span>' +
         '</div>';
 
-      Object.keys(fornitori).sort().forEach(function(forn) {
+      Object.keys(fornitori).sort().forEach(function(forn){
         var frRighe = fornitori[forn];
+        var totPenaleForn = frRighe.reduce(function(s,r){
+          return s + (r.costo==null ? 0 : r.costo * 0.05 * r.qtaRitardo);
+        },0);
+
         html += '<div style="margin-bottom:12px">' +
-          '<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px;padding:4px 10px;background:#f8f9fc;border-radius:6px">🏭 ' + escHtml(forn) + ' (' + frRighe.length + ')</div>' +
-          '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:700px">' +
+          '<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px;padding:4px 10px;background:#f8f9fc;border-radius:6px;display:flex;justify-content:space-between">' +
+            '<span>🏭 ' + escHtml(forn) + ' (' + frRighe.length + ')</span>' +
+            '<span>Penale: <strong>'+euro(totPenaleForn)+'</strong></span>' +
+          '</div>' +
+          '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1000px">' +
           '<thead><tr>' +
             '<th style="' + thS + '">N° ORDINE</th>' +
             '<th style="' + thS + '">DATA ORD.</th>' +
             '<th style="' + thS + '">SKU</th>' +
             '<th style="' + thS + '">PRODOTTO</th>' +
             '<th style="' + thS + ';text-align:right">QTÀ RITARDO</th>' +
-            '<th style="' + thS + '">CONS. PREVISTA</th>' +
-            '<th style="' + thS + '">CONS. EFFETTIVA</th>' +
-            '<th style="' + thS + ';text-align:center">GG RITARDO</th>' +
+            '<th style="' + thS + '">CONS. PREV.</th>' +
+            '<th style="' + thS + '">CONS. EFF.</th>' +
+            '<th style="' + thS + ';text-align:center">GG</th>' +
+            '<th style="' + thS + ';text-align:right">COSTO CONF.</th>' +
+            '<th style="' + thS + ';text-align:right">PENALE 5%</th>' +
+            '<th style="' + thS + ';text-align:right">PENALE RIGA</th>' +
           '</tr></thead><tbody>';
 
-        frRighe.forEach(function(r, i) {
+        frRighe.forEach(function(r, i){
           var bg = i % 2 === 0 ? '#fff' : '#fff5f5';
           var ritColor = r.giorni >= 10 ? '#dc2626' : r.giorni >= 5 ? '#ea580c' : '#d97706';
+          var penaleUnit = r.costo==null ? null : r.costo * 0.05;
+          var penaleRiga = r.costo==null ? null : penaleUnit * r.qtaRitardo;
           html += '<tr style="background:' + bg + '">' +
             '<td style="' + tdS + '">' + escHtml(r.numero) + '</td>' +
             '<td style="' + tdS + '">' + fmtD(r.dataOrd) + '</td>' +
@@ -9521,19 +9563,364 @@ function renderOrdiniRitardo(ignored, panel, ignored2) {
             '<td style="' + tdR + ';font-weight:700">' + r.qtaRitardo + '</td>' +
             '<td style="' + tdS + '">' + fmtD(r.dataCons) + '</td>' +
             '<td style="' + tdS + '">' + fmtD(r.dataRic) + '</td>' +
-            '<td style="' + tdC + ';font-weight:700;color:' + ritColor + '">+' + r.giorni + ' gg</td>' +
+            '<td style="' + tdC + ';font-weight:700;color:' + ritColor + '">+' + r.giorni + '</td>' +
+            '<td style="' + tdR + '">' + (r.costo==null ? '<span style="color:#aaa">?</span>' : euro(r.costo)) + '</td>' +
+            '<td style="' + tdR + '">' + (penaleUnit==null ? '—' : euro(penaleUnit)) + '</td>' +
+            '<td style="' + tdR + ';font-weight:700;color:#dc2626">' + (penaleRiga==null ? '—' : euro(penaleRiga)) + '</td>' +
           '</tr>';
         });
-
         html += '</tbody></table></div></div>';
       });
-
       html += '</div>';
     });
+
+    if(totRigheFiltrate === 0){
+      html = '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:32px;text-align:center;max-width:800px">' +
+        '<div style="font-size:28px;margin-bottom:8px">✅</div>' +
+        '<div style="font-size:14px;font-weight:700;color:#166534">Nessuna riga con i filtri selezionati</div>' +
+      '</div>';
+    } else {
+      // Totale globale filtrato in alto
+      var totBox = '<div style="background:#1F3864;color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;max-width:1100px;display:flex;justify-content:space-between;align-items:center">' +
+        '<span>📊 <strong>'+totRigheFiltrate+'</strong> righe selezionate</span>' +
+        '<span style="font-size:16px">💰 Penale totale: <strong>'+euro(totPenaleGlobale)+'</strong></span>' +
+      '</div>';
+      html = totBox + html;
+    }
+
+    container.innerHTML = html;
+  };
+
+  // ── HEADER con filtri + export ──
+  var headerHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">' +
+    '<div style="font-size:18px;font-weight:700;color:#1F3864">⏰ Ordini in Ritardo — Calcolo Penali</div>' +
+    '<div style="font-size:12px;color:#888">Penale = 5% del costo × quantità in ritardo</div>' +
+  '</div>';
+
+  if (!mesiOrdinati.length) {
+    ca.innerHTML = headerHtml +
+      '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:32px;text-align:center;max-width:800px">' +
+      '<div style="font-size:28px;margin-bottom:8px">✅</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#166534">Nessun ritardo rilevato!</div>' +
+    '</div>';
+    return;
   }
 
-  ca.innerHTML = html;
+  // Barra filtri
+  var filtriBar = '<div style="background:#fff;border:1.5px solid #e0e4ea;border-radius:10px;padding:12px 16px;margin-bottom:16px;max-width:1100px">' +
+    '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+      // Filtro mesi
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+        '<span style="font-size:11px;font-weight:700;color:#555">MESI:</span>' +
+        '<button onclick="_ritardiToggleAll(\'mesi\',true)" style="font-size:10px;padding:3px 8px;border:1px solid #ddd;border-radius:6px;background:#f8f9fc;cursor:pointer">Tutti</button>' +
+        '<button onclick="_ritardiToggleAll(\'mesi\',false)" style="font-size:10px;padding:3px 8px;border:1px solid #ddd;border-radius:6px;background:#f8f9fc;cursor:pointer">Nessuno</button>' +
+        mesiOrdinati.map(function(m){
+          var p=m.split('-');
+          var lbl=mesiLabel[parseInt(p[1])].substring(0,3)+' '+p[0];
+          return '<label style="display:inline-flex;align-items:center;gap:3px;font-size:11px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:3px 8px;cursor:pointer;user-select:none">' +
+            '<input type="checkbox" class="ritardi-f-mese" data-m="'+m+'" checked onchange="_ritardiToggleOne(\'mesi\',this.dataset.m,this.checked)" style="cursor:pointer">'+lbl+
+          '</label>';
+        }).join('') +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:8px">' +
+      // Filtro fornitori
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+        '<span style="font-size:11px;font-weight:700;color:#555">FORNITORI:</span>' +
+        '<button onclick="_ritardiToggleAll(\'fornitori\',true)" style="font-size:10px;padding:3px 8px;border:1px solid #ddd;border-radius:6px;background:#f8f9fc;cursor:pointer">Tutti</button>' +
+        '<button onclick="_ritardiToggleAll(\'fornitori\',false)" style="font-size:10px;padding:3px 8px;border:1px solid #ddd;border-radius:6px;background:#f8f9fc;cursor:pointer">Nessuno</button>' +
+        fornArr.map(function(f){
+          return '<label style="display:inline-flex;align-items:center;gap:3px;font-size:11px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:3px 8px;cursor:pointer;user-select:none">' +
+            '<input type="checkbox" class="ritardi-f-forn" data-f="'+escHtml(f)+'" checked onchange="_ritardiToggleOne(\'fornitori\',this.dataset.f,this.checked)" style="cursor:pointer">'+escHtml(f)+
+          '</label>';
+        }).join('') +
+      '</div>' +
+    '</div>' +
+    // Pulsanti export + ricarica costi
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #f0f2f5;flex-wrap:wrap">' +
+      '<button id="ritardi-btn-costi" onclick="_ritardiCaricaCosti()" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Carica costi da Shopify</button>' +
+      '<button onclick="_ritardiExportExcel()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📊 Export Excel (CSV)</button>' +
+      '<button onclick="_ritardiExportPDF()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📄 Export PDF</button>' +
+      '<span id="ritardi-status" style="font-size:11px;color:#888;margin-left:8px"></span>' +
+    '</div>' +
+  '</div>';
+
+  ca.innerHTML = headerHtml + filtriBar +
+    '<div style="font-size:12px;color:#888;margin-bottom:16px">Totale righe in ritardo: <strong>' + totRitardi + '</strong></div>' +
+    '<div id="ritardi-tables-container"></div>';
+
+  window._ritardiRender();
 }
+
+// ══════════════════════════════════════════════════════════════════
+// HANDLERS FILTRI + EXPORT + CARICAMENTO COSTI SHOPIFY
+// ══════════════════════════════════════════════════════════════════
+
+window._ritardiToggleOne = function(tipo, val, checked){
+  var set = window._ritardiFiltri[tipo];
+  if(checked) set.add(val); else set.delete(val);
+  window._ritardiRender();
+};
+
+window._ritardiToggleAll = function(tipo, checkAll){
+  var set = window._ritardiFiltri[tipo];
+  set.clear();
+  var cls = tipo==='mesi' ? 'ritardi-f-mese' : 'ritardi-f-forn';
+  var attr = tipo==='mesi' ? 'm' : 'f';
+  document.querySelectorAll('.'+cls).forEach(function(cb){
+    cb.checked = checkAll;
+    if(checkAll) set.add(cb.dataset[attr]);
+  });
+  window._ritardiRender();
+};
+
+// Cache costi per sessione (SKU Shopify -> costo confezione)
+window._ritardiCostiCache = window._ritardiCostiCache || {};
+
+window._ritardiCaricaCosti = async function(){
+  var statusEl = document.getElementById('ritardi-status');
+  var btn = document.getElementById('ritardi-btn-costi');
+  if(btn) btn.disabled = true;
+  try{
+    // Raccoglie tutti gli SKU Shopify unici dalle righe
+    var skuShopSet = new Set();
+    window._ritardiMesi.forEach(function(m){
+      window._ritardiData[m].forEach(function(r){
+        if(r.skuShopify && r.skuShopify !== '—') skuShopSet.add(r.skuShopify);
+      });
+    });
+    var skusNeeded = Array.from(skuShopSet).filter(function(s){return window._ritardiCostiCache[s]===undefined;});
+    if(!skusNeeded.length){
+      // Tutti già in cache — applica e basta
+      _ritardiApplicaCosti();
+      window._ritardiRender();
+      if(statusEl) statusEl.textContent = '✅ Costi già caricati';
+      setTimeout(function(){if(statusEl)statusEl.textContent='';},3000);
+      if(btn) btn.disabled = false;
+      return;
+    }
+
+    if(statusEl) statusEl.textContent = '⏳ Caricamento varianti Shopify...';
+
+    // 1) Scan products.json per mappare sku_shopify -> inventory_item_id
+    var invIds = {}; // sku -> inventory_item_id
+    var pageInfo = '';
+    var maxPages = 50;
+    var skuLowerNeeded = new Set(skusNeeded.map(function(s){return s.toLowerCase();}));
+    for(var p=0; p<maxPages && skuLowerNeeded.size>0; p++){
+      var url = 'products.json?limit=250&fields=id,variants' + (pageInfo?'&page_info='+pageInfo:'');
+      var data;
+      try{
+        data = await shopifyGet(url);
+      }catch(e){ console.warn('[Ritardi] shopifyGet fallita:',e); break; }
+      if(!data || !data.products) break;
+      data.products.forEach(function(prod){
+        (prod.variants||[]).forEach(function(v){
+          var sku = (v.sku||'').trim();
+          if(!sku) return;
+          if(skuLowerNeeded.has(sku.toLowerCase())){
+            invIds[sku.toLowerCase()] = v.inventory_item_id;
+            skuLowerNeeded.delete(sku.toLowerCase());
+          }
+        });
+      });
+      // Pagination via Link header non è disponibile tramite shopifyGet; usciamo se non si usa page_info
+      if(data.products.length < 250) break;
+    }
+
+    // 2) Per ogni inventory_item_id, prendi il cost
+    var invIdsArr = Object.values(invIds).filter(Boolean);
+    if(statusEl) statusEl.textContent = '⏳ Caricamento costi ('+invIdsArr.length+' prodotti)...';
+
+    // Shopify permette batch con inventory_items.json?ids=1,2,3 (max 100)
+    var chunks = [];
+    for(var i=0; i<invIdsArr.length; i+=50) chunks.push(invIdsArr.slice(i,i+50));
+    var invToCost = {}; // inventory_item_id -> cost
+    for(var c=0; c<chunks.length; c++){
+      if(statusEl) statusEl.textContent = '⏳ Costi batch '+(c+1)+'/'+chunks.length+'...';
+      try{
+        var resp = await shopifyGet('inventory_items.json?ids='+chunks[c].join(','));
+        if(resp && resp.inventory_items){
+          resp.inventory_items.forEach(function(it){
+            invToCost[it.id] = parseFloat(it.cost) || 0;
+          });
+        }
+      }catch(e){ console.warn('[Ritardi] batch costi fallito:',e); }
+    }
+
+    // 3) Popola cache: sku_shopify originale -> costo
+    skusNeeded.forEach(function(sku){
+      var invId = invIds[sku.toLowerCase()];
+      if(invId && invToCost[invId]!=null){
+        window._ritardiCostiCache[sku] = invToCost[invId];
+      } else {
+        window._ritardiCostiCache[sku] = null; // non trovato
+      }
+    });
+
+    _ritardiApplicaCosti();
+    window._ritardiRender();
+    var trovati = skusNeeded.filter(function(s){return window._ritardiCostiCache[s]!=null;}).length;
+    if(statusEl) statusEl.textContent = '✅ Caricati '+trovati+'/'+skusNeeded.length+' costi';
+    setTimeout(function(){if(statusEl)statusEl.textContent='';},5000);
+  }catch(e){
+    console.error('[Ritardi] caricaCosti errore:',e);
+    if(statusEl){ statusEl.textContent = '❌ Errore: '+e.message; statusEl.style.color='#dc2626'; }
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+};
+
+function _ritardiApplicaCosti(){
+  window._ritardiMesi.forEach(function(m){
+    window._ritardiData[m].forEach(function(r){
+      if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
+        r.costo = window._ritardiCostiCache[r.skuShopify];
+      }
+    });
+  });
+}
+
+// Raccoglie righe filtrate per export
+function _ritardiRigheFiltrate(){
+  var filtri = window._ritardiFiltri;
+  var out = [];
+  window._ritardiMesi.forEach(function(m){
+    if(!filtri.mesi.has(m)) return;
+    var parts = m.split('-');
+    var meseLbl = window._mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
+    window._ritardiData[m].forEach(function(r){
+      if(!filtri.fornitori.has(r.fornitore)) return;
+      var costo = r.costo;
+      var penaleUnit = costo==null ? null : costo * 0.05;
+      var penaleRiga = costo==null ? null : penaleUnit * r.qtaRitardo;
+      out.push({
+        mese: meseLbl,
+        meseKey: m,
+        fornitore: r.fornitore,
+        numero: r.numero,
+        dataOrd: r.dataOrd,
+        sku: r.sku,
+        skuShopify: r.skuShopify,
+        prodotto: r.prodotto,
+        qtaRitardo: r.qtaRitardo,
+        dataCons: r.dataCons,
+        dataRic: r.dataRic,
+        giorni: r.giorni,
+        costo: costo,
+        penaleUnit: penaleUnit,
+        penaleRiga: penaleRiga
+      });
+    });
+  });
+  return out;
+}
+
+// EXPORT CSV (Excel) — separatore ';' per compatibilità Excel IT
+window._ritardiExportExcel = function(){
+  var righe = _ritardiRigheFiltrate();
+  if(!righe.length){ showToast('Nessuna riga da esportare','error'); return; }
+  var sep = ';';
+  var fmtD = function(s){ if(!s||s==='—')return s||''; var p=s.split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;};
+  var fmtN = function(v){ return v==null?'':String(Math.round(v*100)/100).replace('.',','); };
+  var q = function(v){ v=String(v==null?'':v); return v.indexOf(sep)>=0||v.indexOf('"')>=0||v.indexOf('\n')>=0 ? '"'+v.replace(/"/g,'""')+'"' : v; };
+  var header = ['Mese','Fornitore','N° Ordine','Data Ordine','SKU','SKU Shopify','Prodotto','Qtà Ritardo','Cons. Prevista','Cons. Effettiva','GG Ritardo','Costo Conf. (€)','Penale 5% Unitaria (€)','Penale Riga (€)'];
+  var lines = [header.map(q).join(sep)];
+  var totPenale = 0;
+  righe.forEach(function(r){
+    if(r.penaleRiga!=null) totPenale += r.penaleRiga;
+    lines.push([
+      r.mese, r.fornitore, r.numero, fmtD(r.dataOrd), r.sku, r.skuShopify, r.prodotto,
+      r.qtaRitardo, fmtD(r.dataCons), fmtD(r.dataRic), r.giorni,
+      fmtN(r.costo), fmtN(r.penaleUnit), fmtN(r.penaleRiga)
+    ].map(q).join(sep));
+  });
+  // Totale in fondo
+  lines.push(['']);
+  lines.push(['','','','','','','','','','','','','TOTALE PENALE',fmtN(totPenale)].map(q).join(sep));
+
+  var csv = '\uFEFF' + lines.join('\r\n'); // BOM per Excel UTF-8
+  var blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'penali-ritardi-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},2000);
+  showToast('✅ CSV scaricato ('+righe.length+' righe)');
+};
+
+// EXPORT PDF — apre finestra print con contenuto formattato
+window._ritardiExportPDF = function(){
+  var righe = _ritardiRigheFiltrate();
+  if(!righe.length){ showToast('Nessuna riga da esportare','error'); return; }
+  var fmtD = function(s){ if(!s||s==='—')return s||''; var p=s.split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;};
+  var euro = function(v){return v==null?'—':'€'+(Math.round(v*100)/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});};
+
+  // Raggruppa per mese -> fornitore
+  var gruppi = {};
+  righe.forEach(function(r){
+    var k = r.meseKey+'|'+r.fornitore;
+    if(!gruppi[k]) gruppi[k]={mese:r.mese, fornitore:r.fornitore, righe:[], totPenale:0};
+    gruppi[k].righe.push(r);
+    if(r.penaleRiga!=null) gruppi[k].totPenale += r.penaleRiga;
+  });
+  var chiavi = Object.keys(gruppi).sort().reverse();
+  var totPenaleGlob = righe.reduce(function(s,r){return s+(r.penaleRiga||0);},0);
+
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Penali Ritardi Consegna</title>' +
+    '<style>' +
+      '@page { size: A4 landscape; margin: 15mm; }' +
+      'body { font-family: Arial, sans-serif; color:#222; font-size:10px; }' +
+      'h1 { font-size:16px; color:#1F3864; margin:0 0 8px 0; }' +
+      'h2 { font-size:12px; color:#dc2626; margin:12px 0 4px 0; background:#fff5f5; padding:4px 8px; border-left:3px solid #dc2626; }' +
+      'h3 { font-size:11px; color:#374151; margin:6px 0 3px 0; background:#f8f9fc; padding:3px 6px; display:flex; justify-content:space-between; }' +
+      'table { width:100%; border-collapse:collapse; margin-bottom:8px; }' +
+      'th { background:#1F3864; color:#fff; font-size:9px; padding:4px 5px; border:1px solid #2E75B6; text-align:left; }' +
+      'td { font-size:9px; padding:3px 5px; border:1px solid #e0e4ea; vertical-align:top; }' +
+      '.tot { background:#1F3864; color:#fff; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:10px; display:flex; justify-content:space-between; }' +
+      '.tr {text-align:right;} .tc{text-align:center;} .b{font-weight:700;} .red{color:#dc2626;}' +
+      '@media print { button { display:none; } }' +
+    '</style></head><body>';
+  html += '<h1>⏰ Penali Ritardi Consegna Fornitori</h1>';
+  html += '<div style="font-size:10px;color:#666;margin-bottom:10px">Data stampa: '+new Date().toLocaleDateString('it-IT')+' — Penale calcolata al 5% del costo × quantità in ritardo</div>';
+  html += '<div class="tot"><span>📊 '+righe.length+' righe totali</span><span>💰 Penale totale: '+euro(totPenaleGlob)+'</span></div>';
+
+  chiavi.forEach(function(k){
+    var g = gruppi[k];
+    html += '<h2>📅 '+g.mese+'</h2>';
+    html += '<h3><span>🏭 '+g.fornitore+' ('+g.righe.length+')</span><span>Penale: '+euro(g.totPenale)+'</span></h3>';
+    html += '<table><thead><tr>' +
+      '<th>N° Ordine</th><th>Data Ord.</th><th>SKU</th><th>Prodotto</th>' +
+      '<th class="tr">Qtà</th><th>Cons. Prev.</th><th>Cons. Eff.</th><th class="tc">GG</th>' +
+      '<th class="tr">Costo</th><th class="tr">Pen. 5%</th><th class="tr">Penale Riga</th>' +
+    '</tr></thead><tbody>';
+    g.righe.forEach(function(r){
+      html += '<tr>' +
+        '<td>'+(r.numero||'')+'</td>' +
+        '<td>'+fmtD(r.dataOrd)+'</td>' +
+        '<td>'+(r.sku||'')+'</td>' +
+        '<td>'+(r.prodotto||'')+'</td>' +
+        '<td class="tr b">'+r.qtaRitardo+'</td>' +
+        '<td>'+fmtD(r.dataCons)+'</td>' +
+        '<td>'+fmtD(r.dataRic)+'</td>' +
+        '<td class="tc b red">+'+r.giorni+'</td>' +
+        '<td class="tr">'+euro(r.costo)+'</td>' +
+        '<td class="tr">'+euro(r.penaleUnit)+'</td>' +
+        '<td class="tr b red">'+euro(r.penaleRiga)+'</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table>';
+  });
+  html += '<div style="margin-top:20px;padding-top:10px;border-top:2px solid #1F3864;text-align:right;font-size:13px;font-weight:700;color:#1F3864">TOTALE PENALE COMPLESSIVO: '+euro(totPenaleGlob)+'</div>';
+  html += '<div style="margin-top:20px"><button onclick="window.print()" style="padding:8px 16px;font-size:12px;cursor:pointer">🖨️ Stampa/Salva PDF</button></div>';
+  html += '</body></html>';
+
+  var w = window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(function(){ try{ w.print(); }catch(e){} }, 500);
+};
 
 function openElenaPanel(){
   // Stato flags: localStorage con chiavi giornaliera/settimanale/mensile
