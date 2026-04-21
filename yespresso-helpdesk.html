@@ -3116,33 +3116,48 @@ function buildGiacenzaWaMessage(g){
 
   // Messaggio specifico in base al codice motivo BRT
   var codice = (g.motivoCod || '').trim();
+  var descUpper = String(g.motivoDesc || '').toUpperCase();
   var corpo = '';
 
-  switch(codice){
+  // Codici "indirizzo sconosciuto/incompleto" — ricevono tutti lo stesso messaggio
+  //  • 020 = DESTINATARIO SCONOSCIUTO ALL'INDIRIZZO DDT/INCOMPLETO
+  //  • 022 = INDIRIZZO INDICATO SUL DDT INESISTENTE/INCOMPLETO
+  //  • fallback keyword: se la descrizione contiene SCONOSCIUTO, INESISTENTE o INCOMPLETO
+  var isIndirizzoProblem =
+    codice === '020' || codice === '022' ||
+    descUpper.indexOf('SCONOSCIUTO') >= 0 ||
+    descUpper.indexOf('INESISTENTE') >= 0 ||
+    descUpper.indexOf('INCOMPLETO') >= 0;
+
+  if(isIndirizzoProblem){
+    // Costruisci l'indirizzo attuale dall'ordine Shopify (se disponibile)
+    // oppure dai dati estratti dall'email BRT (fallback)
+    var indirizzoAttuale = buildIndirizzoAttuale(g);
+    // Descrizione iniziale leggermente diversa in base al codice
+    if(codice === '020' || descUpper.indexOf('SCONOSCIUTO') >= 0){
+      corpo = 'il corriere BRT ci segnala che il destinatario risulta sconosciuto all\'indirizzo indicato per il suo ordine '+ordineNum+'.\n\n';
+    } else {
+      corpo = 'il corriere BRT ci segnala che l\'indirizzo indicato sul suo ordine '+ordineNum+' risulta incompleto o non trovato.\n\n';
+    }
+    if(indirizzoAttuale) {
+      corpo += 'Indirizzo attualmente in nostro possesso:\n'+indirizzoAttuale+'\n\n';
+      corpo += 'Può gentilmente confermarci se l\'indirizzo è corretto o se dobbiamo integrare/modificare qualche dato? Ad esempio:\n'+
+               '• Numero civico preciso\n'+
+               '• Nome azienda o struttura\n'+
+               '• Nome sul citofono\n'+
+               '• Scala, interno o piano\n'+
+               '• Numero di telefono per il corriere';
+    } else {
+      corpo += 'Per poter consegnare il pacco le chiediamo di inviarci i dati corretti:\n'+
+               '• Indirizzo completo (via, numero civico)\n'+
+               '• CAP, Città e Provincia\n'+
+               '• Nome azienda o citofono (se presente)\n'+
+               '• Numero di telefono per il corriere';
+    }
+  } else switch(codice){
     case '016': // Destinatario rimanda lo svincolo
       corpo = 'il corriere BRT ci segnala che la consegna del suo ordine '+ordineNum+' è stata posticipata su sua richiesta.\n\n'+
               'Per evitare che il pacco rientri in sede, le chiediamo di confermarci quando potremo riprogrammare la consegna e se l\'indirizzo inserito è corretto.';
-      break;
-    case '022': // Indirizzo DDT inesistente/incompleto
-      // Costruisci l'indirizzo attuale dall'ordine Shopify (se disponibile)
-      // oppure dai dati estratti dall'email BRT (fallback)
-      var indirizzoAttuale = buildIndirizzoAttuale(g);
-      corpo = 'il corriere BRT ci segnala che l\'indirizzo indicato sul suo ordine '+ordineNum+' risulta incompleto o non trovato.\n\n';
-      if(indirizzoAttuale) {
-        corpo += 'Indirizzo attualmente in nostro possesso:\n'+indirizzoAttuale+'\n\n';
-        corpo += 'Può gentilmente confermarci se l\'indirizzo è corretto o se dobbiamo integrare/modificare qualche dato? Ad esempio:\n'+
-                 '• Numero civico preciso\n'+
-                 '• Nome azienda o struttura\n'+
-                 '• Nome sul citofono\n'+
-                 '• Scala, interno o piano\n'+
-                 '• Numero di telefono per il corriere';
-      } else {
-        corpo += 'Per poter consegnare il pacco le chiediamo di inviarci i dati corretti:\n'+
-                 '• Indirizzo completo (via, numero civico)\n'+
-                 '• CAP, Città e Provincia\n'+
-                 '• Nome azienda o citofono (se presente)\n'+
-                 '• Numero di telefono per il corriere';
-      }
       break;
     case '003': // Destinatario assente
     case '004':
@@ -3169,11 +3184,12 @@ function buildGiacenzaWaMessage(g){
               'Per poter procedere le chiediamo di contattarci confermando come preferisce che gestiamo la spedizione.';
   }
 
-  // Tracking BRT: rimuovi prefisso "26" per versione "user-friendly"
-  // Es. "20261790113358" → "2026179011335" (senza il 26)
+  // Tracking BRT: rimuovi il prefisso interno (anno 2026 o marker 26)
+  // per mostrare al cliente solo il numero spedizione "pulito".
+  // Esempi: "2026179011133575" → "179011133575" / "26179011133575" → "179011133575"
   var trackingRaw = g.trackingFull || g.trackingBreve || '';
-  var trackingPulito = String(trackingRaw).replace(/^26/,'');
-  var linkTracking = trackingRaw
+  var trackingPulito = String(trackingRaw).replace(/^(2026|26)/, '');
+  var linkTracking = trackingPulito
     ? ('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+encodeURIComponent(trackingPulito))
     : '';
 
