@@ -3674,6 +3674,11 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     const temuAttr=(order.note_attributes||[]).find(a=>["PARENT_ORDER_SN","Temu Order Id","temu_order_id","order_id","Marketplace Order Id"].includes(a.name));
 
     html+='<br>'+displayStatus;
+    // Se l'ordine non è spedito né annullato, mostra data/ora ordine con formato relativo
+    if(!order.cancelled_at && !shipStatus && order.fulfillment_status!=='fulfilled' && order.created_at){
+      var _relDate=formatOrderDateRelative(order.created_at);
+      if(_relDate) html+='<br><span style="color:#5b6778;font-size:12px">📅 Ordinato '+_relDate+'</span>';
+    }
     // Banner visivo annullamento
     if(order.cancelled_at){
       html+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';
@@ -10445,8 +10450,10 @@ async function tryAutoReply(replyText, order){
 }
 function getNoAiEmails(){
   const s=loadSettings();
-  const saved=s.noAiEmails||[];
-  return [...new Set([...NO_AI_DEFAULTS,...saved])];
+  const saved=Array.isArray(s.noAiEmails)?s.noAiEmails:[];
+  const excluded=Array.isArray(s.noAiExcluded)?s.noAiExcluded.map(function(e){return String(e).toLowerCase();}):[];
+  var combined=[...new Set([...NO_AI_DEFAULTS,...saved])];
+  return combined.filter(function(e){return !excluded.includes(String(e).toLowerCase());});
 }
 function isNoAiEmail(email){
   if(!email) return false;
@@ -10464,14 +10471,20 @@ function renderNoAiList(){
   const list=getNoAiEmails();
   const el=document.getElementById("no-ai-list");
   if(!el) return;
-  el.innerHTML=list.map((e,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #e0e4ea;border-radius:20px;padding:4px 12px;font-size:12px">${e}<span onclick="removeNoAiEmail(${i})" style="cursor:pointer;color:#c04040;font-weight:700;margin-left:4px">×</span></span>`).join("");
+  el.innerHTML=list.map(function(e){
+    var safe=String(e).replace(/"/g,'&quot;');
+    return '<span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #e0e4ea;border-radius:20px;padding:4px 12px;font-size:12px">'+
+      e+
+      '<span onclick="removeNoAiEmail(\''+safe.replace(/'/g,"\\'")+'\')" style="cursor:pointer;color:#c04040;font-weight:700;margin-left:4px">×</span>'+
+    '</span>';
+  }).join("");
 }
 function addNoAiEmail(){
   const input=document.getElementById("no-ai-input");
   const val=(input.value||"").trim().toLowerCase();
   if(!val) return;
   const s=loadSettings();
-  const list=s.noAiEmails||getNoAiEmails();
+  const list=s.noAiEmails||[];
   if(!list.includes(val)) list.push(val);
   s.noAiEmails=list;
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
@@ -10482,11 +10495,24 @@ function addNoAiEmail(){
   input.value="";
   renderNoAiList();
 }
-function removeNoAiEmail(idx){
+// Rimuove un'email dalla lista. Accetta direttamente la stringa email
+// (non più l'indice, che causava bug tra defaults e utente-salvate).
+function removeNoAiEmail(emailOrIdx){
   const s=loadSettings();
-  const list=s.noAiEmails||getNoAiEmails();
-  list.splice(idx,1);
-  s.noAiEmails=list;
+  var list=Array.isArray(s.noAiEmails)?s.noAiEmails.slice():[];
+  // Se è un default, dobbiamo "forzare l'esclusione": la salviamo come eccezione
+  // in una lista separata così getNoAiEmails() la filtra.
+  var target=String(emailOrIdx).toLowerCase().trim();
+  var idxInSaved=list.findIndex(function(e){return String(e).toLowerCase()===target;});
+  if(idxInSaved>=0){
+    list.splice(idxInSaved,1);
+    s.noAiEmails=list;
+  } else {
+    // È un default: aggiungiamolo alla blocklist delle eccezioni
+    var excl=Array.isArray(s.noAiExcluded)?s.noAiExcluded.slice():[];
+    if(!excl.includes(target)) excl.push(target);
+    s.noAiExcluded=excl;
+  }
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
   // Salva anche su server
   if(!_filippoDataCache) _filippoDataCache={};
