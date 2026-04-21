@@ -2859,6 +2859,21 @@ function renderMessageHtml(text, attachments){
 }
 
 function renderMsgBlock(text, attachments){
+  // ═══ PARSER GIACENZA BRT ═══
+  // Se il messaggio è un'email di apertura giacenza da vasnoreply@brt.it,
+  // mostriamo una vista compressa con i dati estratti + bottoni azione.
+  // Riconoscimento: contiene "APERTURA GIACENZA" + "pratica di giacenza N."
+  if(text && /APERTURA\s+GIACENZA/i.test(text) && /pratica\s+di\s+giacenza\s+N\./i.test(text)){
+    try{
+      const giacenza = parseBrtGiacenzaEmail(text);
+      if(giacenza){
+        return renderGiacenzaPanel(giacenza, text);
+      }
+    }catch(e){
+      console.warn("[Giacenza parser]", e);
+    }
+  }
+
   const rendered = renderMessageHtml(text, attachments);
   const isHtml = rendered.includes('email-inner');
   if(isHtml){
@@ -2869,6 +2884,201 @@ function renderMsgBlock(text, attachments){
   }
   return '<div class="msg-body msg-body-plain">'+rendered+'</div>';
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Parser email giacenza BRT — estrae i dati principali dal wall of text
+// ═══════════════════════════════════════════════════════════════════
+function parseBrtGiacenzaEmail(text){
+  if(!text) return null;
+  // Normalizza spazi/tab multipli per facilitare il matching
+  const t = text.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
+  const out = {};
+
+  // Numero pratica giacenza (es. "N.124/ 9315" oppure "N.124/9315")
+  const pratica = t.match(/pratica\s+di\s+giacenza\s+N\.(\d{1,4})\s*\/\s*(\d{1,6})/i);
+  if(pratica) out.pratica = pratica[1]+'-'+pratica[2];
+
+  // Data apertura (es. "in data 21/04/2026")
+  const dataApert = t.match(/in\s+data\s+(\d{2}\/\d{2}\/\d{4})/i);
+  if(dataApert) out.dataApertura = dataApert[1];
+
+  // Motivo (es. "motivo: 016 DESTINATARIO RIMANDA LO SVINCOLO AL")
+  const motivo = t.match(/motivo\s*:\s*(\d{3})\s+([A-Z][A-Z\s]+?)(?:\n|Gli\s+estremi)/i);
+  if(motivo){
+    out.motivoCod = motivo[1];
+    out.motivoDesc = motivo[2].trim().replace(/\s+AL\s*$/i,'').trim();
+  }
+
+  // Tracking BRT / numero spedizione (es. "spedizione 2026 179 1 1133575" o "2026179011133575")
+  const tracking1 = t.match(/spedizione\s+(\d{4})\s+(\d{3})\s+(\d+)\s+(\d{5,})/i);
+  if(tracking1){
+    out.trackingFull = tracking1[1]+tracking1[2]+'0'+tracking1[3]+tracking1[4];
+    out.trackingBreve = tracking1[4]; // es. 1133575
+  } else {
+    const tracking2 = t.match(/spedizione\s+(\d{13,18})/i);
+    if(tracking2){
+      out.trackingFull = tracking2[1];
+      out.trackingBreve = tracking2[1].slice(-7);
+    }
+  }
+
+  // Riferimenti mittente: "110759162 2024196496" → il secondo è il numero ordine Shopify
+  const riferimenti = t.match(/Riferimenti\s+mittente\s*:\s*(\d{6,12})(?:\s+(\d{6,12}))?/i);
+  if(riferimenti){
+    out.rifMittente1 = riferimenti[1];
+    if(riferimenti[2]) out.ordineShopify = riferimenti[2];
+  }
+
+  // Destinatario (multi-riga)
+  const destinatario = t.match(/Destinatario\s*:\s*([A-Z][A-Z\s\.'àèéìòù]+?)\s*\n\s*([^\n]+?)\s*\n\s*(\d{5})\s+([A-Z\s]+?)\s+([A-Z]{2})\b/i);
+  if(destinatario){
+    out.destNome = destinatario[1].trim();
+    out.destIndirizzo = destinatario[2].trim();
+    out.destCap = destinatario[3];
+    out.destCitta = destinatario[4].trim();
+    out.destProv = destinatario[5];
+  } else {
+    // Fallback: solo nome
+    const destFallback = t.match(/Destinatario\s*:\s*([A-Z][A-Z\s\.'àèéìòù]+?)(?:\n|PIAZZALE|VIA|CORSO|PIAZZA|VIALE)/i);
+    if(destFallback) out.destNome = destFallback[1].trim();
+  }
+
+  // Filiale BRT (es. "MILANO CENTRO, 21/04/2026" oppure "ROMA CENTRO")
+  const filiale = t.match(/Filiale\s+di\s+([A-Z][A-Z\s]+?)\n/i);
+  if(filiale) out.filialeApertura = filiale[1].trim();
+
+  // Filiale di custodia (es. "la merce e'custodita presso la Ns. di: ROMA CENTRO")
+  const filialeCust = t.match(/custodita\s+presso\s+la\s+Ns\.\s+di[:\s]+([A-Z][A-Z\s]+?)(?:\n|\-\s|$)/i);
+  if(filialeCust) out.filialeCustodia = filialeCust[1].trim();
+
+  // Data riconsegna prevista (es. "provvederemo alla riconsegna dal 24/04/2026")
+  const dataRicons = t.match(/riconsegna\s+dal\s+(\d{2}\/\d{2}\/\d{4})/i);
+  if(dataRicons) out.dataRiconsegna = dataRicons[1];
+
+  // Tipo avviso (1°, 2°, ...)
+  const avviso = t.match(/(\d)°\s+Avviso/i);
+  if(avviso) out.numAvviso = avviso[1];
+
+  // Link portale VAS BRT per la pratica
+  const link = t.match(/https?:\/\/vas\.brt\.it\/vas\/sped_det_show\.hsm\?[^\s<>"']+/i);
+  if(link) out.linkPortale = link[0];
+
+  // Costruisci anche l'URL tracking standard se abbiamo il tracking
+  if(out.trackingFull){
+    const tn = String(out.trackingFull);
+    const tnForUrl = tn.startsWith('26') ? tn : '26'+tn;
+    out.urlTracking = 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn;
+    out.urlPod = 'https://vas.brt.it/vas/SPED_DET_SHOW_LDV.HTM?SpedizioneImmagineLDV='+tnForUrl+'&PODChkCde=348365243';
+  }
+
+  // Almeno un dato utile deve essere presente
+  if(!out.pratica && !out.trackingFull && !out.ordineShopify) return null;
+
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Render pannello giacenza compresso
+// ═══════════════════════════════════════════════════════════════════
+function renderGiacenzaPanel(g, origText){
+  const uid = 'gcz_'+Math.random().toString(36).slice(2);
+  // Salva il testo originale per il toggle "Vedi email originale"
+  window._giacenzaOrigText = window._giacenzaOrigText || {};
+  window._giacenzaOrigText[uid] = origText || '';
+
+  const esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  const tipo = g.numAvviso ? (g.numAvviso+'° Avviso') : 'Apertura giacenza';
+  const bgColor = g.numAvviso && parseInt(g.numAvviso) >= 2 ? '#fef2f2' : '#fff7ed';
+  const borderColor = g.numAvviso && parseInt(g.numAvviso) >= 2 ? '#fca5a5' : '#fed7aa';
+  const textColor = g.numAvviso && parseInt(g.numAvviso) >= 2 ? '#991b1b' : '#9a3412';
+
+  let h = '<div class="msg-body msg-body-plain" style="padding:0;background:transparent;box-shadow:none">';
+
+  // Header giacenza
+  h += '<div style="background:'+bgColor+';border:1.5px solid '+borderColor+';border-radius:10px;padding:14px;margin-bottom:10px">';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:14px;font-weight:700;color:'+textColor+'">📋 '+tipo+(g.pratica?' · Pratica '+esc(g.pratica):'')+'</div>';
+  if(g.dataApertura) h += '<div style="font-size:12px;color:'+textColor+';opacity:0.8">'+esc(g.dataApertura)+'</div>';
+  h += '</div>';
+
+  // Motivo in evidenza
+  if(g.motivoCod || g.motivoDesc){
+    h += '<div style="background:#fff;border-radius:6px;padding:10px 12px;margin-bottom:10px;border-left:3px solid '+textColor+'">';
+    h += '<div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:3px">Motivo</div>';
+    h += '<div style="font-size:13px;color:#1a1a2e;font-weight:600">';
+    if(g.motivoCod) h += '<span style="color:#888;font-weight:500">['+esc(g.motivoCod)+']</span> ';
+    if(g.motivoDesc) h += esc(g.motivoDesc);
+    h += '</div></div>';
+  }
+
+  // Grid dati
+  h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;background:#fff;border-radius:6px;padding:10px 12px">';
+  if(g.ordineShopify){
+    h += '<div style="color:#888">Ordine Shopify</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600">'+
+      '<a href="https://admin.shopify.com/store/yespresso-1/orders?query='+esc(g.ordineShopify)+'" target="_blank" style="color:#1a73e8;text-decoration:none">#'+esc(g.ordineShopify)+' ↗</a>'+
+    '</div>';
+  }
+  if(g.trackingBreve || g.trackingFull){
+    h += '<div style="color:#888">Tracking BRT</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">';
+    if(g.urlTracking){
+      h += '<a href="'+esc(g.urlTracking)+'" target="_blank" style="color:#c2410c;text-decoration:none">'+esc(g.trackingFull||g.trackingBreve)+' ↗</a>';
+    } else {
+      h += esc(g.trackingFull||g.trackingBreve);
+    }
+    h += '</div>';
+  }
+  if(g.destNome){
+    h += '<div style="color:#888">Destinatario</div>';
+    h += '<div style="color:#1a1a2e">'+esc(g.destNome);
+    if(g.destIndirizzo) h += '<br><span style="color:#666;font-size:11px">'+esc(g.destIndirizzo);
+    if(g.destCap) h += ', '+esc(g.destCap)+' '+esc(g.destCitta||'')+' ('+esc(g.destProv||'')+')';
+    if(g.destIndirizzo) h += '</span>';
+    h += '</div>';
+  }
+  if(g.filialeCustodia || g.filialeApertura){
+    h += '<div style="color:#888">Filiale BRT</div>';
+    h += '<div style="color:#1a1a2e">'+esc(g.filialeCustodia||g.filialeApertura)+'</div>';
+  }
+  if(g.dataRiconsegna){
+    h += '<div style="color:#888">Riconsegna dal</div>';
+    h += '<div style="color:#991b1b;font-weight:600">'+esc(g.dataRiconsegna)+'</div>';
+  }
+  h += '</div>';
+
+  // Azioni principali
+  h += '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">';
+  if(g.linkPortale || g.urlTracking){
+    const linkBrt = g.linkPortale || g.urlTracking;
+    h += '<a href="'+esc(linkBrt)+'" target="_blank" style="flex:1;min-width:180px;background:#16a34a;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center">📦 Gestisci giacenza su BRT ↗</a>';
+  }
+  if(g.urlPod){
+    h += '<a href="'+esc(g.urlPod)+'" target="_blank" style="background:#8e44ad;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">📸 POD</a>';
+  }
+  h += '</div>';
+
+  // Toggle per vedere l'email originale
+  h += '<div style="margin-top:10px;text-align:center">';
+  h += '<button onclick="toggleGiacenzaRaw(\''+uid+'\')" style="background:transparent;border:none;color:'+textColor+';font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email BRT originale</button>';
+  h += '</div>';
+
+  h += '</div>'; // chiusura header giacenza
+
+  // Email originale (nascosta di default)
+  h += '<div id="giacenza-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:#555;max-height:400px;overflow-y:auto">'+esc(origText||'')+'</div>';
+
+  h += '</div>';
+  return h;
+}
+
+// Toggle visibilità email originale
+window.toggleGiacenzaRaw = function(uid){
+  const el = document.getElementById('giacenza-raw-'+uid);
+  if(!el) return;
+  const visible = el.style.display !== 'none';
+  el.style.display = visible ? 'none' : 'block';
+};
 
 function renderMessageHtml(text, attachments){
   if(!text&&(!attachments||!attachments.length))return"<em style='color:#aaa'>Nessun messaggio</em>";
