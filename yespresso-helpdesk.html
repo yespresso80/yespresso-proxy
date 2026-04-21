@@ -3049,15 +3049,17 @@ function renderGiacenzaPanel(g, origText){
   }
   h += '</div>';
 
-  // Azioni principali
-  h += '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">';
+  // Azione principale: gestisci giacenza su BRT (full width)
   if(g.linkPortale || g.urlTracking){
     const linkBrt = g.linkPortale || g.urlTracking;
-    h += '<a href="'+esc(linkBrt)+'" target="_blank" style="flex:1;min-width:180px;background:#16a34a;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center">📦 Gestisci giacenza su BRT ↗</a>';
+    h += '<div style="margin-top:12px">';
+    h += '<a href="'+esc(linkBrt)+'" target="_blank" style="display:block;background:#16a34a;color:#fff;padding:11px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center">📦 Gestisci giacenza su BRT ↗</a>';
+    h += '</div>';
   }
-  if(g.urlPod){
-    h += '<a href="'+esc(g.urlPod)+'" target="_blank" style="background:#8e44ad;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">📸 POD</a>';
-  }
+
+  // Box WhatsApp al cliente basato sul motivo giacenza
+  h += '<div id="giacenza-wa-'+uid+'" style="margin-top:10px">';
+  h += renderGiacenzaWaButton(uid, g);
   h += '</div>';
 
   // Toggle per vedere l'email originale
@@ -3080,6 +3082,171 @@ window.toggleGiacenzaRaw = function(uid){
   if(!el) return;
   const visible = el.style.display !== 'none';
   el.style.display = visible ? 'none' : 'block';
+};
+
+// Store globale dei dati giacenza per ciascun uid (necessario per i callback WhatsApp)
+window._giacenzaData = window._giacenzaData || {};
+
+// Costruisce messaggio WhatsApp basato sul codice motivo giacenza
+function buildGiacenzaWaMessage(g){
+  // Recupera nome cliente dall'ordine Shopify corrente (se disponibile)
+  var order = window._lastShopifyOrder;
+  var nomePrimo = '';
+  var ticketId = '';
+  try {
+    var _curTkt = (typeof selectedTicket !== 'undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket || null);
+    if(_curTkt) ticketId = _curTkt.shortID || _curTkt.ID || _curTkt.id || '';
+  } catch(e){}
+  if(order && order.shipping_address && order.shipping_address.name){
+    nomePrimo = String(order.shipping_address.name).split(' ')[0];
+  } else if(g.destNome){
+    // Fallback: prendi il primo nome dal destinatario dell'email BRT
+    var parts = String(g.destNome).trim().split(/\s+/);
+    // Skip titoli come PROF., DR., SIG., ecc.
+    var skip = ['PROF.','PROF','DR.','DR','SIG.','SIG','SIGRA','ING.','ING','AVV.','AVV'];
+    for(var i=0; i<parts.length; i++){
+      if(skip.indexOf(parts[i].toUpperCase()) < 0){ nomePrimo = parts[i]; break; }
+    }
+    // Formatta in case title (iniziale maiuscola)
+    if(nomePrimo) nomePrimo = nomePrimo.charAt(0).toUpperCase() + nomePrimo.substring(1).toLowerCase();
+  }
+
+  var saluto = nomePrimo ? ('Gentile '+nomePrimo+',') : 'Gentile Cliente,';
+  var ordineNum = g.ordineShopify ? ('#'+g.ordineShopify) : '';
+  var trackingStr = g.trackingFull || g.trackingBreve || '';
+  var linkTracking = g.urlTracking || '';
+
+  // Messaggio specifico in base al codice motivo BRT
+  var codice = (g.motivoCod || '').trim();
+  var corpo = '';
+
+  switch(codice){
+    case '016': // Destinatario rimanda lo svincolo
+      corpo = 'il corriere BRT ci segnala che la consegna del suo ordine '+ordineNum+' è stata posticipata su sua richiesta.\n\n'+
+              'Per evitare che il pacco rientri in sede, le chiediamo di confermarci quando potremo riprogrammare la consegna e se l\'indirizzo inserito è corretto.';
+      break;
+    case '022': // Indirizzo DDT inesistente/incompleto
+      corpo = 'il corriere BRT ci segnala che l\'indirizzo indicato sul suo ordine '+ordineNum+' risulta incompleto o non trovato.\n\n'+
+              'Per poter consegnare il pacco le chiediamo di inviarci i dati corretti:\n'+
+              '• Indirizzo completo (via, numero civico)\n'+
+              '• CAP, Città e Provincia\n'+
+              '• Numero di telefono per il corriere (se possibile)';
+      break;
+    case '003': // Destinatario assente
+    case '004':
+    case '005':
+      corpo = 'il corriere BRT ci segnala che durante il tentativo di consegna del suo ordine '+ordineNum+' non è stato trovato nessuno all\'indirizzo indicato.\n\n'+
+              'Per procedere le chiediamo di indicarci se preferisce:\n'+
+              '• Un nuovo tentativo di consegna (indicando giorno/fascia oraria)\n'+
+              '• Il ritiro presso un Fermo!Point BRT vicino\n'+
+              '• La modifica dell\'indirizzo di consegna';
+      break;
+    case '007': // Rifiutato dal destinatario
+      corpo = 'il corriere BRT ci segnala che il pacco del suo ordine '+ordineNum+' è stato rifiutato al momento della consegna.\n\n'+
+              'Per capire come procedere le chiediamo gentilmente di comunicarci il motivo del rifiuto e se desidera comunque ricevere il pacco.';
+      break;
+    case '014': // Ritiro presso punto
+    case '015':
+      corpo = 'il suo ordine '+ordineNum+' è a sua disposizione presso il Fermo!Point BRT indicato dal corriere.\n\n'+
+              'Le ricordiamo di ritirarlo entro i giorni indicati per evitare che il pacco rientri in sede.';
+      break;
+    default:
+      // Messaggio generico per motivi non riconosciuti
+      corpo = 'il corriere BRT ci segnala un problema con la consegna del suo ordine '+ordineNum+'.\n\n'+
+              'Motivo segnalato: '+(g.motivoDesc||'non specificato')+'\n\n'+
+              'Per poter procedere le chiediamo di contattarci confermando come preferisce che gestiamo la spedizione.';
+  }
+
+  // Info standard in coda (come altri messaggi WA)
+  var coda = '\n\nOrdine: '+ordineNum;
+  if(trackingStr) coda += '\nTracking BRT: '+trackingStr;
+  if(linkTracking) coda += '\n'+linkTracking;
+  coda += '\n\nCordiali saluti\nYespresso';
+  if(ticketId) coda += '\n\n#'+ticketId;
+
+  return saluto+'\n\n'+corpo+coda;
+}
+
+// Recupera numero di telefono dall'ordine Shopify corrente
+function getGiacenzaPhone(){
+  var order = window._lastShopifyOrder;
+  if(!order) return '';
+  var raw = (order.customer && order.customer.phone) ||
+            (order.shipping_address && order.shipping_address.phone) ||
+            (order.billing_address && order.billing_address.phone) || '';
+  // Normalizza: solo cifre, rimuovi +39 iniziale
+  return String(raw).replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
+}
+
+// Render pulsante WhatsApp nello stato iniziale (Invia WA)
+function renderGiacenzaWaButton(uid, g){
+  window._giacenzaData[uid] = g;
+  var phone = getGiacenzaPhone();
+  if(!phone){
+    return '<div style="padding:10px 12px;background:#f8f9fc;border:1px dashed #cbd5e1;border-radius:8px;text-align:center;font-size:11px;color:#888">'+
+           '💬 WhatsApp non disponibile: telefono cliente mancante nell\'ordine Shopify'+
+           '</div>';
+  }
+  return '<button onclick="inviaGiacenzaWa(\''+uid+'\')" style="display:block;width:100%;background:#25d366;color:#fff;padding:11px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit">'+
+         '💬 Invia WhatsApp al cliente'+
+         '</button>';
+}
+
+// Render stato "WhatsApp inviato" con bottoni Vedi + Annulla
+function renderGiacenzaWaSent(uid){
+  return '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 12px">'+
+           '<div style="font-size:12px;color:#166534;font-weight:600;margin-bottom:8px;text-align:center">✓ WhatsApp inviato al cliente</div>'+
+           '<div style="display:flex;gap:6px">'+
+             '<button onclick="vediGiacenzaWa(\''+uid+'\')" style="flex:1;background:#25d366;color:#fff;border:none;border-radius:6px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">👁 Vedi Risposta WA</button>'+
+             '<button onclick="annullaGiacenzaWa(\''+uid+'\')" style="background:#fff;color:#6b7280;border:1px solid #e5e7eb;border-radius:6px;padding:9px 14px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit">Annulla</button>'+
+           '</div>'+
+         '</div>';
+}
+
+// Invia il messaggio WhatsApp (apre wa.me in nuova tab)
+window.inviaGiacenzaWa = function(uid){
+  var g = window._giacenzaData[uid];
+  if(!g){ alert('Dati giacenza non disponibili'); return; }
+  var phone = getGiacenzaPhone();
+  if(!phone){ alert('Numero di telefono cliente non trovato'); return; }
+  var messaggio = buildGiacenzaWaMessage(g);
+  var url = 'https://wa.me/39'+phone+'?text='+encodeURIComponent(messaggio);
+  window.open(url, '_blank');
+  // Salva il messaggio per il "vedi risposta"
+  window._giacenzaData[uid]._lastMessage = messaggio;
+  window._giacenzaData[uid]._lastPhone = phone;
+  // Log invio (riusa waSaveLog se esiste)
+  try {
+    if(typeof waSaveLog === 'function'){
+      var _curTkt = (typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
+      waSaveLog({
+        ts: new Date().toISOString(),
+        ticket: _curTkt ? (_curTkt.shortID||_curTkt.ID||_curTkt.id||'') : '',
+        ordine: g.ordineShopify || '',
+        template_nome: 'Giacenza BRT - Motivo '+(g.motivoCod||'?'),
+        phone: phone
+      });
+    }
+  } catch(e){ console.warn('[WA log]',e); }
+  // Aggiorna UI: mostra bottoni Vedi + Annulla
+  var box = document.getElementById('giacenza-wa-'+uid);
+  if(box) box.innerHTML = renderGiacenzaWaSent(uid);
+};
+
+// Riapre la chat WhatsApp per vedere la risposta del cliente
+window.vediGiacenzaWa = function(uid){
+  var d = window._giacenzaData[uid];
+  if(!d || !d._lastPhone){ alert('Dati WA non disponibili'); return; }
+  // Apre wa.me senza testo — va alla chat esistente con il cliente
+  window.open('https://wa.me/39'+d._lastPhone, '_blank');
+};
+
+// Torna allo stato iniziale (bottone Invia WhatsApp)
+window.annullaGiacenzaWa = function(uid){
+  var g = window._giacenzaData[uid];
+  if(!g){ return; }
+  var box = document.getElementById('giacenza-wa-'+uid);
+  if(box) box.innerHTML = renderGiacenzaWaButton(uid, g);
 };
 
 function renderMessageHtml(text, attachments){
