@@ -18559,6 +18559,7 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
 
       perArt[key].righe.push({
         ordId: o.id,
+        skuShopify: r.sku_shopify || r.sku || '',
         numero: o.numero_ordine || ('ORD-' + (o.id||'')),
         fornitore: o.fornitore || '—',
         dataOrd: o.data_ordine || '—',
@@ -18594,18 +18595,35 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
   var totResGlob = chiavi.reduce(function(s,k){return s+perArt[k].totRes;},0);
 
   var h = '';
+  // Conserva query di ricerca tra render (sessione)
+  window._fabArtSearchQuery = window._fabArtSearchQuery || '';
+  var curQ = (window._fabArtSearchQuery||'').toLowerCase().trim();
+
+  // Barra di ricerca
+  h += '<div style="background:#fff;border:1px solid #e0e4ea;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px">'+
+    '<span style="font-size:13px;color:#666">🔍</span>'+
+    '<input id="fab-art-search" type="text" placeholder="Cerca per SKU, nome prodotto, fornitore o numero ordine..." value="'+escHtml(window._fabArtSearchQuery||'')+'" oninput="_fabArtFilter(this.value)" style="flex:1;padding:6px 8px;border:none;outline:none;font-size:13px;font-family:inherit">'+
+    (curQ?'<button onclick="_fabArtFilter(\'\')" style="background:#f0f2f5;border:none;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;color:#666">✕ Pulisci</button>':'')+
+  '</div>';
+
   // Barra totale globale
-  h += '<div style="background:#1F3864;color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">'+
+  h += '<div id="fab-art-totals" style="background:#1F3864;color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">'+
     '<span>📦 <strong>'+chiavi.length+'</strong> articoli con residuo da ricevere</span>'+
     '<span>Ordinato: <strong>'+totOrdGlob.toLocaleString('it-IT')+'</strong> · Ricevuto: <strong>'+totRicGlob.toLocaleString('it-IT')+'</strong> · Residuo: <strong style="color:#fbbf24">'+totResGlob.toLocaleString('it-IT')+'</strong></span>'+
   '</div>';
+
+  // Wrapper per i risultati (filtrabile)
+  h += '<div id="fab-art-list">';
 
   chiavi.forEach(function(k){
     var a = perArt[k];
     var perc = a.totOrd>0 ? Math.round(a.totRic/a.totOrd*100) : 0;
     var barColor = perc>=80?'#16a34a':perc>=50?'#f59e0b':'#dc2626';
 
-    h += '<div style="background:#fff;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:14px;overflow:hidden">';
+    // Costruisco il testo ricercabile (SKU + nome + fornitori + numeri ordine)
+    var searchText = (a.sku+' '+a.nome+' '+a.righe.map(function(r){return r.fornitore+' '+r.numero;}).join(' ')).toLowerCase();
+
+    h += '<div class="fab-art-card" data-search="'+escHtml(searchText)+'" style="background:#fff;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:14px;overflow:hidden">';
     // Header articolo
     h += '<div style="background:linear-gradient(90deg,#f8f9fc,#fff);padding:12px 16px;border-bottom:1px solid #e0e4ea">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">'+
@@ -18663,6 +18681,8 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
         statoLbl = '—'; statoColor = '#888'; statoBg = 'transparent';
       }
       var ordIdEsc = String(r.ordId).replace(/'/g,"\\'");
+      var skuShopEsc = String(r.skuShopify||'').replace(/'/g,"\\'");
+      var dataConsEsc = String(r.dataCons||'').replace(/'/g,"\\'");
       h += '<tr style="background:'+bg+'">'+
         '<td style="'+tdS+';font-weight:600">'+escHtml(r.numero)+'</td>'+
         '<td style="'+tdS+'">'+escHtml(r.fornitore)+'</td>'+
@@ -18672,9 +18692,10 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
         '<td style="'+tdR+';color:#16a34a">'+r.qRic.toLocaleString('it-IT')+'</td>'+
         '<td style="'+tdR+';font-weight:700;color:#dc2626">'+r.qRes.toLocaleString('it-IT')+'</td>'+
         '<td style="'+tdC+'"><span style="background:'+statoBg+';color:'+statoColor+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap">'+statoLbl+'</span></td>'+
-        '<td style="'+tdC+'">'+
-          '<button onclick="fabEditOrdine(\''+ordIdEsc+'\')" title="Modifica" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:3px">✏️</button>'+
-          '<button onclick="fabDeleteOrdine(\''+ordIdEsc+'\')" title="Elimina" style="font-size:11px;background:#fee;border:1px solid #fcc;color:#c04040;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:inherit;font-weight:600">✕</button>'+
+        '<td style="'+tdC+';white-space:nowrap">'+
+          '<button onclick="_fabArtEditRiga(\''+ordIdEsc+'\',\''+skuShopEsc+'\',\''+dataConsEsc+'\')" title="Modifica riga" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✏️</button>'+
+          '<button onclick="_fabArtDeleteRiga(\''+ordIdEsc+'\',\''+skuShopEsc+'\',\''+dataConsEsc+'\')" title="Elimina riga" style="font-size:11px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px" title="Elimina solo questa riga">✕</button>'+
+          '<button onclick="fabEditOrdine(\''+ordIdEsc+'\')" title="Modifica intero ordine" style="font-size:11px;background:#f3e8ff;border:1px solid #d8b4fe;color:#7e22ce;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600">⚙️</button>'+
         '</td>'+
       '</tr>';
     });
@@ -18682,8 +18703,161 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
     h += '</div>';
   });
 
+  h += '</div>'; // chiusura fab-art-list
+
+  // Applica filtro iniziale se presente (via setTimeout per attendere DOM)
+  if(curQ){
+    setTimeout(function(){ _fabArtFilter(window._fabArtSearchQuery); }, 0);
+  }
+
   return h;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Filtro ricerca vista Articolo
+// ═══════════════════════════════════════════════════════════════════
+window._fabArtFilter = function(q){
+  q = String(q||'').toLowerCase().trim();
+  window._fabArtSearchQuery = q;
+  var input = document.getElementById('fab-art-search');
+  if(input && input.value !== q) input.value = q;
+  var cards = document.querySelectorAll('.fab-art-card');
+  var shown = 0;
+  cards.forEach(function(c){
+    var s = c.getAttribute('data-search') || '';
+    if(!q || s.indexOf(q)>=0){
+      c.style.display = '';
+      shown++;
+    } else {
+      c.style.display = 'none';
+    }
+  });
+  // Aggiorna il contatore nella barra totali
+  var totBar = document.getElementById('fab-art-totals');
+  if(totBar){
+    if(q){
+      totBar.querySelector('span').innerHTML = '📦 <strong>'+shown+'</strong> articoli trovati (su '+cards.length+') <span style="color:#fbbf24;margin-left:6px;font-size:11px">🔍 '+escHtml(q)+'</span>';
+    } else {
+      totBar.querySelector('span').innerHTML = '📦 <strong>'+cards.length+'</strong> articoli con residuo da ricevere';
+    }
+  }
+  // Mostra/nascondi bottone pulisci
+  var cleanBtn = document.querySelector('#fab-art-search').parentNode.querySelector('button');
+  if(q && !cleanBtn){
+    var btn = document.createElement('button');
+    btn.innerHTML = '✕ Pulisci';
+    btn.onclick = function(){ _fabArtFilter(''); };
+    btn.style.cssText = 'background:#f0f2f5;border:none;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;color:#666';
+    document.querySelector('#fab-art-search').parentNode.appendChild(btn);
+  } else if(!q && cleanBtn){
+    cleanBtn.remove();
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Modifica singola riga: modal mini per cambiare qty e data consegna
+// ═══════════════════════════════════════════════════════════════════
+window._fabArtEditRiga = function(ordId, skuShop, dataCons){
+  var ord = fabOrdini.find(function(o){return String(o.id)===String(ordId);});
+  if(!ord){ showToast('Ordine non trovato','error'); return; }
+  var rigIdx = (ord.righe||[]).findIndex(function(r){
+    var rSku = String(r.sku_shopify||r.sku||'');
+    var rData = String(r.data_cons_riga||'');
+    return rSku===String(skuShop) && (rData===String(dataCons) || (!rData && !dataCons));
+  });
+  if(rigIdx<0){ showToast('Riga non trovata','error'); return; }
+  var rig = ord.righe[rigIdx];
+
+  var existing = document.getElementById('fab-art-riga-modal');
+  if(existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'fab-art-riga-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:flex;align-items:center;justify-content:center;font-family:inherit';
+
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:14px;width:420px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden">'+
+      '<div style="padding:16px 22px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between">'+
+        '<div style="font-size:16px;font-weight:700;color:#1a1a2e">✏️ Modifica riga ordine</div>'+
+        '<button id="rm-close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#aaa;line-height:1">×</button>'+
+      '</div>'+
+      '<div style="padding:16px 22px">'+
+        '<div style="font-size:12px;color:#666;margin-bottom:12px;background:#f8f9fc;border-radius:6px;padding:8px 10px">'+
+          '<strong>'+escHtml(rig.sku||rig.sku_shopify||'')+'</strong><br>'+
+          '<span style="color:#888">Ordine: '+escHtml(ord.numero_ordine||'ORD-'+ord.id)+' · '+escHtml(ord.fornitore||'')+'</span>'+
+        '</div>'+
+        '<div style="margin-bottom:12px">'+
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Quantità ordinata</label>'+
+          '<input id="rm-qty" type="number" min="0" value="'+(rig.qty_ordinata||0)+'" style="width:100%;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box">'+
+          '<div style="font-size:10px;color:#888;margin-top:3px">Ricevuto: '+(rig.qty_ricevuta||0)+' · la qty non può scendere sotto questo valore</div>'+
+        '</div>'+
+        '<div style="margin-bottom:12px">'+
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Data consegna prevista</label>'+
+          '<input id="rm-data" type="date" value="'+escHtml((rig.data_cons_riga||ord.data_consegna_prevista||'').substring(0,10))+'" style="width:100%;padding:9px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box">'+
+        '</div>'+
+      '</div>'+
+      '<div style="padding:12px 22px 16px;border-top:1px solid #f0f2f5;display:flex;justify-content:flex-end;gap:8px;background:#f8f9fc">'+
+        '<button id="rm-cancel" style="padding:9px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
+        '<button id="rm-save" style="padding:9px 22px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">💾 Salva</button>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(modal);
+  modal.querySelector('#rm-close').addEventListener('click', function(){modal.remove();});
+  modal.querySelector('#rm-cancel').addEventListener('click', function(){modal.remove();});
+  modal.addEventListener('click', function(e){if(e.target===modal)modal.remove();});
+
+  modal.querySelector('#rm-save').addEventListener('click', function(){
+    var newQty = parseInt(modal.querySelector('#rm-qty').value) || 0;
+    var newData = modal.querySelector('#rm-data').value;
+    var minQty = rig.qty_ricevuta || 0;
+    if(newQty < minQty){
+      showToast('La qtà ordinata non può essere inferiore al ricevuto ('+minQty+')','error');
+      return;
+    }
+    // Ricalcolo master se presente
+    if(rig.qty_master){
+      var masterSize = rig.qty_ordinata / rig.qty_master;
+      if(masterSize > 0) rig.qty_master = Math.round(newQty / masterSize);
+    }
+    rig.qty_ordinata = newQty;
+    if(newData) rig.data_cons_riga = newData;
+    saveFabState();
+    modal.remove();
+    renderFabTab('ordini');
+    showToast('✅ Riga aggiornata');
+  });
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Elimina singola riga ordine (se l'ordine ha solo questa riga, elimina l'ordine)
+// ═══════════════════════════════════════════════════════════════════
+window._fabArtDeleteRiga = function(ordId, skuShop, dataCons){
+  var ord = fabOrdini.find(function(o){return String(o.id)===String(ordId);});
+  if(!ord){ showToast('Ordine non trovato','error'); return; }
+  var rigIdx = (ord.righe||[]).findIndex(function(r){
+    var rSku = String(r.sku_shopify||r.sku||'');
+    var rData = String(r.data_cons_riga||'');
+    return rSku===String(skuShop) && (rData===String(dataCons) || (!rData && !dataCons));
+  });
+  if(rigIdx<0){ showToast('Riga non trovata','error'); return; }
+  var rig = ord.righe[rigIdx];
+  if((rig.qty_ricevuta||0) > 0){
+    if(!confirm('⚠ Questa riga ha già ricevuto '+rig.qty_ricevuta+' unità. Eliminarla comunque?')) return;
+  } else {
+    if(!confirm('Eliminare questa riga dall\'ordine?\n\n'+(rig.sku||rig.sku_shopify||'')+'\nQtà: '+rig.qty_ordinata)) return;
+  }
+  ord.righe.splice(rigIdx, 1);
+  // Se non ci sono più righe, elimina tutto l'ordine
+  if(ord.righe.length === 0){
+    if(confirm('L\'ordine non ha più righe. Vuoi eliminarlo completamente?')){
+      fabOrdini = fabOrdini.filter(function(o){return String(o.id)!==String(ord.id);});
+    }
+  }
+  saveFabState();
+  renderFabTab('ordini');
+  showToast('✅ Riga eliminata');
+};
 
 function _renderOrdFornTabella(openOrds,today,parseDataLocale){
   if(!openOrds.length) return '<div style="text-align:center;padding:40px;color:#aaa">Nessun ordine aperto.</div>';
@@ -19130,6 +19304,208 @@ function fabDeleteOrdine(id){
   if(!confirm('Eliminare questo ordine?'))return;
   fabOrdini=fabOrdini.filter(function(o){return String(o.id)!==String(id);});
   saveFabState();renderFabTab('ordini');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// fabEditOrdine — Modal di modifica ordine: testata (numero, fornitore,
+// date, note) + righe (qty ordinata, data consegna riga, elimina riga)
+// ═══════════════════════════════════════════════════════════════════
+function fabEditOrdine(id){
+  var ord = fabOrdini.find(function(o){return String(o.id)===String(id);});
+  if(!ord){ showToast('Ordine non trovato','error'); return; }
+
+  // Rimuovi eventuali modal già aperti
+  var existing = document.getElementById('fab-edit-modal');
+  if(existing) existing.remove();
+
+  var fornitoriList = [];
+  try{ fornitoriList = [...new Set((typeof fabProducts!=='undefined'?fabProducts:[]).map(function(p){return p.fornitore;}).filter(Boolean))]; }catch(e){}
+  if(fornitoriList.indexOf(ord.fornitore)<0 && ord.fornitore) fornitoriList.push(ord.fornitore);
+
+  var esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+
+  var modal = document.createElement('div');
+  modal.id = 'fab-edit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto;font-family:inherit';
+
+  var righeHtml = '';
+  (ord.righe||[]).forEach(function(r, idx){
+    var ms = r.qty_master ? (r.qty_ordinata/r.qty_master) : 1;
+    righeHtml += '<tr data-idx="'+idx+'" style="border-bottom:1px solid #eee">'+
+      '<td style="padding:8px 10px;font-size:12px">'+
+        '<div style="font-weight:600;color:#1F3864">'+esc(r.sku||r.sku_shopify||'—')+'</div>'+
+        '<div style="font-size:10px;color:#888;margin-top:2px">'+esc(r.sku_shopify||'')+'</div>'+
+      '</td>'+
+      '<td style="padding:8px 10px">'+
+        '<input type="number" min="0" value="'+(r.qty_ordinata||0)+'" data-field="qty_ordinata" style="width:90px;padding:6px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;text-align:right">'+
+      '</td>'+
+      '<td style="padding:8px 10px;text-align:right;font-size:11px;color:#16a34a">'+
+        (r.qty_ricevuta||0)+
+      '</td>'+
+      '<td style="padding:8px 10px">'+
+        '<input type="date" value="'+esc((r.data_cons_riga||ord.data_consegna_prevista||'').substring(0,10))+'" data-field="data_cons_riga" style="padding:6px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit">'+
+      '</td>'+
+      '<td style="padding:8px 10px;text-align:center">'+
+        '<button data-action="remove-row" data-idx="'+idx+'" style="background:#fee;border:1px solid #fcc;color:#c04040;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">✕ Rimuovi</button>'+
+      '</td>'+
+    '</tr>';
+  });
+
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:14px;width:860px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.22);overflow:hidden;margin:auto">'+
+      '<div style="padding:18px 22px 14px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between">'+
+        '<div style="font-size:17px;font-weight:700;color:#1a1a2e">✏️ Modifica Ordine</div>'+
+        '<button id="fab-edit-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:#aaa;line-height:1">×</button>'+
+      '</div>'+
+      '<div style="padding:18px 22px;max-height:70vh;overflow-y:auto">'+
+        // Testata
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">'+
+          '<div>'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">N° Ordine</label>'+
+            '<input id="fe-numero" type="text" value="'+esc(ord.numero_ordine||'')+'" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<div>'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Fornitore</label>'+
+            '<input id="fe-fornitore" type="text" list="fe-fornitori-list" value="'+esc(ord.fornitore||'')+'" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+            '<datalist id="fe-fornitori-list">'+fornitoriList.map(function(f){return '<option value="'+esc(f)+'">';}).join('')+'</datalist>'+
+          '</div>'+
+          '<div>'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Data Ordine</label>'+
+            '<input id="fe-data-ord" type="date" value="'+esc((ord.data_ordine||'').substring(0,10))+'" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<div>'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Consegna Prevista</label>'+
+            '<input id="fe-data-cons" type="date" value="'+esc((ord.data_consegna_prevista||'').substring(0,10))+'" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
+          '</div>'+
+          '<div>'+
+            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Stato</label>'+
+            '<select id="fe-stato" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box;background:#fff">'+
+              ['attesa','parziale','ricevuto','annullato'].map(function(s){
+                return '<option value="'+s+'"'+(ord.stato===s?' selected':'')+'>'+s+'</option>';
+              }).join('')+
+            '</select>'+
+          '</div>'+
+        '</div>'+
+        '<div style="margin-bottom:16px">'+
+          '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">Note</label>'+
+          '<textarea id="fe-note" style="width:100%;padding:8px 12px;border:1px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box;resize:vertical;min-height:50px">'+esc(ord.note||'')+'</textarea>'+
+        '</div>'+
+        // Righe
+        '<div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px">📦 Righe ordine ('+(ord.righe||[]).length+')</div>'+
+        '<div style="border:1px solid #e0e4ea;border-radius:8px;overflow:hidden">'+
+          '<table id="fe-righe" style="width:100%;border-collapse:collapse">'+
+            '<thead style="background:#f8f9fc">'+
+              '<tr>'+
+                '<th style="padding:8px 10px;text-align:left;font-size:11px;color:#555;font-weight:700">ARTICOLO</th>'+
+                '<th style="padding:8px 10px;text-align:right;font-size:11px;color:#555;font-weight:700">QTÀ ORD.</th>'+
+                '<th style="padding:8px 10px;text-align:right;font-size:11px;color:#555;font-weight:700">RIC.</th>'+
+                '<th style="padding:8px 10px;text-align:left;font-size:11px;color:#555;font-weight:700">CONS.</th>'+
+                '<th style="padding:8px 10px;text-align:center;font-size:11px;color:#555;font-weight:700">AZ.</th>'+
+              '</tr>'+
+            '</thead>'+
+            '<tbody>'+righeHtml+'</tbody>'+
+          '</table>'+
+        '</div>'+
+        '<div style="font-size:10px;color:#999;margin-top:6px">Per ridurre la qtà ricevuta usa la pagina Ricevi Merce. Qui puoi solo modificare la qtà ordinata.</div>'+
+      '</div>'+
+      '<div style="padding:12px 22px 16px;border-top:1px solid #f0f2f5;display:flex;justify-content:space-between;gap:8px;background:#f8f9fc">'+
+        '<button id="fab-edit-delete" style="padding:9px 16px;background:#fee;border:1px solid #fcc;border-radius:8px;color:#c04040;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🗑 Elimina ordine</button>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button id="fab-edit-cancel" style="padding:9px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
+          '<button id="fab-edit-save" style="padding:9px 22px;background:#6d28d9;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">💾 Salva</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(modal);
+
+  // Handler chiusura
+  modal.querySelector('#fab-edit-close').addEventListener('click', function(){ modal.remove(); });
+  modal.querySelector('#fab-edit-cancel').addEventListener('click', function(){ modal.remove(); });
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+
+  // Rimozione riga
+  modal.querySelectorAll('[data-action="remove-row"]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var tr = btn.closest('tr');
+      if(tr){
+        if(!confirm('Rimuovere questa riga dall\'ordine?')) return;
+        tr.setAttribute('data-removed','1');
+        tr.style.opacity = '0.4';
+        tr.style.textDecoration = 'line-through';
+        btn.textContent = '↺ Annulla';
+        btn.dataset.action = 'restore-row';
+      }
+    });
+  });
+  // Handler dinamico per il toggle rimuovi/ripristina
+  modal.querySelector('tbody').addEventListener('click', function(ev){
+    var btn = ev.target.closest('[data-action]');
+    if(!btn) return;
+    if(btn.dataset.action === 'restore-row'){
+      ev.preventDefault();
+      var tr = btn.closest('tr');
+      if(tr){
+        tr.removeAttribute('data-removed');
+        tr.style.opacity = '1';
+        tr.style.textDecoration = '';
+        btn.textContent = '✕ Rimuovi';
+        btn.dataset.action = 'remove-row';
+      }
+    }
+  });
+
+  // Elimina ordine intero
+  modal.querySelector('#fab-edit-delete').addEventListener('click', function(){
+    if(!confirm('Eliminare DEFINITIVAMENTE l\'intero ordine?')) return;
+    modal.remove();
+    fabDeleteOrdine(ord.id);
+  });
+
+  // Salva
+  modal.querySelector('#fab-edit-save').addEventListener('click', function(){
+    try{
+      ord.numero_ordine = modal.querySelector('#fe-numero').value.trim();
+      ord.fornitore = modal.querySelector('#fe-fornitore').value.trim();
+      ord.data_ordine = modal.querySelector('#fe-data-ord').value;
+      ord.data_consegna_prevista = modal.querySelector('#fe-data-cons').value;
+      ord.stato = modal.querySelector('#fe-stato').value;
+      ord.note = modal.querySelector('#fe-note').value;
+
+      // Aggiorna righe
+      var nuoveRighe = [];
+      modal.querySelectorAll('#fe-righe tbody tr').forEach(function(tr){
+        if(tr.getAttribute('data-removed')==='1') return; // skip rimossa
+        var idx = parseInt(tr.getAttribute('data-idx'));
+        var rig = ord.righe[idx];
+        if(!rig) return;
+        var qtyInp = tr.querySelector('[data-field="qty_ordinata"]');
+        var dataInp = tr.querySelector('[data-field="data_cons_riga"]');
+        if(qtyInp){
+          var newQty = parseInt(qtyInp.value) || 0;
+          // Se c'è qty_master, ricalcola master
+          if(rig.qty_master){
+            var masterSize = rig.qty_ordinata / rig.qty_master;
+            if(masterSize > 0){
+              rig.qty_master = Math.round(newQty / masterSize);
+            }
+          }
+          rig.qty_ordinata = newQty;
+        }
+        if(dataInp) rig.data_cons_riga = dataInp.value;
+        nuoveRighe.push(rig);
+      });
+      ord.righe = nuoveRighe;
+
+      saveFabState();
+      modal.remove();
+      renderFabTab('ordini');
+      showToast('✅ Ordine aggiornato');
+    }catch(e){
+      console.error('[fabEditOrdine] errore:',e);
+      showToast('Errore salvataggio: '+e.message,'error');
+    }
+  });
 }
 
 // ── PAGINA RICEZIONE MERCE (fullscreen) ──────────────────────────
