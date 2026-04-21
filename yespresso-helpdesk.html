@@ -1553,11 +1553,64 @@ function getFiltered(){
 
 function renderTable(){
   if(currentView==='richieste-reso'){renderRichiesteReso();return;}
-  const filtered=getFiltered();
+  const filteredRaw=getFiltered();
+
+  // ═══ COMPATTAZIONE THREAD AMAZON ═══
+  // Raggruppa ticket Amazon con stessa email + stesso numero ordine:
+  // mostra solo il più recente, con badge "+N messaggi collegati".
+  // I raggruppati vengono nascosti dalla lista ma restano in `tickets[]`.
+  const amzGroups = {}; // key: email|orderNum → [ticket,...]
+  filteredRaw.forEach(function(t){
+    const email = (t.requester && t.requester.email) || '';
+    if(!email.includes('marketplace.amazon')) return;
+    const subj = t.subject || '';
+    const m = subj.match(/(\d{3}-\d{7}-\d{7})/);
+    if(!m) return;
+    const key = email + '|' + m[1];
+    if(!amzGroups[key]) amzGroups[key] = [];
+    amzGroups[key].push(t);
+  });
+  // Per ogni gruppo con >1 ticket: tieni solo il più recente, nascondi gli altri
+  const hiddenIds = new Set();
+  const groupInfoByMainId = {}; // mainTicketId → {size, orderNum, openCount, allSolved}
+  Object.keys(amzGroups).forEach(function(k){
+    const grp = amzGroups[k];
+    if(grp.length <= 1) return;
+    // Ordina per data ultima attività desc
+    grp.sort(function(a,b){
+      return new Date(b.lastMessageAt||b.updatedAt||b.updated_at||0) -
+             new Date(a.lastMessageAt||a.updatedAt||a.updated_at||0);
+    });
+    // Preferenza: il più recente tra quelli open/pending. Se tutti solved, il più recente in assoluto.
+    let main = grp.find(function(g){return g.status==='open'||g.status==='pending';}) || grp[0];
+    const mainId = main.ID||main.id;
+    grp.forEach(function(g){
+      const gid = g.ID||g.id;
+      if(gid !== mainId) hiddenIds.add(gid);
+    });
+    const openCount = grp.filter(function(g){return g.status==='open'||g.status==='pending';}).length;
+    groupInfoByMainId[mainId] = {
+      size: grp.length,
+      orderNum: k.split('|')[1],
+      openCount: openCount,
+      allSolved: openCount === 0
+    };
+  });
+  const filtered = filteredRaw.filter(function(t){return !hiddenIds.has(t.ID||t.id);});
+  // Esporto info gruppi per uso in altre funzioni (badge, counter, ecc.)
+  window._amzGroupInfo = groupInfoByMainId;
+  window._amzHiddenIds = hiddenIds;
+
   const totalPages=Math.ceil(filtered.length/PAGE_SIZE);
   if(currentPage>totalPages&&totalPages>0)currentPage=totalPages;
   const pageTickets=filtered.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
-  document.getElementById("ticket-count-bar").textContent=filtered.length+" tickets";
+  // Conteggio "thread" vs ticket raw
+  const threadCount = filtered.length;
+  const rawCount = filteredRaw.length;
+  const countLabel = threadCount === rawCount
+    ? threadCount+" tickets"
+    : threadCount+" thread ("+rawCount+" ticket totali)";
+  document.getElementById("ticket-count-bar").textContent = countLabel;
   if(!filtered.length){document.getElementById("ticket-rows").innerHTML='<div class="center-msg">Nessun ticket trovato</div>';renderPagination(0,0);return}
   renderPagination(currentPage,totalPages);
   document.getElementById("ticket-rows").innerHTML=pageTickets.map(t=>{
@@ -1591,6 +1644,15 @@ function renderTable(){
       var _waTip='WhatsApp: '+(_waRecent.template_nome||'Template')+' ('+_waWhen+')';
       _waIcon=' <span title="'+_waTip.replace(/"/g,'&quot;')+'" style="color:#25d366;font-size:11px;margin-left:2px">💬</span>';
     }
+    // Badge "+N messaggi collegati" per thread Amazon compattato
+    var _amzBadge = '';
+    var _gi = window._amzGroupInfo && window._amzGroupInfo[tid];
+    if(_gi){
+      var extraMsgs = _gi.size - 1;
+      var badgeColor = _gi.allSolved ? '#64748b' : '#1a73e8';
+      var badgeBg = _gi.allSolved ? '#f1f5f9' : '#e8f0fe';
+      _amzBadge = ' <span title="Thread Amazon ordine '+_gi.orderNum+' — '+_gi.size+' ticket collegati'+(_gi.openCount>0?' ('+_gi.openCount+' ancora aperti)':' (tutti chiusi)')+'" style="background:'+badgeBg+';color:'+badgeColor+';padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap">🔗 +'+extraMsgs+'</span>';
+    }
     return `<div class="ticket-row${isActive?" active":""}" onclick="selectTicket('${tid}')">
       <div class="tr-check"><input type="checkbox" ${selectedTicketIds.has(tid)?"checked":""} onclick="event.stopPropagation();toggleBulkSelect('${tid}',this)"/></div>
       <div class="tr-requester">
@@ -1600,7 +1662,7 @@ function renderTable(){
           <div class="tr-req-email">${email}</div>
         </div>
       </div>
-      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}</div>
+      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}${_amzBadge}</div>
       <div class="tr-agent" style="font-size:11px;color:#aaa">unassigned</div>
       <div class="tr-status"><span class="status-pill ${sc}">${sl}</span></div>
       <div class="tr-time">${lastTime}</div>
@@ -1658,13 +1720,47 @@ async function selectTicket(tid){
   const isNoContactSubj=noConcat_subjects.some(s=>baseSubjLow.includes(s));
   const noConcat=isTemuPostVendita||isTemuInfoSospeso||isNoContactSubj||email.includes("donotreply@amazon")||email.includes("servizioclienti@brt")||email.includes("vasnoreply@brt")||email.includes("brt.it");
 
-  // Find all open/pending tickets for this customer
-  let openTickets=noConcat?[base]:tickets.filter(t=>{
-    if((t.status!=="open"&&t.status!=="pending"))return false;
-    const te=(t.requester&&t.requester.email)||"";
-    const tn=(t.requester&&t.requester.name)||"";
-    return email&&te===email; // concatena SOLO per email uguale, mai per nome
-  });
+  // ═══ CONCATENAZIONE AMAZON STESSO ORDINE ═══
+  // Per clienti Amazon (@marketplace.amazon.it): HelpDesk crea un nuovo ticket
+  // per OGNI risposta del cliente, con subject "Re: Re: Re: ..." accumulati.
+  // Quindi devo raggruppare TUTTI i ticket (anche solved/closed) con:
+  //   - stessa email cliente
+  //   - stesso numero ordine Amazon (NNN-NNNNNNN-NNNNNNN nel subject)
+  // così da mostrarli come una conversazione unica.
+  let isAmazonGroup = false;
+  let amazonOrderNum = '';
+  const baseSubj = base.subject || '';
+  const isAmazonTicket = email && email.includes('marketplace.amazon');
+  if(isAmazonTicket){
+    const amzMatch = baseSubj.match(/(\d{3}-\d{7}-\d{7})/);
+    if(amzMatch){
+      amazonOrderNum = amzMatch[1];
+      isAmazonGroup = true;
+    }
+  }
+
+  // Find tickets for this customer
+  let openTickets;
+  if(noConcat){
+    openTickets = [base];
+  } else if(isAmazonGroup){
+    // Per Amazon: tutti i ticket (qualsiasi stato) con stessa email E stesso ordine
+    openTickets = tickets.filter(t=>{
+      const te = (t.requester && t.requester.email) || '';
+      if(te !== email) return false;
+      const ts = t.subject || '';
+      return ts.includes(amazonOrderNum);
+    });
+    if(!openTickets.length) openTickets = [base];
+  } else {
+    // Comportamento standard: ticket aperti stessa email
+    openTickets = tickets.filter(t=>{
+      if((t.status!=="open"&&t.status!=="pending"))return false;
+      const te=(t.requester&&t.requester.email)||"";
+      const tn=(t.requester&&t.requester.name)||"";
+      return email&&te===email; // concatena SOLO per email uguale, mai per nome
+    });
+  }
 
   // Sort by date asc (oldest first = reading order), newest = main ticket
   openTickets.sort((a,b)=>{
@@ -1674,10 +1770,60 @@ async function selectTicket(tid){
   });
 
   // Use newest open ticket as main
-  const mainTicket=openTickets.length>0?openTickets[openTickets.length-1]:base;
+  // Per Amazon: se possibile preferisce l'ultimo ticket OPEN/PENDING (dove rispondere),
+  // altrimenti il più recente in assoluto
+  let mainTicket;
+  if(isAmazonGroup){
+    const openOnes = openTickets.filter(t=>t.status==='open'||t.status==='pending');
+    if(openOnes.length){
+      mainTicket = openOnes[openOnes.length-1];
+    } else {
+      mainTicket = openTickets[openTickets.length-1] || base;
+    }
+  } else {
+    mainTicket = openTickets.length>0 ? openTickets[openTickets.length-1] : base;
+  }
+  // Esporta info gruppo Amazon per UI e azioni
+  window._amazonGroup = isAmazonGroup ? {
+    orderNum: amazonOrderNum,
+    ticketIds: openTickets.map(t=>t.ID||t.id),
+    mainId: mainTicket.ID || mainTicket.id
+  } : null;
   selectedTicket=mainTicket;
   window.selectedTicket=selectedTicket; // esposto per waBuildContext
   renderTable();
+
+  // ═══ Per gruppo Amazon: pre-carica eventi di tutti i ticket del gruppo ═══
+  // Gli eventi completi (con messaggi e allegati) non sono nella cache `tickets[]`,
+  // bisogna fetcharli uno per uno. Lo facciamo in parallelo prima del render principale.
+  if(isAmazonGroup && openTickets.length>1){
+    try{
+      const groupFetches = openTickets.map(function(gt){
+        const gtid = gt.ID||gt.id;
+        // Skip il main (verrà fetchato subito dopo più dettagliatamente)
+        if(gtid === (mainTicket.ID||mainTicket.id)) return Promise.resolve(null);
+        return hdFetch("/v1/tickets/"+gtid).then(function(full){
+          if(full && full.events){
+            const idx = tickets.findIndex(function(tk){return (tk.ID||tk.id)===gtid;});
+            if(idx>=0){
+              tickets[idx] = Object.assign({}, tickets[idx], full);
+            }
+            // Aggiorna anche il riferimento in openTickets
+            const oIdx = openTickets.findIndex(function(tk){return (tk.ID||tk.id)===gtid;});
+            if(oIdx>=0){
+              openTickets[oIdx] = Object.assign({}, openTickets[oIdx], full);
+            }
+          }
+          return full;
+        }).catch(function(e){console.log("[Amazon group] fetch failed per",gtid,":",e.message); return null;});
+      });
+      await Promise.all(groupFetches);
+      console.log("🔗 [Amazon group] eventi caricati per",openTickets.length,"ticket");
+    }catch(e){
+      console.warn("[Amazon group] errore pre-fetch:",e);
+    }
+  }
+
   // Carica ticket completo dall'API per avere gli allegati negli eventi
   try{
     const fullTicket=await hdFetch("/v1/tickets/"+(mainTicket.ID||mainTicket.id));
@@ -1808,8 +1954,66 @@ async function selectTicket(tid){
   const hasMultiple=openTickets.length>1;
 
   if(hasMultiple){
-    messagesHtml+='<div class="concat-banner">&#9888;&#65039; Questo cliente ha <strong>'+openTickets.length+' ticket aperti</strong> &mdash; messaggi concatenati di seguito</div>';
+    if(isAmazonGroup){
+      // Conta quanti dei ticket sono aperti
+      const openAmzCount = openTickets.filter(tk=>tk.status==='open'||tk.status==='pending').length;
+      const openLbl = openAmzCount>0 ? ' (<strong>'+openAmzCount+' aperti</strong>)' : ' (tutti chiusi)';
+      messagesHtml+='<div class="concat-banner" style="background:#fff4e0;border:1px solid #ffcf94;color:#a64500">🔗 <strong>Thread Amazon</strong> &mdash; '+openTickets.length+' messaggi raggruppati dallo stesso ordine <strong>'+amazonOrderNum+'</strong>'+openLbl+'</div>';
+    } else {
+      messagesHtml+='<div class="concat-banner">&#9888;&#65039; Questo cliente ha <strong>'+openTickets.length+' ticket aperti</strong> &mdash; messaggi concatenati di seguito</div>';
+    }
   }
+
+  // Banner informativo: ticket chiusi stesso ordine (ultimi 30gg) — contesto per AI
+  try{
+    const subjForCheck = (t.subject||"");
+    const amzForCheck = subjForCheck.match(/\d{3}-\d{7}-\d{7}/);
+    let shopForCheck = '';
+    if(window._lastShopifyOrder){
+      shopForCheck = ((window._lastShopifyOrder.name||'').replace('#','').trim())
+                   || String(window._lastShopifyOrder.order_number||'').trim();
+    }
+    if(!shopForCheck){
+      const shm = subjForCheck.match(/#(\d{6,})/);
+      if(shm) shopForCheck = shm[1];
+    }
+    const patterns = [];
+    if(amzForCheck) patterns.push({label:'Amazon', num:amzForCheck[0]});
+    if(shopForCheck) patterns.push({label:'Shopify', num:shopForCheck});
+    if(patterns.length){
+      const MS_30D = 30*24*60*60*1000;
+      const nowCheck = Date.now();
+      const curIdC = t.ID||t.id;
+      const matchedCount = patterns.reduce((acc,p)=>{
+        const list = tickets.filter(tk=>{
+          if(tk.status!=='solved' && tk.status!=='closed') return false;
+          if((tk.ID||tk.id)===curIdC) return false;
+          const subj = tk.subject||'';
+          const firstMsg = (tk.events&&tk.events[0]&&tk.events[0].message&&tk.events[0].message.text)||'';
+          const combined = subj+' '+firstMsg;
+          let hasN = false;
+          if(p.label==='Amazon'){
+            hasN = combined.indexOf(p.num)>=0;
+          } else {
+            const re = new RegExp('(?:^|[^0-9])'+p.num+'(?:[^0-9]|$)');
+            hasN = re.test(combined);
+          }
+          if(!hasN) return false;
+          let tDate = 0;
+          if(tk.events&&tk.events.length){
+            const le = tk.events[tk.events.length-1];
+            tDate = new Date(le.date||le.createdAt||le.created_at||0).getTime();
+          }
+          return tDate && (nowCheck-tDate)<=MS_30D;
+        });
+        return acc + list.length;
+      }, 0);
+      if(matchedCount > 0){
+        const lbl = patterns.map(p=>p.label+' '+p.num).join(' / ');
+        messagesHtml += '<div style="background:#e8f0fe;border:1px solid #c5d8fa;border-radius:8px;padding:10px 14px;font-size:12px;color:#1a4b8f;display:flex;align-items:center;gap:8px;flex-shrink:0;margin-bottom:8px">📚 <strong>'+matchedCount+' ticket chiusi</strong> sullo stesso ordine ('+lbl+') negli ultimi 30 giorni &mdash; l\'AI considera il contesto storico nelle risposte</div>';
+      }
+    }
+  }catch(e){ console.warn('[solved banner]',e); }
 
   // Show all open tickets messages in chronological order — tutti gli eventi
   const ticketsToShow=hasMultiple?openTickets:[t];
@@ -1825,9 +2029,18 @@ async function selectTicket(tid){
     // Header ticket
     const tkDate=(tkEvents[0]&&(tkEvents[0].date||tkEvents[0].createdAt))||"";
     const tkDateStr=tkDate?new Date(tkDate).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
+    // Status badge per la vista concatenata (utile soprattutto per gruppi Amazon)
+    const tkStatusBadge=(function(){
+      if(!hasMultiple) return '';
+      const st=tk.status||'';
+      const col=st==='solved'||st==='closed'?'#2a7a50':st==='pending'?'#d97706':'#1a73e8';
+      const bg=st==='solved'||st==='closed'?'#e8f5ec':st==='pending'?'#fff8e1':'#e8f0fe';
+      const lbl=st==='solved'?'✓ Solved':st==='closed'?'✓ Closed':st==='pending'?'⏳ Pending':st==='open'?'● Open':st;
+      return '<span style="background:'+bg+';color:'+col+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:6px">'+lbl+'</span>';
+    })();
     messagesHtml+='<div class="concat-ticket">'+
       '<div class="concat-ticket-header">'+
-        '<span class="concat-ticket-label">'+(hasMultiple?(isMain?'&#128204; Ticket principale: ':'&#128206; '):'')+'<span class="'+(isMain?'s-open':'s-pending')+' status-pill" style="font-size:10px">'+(tk.subject||"Senza oggetto")+'</span></span>'+
+        '<span class="concat-ticket-label">'+(hasMultiple?(isMain?'&#128204; Ticket principale: ':'&#128206; '):'')+'<span class="'+(isMain?'s-open':'s-pending')+' status-pill" style="font-size:10px">'+(tk.subject||"Senza oggetto")+'</span>'+tkStatusBadge+'</span>'+
         '<span class="concat-ticket-date">'+tkDateStr+'</span>'+
       '</div>';
     // Mostra tutti gli eventi (messaggi cliente + risposte agente)
@@ -4333,12 +4546,27 @@ async function sendReply(){
         const email=(selectedTicket.requester&&selectedTicket.requester.email)||"";
         // Email di sistema/BRT: non mettere solved su altri ticket con la stessa email
         const isSystemEmail=email.includes("brt.it")||email.includes("vasnoreply")||email.includes("donotreply@amazon")||email.includes("orders.temu")||email.includes("paypal");
-        const otherOpen=(isCurrNoConcat||isSystemEmail)?[]:tickets.filter(t=>{
-          const te=(t.requester&&t.requester.email)||"";
-          const tSubjLow=(t.subject||"").toLowerCase();
-          const isOtherNoConcat=noConcat_subj.some(s=>tSubjLow.includes(s));
-          return te===email&&(t.ID||t.id)!==tid&&(t.status==="open"||t.status==="pending")&&!isOtherNoConcat;
-        });
+
+        // ═══ Gruppo Amazon: chiudi solo ticket stesso ORDINE Amazon ═══
+        // Se il ticket corrente fa parte di un gruppo Amazon (stesso numero ordine),
+        // chiudi solo i ticket del gruppo, non tutti quelli dell'email
+        const amzGrp = window._amazonGroup;
+        let otherOpen;
+        if(amzGrp && amzGrp.ticketIds && amzGrp.ticketIds.length){
+          otherOpen = tickets.filter(t=>{
+            const tid2=t.ID||t.id;
+            return amzGrp.ticketIds.indexOf(tid2)>=0 && tid2!==tid && (t.status==="open"||t.status==="pending");
+          });
+          console.log("🔗 [Amazon group] chiudo",otherOpen.length,"altri ticket dello stesso ordine",amzGrp.orderNum);
+        } else {
+          otherOpen=(isCurrNoConcat||isSystemEmail)?[]:tickets.filter(t=>{
+            const te=(t.requester&&t.requester.email)||"";
+            const tSubjLow=(t.subject||"").toLowerCase();
+            const isOtherNoConcat=noConcat_subj.some(s=>tSubjLow.includes(s));
+            return te===email&&(t.ID||t.id)!==tid&&(t.status==="open"||t.status==="pending")&&!isOtherNoConcat;
+          });
+        }
+
         if(otherOpen.length){
           console.log("🔄 Metto solved su",otherOpen.length,"altri ticket concatenati");
           for(const ot of otherOpen){
@@ -11626,27 +11854,129 @@ function openAIPromptPanel(){
 
 
 function buildSolvedContext(currentTicket){
+  var historyBlocks = [];
   if(currentTicket){
-    const subjCur=currentTicket.subject||"";
-    const amzMatch=subjCur.match(/\d{3}-\d{7}-\d{7}/);
+    var subjCur = currentTicket.subject || "";
+    var curId = currentTicket.ID || currentTicket.id;
+
+    // ═══ Raccolta numeri ordine da cercare ═══
+    var orderPatterns = []; // {label:'Amazon'|'Shopify', num:'...'}
+
+    // 1) Numero ordine Amazon dal subject
+    var amzMatch = subjCur.match(/\d{3}-\d{7}-\d{7}/);
     if(amzMatch){
-      const amzNum=amzMatch[0];
-      const sameOrder=tickets.filter(t=>(t.status==="solved"||t.status==="closed")&&(t.subject||"").includes(amzNum)&&(t.ID||t.id)!==(currentTicket.ID||currentTicket.id));
-      if(sameOrder.length){
-        const hist=sameOrder.slice(0,3).map((t,i)=>{
-          const agentMsgs=(t.events||[]).filter(e=>e.message&&e.message.text&&e.author&&e.author.type==="agent").slice(-2);
-          const reply=agentMsgs.map(e=>e.message.text.substring(0,300)).join(" | ");
-          return "[Storico "+(i+1)+" - stesso ordine "+amzNum+"]\nOggetto: "+t.subject+"\nRisposta Yespresso: "+reply;
-        }).join("\n---\n");
-        return "\n\nSTORICO TICKET CON STESSO ORDINE AMAZON (NON ripetere richieste già fatte in questi ticket):\n"+hist;
+      orderPatterns.push({label:'Amazon', num:amzMatch[0]});
+    }
+
+    // 2) Numero ordine Shopify: prima prova da window._lastShopifyOrder (più affidabile)
+    var shopNum = '';
+    try{
+      if(window._lastShopifyOrder){
+        shopNum = (window._lastShopifyOrder.name||'').replace('#','').trim()
+               || String(window._lastShopifyOrder.order_number||'').trim();
       }
+    }catch(e){}
+    // Fallback: pattern #NNNNNNN nel subject o messaggi
+    if(!shopNum){
+      var shopMatch = subjCur.match(/#(\d{6,})/);
+      if(shopMatch) shopNum = shopMatch[1];
+    }
+    if(shopNum){
+      orderPatterns.push({label:'Shopify', num:shopNum});
+    }
+
+    // ═══ Filtro ticket solved/closed stesso ordine, ultimi 30 giorni ═══
+    if(orderPatterns.length){
+      var now = Date.now();
+      var MS_30D = 30 * 24 * 60 * 60 * 1000;
+
+      orderPatterns.forEach(function(p){
+        var matched = tickets.filter(function(t){
+          // Solo solved/closed, esclude corrente
+          if(t.status !== "solved" && t.status !== "closed") return false;
+          if((t.ID||t.id) === curId) return false;
+          // Match numero ordine nel subject OPPURE nei messaggi (primo messaggio cliente)
+          var subj = t.subject || "";
+          var firstMsg = (t.events && t.events[0] && t.events[0].message && t.events[0].message.text) || "";
+          var combined = subj + " " + firstMsg;
+          var hasNum = false;
+          if(p.label === 'Amazon'){
+            hasNum = combined.indexOf(p.num) >= 0;
+          } else {
+            // Shopify: cerca sia "#123456" che "123456" ma solo come parola (evita match parziale)
+            var re = new RegExp('(?:^|[^0-9])'+p.num+'(?:[^0-9]|$)');
+            hasNum = re.test(combined);
+          }
+          if(!hasNum) return false;
+          // Filtro temporale: ultimi 30 giorni (da ultima attività o data creazione)
+          var tDate = 0;
+          if(t.events && t.events.length){
+            var lastEv = t.events[t.events.length-1];
+            tDate = new Date(lastEv.date||lastEv.createdAt||lastEv.created_at||0).getTime();
+          }
+          if(!tDate && t.events && t.events[0]){
+            tDate = new Date(t.events[0].date||t.events[0].createdAt||0).getTime();
+          }
+          if(!tDate) return false;
+          return (now - tDate) <= MS_30D;
+        });
+
+        if(matched.length){
+          // Ordina più recenti in cima, max 5
+          matched.sort(function(a,b){
+            var ad = (a.events&&a.events[a.events.length-1]) ? new Date(a.events[a.events.length-1].date||a.events[a.events.length-1].createdAt||0).getTime() : 0;
+            var bd = (b.events&&b.events[b.events.length-1]) ? new Date(b.events[b.events.length-1].date||b.events[b.events.length-1].createdAt||0).getTime() : 0;
+            return bd - ad;
+          });
+          var hist = matched.slice(0,5).map(function(t,i){
+            // Primo messaggio cliente (di cosa si lamentava)
+            var firstCust = '';
+            var evs = t.events || [];
+            for(var k=0; k<evs.length; k++){
+              var e = evs[k];
+              if(e.author && e.author.type !== 'agent' && e.message && e.message.text){
+                firstCust = e.message.text.replace(/\s+/g,' ').substring(0,300).trim();
+                break;
+              }
+            }
+            // Ultime 2 risposte agente
+            var agentMsgs = evs.filter(function(e){return e.message&&e.message.text&&e.author&&e.author.type==='agent';}).slice(-2);
+            var reply = agentMsgs.map(function(e){return e.message.text.replace(/\s+/g,' ').substring(0,300).trim();}).join(" || ");
+            // Data chiusura
+            var closeDate = '';
+            if(evs.length){
+              var lastEv = evs[evs.length-1];
+              var ts = lastEv.date||lastEv.createdAt||lastEv.created_at;
+              if(ts){
+                var d = new Date(ts);
+                closeDate = d.toLocaleDateString('it-IT');
+              }
+            }
+            return "[Storico "+(i+1)+" — "+p.label+" "+p.num+(closeDate?" — chiuso "+closeDate:"")+"]\n"+
+              "Oggetto: "+t.subject+"\n"+
+              (firstCust?"Cliente chiedeva: "+firstCust+"\n":"")+
+              (reply?"Nostra risposta: "+reply:"");
+          }).join("\n---\n");
+          historyBlocks.push("STORICO TICKET CHIUSI STESSO ORDINE "+p.label+" "+p.num+" (ULTIMI 30 GIORNI — considera questo contesto, non ripetere richieste già fatte):\n"+hist);
+        }
+      });
     }
   }
-  if(!solvedExamples.length)return"";
-  const examples=solvedExamples.slice(0,6).map((ex,i)=>
-    `[Esempio ${i+1}]\nOggetto: ${ex.subject}\nCliente: ${ex.customer}\nRisposta Yespresso: ${ex.reply}`
-  ).join("\n---\n");
-  return "\n\nECCO COME YESPRESSO HA RISPOSTO IN PASSATO A TICKET SIMILI (usa questi esempi per adottare lo stesso tono, stile e formato):\n"+examples;
+
+  var out = '';
+  if(historyBlocks.length){
+    out += "\n\n"+historyBlocks.join("\n\n");
+  }
+
+  // Esempi di risposte passate (come prima, per il tono)
+  if(solvedExamples.length){
+    var examples = solvedExamples.slice(0,6).map(function(ex,i){
+      return "[Esempio "+(i+1)+"]\nOggetto: "+ex.subject+"\nCliente: "+ex.customer+"\nRisposta Yespresso: "+ex.reply;
+    }).join("\n---\n");
+    out += "\n\nECCO COME YESPRESSO HA RISPOSTO IN PASSATO A TICKET SIMILI (usa questi esempi per adottare lo stesso tono, stile e formato):\n"+examples;
+  }
+
+  return out;
 }
 
 
