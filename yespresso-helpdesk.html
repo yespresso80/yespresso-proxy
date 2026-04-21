@@ -3167,26 +3167,34 @@ function buildGiacenzaWaMessage(g){
   return saluto+'\n\n'+corpo+coda;
 }
 
-// Recupera numero di telefono dall'ordine Shopify corrente
+// Recupera numero di telefono da tutte le fonti disponibili
+// (identico al pattern del bottone WA standard della sidebar)
 function getGiacenzaPhone(){
-  var order = window._lastShopifyOrder;
-  if(!order) return '';
-  var raw = (order.customer && order.customer.phone) ||
+  var raw = '';
+  // 1) Prova _brtPickupData (popolato quando l'ordine Shopify viene caricato)
+  //    Scorre tutte le chiavi per trovare quella con telefono (non sempre uguale all'order.id)
+  var bpMap = window._brtPickupData || {};
+  for(var k in bpMap){
+    if(bpMap[k] && bpMap[k].phone){ raw = bpMap[k].phone; break; }
+  }
+  // 2) Fallback: window._lastShopifyOrder
+  if(!raw){
+    var order = window._lastShopifyOrder;
+    if(order){
+      raw = (order.customer && order.customer.phone) ||
             (order.shipping_address && order.shipping_address.phone) ||
             (order.billing_address && order.billing_address.phone) || '';
-  // Normalizza: solo cifre, rimuovi +39 iniziale
-  return String(raw).replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
+    }
+  }
+  // Normalizza: solo cifre/+, rimuovi + iniziale e prefisso 39
+  return String(raw||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
 }
 
 // Render pulsante WhatsApp nello stato iniziale (Invia WA)
+// Nota: NON facciamo il check del telefono al render (ordine Shopify potrebbe
+// essere ancora in caricamento). Il check avviene al click.
 function renderGiacenzaWaButton(uid, g){
   window._giacenzaData[uid] = g;
-  var phone = getGiacenzaPhone();
-  if(!phone){
-    return '<div style="padding:10px 12px;background:#f8f9fc;border:1px dashed #cbd5e1;border-radius:8px;text-align:center;font-size:11px;color:#888">'+
-           '💬 WhatsApp non disponibile: telefono cliente mancante nell\'ordine Shopify'+
-           '</div>';
-  }
   return '<button onclick="inviaGiacenzaWa(\''+uid+'\')" style="display:block;width:100%;background:#25d366;color:#fff;padding:11px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit">'+
          '💬 Invia WhatsApp al cliente'+
          '</button>';
@@ -3208,7 +3216,10 @@ window.inviaGiacenzaWa = function(uid){
   var g = window._giacenzaData[uid];
   if(!g){ alert('Dati giacenza non disponibili'); return; }
   var phone = getGiacenzaPhone();
-  if(!phone){ alert('Numero di telefono cliente non trovato'); return; }
+  if(!phone){
+    alert('Numero di telefono cliente non trovato.\n\nAttendi che l\'ordine Shopify venga caricato nella sidebar destra (il bottone WhatsApp deve essere visibile là) e riprova.');
+    return;
+  }
   var messaggio = buildGiacenzaWaMessage(g);
   var url = 'https://wa.me/39'+phone+'?text='+encodeURIComponent(messaggio);
   window.open(url, '_blank');
