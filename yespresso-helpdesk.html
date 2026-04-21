@@ -3113,8 +3113,6 @@ function buildGiacenzaWaMessage(g){
 
   var saluto = nomePrimo ? ('Gentile '+nomePrimo+',') : 'Gentile Cliente,';
   var ordineNum = g.ordineShopify ? ('#'+g.ordineShopify) : '';
-  var trackingStr = g.trackingFull || g.trackingBreve || '';
-  var linkTracking = g.urlTracking || '';
 
   // Messaggio specifico in base al codice motivo BRT
   var codice = (g.motivoCod || '').trim();
@@ -3126,11 +3124,25 @@ function buildGiacenzaWaMessage(g){
               'Per evitare che il pacco rientri in sede, le chiediamo di confermarci quando potremo riprogrammare la consegna e se l\'indirizzo inserito è corretto.';
       break;
     case '022': // Indirizzo DDT inesistente/incompleto
-      corpo = 'il corriere BRT ci segnala che l\'indirizzo indicato sul suo ordine '+ordineNum+' risulta incompleto o non trovato.\n\n'+
-              'Per poter consegnare il pacco le chiediamo di inviarci i dati corretti:\n'+
-              '• Indirizzo completo (via, numero civico)\n'+
-              '• CAP, Città e Provincia\n'+
-              '• Numero di telefono per il corriere (se possibile)';
+      // Costruisci l'indirizzo attuale dall'ordine Shopify (se disponibile)
+      // oppure dai dati estratti dall'email BRT (fallback)
+      var indirizzoAttuale = buildIndirizzoAttuale(g);
+      corpo = 'il corriere BRT ci segnala che l\'indirizzo indicato sul suo ordine '+ordineNum+' risulta incompleto o non trovato.\n\n';
+      if(indirizzoAttuale) {
+        corpo += 'Indirizzo attualmente in nostro possesso:\n'+indirizzoAttuale+'\n\n';
+        corpo += 'Può gentilmente confermarci se l\'indirizzo è corretto o se dobbiamo integrare/modificare qualche dato? Ad esempio:\n'+
+                 '• Numero civico preciso\n'+
+                 '• Nome azienda o struttura\n'+
+                 '• Nome sul citofono\n'+
+                 '• Scala, interno o piano\n'+
+                 '• Numero di telefono per il corriere';
+      } else {
+        corpo += 'Per poter consegnare il pacco le chiediamo di inviarci i dati corretti:\n'+
+                 '• Indirizzo completo (via, numero civico)\n'+
+                 '• CAP, Città e Provincia\n'+
+                 '• Nome azienda o citofono (se presente)\n'+
+                 '• Numero di telefono per il corriere';
+      }
       break;
     case '003': // Destinatario assente
     case '004':
@@ -3157,14 +3169,47 @@ function buildGiacenzaWaMessage(g){
               'Per poter procedere le chiediamo di contattarci confermando come preferisce che gestiamo la spedizione.';
   }
 
+  // Tracking BRT: rimuovi prefisso "26" per versione "user-friendly"
+  // Es. "20261790113358" → "2026179011335" (senza il 26)
+  var trackingRaw = g.trackingFull || g.trackingBreve || '';
+  var trackingPulito = String(trackingRaw).replace(/^26/,'');
+  var linkTracking = trackingRaw
+    ? ('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+encodeURIComponent(trackingPulito))
+    : '';
+
   // Info standard in coda (come altri messaggi WA)
   var coda = '\n\nOrdine: '+ordineNum;
-  if(trackingStr) coda += '\nTracking BRT: '+trackingStr;
+  if(trackingPulito) coda += '\nTracking BRT: '+trackingPulito;
   if(linkTracking) coda += '\n'+linkTracking;
   coda += '\n\nCordiali saluti\nYespresso';
   if(ticketId) coda += '\n\n#'+ticketId;
 
   return saluto+'\n\n'+corpo+coda;
+}
+
+// Costruisce stringa indirizzo attuale dalle fonti disponibili
+// Priorità: ordine Shopify > dati estratti dall'email BRT
+function buildIndirizzoAttuale(g){
+  var lines = [];
+  // 1) Prova ordine Shopify
+  var order = window._lastShopifyOrder;
+  var sa = (order && order.shipping_address) || null;
+  if(sa){
+    if(sa.name) lines.push(sa.name);
+    if(sa.company) lines.push(sa.company);
+    var viaCiv = [sa.address1, sa.address2].filter(Boolean).join(', ');
+    if(viaCiv) lines.push(viaCiv);
+    var cittaCap = [sa.zip, sa.city, sa.province_code ? '('+sa.province_code+')' : ''].filter(Boolean).join(' ');
+    if(cittaCap) lines.push(cittaCap);
+    if(sa.phone) lines.push('Tel: '+sa.phone);
+    if(lines.length) return lines.join('\n');
+  }
+  // 2) Fallback: dati dall'email BRT
+  if(g.destNome) lines.push(g.destNome);
+  if(g.destIndirizzo) lines.push(g.destIndirizzo);
+  var fallbackCap = [g.destCap, g.destCitta, g.destProv ? '('+g.destProv+')' : ''].filter(Boolean).join(' ');
+  if(fallbackCap) lines.push(fallbackCap);
+  return lines.length ? lines.join('\n') : '';
 }
 
 // Recupera numero di telefono da tutte le fonti disponibili
