@@ -213,35 +213,69 @@ function showToast(msg, type){
   setTimeout(()=>t.remove(),3000);
 }
 
-// ═══ API WRAPPER ═══
-async function hdFetch(path, opts){
-  opts=opts||{};
-  opts.headers=Object.assign({
-    'Authorization':'Basic '+HD_TOKEN,
-    'Content-Type':'application/json',
-    'User-Agent':'Yespresso/1.0'
-  },opts.headers||{});
-  const res=await fetch(PROXY+'/api/v1'+path,opts);
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  const txt=await res.text();
-  return txt?JSON.parse(txt):null;
+// ═══ API WRAPPER (stessi pattern del desktop) ═══
+// Wrapper con X-App-Token per tutte le chiamate
+function proxyFetch(url, opts){
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  if(PROXY_TOKEN) opts.headers["X-App-Token"] = PROXY_TOKEN;
+  return fetch(url, opts);
 }
 
+// Chiamata API helpdesk (identica al desktop)
+async function hdFetch(path, options){
+  // path è del tipo "/tickets?..." o "/tickets/ID" ecc.
+  // → URL diventa PROXY + "/api/v1" + path
+  const url = PROXY + "/api/v1" + path;
+  const headers = Object.assign({
+    "Authorization": "Basic " + HD_TOKEN,
+    "Content-Type": "application/json"
+  }, (options||{}).headers||{});
+  if(PROXY_TOKEN) headers["X-App-Token"] = PROXY_TOKEN;
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 30000);
+  try{
+    const res = await fetch(url, Object.assign({}, options, {headers, signal:controller.signal}));
+    clearTimeout(timer);
+    if(!res.ok){
+      const b = await res.text();
+      console.error("[hdFetch 4xx/5xx]", res.status, path, b);
+      throw new Error("Errore "+res.status+": "+b.substring(0,200));
+    }
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+  }catch(e){
+    clearTimeout(timer);
+    if(e.name === "AbortError") throw new Error("Timeout proxy (~15s avvio)");
+    throw e;
+  }
+}
+
+// Shopify fetch (identico al desktop)
 async function shopifyGet(path){
   try{
-    const res=await fetch(PROXY+'/shopify/'+path);
+    const res = await proxyFetch(PROXY+"/shopify/"+path);
     if(!res.ok) return null;
     return await res.json();
-  }catch(e){ console.warn('[Shopify]',e.message); return null; }
+  }catch(e){
+    console.warn('[Shopify]', e.message);
+    return null;
+  }
 }
 
+// Anthropic con retry per 529 overload (identico al desktop)
 async function anthropicFetch(body){
-  const res=await fetch(PROXY+'/anthropic/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  });
-  return res;
+  for(let attempt=0; attempt<3; attempt++){
+    const res = await proxyFetch(PROXY+"/anthropic/v1/messages", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    if(res.status !== 529) return res;
+    console.log("[ANTHROPIC] 529 overload, retry "+(attempt+1)+"/3...");
+    await new Promise(r => setTimeout(r, 4000*(attempt+1)));
+  }
+  return null;
 }
 
 // ═══ LOGIN ═══
@@ -491,24 +525,45 @@ async function generateSummary(){
   // Prendi ultimo messaggio cliente
   const custMsgs=t.events.filter(e=>e.message&&e.message.text&&e.author&&e.author.type!=='agent');
   const agentMsgs=t.events.filter(e=>e.message&&e.message.text&&e.author&&e.author.type==='agent');
-  if(!custMsgs.length) return;
+  if(!custMsgs.length){
+    state.aiSummary='(nessun messaggio cliente)';
+    const el=$('summary-text');
+    if(el) el.textContent=state.aiSummary;
+    return;
+  }
   const lastCust=custMsgs[custMsgs.length-1].message.text.substring(0,1000);
   const ourReplies=agentMsgs.slice(-3).map(e=>e.message.text.substring(0,300)).join(' || ');
   const prompt='Sintetizza in 2 righe MASSIMO cosa chiede il cliente e cosa abbiamo già fatto. Stile telegrafico, italiano, riga 1 = richiesta cliente, riga 2 = cosa abbiamo già detto. Non usare liste.\n\nUltimo msg cliente: '+lastCust+'\n\nNostre risposte precedenti: '+(ourReplies||'nessuna');
   try{
     const res=await anthropicFetch({
       model:'claude-sonnet-4-5',
-      max_tokens:150,
+      max_tokens:200,
       messages:[{role:'user',content:prompt}]
     });
-    if(!res.ok) return;
+    if(!res){
+      state.aiSummary='⚠️ AI non raggiungibile';
+      const el=$('summary-text');
+      if(el) el.textContent=state.aiSummary;
+      return;
+    }
+    if(!res.ok){
+      const errBody=await res.text();
+      console.error('[summary AI]',res.status,errBody);
+      state.aiSummary='⚠️ Errore AI: '+res.status;
+      const el=$('summary-text');
+      if(el) el.textContent=state.aiSummary;
+      return;
+    }
     const data=await res.json();
     const summary=(data.content&&data.content[0]&&data.content[0].text)||'';
-    state.aiSummary=summary;
+    state.aiSummary=summary||'(riassunto vuoto)';
     const el=$('summary-text');
-    if(el) el.textContent=summary;
+    if(el) el.textContent=state.aiSummary;
   }catch(e){
     console.warn('[summary]',e);
+    state.aiSummary='⚠️ '+e.message;
+    const el=$('summary-text');
+    if(el) el.textContent=state.aiSummary;
   }
 }
 
@@ -544,14 +599,23 @@ async function generateReply(){
       max_tokens:1000,
       messages:[{role:'user',content:prompt}]
     });
-    if(!res.ok){ throw new Error('HTTP '+res.status); }
+    if(!res){
+      throw new Error('AI non raggiungibile (timeout)');
+    }
+    if(!res.ok){
+      const errBody=await res.text();
+      console.error('[AI reply]',res.status,errBody);
+      throw new Error('AI '+res.status+': '+errBody.substring(0,150));
+    }
     const data=await res.json();
     const reply=(data.content&&data.content[0]&&data.content[0].text)||'';
+    if(!reply) throw new Error('AI risposta vuota');
     state.aiReply=reply;
     state.sending=false;
     renderDetail();
     showToast('Risposta AI generata','success');
   }catch(e){
+    console.error('[generateReply]',e);
     state.sending=false;
     renderDetail();
     showToast('Errore AI: '+e.message,'error');
@@ -573,6 +637,11 @@ async function reformulateReply(){
       max_tokens:1000,
       messages:[{role:'user',content:p}]
     });
+    if(!res) throw new Error('AI non raggiungibile');
+    if(!res.ok){
+      const errBody=await res.text();
+      throw new Error('AI '+res.status+': '+errBody.substring(0,100));
+    }
     const data=await res.json();
     state.aiReply=(data.content&&data.content[0]&&data.content[0].text)||currentText;
     state.sending=false;
@@ -595,17 +664,11 @@ async function sendReply(){
   state.sending=true;
   renderDetail();
   try{
-    // Invia messaggio
-    const res=await fetch(PROXY+'/api/v1/tickets/'+tid,{
+    // Invia messaggio (stesso pattern desktop)
+    await hdFetch('/tickets/'+tid,{
       method:'PATCH',
-      headers:{
-        'Authorization':'Basic '+HD_TOKEN,
-        'Content-Type':'application/json',
-        'User-Agent':'Yespresso/1.0'
-      },
       body:JSON.stringify({message:{text:message}})
     });
-    if(!res.ok) throw new Error('HTTP '+res.status);
     // Cambia stato a solved
     try{
       await hdFetch('/tickets/'+tid,{method:'PATCH',body:JSON.stringify({status:'solved'})});
@@ -618,7 +681,6 @@ async function sendReply(){
     setTimeout(()=>{
       state.view='list';
       state.currentTicket=null;
-      // Rimuovi ticket dalla lista locale
       state.tickets=state.tickets.filter(tk=>(tk.ID||tk.id)!==tid);
       renderList();
     },500);
