@@ -710,6 +710,31 @@ let agentsList=[], tagsList=[];
 
 
 
+// ═══════════════════════════════════════════════════════════════════════
+// HELPER: formattazione data ordine in stile "Oggi alle HH:MM", "Ieri alle HH:MM",
+// "DD/MM alle HH:MM" (se stesso anno), "DD/MM/YYYY alle HH:MM" (se anno diverso)
+// ═══════════════════════════════════════════════════════════════════════
+function formatOrderDateRelative(dateStr){
+  if(!dateStr) return '';
+  var d;
+  try{ d=new Date(dateStr); }catch(e){ return ''; }
+  if(isNaN(d.getTime())) return '';
+  var now=new Date();
+  var today=new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var yesterday=new Date(today.getTime()-86400000);
+  var dDate=new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  var hh=String(d.getHours()).padStart(2,'0');
+  var mm=String(d.getMinutes()).padStart(2,'0');
+  var ora=hh+':'+mm;
+  if(dDate.getTime()===today.getTime()) return 'Oggi alle '+ora;
+  if(dDate.getTime()===yesterday.getTime()) return 'Ieri alle '+ora;
+  // Se stesso anno, mostra DD/MM; altrimenti DD/MM/YYYY
+  var dd=String(d.getDate()).padStart(2,'0');
+  var MM=String(d.getMonth()+1).padStart(2,'0');
+  if(d.getFullYear()===now.getFullYear()) return dd+'/'+MM+' alle '+ora;
+  return dd+'/'+MM+'/'+d.getFullYear()+' alle '+ora;
+}
+
 function openAgentEditor(){
   if(!selectedTicket)return;
   const tid=selectedTicket.ID||selectedTicket.id;
@@ -2013,6 +2038,11 @@ async function selectTicket(tid){
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
         html2+='<br>'+displayStatus2;
+        // Se l'ordine non è spedito né annullato, mostra data/ora ordine con formato relativo
+        if(!order.cancelled_at && !shipStatus2 && order.fulfillment_status!=='fulfilled' && order.created_at){
+          var _relDate=formatOrderDateRelative(order.created_at);
+          if(_relDate) html2+='<br><span style="color:#5b6778;font-size:12px">📅 Ordinato '+_relDate+'</span>';
+        }
         if(order.cancelled_at){html2+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';}
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
@@ -2130,6 +2160,11 @@ async function selectTicket(tid){
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
         html2+='<br>'+displayStatus2;
+        // Se l'ordine non è spedito né annullato, mostra data/ora ordine con formato relativo
+        if(!order.cancelled_at && !shipStatus2 && order.fulfillment_status!=='fulfilled' && order.created_at){
+          var _relDate=formatOrderDateRelative(order.created_at);
+          if(_relDate) html2+='<br><span style="color:#5b6778;font-size:12px">📅 Ordinato '+_relDate+'</span>';
+        }
         if(order.cancelled_at){html2+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';}
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
@@ -2407,6 +2442,11 @@ function renderMessageHtml(text, attachments){
         let html2='<strong>🛍️ <a href="'+shopifyOrderUrl2+'" target="_blank" style="color:#2a5a2a;text-decoration:none">Ordine '+(order.name||('#'+order.order_number))+' ↗</a></strong>';
 
         html2+='<br>'+displayStatus2;
+        // Se l'ordine non è spedito né annullato, mostra data/ora ordine con formato relativo
+        if(!order.cancelled_at && !shipStatus2 && order.fulfillment_status!=='fulfilled' && order.created_at){
+          var _relDate=formatOrderDateRelative(order.created_at);
+          if(_relDate) html2+='<br><span style="color:#5b6778;font-size:12px">📅 Ordinato '+_relDate+'</span>';
+        }
         if(order.cancelled_at){html2+='<br><span style="display:inline-block;background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;color:#dc2626;margin-top:2px">❌ ORDINE ANNULLATO</span>';}
         if(f){
           const tn2=f.tracking_number||(f.tracking_numbers&&f.tracking_numbers[0])||"";
@@ -9183,213 +9223,6 @@ window.corrStampaPDF=function(){
 };
 
 
-// ═══ MERCE INSERITA ═══
-function renderMerceInserita(panel){
-  var ca=panel.querySelector('#filippo-content');
-  if(!ca)return;
-  function loadItems(){return JSON.parse(localStorage.getItem('filippo_merce_inserita')||'[]');}
-  function saveItems(data){localStorage.setItem('filippo_merce_inserita',JSON.stringify(data));}
-
-  function draw(){
-    var items=loadItems();
-    var thS='background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:8px 12px;border:1px solid #2E75B6;text-align:left';
-    var thR='background:#1F3864;color:#fff;font-weight:700;font-size:11px;padding:8px 12px;border:1px solid #2E75B6;text-align:center';
-    var rows=items.map(function(it,i){
-      var bg=i%2===0?'#fff':'#f8f9fc';
-      return '<tr style="background:'+bg+'">'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:13px;font-weight:600">'+it.nome+'</td>'+
-        '<td style="padding:8px 4px;border:1px solid #e0e4ea;text-align:center">'+
-          '<input type="number" min="0" value="'+it.qty+'" data-i="'+i+'" class="mi-qty" style="width:70px;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:13px;font-family:inherit;text-align:center">'+
-        '</td>'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:12px;color:#888">'+it.note+'</td>'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;text-align:center">'+
-          '<button data-i="'+i+'" class="mi-del" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;line-height:1">🗑</button>'+
-        '</td>'+
-      '</tr>';
-    }).join('');
-
-    ca.innerHTML=
-      '<div style="font-size:18px;font-weight:700;color:#1F3864;margin-bottom:4px">📦 Merce Inserita in Inventario</div>'+
-      '<div style="font-size:12px;color:#888;margin-bottom:20px">Promemoria quantità inserite su Shopify in attesa di arrivo fisico. Nessuna azione automatica.</div>'+
-      // Form aggiunta
-      '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:16px 20px;margin-bottom:20px;max-width:700px">'+
-        '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px">+ Aggiungi prodotto</div>'+
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'+
-          '<div style="flex:2;min-width:180px">'+
-            '<label style="font-size:11px;color:#555;font-weight:700;display:block;margin-bottom:4px">PRODOTTO</label>'+
-            '<input id="mi-nome" type="text" placeholder="es. Capsule Nespresso 240pz" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
-          '</div>'+
-          '<div style="flex:0 0 85px">'+
-            '<label style="font-size:11px;color:#555;font-weight:700;display:block;margin-bottom:4px">QTÀ</label>'+
-            '<input id="mi-qty" type="number" min="1" value="1" style="width:100%;padding:8px 8px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;text-align:center;box-sizing:border-box">'+
-          '</div>'+
-          '<div style="flex:1;min-width:140px">'+
-            '<label style="font-size:11px;color:#555;font-weight:700;display:block;margin-bottom:4px">NOTE</label>'+
-            '<input id="mi-note" type="text" placeholder="es. data, fornitore..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
-          '</div>'+
-          '<button id="mi-add" style="background:#166534;border:none;color:#fff;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap;flex-shrink:0">+ Aggiungi</button>'+
-        '</div>'+
-      '</div>'+
-      // Tabella
-      (items.length===0?
-        '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:48px;text-align:center;color:#aaa;max-width:700px">'+
-          '<div style="font-size:36px;margin-bottom:10px">📦</div>'+
-          '<div style="font-size:14px;font-weight:600;color:#555">Nessuna merce inserita</div>'+
-          '<div style="font-size:12px;margin-top:4px">Aggiungi un prodotto usando il form sopra</div>'+
-        '</div>':
-        '<div style="overflow-x:auto;max-width:700px">'+
-          '<table style="border-collapse:collapse;width:100%">'+
-          '<thead><tr>'+
-            '<th style="'+thS+';width:40%">PRODOTTO</th>'+
-            '<th style="'+thR+';width:15%">QTÀ</th>'+
-            '<th style="'+thS+'">NOTE</th>'+
-            '<th style="'+thR+';width:50px"></th>'+
-          '</tr></thead>'+
-          '<tbody>'+rows+'</tbody>'+
-          '</table></div>'+
-          '<div style="margin-top:10px;font-size:11px;color:#aaa;max-width:700px">'+items.length+' prodott'+(items.length===1?'o':'i')+' in lista — Modifica le quantità direttamente nella tabella, rimuovi quando la merce è arrivata fisicamente</div>'
-      );
-
-    // Listener aggiungi
-    var addBtn=ca.querySelector('#mi-add');
-    if(addBtn) addBtn.onclick=function(){
-      var nome=(ca.querySelector('#mi-nome').value||'').trim();
-      var qty=parseInt(ca.querySelector('#mi-qty').value)||1;
-      var note=(ca.querySelector('#mi-note').value||'').trim();
-      if(!nome){ca.querySelector('#mi-nome').focus();return;}
-      var data=loadItems();
-      data.push({nome:nome,qty:qty,note:note,ts:new Date().toLocaleDateString('it-IT')});
-      saveItems(data);
-      draw();
-    };
-
-    // Listener quantità
-    ca.querySelectorAll('.mi-qty').forEach(function(inp){
-      inp.addEventListener('change',function(){
-        var data=loadItems();
-        var i=parseInt(this.getAttribute('data-i'));
-        data[i].qty=parseInt(this.value)||0;
-        saveItems(data);
-      });
-    });
-
-    // Listener elimina
-    ca.querySelectorAll('.mi-del').forEach(function(btn){
-      btn.onclick=function(){
-        var i=parseInt(this.getAttribute('data-i'));
-        var data=loadItems();
-        var nome=data[i].nome;
-        if(!confirm('Rimuovere "'+nome+'" dalla lista?'))return;
-        data.splice(i,1);
-        saveItems(data);
-        draw();
-      };
-    });
-
-    // Enter su campo nome
-    var nomeInp=ca.querySelector('#mi-nome');
-    if(nomeInp) nomeInp.addEventListener('keydown',function(e){if(e.key==='Enter')ca.querySelector('#mi-add').click();});
-  }
-
-  draw();
-}
-
-// ═══ MERCE INSERITA ═══
-var _merceKey = 'filippo_merce_inserita';
-function merceLoad(){ try{ return JSON.parse(localStorage.getItem(_merceKey)||'[]'); }catch(e){ return []; } }
-function merceSave(list){ localStorage.setItem(_merceKey, JSON.stringify(list)); }
-
-function renderMerceInserita(ignored, panel, ignored2){
-  var ca = panel.querySelector('#filippo-content');
-  if(!ca) return;
-  var list = merceLoad();
-
-  function render(){
-    list = merceLoad();
-    var rows = list.length ? list.map(function(item, i){
-      var bg = i%2===0 ? '#fff' : '#f8f9fc';
-      return '<tr style="background:'+bg+'">'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:13px;font-weight:600">'+escHtml(item.prodotto)+'</td>'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:13px;text-align:center">'+escHtml(String(item.qta))+'</td>'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:12px;color:#888">'+escHtml(item.note||'')+'</td>'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;font-size:11px;color:#aaa">'+escHtml(item.data||'')+'</td>'+
-        '<td style="padding:8px 12px;border:1px solid #e0e4ea;text-align:center">'+
-          '<button onclick="merceRimuovi('+i+')" style="background:#fee2e2;border:none;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;color:#dc2626">Rimuovi</button>'+
-        '</td>'+
-      '</tr>';
-    }).join('') : '<tr><td colspan="5" style="padding:20px;text-align:center;color:#aaa;font-size:13px;border:1px solid #e0e4ea">Nessuna merce annotata</td></tr>';
-
-    ca.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
-        '<div style="font-size:18px;font-weight:700;color:#1F3864">📦 Merce Inserita in Inventario</div>'+
-        '<div style="font-size:12px;color:#888">Solo promemoria — nessuna azione su Shopify</div>'+
-      '</div>'+
-      // Form aggiunta
-      '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:16px 20px;margin-bottom:20px;max-width:700px">'+
-        '<div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:12px">➕ Aggiungi prodotto</div>'+
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'+
-          '<div style="flex:3;min-width:180px">'+
-            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">PRODOTTO / CODICE</label>'+
-            '<input id="merce-prodotto" type="text" placeholder="es. CNX5CAF872-240 Supremo..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
-          '</div>'+
-          '<div style="flex:1;min-width:80px">'+
-            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">QUANTITÀ</label>'+
-            '<input id="merce-qta" type="number" min="1" value="1" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
-          '</div>'+
-          '<div style="flex:2;min-width:140px">'+
-            '<label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">NOTE</label>'+
-            '<input id="merce-note" type="text" placeholder="es. ordine #123, data arr. prevista..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box">'+
-          '</div>'+
-          '<button onclick="merceAggiungi()" style="background:#1F3864;border:none;color:#fff;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap">+ Aggiungi</button>'+
-        '</div>'+
-      '</div>'+
-      // Tabella
-      '<div style="overflow-x:auto;max-width:700px">'+
-        '<table style="border-collapse:collapse;width:100%">'+
-        '<thead><tr style="background:#1F3864">'+
-          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:left;border:1px solid #2E75B6">PRODOTTO</th>'+
-          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:center;border:1px solid #2E75B6;white-space:nowrap">QTÀ</th>'+
-          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:left;border:1px solid #2E75B6">NOTE</th>'+
-          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:left;border:1px solid #2E75B6">INSERITA IL</th>'+
-          '<th style="padding:8px 12px;color:#fff;font-size:11px;font-weight:700;text-align:center;border:1px solid #2E75B6"></th>'+
-        '</tr></thead>'+
-        '<tbody>'+rows+'</tbody>'+
-        '</table>'+
-      '</div>'+
-      (list.length ? '<div style="margin-top:10px;font-size:12px;color:#aaa">'+list.length+' prodott'+(list.length===1?'o':'i')+' in lista — clicca Rimuovi quando la merce è fisicamente arrivata</div>' : '');
-  }
-
-  window.merceAggiungi = function(){
-    var p = document.getElementById('merce-prodotto');
-    var q = document.getElementById('merce-qta');
-    var n = document.getElementById('merce-note');
-    if(!p||!p.value.trim()){showToast('Inserisci il prodotto','error');return;}
-    var list2 = merceLoad();
-    list2.push({
-      prodotto: p.value.trim(),
-      qta: parseInt(q&&q.value)||1,
-      note: n?n.value.trim():'',
-      data: new Date().toLocaleDateString('it-IT')
-    });
-    merceSave(list2);
-    render();
-    showToast('Prodotto aggiunto');
-  };
-
-  window.merceRimuovi = function(i){
-    if(!confirm('Rimuovere questo prodotto dalla lista?')) return;
-    var list2 = merceLoad();
-    list2.splice(i,1);
-    merceSave(list2);
-    render();
-    showToast('Prodotto rimosso');
-  };
-
-  function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-  render();
-}
-
 // ═══ ATTIVITÀ DA FARE ═══
 function renderAttivita(ignored, panel, ignored2) {
   var ca = panel.querySelector('#filippo-content');
@@ -10067,11 +9900,20 @@ async function syncQRToServer(){
 // ── SETTINGS ──
 const SETTINGS_KEY = "yespresso_settings";
 function loadSettings(){
+  // Le impostazioni sono salvate sia in localStorage che nel server (filippo-data).
+  // Preferenza: server (via cache _filippoDataCache), fallback localStorage.
+  var fromServer = (_filippoDataCache && _filippoDataCache.yespressoSettings) || null;
+  if(fromServer) return fromServer;
   try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}"); }catch(e){ return {}; }
 }
 function saveSettings(){
   const s=loadSettings();
+  // Salva localmente (uso immediato)
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  // Salva anche su server (persistenza cross-device)
+  if(!_filippoDataCache) _filippoDataCache={};
+  _filippoDataCache.yespressoSettings=s;
+  _saveFilippoData();
   showToast("✅ Impostazioni salvate");
   closeSettingsModal();
 }
@@ -10633,6 +10475,10 @@ function addNoAiEmail(){
   if(!list.includes(val)) list.push(val);
   s.noAiEmails=list;
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  // Salva anche su server per persistenza cross-device
+  if(!_filippoDataCache) _filippoDataCache={};
+  _filippoDataCache.yespressoSettings=s;
+  _saveFilippoData();
   input.value="";
   renderNoAiList();
 }
@@ -10642,6 +10488,10 @@ function removeNoAiEmail(idx){
   list.splice(idx,1);
   s.noAiEmails=list;
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  // Salva anche su server
+  if(!_filippoDataCache) _filippoDataCache={};
+  _filippoDataCache.yespressoSettings=s;
+  _saveFilippoData();
   renderNoAiList();
 }
 function openSettingsModal(){
@@ -12184,7 +12034,7 @@ function detectChannelFromOrder(order){
 }
 
 async function saveStaffNote(id,value){
-  var all=await getResiList();
+  var all = Array.isArray(_resiCache) ? _resiCache : await getResiList();
   var i=all.findIndex(function(r){return r.id===id;});
   if(i>=0){all[i].staffNote=value;_resiCache=all;await saveResiList(all);showToast('Nota staff salvata');}
 }
@@ -12342,7 +12192,7 @@ function openRichiesteResoPanel(){
 
   async function eliminaReso(id){
     if(!confirm('Eliminare definitivamente questo reso?'))return;
-    var all=await getResiList();
+    var all = Array.isArray(_resiCache) ? _resiCache : await getResiList();
     var filtered=all.filter(function(r){return r.id!==id;});
     _resiCache=filtered;
     await saveResiList(filtered);
@@ -12352,9 +12202,16 @@ function openRichiesteResoPanel(){
   }
 
   async function setStatus(id,status){
-    var all=await getResiList();
+    // Usa la cache già caricata invece di rifare un GET (rischio di sovrascrivere
+    // modifiche appena fatte in un'altra tab prima che arrivino dal server)
+    var all = Array.isArray(_resiCache) ? _resiCache : await getResiList();
     var i=all.findIndex(function(r){return r.id===id;});
-    if(i>=0){all[i].risolto=(status==='risolto');all[i].sospeso=(status==='sospeso');}
+    if(i<0){
+      console.warn('[RESI] setStatus: reso',id,'non trovato in cache');
+      return;
+    }
+    all[i].risolto=(status==='risolto');
+    all[i].sospeso=(status==='sospeso');
     _resiCache=all;
     await saveResiList(all);
     aggiornaResoBadge();
@@ -12744,13 +12601,20 @@ async function saveResiList(list){
   }
 }
 function aggiornaResoBadge(){
-  getResiList().then(function(list){
+  // Usa _resiCache se già popolata (appena salvata) per evitare race condition
+  // con la GET del server (GitHub Contents API ha latenza tra write e read).
+  function applyBadge(list){
     var pendenti=list.filter(function(r){return !r.risolto&&!r.sospeso;}).length;
     var badge=document.getElementById('reso-badge-menu');
     if(badge)badge.textContent=pendenti>0?pendenti:'0';
     var badgeSidebar=document.getElementById('badge-richieste-reso');
     if(badgeSidebar)badgeSidebar.textContent=pendenti>0?pendenti:'0';
-  }).catch(function(){});
+  }
+  if(Array.isArray(_resiCache)){
+    applyBadge(_resiCache);
+    return;
+  }
+  getResiList().then(applyBadge).catch(function(){});
 }
 setTimeout(aggiornaResoBadge, 1000);
 
