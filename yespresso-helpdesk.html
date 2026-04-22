@@ -1663,7 +1663,7 @@ function renderTable(){
             var _d = new Date(_gwsEntry.ts);
             _gwsWhen = _d.toLocaleDateString('it-IT')+' '+_d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
           }
-          _gwsBadge = ' <span title="WhatsApp giacenza inviato'+(_gwsWhen?' il '+_gwsWhen:'')+'" style="background:#25d366;color:#fff;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap">💬 WA</span>';
+          _gwsBadge = ' <span title="WhatsApp giacenza inviato'+(_gwsWhen?' il '+_gwsWhen:'')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#25d366;margin-left:6px;vertical-align:middle;flex-shrink:0"></span>';
         }
       }
     } catch(e) { /* ignora errori nel badge */ }
@@ -1682,10 +1682,10 @@ function renderTable(){
         <div class="tr-avatar" style="background:${avatarColor(name)}">${initials(name)}</div>
         <div class="tr-req-info">
           <div class="tr-req-name" style="display:flex;align-items:center">${name}${isSent?' <span style="color:#2a9d60;font-size:10px">✓</span>':""}${_actionDot}${_waIcon}</div>
-          <div class="tr-req-email">${email}</div>
+          <div class="tr-req-email" style="display:flex;align-items:center">${email}${_gwsBadge}</div>
         </div>
       </div>
-      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}${_amzBadge}${_gwsBadge}</div>
+      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}${_amzBadge}</div>
       <div class="tr-agent" style="font-size:11px;color:#aaa">unassigned</div>
       <div class="tr-status"><span class="status-pill ${sc}">${sl}</span></div>
       <div class="tr-time">${lastTime}</div>
