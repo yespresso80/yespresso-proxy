@@ -1057,6 +1057,10 @@ async function loadTickets(){
   const CACHE_META="yespresso_tickets_meta";
   const DAYS_30=Date.now()-30*24*60*60*1000;
 
+  // Carica in background la mappa giacenza-wa-sent (condivisa tra agenti)
+  // — non attendiamo perché non deve bloccare la lista ticket
+  try { if(typeof window.loadGiacenzaWaSent === 'function') window.loadGiacenzaWaSent().then(function(){ try { renderTable(); } catch(e){} }); } catch(e){}
+
   // 1. MOSTRA SUBITO LA CACHE se disponibile e fresca (< 4h)
   try{
     const cached=localStorage.getItem(CACHE_KEY);
@@ -1644,6 +1648,25 @@ function renderTable(){
       var _waTip='WhatsApp: '+(_waRecent.template_nome||'Template')+' ('+_waWhen+')';
       _waIcon=' <span title="'+_waTip.replace(/"/g,'&quot;')+'" style="color:#25d366;font-size:11px;margin-left:2px">💬</span>';
     }
+    // Badge giacenza-WA: se il WA giacenza è stato inviato per questo ticket
+    // (condiviso tra agenti via server). Mostrato anche oltre le 48h.
+    var _gwsBadge = '';
+    try {
+      if(typeof window.isGiacenzaWaSent === 'function'){
+        var _tShort = t.shortID || '';
+        var _tUuid = t.ID || t.id || '';
+        if(window.isGiacenzaWaSent(_tShort) || window.isGiacenzaWaSent(_tUuid)){
+          var _gwsMap = window.getGiacenzaWaSentMap ? window.getGiacenzaWaSentMap() : {};
+          var _gwsEntry = _gwsMap[_tShort] || _gwsMap[_tUuid] || {};
+          var _gwsWhen = '';
+          if(_gwsEntry.ts){
+            var _d = new Date(_gwsEntry.ts);
+            _gwsWhen = _d.toLocaleDateString('it-IT')+' '+_d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+          }
+          _gwsBadge = ' <span title="WhatsApp giacenza inviato'+(_gwsWhen?' il '+_gwsWhen:'')+'" style="background:#25d366;color:#fff;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap">💬 WA</span>';
+        }
+      }
+    } catch(e) { /* ignora errori nel badge */ }
     // Badge "+N messaggi collegati" per thread Amazon compattato
     var _amzBadge = '';
     var _gi = window._amzGroupInfo && window._amzGroupInfo[tid];
@@ -1662,7 +1685,7 @@ function renderTable(){
           <div class="tr-req-email">${email}</div>
         </div>
       </div>
-      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}${_amzBadge}</div>
+      <div class="tr-subject"><span class="tr-subject-dot">•</span>${src?src+" — ":""}${t.subject||"Senza oggetto"}${_amzBadge}${_gwsBadge}</div>
       <div class="tr-agent" style="font-size:11px;color:#aaa">unassigned</div>
       <div class="tr-status"><span class="status-pill ${sc}">${sl}</span></div>
       <div class="tr-time">${lastTime}</div>
@@ -3251,11 +3274,98 @@ function getGiacenzaPhone(){
   return String(raw||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
 }
 
+// ═══ Tracking invii WhatsApp giacenza (condiviso server) ═══
+// La mappa è persistita su server → visibile a tutti gli agenti.
+// Cache locale in window._giacenzaWaSentCache per evitare chiamate ripetute.
+window._giacenzaWaSentCache = null;
+window._giacenzaWaSentCacheTs = 0;
+
+window.loadGiacenzaWaSent = async function(force){
+  var now = Date.now();
+  // Cache valida per 60 secondi (salvo force)
+  if(!force && window._giacenzaWaSentCache && (now - window._giacenzaWaSentCacheTs) < 60000){
+    return window._giacenzaWaSentCache;
+  }
+  try{
+    var r = await fetch(PROXY+'/giacenza-wa-sent');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var data = await r.json();
+    window._giacenzaWaSentCache = data || {};
+    window._giacenzaWaSentCacheTs = now;
+    return window._giacenzaWaSentCache;
+  }catch(e){
+    console.warn('[GWS load]', e.message);
+    return window._giacenzaWaSentCache || {};
+  }
+};
+
+window.setGiacenzaWaSent = async function(ticketId, phone){
+  if(!ticketId) return;
+  // Update immediato cache locale per UI reattiva
+  window._giacenzaWaSentCache = window._giacenzaWaSentCache || {};
+  window._giacenzaWaSentCache[String(ticketId)] = { ts: new Date().toISOString(), phone: phone || '' };
+  try{
+    await fetch(PROXY+'/giacenza-wa-sent', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ticketId: String(ticketId), phone: phone || '' })
+    });
+  }catch(e){ console.warn('[GWS save]', e.message); }
+};
+
+window.clearGiacenzaWaSent = async function(ticketId){
+  if(!ticketId) return;
+  // Update immediato cache locale
+  if(window._giacenzaWaSentCache) delete window._giacenzaWaSentCache[String(ticketId)];
+  try{
+    await fetch(PROXY+'/giacenza-wa-sent?ticketId='+encodeURIComponent(String(ticketId)), {
+      method:'DELETE'
+    });
+  }catch(e){ console.warn('[GWS delete]', e.message); }
+};
+
+window.isGiacenzaWaSent = function(ticketId){
+  if(!ticketId) return false;
+  var map = window._giacenzaWaSentCache || {};
+  return !!map[String(ticketId)];
+};
+
+window.getGiacenzaWaSentMap = function(){
+  return window._giacenzaWaSentCache || {};
+};
+
+// Restituisce l'ID del ticket corrente (preferisce shortID per coerenza con la lista)
+function _giacenzaCurrentTicketIds(){
+  try{
+    var t = (typeof selectedTicket !== 'undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket || null);
+    if(!t) return [];
+    var ids = [];
+    if(t.ID) ids.push(t.ID);
+    if(t.id && t.id !== t.ID) ids.push(t.id);
+    if(t.shortID && ids.indexOf(t.shortID) < 0) ids.push(t.shortID);
+    return ids;
+  }catch(e){ return []; }
+}
+
 // Render pulsante WhatsApp nello stato iniziale (Invia WA)
 // Nota: NON facciamo il check del telefono al render (ordine Shopify potrebbe
 // essere ancora in caricamento). Il check avviene al click.
 function renderGiacenzaWaButton(uid, g){
   window._giacenzaData[uid] = g;
+  // Se il WhatsApp è già stato inviato per questo ticket (persistito),
+  // mostra direttamente lo stato "inviato" con Vedi/Annulla
+  var ids = _giacenzaCurrentTicketIds();
+  for(var i=0; i<ids.length; i++){
+    if(window.isGiacenzaWaSent(ids[i])){
+      // Recupera il telefono salvato se disponibile
+      var map = window.getGiacenzaWaSentMap();
+      var saved = map[ids[i]];
+      if(saved && typeof saved === 'object' && saved.phone){
+        window._giacenzaData[uid]._lastPhone = saved.phone;
+      }
+      return renderGiacenzaWaSent(uid);
+    }
+  }
   return '<button onclick="inviaGiacenzaWa(\''+uid+'\')" style="display:block;width:100%;background:#25d366;color:#fff;padding:11px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit">'+
          '💬 Invia WhatsApp al cliente'+
          '</button>';
@@ -3287,13 +3397,23 @@ window.inviaGiacenzaWa = function(uid){
   // Salva il messaggio per il "vedi risposta"
   window._giacenzaData[uid]._lastMessage = messaggio;
   window._giacenzaData[uid]._lastPhone = phone;
+  // Salva lo stato "inviato" sul server (condiviso tra agenti)
+  try{
+    var _curTkt = (typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
+    if(_curTkt){
+      var tidForStore = _curTkt.shortID || _curTkt.ID || _curTkt.id || '';
+      if(tidForStore && typeof window.setGiacenzaWaSent === 'function'){
+        window.setGiacenzaWaSent(tidForStore, phone);
+      }
+    }
+  }catch(e){ console.warn('[GWS set]', e); }
   // Log invio (riusa waSaveLog se esiste)
   try {
     if(typeof waSaveLog === 'function'){
-      var _curTkt = (typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
+      var _curTkt2 = (typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
       waSaveLog({
         ts: new Date().toISOString(),
-        ticket: _curTkt ? (_curTkt.shortID||_curTkt.ID||_curTkt.id||'') : '',
+        ticket: _curTkt2 ? (_curTkt2.shortID||_curTkt2.ID||_curTkt2.id||'') : '',
         ordine: g.ordineShopify || '',
         template_nome: 'Giacenza BRT - Motivo '+(g.motivoCod||'?'),
         phone: phone
@@ -3303,12 +3423,30 @@ window.inviaGiacenzaWa = function(uid){
   // Aggiorna UI: mostra bottoni Vedi + Annulla
   var box = document.getElementById('giacenza-wa-'+uid);
   if(box) box.innerHTML = renderGiacenzaWaSent(uid);
+  // Forza re-render lista ticket per mostrare il badge WA
+  try { if(typeof renderTable === 'function') setTimeout(renderTable, 300); } catch(e){}
 };
 
 // Riapre la chat WhatsApp per vedere la risposta del cliente
 window.vediGiacenzaWa = function(uid){
   var d = window._giacenzaData[uid];
-  if(!d || !d._lastPhone){ alert('Dati WA non disponibili'); return; }
+  if(!d || !d._lastPhone){
+    // Fallback: recupera telefono dalla cache server
+    try{
+      var _curTkt = (typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
+      if(_curTkt){
+        var tidForStore = _curTkt.shortID || _curTkt.ID || _curTkt.id || '';
+        var map = window.getGiacenzaWaSentMap ? window.getGiacenzaWaSentMap() : {};
+        var entry = map[tidForStore];
+        if(entry && entry.phone){
+          window.open('https://wa.me/39'+entry.phone, '_blank');
+          return;
+        }
+      }
+    }catch(e){}
+    alert('Dati WA non disponibili');
+    return;
+  }
   // Apre wa.me senza testo — va alla chat esistente con il cliente
   window.open('https://wa.me/39'+d._lastPhone, '_blank');
 };
@@ -3317,8 +3455,20 @@ window.vediGiacenzaWa = function(uid){
 window.annullaGiacenzaWa = function(uid){
   var g = window._giacenzaData[uid];
   if(!g){ return; }
+  // Rimuovi lo stato "inviato" dal server
+  try{
+    var _curTkt = (typeof selectedTicket!=='undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket||null);
+    if(_curTkt){
+      var tidForStore = _curTkt.shortID || _curTkt.ID || _curTkt.id || '';
+      if(tidForStore && typeof window.clearGiacenzaWaSent === 'function'){
+        window.clearGiacenzaWaSent(tidForStore);
+      }
+    }
+  }catch(e){ console.warn('[GWS clear]', e); }
   var box = document.getElementById('giacenza-wa-'+uid);
   if(box) box.innerHTML = renderGiacenzaWaButton(uid, g);
+  // Forza re-render lista ticket per rimuovere il badge WA
+  try { if(typeof renderTable === 'function') setTimeout(renderTable, 300); } catch(e){}
 };
 
 function renderMessageHtml(text, attachments){

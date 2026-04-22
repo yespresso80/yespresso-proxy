@@ -1579,6 +1579,100 @@ async function brtRestPost(path, body) {
     return;
   }
 
+  // ── GIACENZA WA SENT (stato condiviso invii WhatsApp giacenza) ──
+  // Mappa { ticketId: { ts, phone, agente } } persistita su GitHub.
+  // Condivisa tra tutti gli agenti: se un collega ha inviato WA, appare il badge.
+  if (req.url.startsWith('/giacenza-wa-sent') && req.method === 'OPTIONS') {
+    res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+    res.end(); return;
+  }
+  if (req.url.startsWith('/giacenza-wa-sent')) {
+    const CORS_GWS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const GH_GWS_INDEX = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/giacenza-wa-sent.json';
+    async function ghGWSGet() {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) return { data: {}, sha: null };
+      const r = await fetch(GH_GWS_INDEX, { headers: { 'Authorization': 'token '+ghToken, 'Accept': 'application/vnd.github.v3+json' } });
+      if (r.status === 404) return { data: {}, sha: null };
+      const j = await r.json();
+      try {
+        return { data: JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString('utf8')) || {}, sha: j.sha };
+      } catch(e) { return { data: {}, sha: j.sha }; }
+    }
+    async function ghGWSSave(data, sha) {
+      const ghToken = process.env.GH_TOKEN;
+      if (!ghToken) throw new Error('GH_TOKEN non configurato');
+      const body = { message: 'update giacenza-wa-sent', content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(GH_GWS_INDEX, { method: 'PUT', headers: { 'Authorization': 'token '+ghToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const t = await r.text(); throw new Error('GitHub giacenza-wa-sent save error: '+t.substring(0,200)); }
+    }
+
+    if (req.method === 'GET') {
+      try {
+        const { data } = await ghGWSGet();
+        res.writeHead(200, CORS_GWS); res.end(JSON.stringify(data || {}));
+      } catch(e) {
+        console.error('[GWS GET]', e.message);
+        res.writeHead(200, CORS_GWS); res.end('{}');
+      }
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const chunks = []; req.on('data', c => chunks.push(c)); await new Promise(r => req.on('end', r));
+      try {
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        if (!payload.ticketId) throw new Error('ticketId mancante');
+        const { data, sha } = await ghGWSGet();
+        var map = (data && typeof data === 'object') ? data : {};
+        map[String(payload.ticketId)] = {
+          ts: new Date().toISOString(),
+          phone: payload.phone || '',
+          agente: payload.agente || ''
+        };
+        await ghGWSSave(map, sha);
+        res.writeHead(200, CORS_GWS); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        console.error('[GWS POST]', e.message);
+        res.writeHead(500, CORS_GWS); res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      // URL tipo /giacenza-wa-sent/TICKET_ID oppure /giacenza-wa-sent?ticketId=...
+      let ticketId = '';
+      try {
+        const urlObj = new URL(req.url, 'http://localhost');
+        ticketId = urlObj.searchParams.get('ticketId') || '';
+        if (!ticketId) {
+          // Prendi dalla path
+          const parts = urlObj.pathname.split('/').filter(Boolean);
+          if (parts.length >= 2) ticketId = decodeURIComponent(parts[1]);
+        }
+      } catch(e) {}
+      if (!ticketId) {
+        res.writeHead(400, CORS_GWS); res.end(JSON.stringify({ ok:false, error:'ticketId mancante' }));
+        return;
+      }
+      try {
+        const { data, sha } = await ghGWSGet();
+        var map = (data && typeof data === 'object') ? data : {};
+        delete map[String(ticketId)];
+        await ghGWSSave(map, sha);
+        res.writeHead(200, CORS_GWS); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        console.error('[GWS DELETE]', e.message);
+        res.writeHead(500, CORS_GWS); res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+
+    res.writeHead(405, CORS_GWS); res.end(JSON.stringify({error:'Method not allowed'}));
+    return;
+  }
+
   // ── Verifica token su endpoint sensibili ──
   const sensitiveEndpoints = ["/brt/", "/shopify", "/anthropic", "/creditsyard/"];
   if (sensitiveEndpoints.some(function(e){ return req.url.startsWith(e); })) {
