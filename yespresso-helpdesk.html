@@ -3251,20 +3251,22 @@ function buildIndirizzoAttuale(g){
   return lines.length ? lines.join('\n') : '';
 }
 
-// Recupera numero di telefono da tutte le fonti disponibili
-// (identico al pattern del bottone WA standard della sidebar)
+// Recupera numero di telefono del CLIENTE DEL TICKET CORRENTE.
+// Stessa logica del bottone WA standard della sidebar (vedi waButtonHtml).
+// Il bottone sidebar usa: _brtPickupData[order.id].phone dove order è l'ordine
+// caricato per il ticket corrente (window._lastShopifyOrder).
 function getGiacenzaPhone(){
   var raw = '';
-  // 1) Prova _brtPickupData (popolato quando l'ordine Shopify viene caricato)
-  //    Scorre tutte le chiavi per trovare quella con telefono (non sempre uguale all'order.id)
-  var bpMap = window._brtPickupData || {};
-  for(var k in bpMap){
-    if(bpMap[k] && bpMap[k].phone){ raw = bpMap[k].phone; break; }
-  }
-  // 2) Fallback: window._lastShopifyOrder
-  if(!raw){
-    var order = window._lastShopifyOrder;
-    if(order){
+  var order = window._lastShopifyOrder;
+  // 1) Se c'è un ordine corrente → prendi il telefono LEGATO A QUELL'ORDINE
+  if(order){
+    // Prima dalla mappa _brtPickupData (che include eventuali override manuali)
+    var bpMap = window._brtPickupData || {};
+    var bpEntry = bpMap[order.id];
+    if(bpEntry && bpEntry.phone){
+      raw = bpEntry.phone;
+    } else {
+      // Fallback sullo stesso ordine: customer/shipping/billing
       raw = (order.customer && order.customer.phone) ||
             (order.shipping_address && order.shipping_address.phone) ||
             (order.billing_address && order.billing_address.phone) || '';
@@ -3292,6 +3294,7 @@ window.loadGiacenzaWaSent = async function(force){
     var data = await r.json();
     window._giacenzaWaSentCache = data || {};
     window._giacenzaWaSentCacheTs = now;
+    console.log('[GWS] cache caricata:', Object.keys(window._giacenzaWaSentCache).length, 'ticket con WA inviato');
     return window._giacenzaWaSentCache;
   }catch(e){
     console.warn('[GWS load]', e.message);
@@ -3333,6 +3336,17 @@ window.isGiacenzaWaSent = function(ticketId){
 window.getGiacenzaWaSentMap = function(){
   return window._giacenzaWaSentCache || {};
 };
+
+// Pre-carica la mappa giacenza-wa-sent il prima possibile (non appena definita).
+// Quando arriverà la risposta del server, la cache sarà pronta per il primo render.
+(function _preloadGwsCache(){
+  try {
+    window.loadGiacenzaWaSent(true).then(function(){
+      // Dopo il caricamento, forza un re-render della lista ticket se già renderizzata
+      try { if(typeof renderTable === 'function') renderTable(); } catch(e){}
+    });
+  } catch(e){ console.warn('[GWS preload]', e); }
+})();
 
 // Restituisce l'ID del ticket corrente (preferisce shortID per coerenza con la lista)
 function _giacenzaCurrentTicketIds(){
