@@ -213,6 +213,63 @@ function showToast(msg, type){
   setTimeout(()=>t.remove(),3000);
 }
 
+// ═══ Tracking invii WhatsApp giacenza (condiviso server) ═══
+// La mappa è persistita su server → visibile a tutti gli agenti.
+window._giacenzaWaSentCache = null;
+window._giacenzaWaSentCacheTs = 0;
+
+window.loadGiacenzaWaSent = async function(force){
+  const now = Date.now();
+  if(!force && window._giacenzaWaSentCache && (now - window._giacenzaWaSentCacheTs) < 60000){
+    return window._giacenzaWaSentCache;
+  }
+  try{
+    const r = await fetch(PROXY+'/giacenza-wa-sent');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    window._giacenzaWaSentCache = data || {};
+    window._giacenzaWaSentCacheTs = now;
+    console.log('[GWS mobile] cache caricata:', Object.keys(window._giacenzaWaSentCache).length, 'ticket con WA');
+    return window._giacenzaWaSentCache;
+  }catch(e){
+    console.warn('[GWS load]', e.message);
+    return window._giacenzaWaSentCache || {};
+  }
+};
+
+window.setGiacenzaWaSent = async function(ticketId, phone){
+  if(!ticketId) return;
+  window._giacenzaWaSentCache = window._giacenzaWaSentCache || {};
+  window._giacenzaWaSentCache[String(ticketId)] = { ts: new Date().toISOString(), phone: phone || '' };
+  try{
+    await fetch(PROXY+'/giacenza-wa-sent', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ticketId: String(ticketId), phone: phone || '' })
+    });
+  }catch(e){ console.warn('[GWS save]', e.message); }
+};
+
+window.clearGiacenzaWaSent = async function(ticketId){
+  if(!ticketId) return;
+  if(window._giacenzaWaSentCache) delete window._giacenzaWaSentCache[String(ticketId)];
+  try{
+    await fetch(PROXY+'/giacenza-wa-sent?ticketId='+encodeURIComponent(String(ticketId)), {
+      method:'DELETE'
+    });
+  }catch(e){ console.warn('[GWS delete]', e.message); }
+};
+
+window.isGiacenzaWaSent = function(ticketId){
+  if(!ticketId) return false;
+  const map = window._giacenzaWaSentCache || {};
+  return !!map[String(ticketId)];
+};
+
+window.getGiacenzaWaSentMap = function(){
+  return window._giacenzaWaSentCache || {};
+};
+
 // ═══ API WRAPPER (stessi pattern del desktop) ═══
 // Wrapper con X-App-Token per tutte le chiamate
 function proxyFetch(url, opts){
@@ -339,6 +396,9 @@ async function loadTickets(){
   state.view='list';
   state.loading=true;
   renderList();
+  // Carica in background la mappa giacenza-wa-sent (condivisa tra agenti)
+  // Al completamento, re-renderizza la lista per far apparire i pallini verdi
+  try { if(typeof window.loadGiacenzaWaSent === 'function') window.loadGiacenzaWaSent().then(function(){ try { renderList(); } catch(e){} }); } catch(e){}
   try{
     // Carica ticket Open + Pending in parallelo
     const [openRes, pendingRes] = await Promise.all([
@@ -430,13 +490,29 @@ function renderList(){
       const gi=groupInfo[tid];
       const amzBadge=gi?'<span class="m-badge m-badge-thread">🔗 +'+(gi.size-1)+'</span>':'';
       const statusBadge=t.status==='pending'?'<span class="m-badge m-badge-pending">⏳ Pending</span>':'<span class="m-badge m-badge-open">● Open</span>';
+      // Pallino verde se c'è un invio WhatsApp giacenza per questo ticket (condiviso server)
+      let waDot = '';
+      try {
+        const tShort = t.shortID || '';
+        const tUuid = t.ID || t.id || '';
+        if(window.isGiacenzaWaSent && (window.isGiacenzaWaSent(tShort) || window.isGiacenzaWaSent(tUuid))){
+          const gwsMap = window.getGiacenzaWaSentMap ? window.getGiacenzaWaSentMap() : {};
+          const gwsEntry = gwsMap[tShort] || gwsMap[tUuid] || {};
+          let waWhen = '';
+          if(gwsEntry.ts){
+            const d = new Date(gwsEntry.ts);
+            waWhen = d.toLocaleDateString('it-IT')+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+          }
+          waDot = ' <span title="WhatsApp giacenza inviato'+(waWhen?' il '+waWhen:'')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#25d366;margin-left:6px;vertical-align:middle;flex-shrink:0"></span>';
+        }
+      } catch(e){}
       html+=
         '<div class="m-ticket-row" onclick="openTicket(\''+tid+'\')">'+
           '<div class="m-ticket-head">'+
             '<div class="m-avatar" style="background:'+avatarColor(name)+'">'+initials(name)+'</div>'+
             '<div class="m-ticket-info">'+
               '<div class="m-ticket-name-row">'+
-                '<div class="m-ticket-name">'+h(name)+'</div>'+
+                '<div class="m-ticket-name">'+h(name)+waDot+'</div>'+
                 '<div class="m-ticket-time">'+time+'</div>'+
               '</div>'+
               '<div class="m-ticket-subj">'+h(t.subject||'Senza oggetto')+'</div>'+
@@ -497,17 +573,34 @@ async function fetchShopifyOrderFromTicket(t){
   if(!t) return null;
   const subj=t.subject||'';
   const email=(t.requester&&t.requester.email)||'';
-  const msgText=(t.events&&t.events[0]&&t.events[0].message&&t.events[0].message.text)||'';
+  const allMsgText=((t.events||[]).map(ev=>(ev.message&&ev.message.text)||'').join(' ')).substring(0,5000);
   // Cerca numero ordine
   let orderNum='';
-  // Pattern Shopify: #NNNNNNN
-  const shopMatch=(subj+' '+msgText).match(/#(\d{6,})/);
-  if(shopMatch) orderNum=shopMatch[1];
-  // Se non trovato, prova email
+
+  // 1) Se è una giacenza BRT, usa il parser per estrarre l'ordine
+  if(email.includes('brt.it') || email.includes('vasnoreply')){
+    for(const ev of (t.events||[])){
+      const txt = ev && ev.message && ev.message.text;
+      if(!txt) continue;
+      if(/APERTURA\s+GIACENZA/i.test(txt)){
+        try{
+          const g = parseBrtGiacenzaEmail(txt);
+          if(g && g.ordineShopify){ orderNum = g.ordineShopify; break; }
+        }catch(e){}
+      }
+    }
+  }
+
+  // 2) Pattern Shopify nel subject o nei messaggi: #NNNNNNN
+  if(!orderNum){
+    const shopMatch=(subj+' '+allMsgText).match(/#(\d{6,})/);
+    if(shopMatch) orderNum=shopMatch[1];
+  }
+
+  // 3) Se ancora non trovato, prova email (solo canali non-marketplace)
   if(!orderNum && email && !email.includes('marketplace.amazon') && !email.includes('temu') && !email.includes('brt')){
     const d=await shopifyGet('orders.json?email='+encodeURIComponent(email)+'&status=any&limit=5');
     if(d&&d.orders&&d.orders.length){
-      // Prendi il più recente
       return d.orders.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
     }
   }
@@ -691,6 +784,416 @@ async function sendReply(){
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PARSER GIACENZA BRT MOBILE (identico al desktop)
+// ═══════════════════════════════════════════════════════════════════
+function parseBrtGiacenzaEmail(text){
+  if(!text) return null;
+  const t = text.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
+  const out = {};
+
+  const pratica = t.match(/pratica\s+di\s+giacenza\s+N\.(\d{1,4})\s*\/\s*(\d{1,6})/i);
+  if(pratica) out.pratica = pratica[1]+'-'+pratica[2];
+
+  const dataApert = t.match(/in\s+data\s+(\d{2}\/\d{2}\/\d{4})/i);
+  if(dataApert) out.dataApertura = dataApert[1];
+
+  const motivo = t.match(/motivo\s*:\s*(\d{3})\s+([A-Z][A-Z0-9\s\/\.\-',]+?)(?:\n|Gli\s+estremi)/i);
+  if(motivo){
+    out.motivoCod = motivo[1];
+    out.motivoDesc = motivo[2].trim().replace(/\s+AL\s*$/i,'').trim();
+  }
+
+  const tracking1 = t.match(/spedizione\s+(\d{4})\s+(\d{3})\s+(\d+)\s+(\d{5,})/i);
+  if(tracking1){
+    out.trackingFull = tracking1[1]+tracking1[2]+'0'+tracking1[3]+tracking1[4];
+    out.trackingBreve = tracking1[4];
+  } else {
+    const tracking2 = t.match(/spedizione\s+(\d{13,18})/i);
+    if(tracking2){
+      out.trackingFull = tracking2[1];
+      out.trackingBreve = tracking2[1].slice(-7);
+    }
+  }
+
+  const riferimenti = t.match(/Riferimenti\s+mittente\s*:\s*(\d{6,12})(?:\s+(\d{6,12}))?/i);
+  if(riferimenti){
+    out.rifMittente1 = riferimenti[1];
+    if(riferimenti[2]) out.ordineShopify = riferimenti[2];
+  }
+
+  const destinatario = t.match(/Destinatario\s*:\s*([A-Z][A-Z\s\.'àèéìòù]+?)\s*\n\s*([^\n]+?)\s*\n\s*(\d{5})\s+([A-Z\s]+?)\s+([A-Z]{2})\b/i);
+  if(destinatario){
+    out.destNome = destinatario[1].trim();
+    out.destIndirizzo = destinatario[2].trim();
+    out.destCap = destinatario[3];
+    out.destCitta = destinatario[4].trim();
+    out.destProv = destinatario[5];
+  } else {
+    const destFallback = t.match(/Destinatario\s*:\s*([A-Z][A-Z\s\.'àèéìòù]+?)(?:\n|PIAZZALE|VIA|CORSO|PIAZZA|VIALE)/i);
+    if(destFallback) out.destNome = destFallback[1].trim();
+  }
+
+  const filiale = t.match(/Filiale\s+di\s+([A-Z][A-Z\s]+?)\n/i);
+  if(filiale) out.filialeApertura = filiale[1].trim();
+
+  const filialeCust = t.match(/custodita\s+presso\s+la\s+Ns\.\s+di[:\s]+([A-Z][A-Z\s]+?)(?:\n|\-\s|$)/i);
+  if(filialeCust) out.filialeCustodia = filialeCust[1].trim();
+
+  const dataRicons = t.match(/riconsegna\s+dal\s+(\d{2}\/\d{2}\/\d{4})/i);
+  if(dataRicons) out.dataRiconsegna = dataRicons[1];
+
+  const avviso = t.match(/(\d)°\s+Avviso/i);
+  if(avviso) out.numAvviso = avviso[1];
+
+  const link = t.match(/https?:\/\/vas\.brt\.it\/vas\/sped_det_show\.hsm\?[^\s<>"']+/i);
+  if(link) out.linkPortale = link[0];
+
+  if(out.trackingFull){
+    out.urlTracking = 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+out.trackingFull;
+  }
+
+  if(!out.pratica && !out.trackingFull && !out.ordineShopify) return null;
+  return out;
+}
+
+// Rileva se il ticket corrente è una giacenza BRT (usa ultimo messaggio cliente)
+function detectGiacenza(ticket){
+  if(!ticket || !ticket.events) return null;
+  for(let i = ticket.events.length-1; i >= 0; i--){
+    const ev = ticket.events[i];
+    const txt = ev && ev.message && ev.message.text;
+    if(!txt) continue;
+    if(/APERTURA\s+GIACENZA/i.test(txt) && /pratica\s+di\s+giacenza\s+N\./i.test(txt)){
+      try{
+        const g = parseBrtGiacenzaEmail(txt);
+        if(g) return {data:g, rawText:txt};
+      }catch(e){ console.warn('[giacenza parser]',e); }
+    }
+  }
+  return null;
+}
+
+// Render pannello giacenza su mobile
+function renderGiacenzaPanelMobile(g, origText){
+  const uid = 'gcz_m_'+Math.random().toString(36).slice(2);
+  window._giacenzaData = window._giacenzaData || {};
+  window._giacenzaRawText = window._giacenzaRawText || {};
+  window._giacenzaData[uid] = g;
+  window._giacenzaRawText[uid] = origText || '';
+
+  const tipo = g.numAvviso ? (g.numAvviso+'° Avviso') : 'Apertura giacenza';
+  const is2plus = g.numAvviso && parseInt(g.numAvviso) >= 2;
+  const bgColor = is2plus ? '#fef2f2' : '#fff7ed';
+  const borderColor = is2plus ? '#fca5a5' : '#fed7aa';
+  const textColor = is2plus ? '#991b1b' : '#9a3412';
+
+  let html = '<div style="padding:11px 12px;background:'+bgColor+';border-left:3px solid '+textColor+';border-bottom:1px solid '+borderColor+'">';
+
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">';
+  html += '<div style="font-size:12px;font-weight:700;color:'+textColor+'">📋 '+h(tipo)+(g.pratica?' · '+h(g.pratica):'')+'</div>';
+  if(g.dataApertura) html += '<div style="font-size:10px;color:'+textColor+';opacity:0.8">'+h(g.dataApertura)+'</div>';
+  html += '</div>';
+
+  if(g.motivoCod || g.motivoDesc){
+    html += '<div style="background:#fff;border-radius:5px;padding:8px 10px;margin-bottom:8px;border-left:2px solid '+textColor+'">';
+    html += '<div style="font-size:8px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:2px">Motivo</div>';
+    html += '<div style="font-size:11px;color:#1a1a2e;font-weight:600;line-height:1.3">';
+    if(g.motivoCod) html += '<span style="color:#888;font-weight:500">['+h(g.motivoCod)+']</span> ';
+    if(g.motivoDesc) html += h(g.motivoDesc);
+    html += '</div></div>';
+  }
+
+  html += '<div style="background:#fff;border-radius:5px;padding:8px 10px;font-size:11px;line-height:1.5">';
+  html += '<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 8px">';
+  if(g.ordineShopify){
+    html += '<div style="color:#888">Ordine</div>';
+    html += '<div><a href="https://admin.shopify.com/store/yespresso-1/orders?query='+h(g.ordineShopify)+'" target="_blank" style="color:#1a73e8;text-decoration:none;font-weight:600">#'+h(g.ordineShopify)+' ↗</a></div>';
+  }
+  if(g.trackingFull || g.trackingBreve){
+    const tnShow = g.trackingFull || g.trackingBreve;
+    const tnClean = String(tnShow).replace(/^(2026|26)/,'');
+    html += '<div style="color:#888">Tracking</div>';
+    html += '<div><a href="'+h(g.urlTracking||'#')+'" target="_blank" style="color:#c2410c;text-decoration:none;font-weight:600;font-family:monospace">'+h(tnClean)+' ↗</a></div>';
+  }
+  if(g.destNome){
+    html += '<div style="color:#888">Destinatario</div>';
+    html += '<div style="color:#1a1a2e">'+h(g.destNome);
+    if(g.destIndirizzo) html += '<br><span style="color:#888;font-size:10px">'+h(g.destIndirizzo);
+    if(g.destCap) html += ', '+h(g.destCap)+' '+h(g.destCitta||'')+' ('+h(g.destProv||'')+')';
+    if(g.destIndirizzo) html += '</span>';
+    html += '</div>';
+  }
+  if(g.filialeCustodia || g.filialeApertura){
+    html += '<div style="color:#888">Filiale</div>';
+    html += '<div style="color:#1a1a2e">'+h(g.filialeCustodia||g.filialeApertura)+'</div>';
+  }
+  if(g.dataRiconsegna){
+    html += '<div style="color:#888">Riconsegna</div>';
+    html += '<div style="color:#991b1b;font-weight:600">dal '+h(g.dataRiconsegna)+'</div>';
+  }
+  html += '</div></div>';
+
+  html += '</div>';
+
+  // Azione principale: Gestisci giacenza (rosso)
+  if(g.linkPortale || g.urlTracking){
+    const linkBrt = g.linkPortale || g.urlTracking;
+    html += '<div style="padding:11px 12px;background:#fff;border-bottom:1px solid #e5e7eb">';
+    html += '<a href="'+h(linkBrt)+'" target="_blank" style="display:block;background:#dc2626;color:#fff;padding:11px;border-radius:8px;font-size:12px;font-weight:700;text-align:center;text-decoration:none">📦 Gestisci giacenza su BRT ↗</a>';
+    html += '</div>';
+  }
+
+  // Box WhatsApp
+  html += '<div id="giacenza-wa-'+uid+'" style="padding:10px 12px;background:#fff;border-bottom:1px solid #e5e7eb">';
+  html += renderGiacenzaWaButtonMobile(uid);
+  html += '</div>';
+
+  // Toggle email originale
+  html += '<div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb;text-align:center">';
+  html += '<button onclick="toggleGiacenzaRawMobile(\''+uid+'\')" style="background:transparent;border:none;color:'+textColor+';font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email BRT originale</button>';
+  html += '<div id="giacenza-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:10px;font-family:monospace;font-size:10px;white-space:pre-wrap;color:#555;max-height:300px;overflow-y:auto;margin-top:8px;text-align:left">'+h(origText||'')+'</div>';
+  html += '</div>';
+
+  return html;
+}
+
+// Toggle email originale
+window.toggleGiacenzaRawMobile = function(uid){
+  const el = document.getElementById('giacenza-raw-'+uid);
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+// Render bottone WhatsApp iniziale (o stato "inviato" se già inviato)
+function renderGiacenzaWaButtonMobile(uid){
+  // Se il ticket ha già il WA inviato, mostra direttamente stato "inviato"
+  const t = state.currentTicket;
+  if(t){
+    const ids = [t.shortID, t.ID, t.id].filter(Boolean);
+    for(const id of ids){
+      if(window.isGiacenzaWaSent(id)){
+        const map = window.getGiacenzaWaSentMap();
+        const entry = map[id];
+        if(entry && entry.phone && window._giacenzaData && window._giacenzaData[uid]){
+          window._giacenzaData[uid]._lastPhone = entry.phone;
+        }
+        return renderGiacenzaWaSentMobile(uid);
+      }
+    }
+  }
+  return '<button onclick="inviaGiacenzaWaMobile(\''+uid+'\')" style="display:block;width:100%;background:#25d366;color:#fff;padding:11px;border-radius:8px;font-size:12px;font-weight:700;text-align:center;border:none;cursor:pointer;font-family:inherit">💬 Invia WhatsApp al cliente</button>';
+}
+
+// Render stato "inviato"
+function renderGiacenzaWaSentMobile(uid){
+  return '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 12px">'+
+    '<div style="font-size:11px;color:#166534;font-weight:600;margin-bottom:8px;text-align:center">✓ WhatsApp inviato al cliente</div>'+
+    '<div style="display:flex;gap:6px">'+
+      '<button onclick="vediGiacenzaWaMobile(\''+uid+'\')" style="flex:1;background:#25d366;color:#fff;border:none;border-radius:6px;padding:9px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">👁 Vedi Risposta WA</button>'+
+      '<button onclick="annullaGiacenzaWaMobile(\''+uid+'\')" style="background:#fff;color:#6b7280;border:1px solid #e5e7eb;border-radius:6px;padding:9px 12px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit">Annulla</button>'+
+    '</div>'+
+  '</div>';
+}
+
+// Recupera telefono cliente
+function getGiacenzaPhoneMobile(){
+  const order = state.shopifyOrder;
+  if(!order) return '';
+  const raw = (order.customer && order.customer.phone) ||
+              (order.shipping_address && order.shipping_address.phone) ||
+              (order.billing_address && order.billing_address.phone) || '';
+  return String(raw||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
+}
+
+// Costruisce l'indirizzo attuale dall'ordine Shopify o dai dati giacenza
+function buildIndirizzoAttualeMobile(g){
+  const lines = [];
+  const order = state.shopifyOrder;
+  const sa = (order && order.shipping_address) || null;
+  if(sa){
+    if(sa.name) lines.push(sa.name);
+    if(sa.company) lines.push(sa.company);
+    const viaCiv = [sa.address1, sa.address2].filter(Boolean).join(', ');
+    if(viaCiv) lines.push(viaCiv);
+    const cittaCap = [sa.zip, sa.city, sa.province_code?'('+sa.province_code+')':''].filter(Boolean).join(' ');
+    if(cittaCap) lines.push(cittaCap);
+    if(sa.phone) lines.push('Tel: '+sa.phone);
+    if(lines.length) return lines.join('\n');
+  }
+  if(g.destNome) lines.push(g.destNome);
+  if(g.destIndirizzo) lines.push(g.destIndirizzo);
+  const fallbackCap = [g.destCap, g.destCitta, g.destProv?'('+g.destProv+')':''].filter(Boolean).join(' ');
+  if(fallbackCap) lines.push(fallbackCap);
+  return lines.length ? lines.join('\n') : '';
+}
+
+// Costruisce messaggio WhatsApp basato sul motivo
+function buildGiacenzaWaMessageMobile(g){
+  const order = state.shopifyOrder;
+  let nomePrimo = '';
+  let ticketId = '';
+  const t = state.currentTicket;
+  if(t) ticketId = t.shortID || t.ID || t.id || '';
+
+  if(order && order.shipping_address && order.shipping_address.name){
+    nomePrimo = String(order.shipping_address.name).split(' ')[0];
+  } else if(g.destNome){
+    const parts = String(g.destNome).trim().split(/\s+/);
+    const skip = ['PROF.','PROF','DR.','DR','SIG.','SIG','SIGRA','ING.','ING','AVV.','AVV'];
+    for(let i=0; i<parts.length; i++){
+      if(skip.indexOf(parts[i].toUpperCase()) < 0){ nomePrimo = parts[i]; break; }
+    }
+    if(nomePrimo) nomePrimo = nomePrimo.charAt(0).toUpperCase() + nomePrimo.substring(1).toLowerCase();
+  }
+
+  const saluto = nomePrimo ? ('Gentile '+nomePrimo+',') : 'Gentile Cliente,';
+  const ordineNum = g.ordineShopify ? ('#'+g.ordineShopify) : '';
+
+  const codice = (g.motivoCod || '').trim();
+  const descUpper = String(g.motivoDesc || '').toUpperCase();
+  let corpo = '';
+
+  const isIndirizzoProblem =
+    codice === '020' || codice === '022' ||
+    descUpper.indexOf('SCONOSCIUTO') >= 0 ||
+    descUpper.indexOf('INESISTENTE') >= 0 ||
+    descUpper.indexOf('INCOMPLETO') >= 0;
+
+  if(isIndirizzoProblem){
+    const indirizzoAttuale = buildIndirizzoAttualeMobile(g);
+    if(codice === '020' || descUpper.indexOf('SCONOSCIUTO') >= 0){
+      corpo = 'il corriere BRT ci segnala che il destinatario risulta sconosciuto all\'indirizzo indicato per il suo ordine '+ordineNum+'.\n\n';
+    } else {
+      corpo = 'il corriere BRT ci segnala che l\'indirizzo indicato sul suo ordine '+ordineNum+' risulta incompleto o non trovato.\n\n';
+    }
+    if(indirizzoAttuale){
+      corpo += 'Indirizzo attualmente in nostro possesso:\n'+indirizzoAttuale+'\n\n';
+      corpo += 'Può gentilmente confermarci se l\'indirizzo è corretto o se dobbiamo integrare/modificare qualche dato? Ad esempio:\n'+
+               '• Numero civico preciso\n'+
+               '• Nome azienda o struttura\n'+
+               '• Nome sul citofono\n'+
+               '• Scala, interno o piano\n'+
+               '• Numero di telefono per il corriere';
+    } else {
+      corpo += 'Per poter consegnare il pacco le chiediamo di inviarci i dati corretti:\n'+
+               '• Indirizzo completo (via, numero civico)\n'+
+               '• CAP, Città e Provincia\n'+
+               '• Nome azienda o citofono (se presente)\n'+
+               '• Numero di telefono per il corriere';
+    }
+  } else switch(codice){
+    case '016':
+      corpo = 'il corriere BRT ci segnala che la consegna del suo ordine '+ordineNum+' è stata posticipata su sua richiesta.\n\n'+
+              'Per evitare che il pacco rientri in sede, le chiediamo di confermarci quando potremo riprogrammare la consegna e se l\'indirizzo inserito è corretto.';
+      break;
+    case '003':
+    case '004':
+    case '005':
+      corpo = 'il corriere BRT ci segnala che durante il tentativo di consegna del suo ordine '+ordineNum+' non è stato trovato nessuno all\'indirizzo indicato.\n\n'+
+              'Per procedere le chiediamo di indicarci se preferisce:\n'+
+              '• Un nuovo tentativo di consegna (indicando giorno/fascia oraria)\n'+
+              '• Il ritiro presso un Fermo!Point BRT vicino\n'+
+              '• La modifica dell\'indirizzo di consegna';
+      break;
+    case '007':
+      corpo = 'il corriere BRT ci segnala che il pacco del suo ordine '+ordineNum+' è stato rifiutato al momento della consegna.\n\n'+
+              'Per capire come procedere le chiediamo gentilmente di comunicarci il motivo del rifiuto e se desidera comunque ricevere il pacco.';
+      break;
+    case '014':
+    case '015':
+      corpo = 'il suo ordine '+ordineNum+' è a sua disposizione presso il Fermo!Point BRT indicato dal corriere.\n\n'+
+              'Le ricordiamo di ritirarlo entro i giorni indicati per evitare che il pacco rientri in sede.';
+      break;
+    default:
+      corpo = 'il corriere BRT ci segnala un problema con la consegna del suo ordine '+ordineNum+'.\n\n'+
+              'Motivo segnalato: '+(g.motivoDesc||'non specificato')+'\n\n'+
+              'Per poter procedere le chiediamo di contattarci confermando come preferisce che gestiamo la spedizione.';
+  }
+
+  // Tracking "pulito": togli 2026 o 26 prefisso
+  const trackingRaw = g.trackingFull || g.trackingBreve || '';
+  const trackingPulito = String(trackingRaw).replace(/^(2026|26)/, '');
+  const linkTracking = trackingPulito
+    ? ('https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+encodeURIComponent(trackingPulito))
+    : '';
+
+  let coda = '\n\nOrdine: '+ordineNum;
+  if(trackingPulito) coda += '\nTracking BRT: '+trackingPulito;
+  if(linkTracking) coda += '\n'+linkTracking;
+  coda += '\n\nCordiali saluti\nYespresso';
+  if(ticketId) coda += '\n\n#'+ticketId;
+
+  return saluto+'\n\n'+corpo+coda;
+}
+
+// Handler bottone invio WhatsApp
+window.inviaGiacenzaWaMobile = function(uid){
+  const g = window._giacenzaData[uid];
+  if(!g){ showToast('Dati giacenza non disponibili','error'); return; }
+  const phone = getGiacenzaPhoneMobile();
+  if(!phone){
+    showToast('Telefono cliente non trovato. Attendi caricamento ordine.','error');
+    return;
+  }
+  const messaggio = buildGiacenzaWaMessageMobile(g);
+  const url = 'https://wa.me/39'+phone+'?text='+encodeURIComponent(messaggio);
+  window.open(url, '_blank');
+  window._giacenzaData[uid]._lastPhone = phone;
+  // Salva lo stato "inviato" sul server (condiviso tra agenti)
+  try {
+    const t = state.currentTicket;
+    if(t){
+      const tidForStore = t.shortID || t.ID || t.id || '';
+      if(tidForStore && typeof window.setGiacenzaWaSent === 'function'){
+        window.setGiacenzaWaSent(tidForStore, phone);
+      }
+    }
+  } catch(e){ console.warn('[GWS set]', e); }
+  // Aggiorna UI: mostra bottoni Vedi/Annulla
+  const box = document.getElementById('giacenza-wa-'+uid);
+  if(box) box.innerHTML = renderGiacenzaWaSentMobile(uid);
+};
+
+window.vediGiacenzaWaMobile = function(uid){
+  const d = window._giacenzaData[uid];
+  if(d && d._lastPhone){
+    window.open('https://wa.me/39'+d._lastPhone, '_blank');
+    return;
+  }
+  // Fallback: prendi telefono dalla cache server
+  try {
+    const t = state.currentTicket;
+    if(t){
+      const ids = [t.shortID, t.ID, t.id].filter(Boolean);
+      const map = window.getGiacenzaWaSentMap ? window.getGiacenzaWaSentMap() : {};
+      for(const id of ids){
+        const entry = map[id];
+        if(entry && entry.phone){
+          window.open('https://wa.me/39'+entry.phone, '_blank');
+          return;
+        }
+      }
+    }
+  } catch(e){}
+  showToast('Dati WA non disponibili','error');
+};
+
+window.annullaGiacenzaWaMobile = function(uid){
+  // Rimuovi lo stato "inviato" dal server
+  try {
+    const t = state.currentTicket;
+    if(t){
+      const tidForStore = t.shortID || t.ID || t.id || '';
+      if(tidForStore && typeof window.clearGiacenzaWaSent === 'function'){
+        window.clearGiacenzaWaSent(tidForStore);
+      }
+    }
+  } catch(e){ console.warn('[GWS clear]', e); }
+  const box = document.getElementById('giacenza-wa-'+uid);
+  if(box) box.innerHTML = renderGiacenzaWaButtonMobile(uid);
+};
+
 // ═══ BACK TO LIST ═══
 function backToList(){
   state.view='list';
@@ -698,6 +1201,68 @@ function backToList(){
   state.currentTicketFull=null;
   renderList();
 }
+
+// ═══ RENDER DETAIL GIACENZA ═══
+function renderDetailGiacenza(t, name, src, giacenza){
+  const g = giacenza.data;
+  const rawText = giacenza.rawText;
+  const subj = t.subject || '';
+
+  // Info ordine dal parser (se ordineShopify è estratto) o fallback a state.shopifyOrder
+  const orderRef = state.shopifyOrder;
+  let orderBox = '';
+  const shopOrderNum = g.ordineShopify || (orderRef && orderRef.order_number) || '';
+  if(shopOrderNum || orderRef){
+    const adminUrl = orderRef ? 'https://admin.shopify.com/store/yespresso-1/orders/'+orderRef.id
+      : 'https://admin.shopify.com/store/yespresso-1/orders?query='+encodeURIComponent(shopOrderNum);
+    orderBox = '<div class="m-order-box">'+
+      '<div class="m-order-card" style="display:flex;align-items:center;justify-content:space-between">'+
+        '<div>'+
+          '<div class="m-order-label">Ordine</div>'+
+          '<div class="m-order-value">#'+h(shopOrderNum)+'</div>'+
+        '</div>'+
+        '<a href="'+h(adminUrl)+'" target="_blank" style="background:#1a73e8;color:#fff;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:500;text-decoration:none">🛍 Shopify ↗</a>'+
+      '</div>'+
+    '</div>';
+  }
+
+  $('app').innerHTML =
+    '<div class="m-detail-header">'+
+      '<button class="m-back" onclick="backToList()">←</button>'+
+      '<div class="m-detail-title">'+
+        '<div class="m-detail-name">Giacenza '+h(g.pratica||'')+'</div>'+
+        '<div class="m-detail-sub">BRT · '+h(subj.substring(0,60))+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="m-content">'+
+      orderBox+
+      renderGiacenzaPanelMobile(g, rawText)+
+    '</div>'+
+    '<div class="m-footer">'+
+      '<button class="m-footer-btn" onclick="backToList()">Indietro</button>'+
+      '<button class="m-footer-btn-success" onclick="chiudiGiacenzaTicket()">✓ Chiudi ticket</button>'+
+    '</div>';
+}
+
+// Chiudi ticket giacenza (stato solved, senza inviare messaggio)
+window.chiudiGiacenzaTicket = async function(){
+  const t = state.currentTicket;
+  if(!t) return;
+  const tid = t.ID || t.id;
+  try{
+    await hdFetch('/tickets/'+tid, {method:'PATCH', body:JSON.stringify({status:'solved'})});
+    t.status = 'solved';
+    showToast('Ticket chiuso','success');
+    setTimeout(()=>{
+      state.view='list';
+      state.currentTicket=null;
+      state.tickets=state.tickets.filter(tk=>(tk.ID||tk.id)!==tid);
+      renderList();
+    },500);
+  }catch(e){
+    showToast('Errore: '+e.message,'error');
+  }
+};
 
 // ═══ RENDER DETAIL ═══
 function renderDetail(){
@@ -707,6 +1272,16 @@ function renderDetail(){
   const email=(t.requester&&t.requester.email)||'';
   const src=srcLabel(email);
   const order=state.shopifyOrder;
+
+  // Rilevazione giacenza BRT (solo se ticket è da vasnoreply@brt.it)
+  const isBrtGiacenza = email.includes('brt.it') || email.includes('vasnoreply');
+  const giacenza = isBrtGiacenza ? detectGiacenza(state.currentTicketFull||t) : null;
+
+  // Se è giacenza, renderizza il pannello specifico
+  if(giacenza){
+    renderDetailGiacenza(t, name, src, giacenza);
+    return;
+  }
 
   // Ultimo messaggio cliente
   const events=(t.events||[]).filter(e=>e.message&&e.message.text);

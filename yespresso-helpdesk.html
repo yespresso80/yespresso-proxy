@@ -4734,7 +4734,29 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     if(aiLabel2)aiLabel2.textContent="🚫 AI disabilitata per questo mittente";
     return;
   }
-  const prompt="Oggetto: "+t.subject+"\nDa: "+((t.requester&&t.requester.name)||"Cliente")+"\nEmail: "+(email||"")+(orderInfoFull?"\n\nDati ordine: "+orderInfoFull:"")+"\n\nSTORICO CONVERSAZIONE (dal più vecchio al più recente):\n"+fullThread+otherOpenStr+recentStr+"\n\nRispondi all'ultimo messaggio del cliente tenendo conto dell'INTERA conversazione sopra. Se il cliente ha gia fornito informazioni nei messaggi precedenti (es. numero ordine, descrizione problema, quantita prodotti), NON chiederle di nuovo ma usa quelle informazioni per rispondere.";
+  // Estrai l'ULTIMO messaggio cliente per evidenziarlo separatamente nel prompt
+  const _lastCustEv = (t.events||[]).filter(ev => ev.message && (ev.message.text||ev.message.richTextHtml) && !(ev.author && ev.author.type==='agent')).slice(-1)[0];
+  const _lastCustMsg = _lastCustEv ? (_lastCustEv.message.text || _lastCustEv.message.richTextHtml || '').substring(0, 2500) : '';
+
+  const prompt =
+    "Oggetto: "+t.subject+
+    "\nDa: "+((t.requester&&t.requester.name)||"Cliente")+
+    "\nEmail: "+(email||"")+
+    (orderInfoFull?"\n\nDati ordine: "+orderInfoFull:"")+
+    "\n\n═══ ULTIMO MESSAGGIO DEL CLIENTE (rispondi a QUESTO) ═══\n"+
+    (_lastCustMsg||"(nessun messaggio cliente — usa lo storico sotto)")+
+    "\n\n═══ STORICO COMPLETO (solo per contesto, dal più vecchio al più recente) ═══\n"+
+    fullThread+
+    otherOpenStr+
+    recentStr+
+    "\n\n═══ ISTRUZIONI PER LA RISPOSTA ═══\n"+
+    "1. FOCALIZZATI sull'ULTIMO MESSAGGIO del cliente qui sopra: quello è ciò a cui devi rispondere.\n"+
+    "2. Se l'ultimo messaggio contiene già TUTTE le informazioni necessarie per rispondere (es. problema chiaro, foto, quantità, numero ordine), rispondi in modo DIRETTO e BREVE senza guardare lo storico.\n"+
+    "3. Usa lo STORICO solo se l'ultimo messaggio è ambiguo o incompleto, e serve recuperare dati dai messaggi precedenti (es. il cliente aveva già dato il numero ordine, la quantità, aveva già inviato foto).\n"+
+    "4. NON ripetere cose che abbiamo già scritto nei messaggi precedenti (scuse, spiegazioni già date, link già inviati): il cliente le ha già lette.\n"+
+    "5. NON rifare domande a cui il cliente ha già risposto in messaggi precedenti.\n"+
+    "6. NON introdurre il contesto (\"come da precedente conversazione\", \"come le avevamo già scritto\"): vai al punto.\n"+
+    "7. Risposta BREVE e CONCRETA: se il cliente chiede X, rispondi X. Niente preamboli lunghi, niente riepiloghi inutili.";
 
   // Se stato spedizione critico → non chiamare Claude
   if(order && order._criticalShipping){ return; }
@@ -12583,12 +12605,12 @@ function buildSolvedContext(currentTicket){
     out += "\n\n"+historyBlocks.join("\n\n");
   }
 
-  // Esempi di risposte passate (come prima, per il tono)
+  // Esempi di risposte passate (ridotti a 3, solo per TONO — non per contenuto)
   if(solvedExamples.length){
-    var examples = solvedExamples.slice(0,6).map(function(ex,i){
-      return "[Esempio "+(i+1)+"]\nOggetto: "+ex.subject+"\nCliente: "+ex.customer+"\nRisposta Yespresso: "+ex.reply;
+    var examples = solvedExamples.slice(0,3).map(function(ex,i){
+      return "[Esempio "+(i+1)+"]\nOggetto: "+ex.subject+"\nCliente: "+ex.customer.substring(0,400)+"\nRisposta Yespresso: "+ex.reply.substring(0,600);
     }).join("\n---\n");
-    out += "\n\nECCO COME YESPRESSO HA RISPOSTO IN PASSATO A TICKET SIMILI (usa questi esempi per adottare lo stesso tono, stile e formato):\n"+examples;
+    out += "\n\nESEMPI DI TONO E STILE (usa solo per replicare il TONO e lo STILE, NON copiare il contenuto: ogni ticket è diverso):\n"+examples;
   }
 
   return out;
