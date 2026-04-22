@@ -2897,6 +2897,32 @@ function renderMsgBlock(text, attachments){
     }
   }
 
+  // ═══ PARSER PAYPAL ═══
+  // Email da PayPal (assistenza@paypal.it / paypal.it):
+  // - "Hai ricevuto una nuova richiesta" → controversia aperta
+  // - "Come procede la pratica?" → promemoria risposta
+  // - "Richiesta rimborso"
+  // - "Caso chiuso"
+  // Riconoscimento: contiene parole chiave PayPal tipiche
+  if(text && /paypal/i.test(text) && (
+       /hai\s+ricevuto\s+una\s+nuova\s+richiesta/i.test(text) ||
+       /come\s+procede\s+la\s+pratica/i.test(text) ||
+       /richiesta\s+di\s+rimborso/i.test(text) ||
+       /ha\s+aperto\s+una\s+controversia/i.test(text) ||
+       /caso\s+chiuso/i.test(text) ||
+       /ID\s+transazione/i.test(text) ||
+       /ID\s+controversia/i.test(text)
+     )){
+    try{
+      const paypal = parsePayPalEmail(text);
+      if(paypal){
+        return renderPayPalPanel(paypal, text);
+      }
+    }catch(e){
+      console.warn("[PayPal parser]", e);
+    }
+  }
+
   const rendered = renderMessageHtml(text, attachments);
   const isHtml = rendered.includes('email-inner');
   if(isHtml){
@@ -3105,6 +3131,167 @@ window.toggleGiacenzaRaw = function(uid){
   if(!el) return;
   const visible = el.style.display !== 'none';
   el.style.display = visible ? 'none' : 'block';
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Parser email PayPal — estrae i dati principali dal wall of text
+// ═══════════════════════════════════════════════════════════════════
+function parsePayPalEmail(text){
+  if(!text) return null;
+  const t = text.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
+  const out = {};
+
+  // Tipo email (usiamo per titolo box)
+  if(/hai\s+ricevuto\s+una\s+nuova\s+richiesta/i.test(t)) out.tipo = 'Nuova richiesta';
+  else if(/come\s+procede\s+la\s+pratica/i.test(t)) out.tipo = 'Promemoria pratica';
+  else if(/caso\s+chiuso/i.test(t)) out.tipo = 'Caso chiuso';
+  else if(/richiesta\s+di\s+rimborso/i.test(t)) out.tipo = 'Richiesta rimborso';
+  else if(/ha\s+aperto\s+una\s+controversia/i.test(t)) out.tipo = 'Controversia aperta';
+  else out.tipo = 'Comunicazione PayPal';
+
+  // Nome cliente che ha aperto la controversia (es. "Alessandro Righi ha riscontrato un problema")
+  const clienteMatch = t.match(/([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+)+)\s+(?:ha\s+riscontrato|ha\s+aperto|segnala)/);
+  if(clienteMatch) out.cliente = clienteMatch[1].trim();
+
+  // ID Caso / ID Controversia (es. "Caso N. PP-R-XXX-YYYY" oppure "Case ID: PP-D-XXXXX")
+  const casoMatch = t.match(/(?:caso|controversia|case|pratica)\s*(?:N[.°]|n\.?|ID:?|#)?\s*([A-Z]{2}-[A-Z]-\d{3,}[-\s\d]*)/i);
+  if(casoMatch) out.idCaso = casoMatch[1].trim().replace(/\s+/g,'');
+  // Fallback: pattern generico PayPal ID (PP-X-XXXXXXXX oppure lunga sequenza alfanumerica)
+  if(!out.idCaso){
+    const altCaso = t.match(/\b(PP-[A-Z]-[\dA-Z-]+)\b/i);
+    if(altCaso) out.idCaso = altCaso[1];
+  }
+
+  // ID Transazione (es. "ID transazione: 1AB23456CD789012E")
+  const txMatch = t.match(/ID\s+(?:transazione|pagamento|operazione)[:\s]+([A-Z0-9]{10,20})/i);
+  if(txMatch) out.idTransazione = txMatch[1];
+
+  // Importo (es. "€50,00 EUR" oppure "EUR 50,00")
+  const importoMatch = t.match(/(?:€|EUR)\s*([\d.,]+)/);
+  if(importoMatch) out.importo = importoMatch[1];
+
+  // Data transazione (es. "Data della transazione: 15 aprile 2026")
+  const dataTxMatch = t.match(/Data\s+(?:della\s+)?transazione[:\s]+(\d{1,2}\s+[a-z]+\s+\d{4})/i);
+  if(dataTxMatch) out.dataTransazione = dataTxMatch[1].trim();
+
+  // Data scadenza risposta (es. "Rispondi entro il 30 aprile 2026")
+  const scadenzaMatch = t.match(/(?:rispondi|risponda|hai|devi\s+rispondere)\s+(?:entro|al\s+più\s+tardi)\s+(?:il\s+|entro\s+il\s+)?(\d{1,2}[\s\/\.-]\s*[a-z0-9]+[\s\/\.-]\s*\d{2,4})/i);
+  if(scadenzaMatch) out.scadenza = scadenzaMatch[1].trim();
+
+  // Motivo disputa (keyword comuni)
+  const motiviMap = [
+    {re:/oggetto\s+non\s+ricevuto|non\s+ho\s+ricevuto/i, label:'Oggetto non ricevuto'},
+    {re:/oggetto\s+(?:molto\s+)?diverso|non\s+corrispondente|non\s+conforme/i, label:'Oggetto non conforme'},
+    {re:/transazione\s+non\s+autorizzata|pagamento\s+non\s+autorizzato/i, label:'Transazione non autorizzata'},
+    {re:/rimborso\s+non\s+(?:effettuato|ricevuto)/i, label:'Rimborso non ricevuto'},
+    {re:/articolo\s+danneggiato|prodotto\s+danneggiato/i, label:'Articolo danneggiato'},
+    {re:/duplicato|addebit[oa]\s+duplicat/i, label:'Addebito duplicato'}
+  ];
+  for(const m of motiviMap){
+    if(m.re.test(t)){ out.motivoTipo = m.label; break; }
+  }
+
+  // Numero ordine Shopify (se presente nel messaggio)
+  const ordMatch = t.match(/(?:ordine|order|rif\.?|n[.°])\s*[#:]?\s*(\d{6,10})/i);
+  if(ordMatch) out.ordineShopify = ordMatch[1];
+
+  // Link "Risolvi" / "Visualizza dettagli" nella mail PayPal
+  const linkMatch = t.match(/https?:\/\/(?:www\.)?paypal\.com[^\s<>"']+/i);
+  if(linkMatch) out.linkPayPal = linkMatch[0];
+
+  // Almeno un dato utile deve esserci
+  if(!out.idCaso && !out.idTransazione && !out.cliente && !out.importo) return null;
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Render pannello PayPal compresso
+// ═══════════════════════════════════════════════════════════════════
+function renderPayPalPanel(p, origText){
+  const uid = 'pp_'+Math.random().toString(36).slice(2);
+  window._paypalOrigText = window._paypalOrigText || {};
+  window._paypalOrigText[uid] = origText || '';
+
+  const esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+
+  // Colore header in base al tipo (urgente per controversie, neutro per caso chiuso)
+  const isUrgent = /richiesta|controversia|promemoria|rimborso/i.test(p.tipo||'');
+  const bgColor = isUrgent ? '#fff7ed' : '#eff6ff';
+  const borderColor = isUrgent ? '#fed7aa' : '#bfdbfe';
+  const textColor = isUrgent ? '#9a3412' : '#1a4b8f';
+  const icon = '🅿️';
+
+  let h = '<div class="msg-body msg-body-plain" style="padding:0;background:transparent;box-shadow:none">';
+
+  // Header PayPal
+  h += '<div style="background:'+bgColor+';border:1.5px solid '+borderColor+';border-radius:10px;padding:14px">';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:14px;font-weight:700;color:'+textColor+'">'+icon+' '+esc(p.tipo||'PayPal')+'</div>';
+  if(p.scadenza) h += '<div style="font-size:12px;color:#991b1b;font-weight:600">⏰ Scadenza: '+esc(p.scadenza)+'</div>';
+  h += '</div>';
+
+  // Motivo in evidenza
+  if(p.motivoTipo){
+    h += '<div style="background:#fff;border-radius:6px;padding:10px 12px;margin-bottom:10px;border-left:3px solid '+textColor+'">';
+    h += '<div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:3px">Motivo disputa</div>';
+    h += '<div style="font-size:13px;color:#1a1a2e;font-weight:600">'+esc(p.motivoTipo)+'</div>';
+    h += '</div>';
+  }
+
+  // Grid dati
+  h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;background:#fff;border-radius:6px;padding:10px 12px">';
+  if(p.cliente){
+    h += '<div style="color:#888">Cliente</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600">'+esc(p.cliente)+'</div>';
+  }
+  if(p.idCaso){
+    h += '<div style="color:#888">ID Caso</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">'+esc(p.idCaso)+'</div>';
+  }
+  if(p.idTransazione){
+    h += '<div style="color:#888">ID Transazione</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">'+esc(p.idTransazione)+'</div>';
+  }
+  if(p.importo){
+    h += '<div style="color:#888">Importo</div>';
+    h += '<div style="color:#991b1b;font-weight:700">€ '+esc(p.importo)+'</div>';
+  }
+  if(p.dataTransazione){
+    h += '<div style="color:#888">Data transazione</div>';
+    h += '<div style="color:#1a1a2e">'+esc(p.dataTransazione)+'</div>';
+  }
+  if(p.ordineShopify){
+    h += '<div style="color:#888">Ordine Yespresso</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600">'+
+      '<a href="https://admin.shopify.com/store/yespresso-1/orders?query='+esc(p.ordineShopify)+'" target="_blank" style="color:#1a73e8;text-decoration:none">#'+esc(p.ordineShopify)+' ↗</a>'+
+    '</div>';
+  }
+  h += '</div>';
+
+  // Azione principale: Apri PayPal
+  h += '<div style="margin-top:12px">';
+  const linkPp = p.linkPayPal || 'https://www.paypal.com/resolutioncenter';
+  h += '<a href="'+esc(linkPp)+'" target="_blank" style="display:block;background:#0070ba;color:#fff;padding:11px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center">🅿️ Gestisci su PayPal ↗</a>';
+  h += '</div>';
+
+  // Toggle email originale
+  h += '<div style="margin-top:10px;text-align:center">';
+  h += '<button onclick="togglePaypalRaw(\''+uid+'\')" style="background:transparent;border:none;color:'+textColor+';font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email PayPal originale</button>';
+  h += '</div>';
+
+  h += '</div>'; // chiude header box
+
+  // Email originale nascosta
+  h += '<div id="paypal-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:#555;max-height:400px;overflow-y:auto;margin-top:10px">'+esc(origText||'')+'</div>';
+
+  h += '</div>';
+  return h;
+}
+
+window.togglePaypalRaw = function(uid){
+  const el = document.getElementById('paypal-raw-'+uid);
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 };
 
 // Store globale dei dati giacenza per ciascun uid (necessario per i callback WhatsApp)
