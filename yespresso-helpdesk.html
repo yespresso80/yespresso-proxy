@@ -2923,6 +2923,25 @@ function renderMsgBlock(text, attachments){
     }
   }
 
+  // ═══ PARSER AMAZON A-Z GUARANTEE ═══
+  // Email da atoz-guarantee-no-reply@amazon.it con richieste di risposta a reclami
+  // Riconoscimento: menziona "Garanzia dalla A alla Z" o "reclamo dalla A alla Z" o "Garanzia A-Z"
+  if(text && (
+       /garanzia\s+dalla\s+A\s+alla\s+Z/i.test(text) ||
+       /reclamo\s+dalla\s+A\s+alla\s+Z/i.test(text) ||
+       /\bA-Z\s+Guarantee\b/i.test(text) ||
+       /atoz-guarantee/i.test(text)
+     )){
+    try{
+      const atoz = parseAtoZEmail(text);
+      if(atoz){
+        return renderAtoZPanel(atoz, text);
+      }
+    }catch(e){
+      console.warn("[A-Z parser]", e);
+    }
+  }
+
   const rendered = renderMessageHtml(text, attachments);
   const isHtml = rendered.includes('email-inner');
   if(isHtml){
@@ -3407,8 +3426,10 @@ window.cercaOrdineDaPayPalTx = async function(uid, txId){
       box.innerHTML =
         '<a href="'+adminUrl+'" target="_blank" style="color:#1a73e8;text-decoration:none;font-weight:600">'+orderName+' ↗</a>'+
         ' <span style="color:#16a34a;font-size:10px;margin-left:6px">✓ trovato</span>';
-      // Salva l'ordine nel contesto globale così il resto del sistema lo può usare
+      // Popola il contesto globale
       try{ window._lastShopifyOrder = order; }catch(e){}
+      // Popola la sidebar destra con i dati dell'ordine (box "Nessun ordine Shopify trovato" → dati completi)
+      try{ populateShopifyOrderSidebar(order); }catch(e){ console.warn('[sidebar populate]', e); }
     } else {
       box.innerHTML =
         '<span style="color:#991b1b;font-size:11px">❌ Ordine non trovato</span>'+
@@ -3419,6 +3440,254 @@ window.cercaOrdineDaPayPalTx = async function(uid, txId){
       '<span style="color:#991b1b;font-size:11px">⚠ Errore: '+(e.message||'')+'</span>'+
       ' <button onclick="cercaOrdineDaPayPalTx(\''+uid+'\',\''+txId+'\')" style="background:transparent;border:none;color:#1a73e8;font-size:11px;cursor:pointer;text-decoration:underline;margin-left:6px">Riprova</button>';
   }
+};
+
+// Popola la sidebar destra (box "Ordine Shopify") con un ordine trovato fuori dal normale flusso
+// (es. quando findShopifyOrderByTxId trova l'ordine via PayPal txId)
+window.populateShopifyOrderSidebar = function(order){
+  if(!order) return;
+  const oArea = document.getElementById('order-area');
+  if(!oArea) return;
+
+  // Popola _brtPickupData per il bottone WA standard
+  window._brtPickupData = window._brtPickupData || {};
+  const sa = order.shipping_address || {};
+  window._brtPickupData[order.id] = {
+    tn: (order.fulfillments && order.fulfillments[0] && order.fulfillments[0].tracking_number) || '',
+    orderName: order.name || '',
+    name: sa.name || '',
+    addr: sa.address1 || '',
+    zip: sa.zip || '',
+    city: sa.city || '',
+    prov: sa.province_code || '',
+    email: (order.customer && order.customer.email) || '',
+    phone: (order.customer && order.customer.phone) ||
+           (order.shipping_address && order.shipping_address.phone) ||
+           (order.billing_address && order.billing_address.phone) || ''
+  };
+
+  // Costruisci l'HTML della sidebar (stessa struttura delle altre funzioni)
+  const esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+  const adminUrl = 'https://admin.shopify.com/store/yespresso-1/orders/'+order.id;
+  const tn = window._brtPickupData[order.id].tn;
+  const brtUrl = tn ? 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn : '';
+
+  // Stato spedizione
+  const ff = (order.fulfillments||[])[0];
+  const shipStatus = ff && ff.shipment_status || '';
+  const fStatusMap = {delivered:'✓ Consegnato', in_transit:'🚚 In transito', out_for_delivery:'🛵 In consegna', attempted_delivery:'⚠ Tentativo', ready_for_pickup:'📬 Pronto al ritiro', failure:'❌ Problema'};
+  const statusLbl = order.cancelled_at ? '❌ Annullato' : (fStatusMap[shipStatus] || (order.fulfillment_status==='fulfilled' ? '✓ Spedito' : '⏳ Non spedito'));
+
+  // Data creazione
+  const created = order.created_at ? new Date(order.created_at).toLocaleDateString('it-IT') : '';
+  const totPrice = order.total_price ? ('€ '+String(order.total_price).replace('.',',')) : '';
+  const pg = order.payment_gateway_names && order.payment_gateway_names[0] || order.payment_gateway || '';
+
+  let html2 = '';
+  html2 += '<strong><a href="'+adminUrl+'" target="_blank" style="color:#1a4b8f;text-decoration:none">'+esc(order.name||'#'+order.order_number)+' ↗</a></strong>';
+  if(created) html2 += '<br>📅 '+esc(created);
+  if(totPrice) html2 += ' · 💶 '+esc(totPrice);
+  if(pg) html2 += '<br>💳 '+esc(pg);
+  html2 += '<br>📦 '+esc(statusLbl);
+  if(tn) html2 += '<br>🔗 <a href="'+brtUrl+'" target="_blank" style="color:#c2410c;font-weight:600;text-decoration:none">Tracking BRT ↗</a>';
+  if(sa.name){
+    html2 += '<br><br><span style="font-size:11px;color:#666">👤 '+esc(sa.name);
+    if(sa.address1) html2 += '<br>'+esc(sa.address1);
+    if(sa.zip||sa.city) html2 += '<br>'+esc(sa.zip||'')+' '+esc(sa.city||'')+(sa.province_code?' ('+esc(sa.province_code)+')':'');
+    if(sa.phone) html2 += '<br>📞 '+esc(sa.phone);
+    html2 += '</span>';
+  }
+  // Bottone WhatsApp se c'è telefono
+  const _waPhone = String(window._brtPickupData[order.id].phone||'').replace(/[^0-9+]/g,'').replace(/^\+/,'').replace(/^39/,'');
+  if(_waPhone && typeof window.waButtonHtml === 'function'){
+    html2 += '<br>'+window.waButtonHtml(order.id, _waPhone);
+  }
+
+  oArea.innerHTML = '<div class="order-info-box">'+html2+'</div>';
+
+  // Aggiorna anche altri box collegati (top product, note, etc.)
+  try{ if(typeof renderTopProduct === 'function') renderTopProduct(order); }catch(e){}
+  try{ if(order.note){ window._shopifyOrderNote = order.note; if(typeof aggiornaBoxNoteOrdine === 'function') setTimeout(()=>aggiornaBoxNoteOrdine(order.note),100); } }catch(e){}
+
+  // Notifica visiva: toast successo
+  try{
+    const toast = document.createElement('div');
+    toast.textContent = '✓ Ordine '+(order.name||'')+' collegato da PayPal';
+    toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 2px 10px rgba(0,0,0,0.2)';
+    document.body.appendChild(toast);
+    setTimeout(()=>toast.remove(), 3000);
+  }catch(e){}
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Parser email Amazon A-Z Guarantee (atoz-guarantee-no-reply@amazon.it)
+// ═══════════════════════════════════════════════════════════════════
+function parseAtoZEmail(text){
+  if(!text) return null;
+
+  // Strip HTML se presente
+  let rawT = text;
+  if(/<\/?(?:td|tr|table|body|html|div|p|br|span)\b/i.test(rawT)){
+    rawT = rawT.replace(/<style[^>]*>[\s\S]*?<\/style>/gi,'')
+               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,'')
+               .replace(/<br\s*\/?>/gi,'\n')
+               .replace(/<\/?(p|div|tr|h[1-6])\b[^>]*>/gi,'\n')
+               .replace(/<[^>]+>/g,' ')
+               .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
+               .replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+               .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  }
+  const t = rawT.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
+  const out = {};
+
+  // Tipo email (diverse casistiche A-Z)
+  if(/accogliere il reclamo|addebitare l'importo/i.test(t)) out.tipo = 'Richiesta prove (72h)';
+  else if(/risolvere rapidamente questo reclamo/i.test(t)) out.tipo = 'Nuovo reclamo A-Z';
+  else if(/reclamo.*accolto|deciso a favore/i.test(t)) out.tipo = 'Reclamo accolto dal cliente';
+  else if(/reclamo.*respinto|deciso a suo favore/i.test(t)) out.tipo = 'Reclamo respinto (a nostro favore)';
+  else if(/informazioni aggiuntive|maggiori informazioni/i.test(t)) out.tipo = 'Richiesta informazioni';
+  else out.tipo = 'Comunicazione A-Z Guarantee';
+
+  // Documenti/info richieste (estratte dalle righe che iniziano con -- )
+  const richiesteMatch = t.match(/-{1,2}\s*([A-Z][^\n-]{5,150})/g);
+  if(richiesteMatch && richiesteMatch.length){
+    out.richieste = richiesteMatch.slice(0,8).map(r =>
+      r.replace(/^-{1,2}\s*/,'').replace(/\s+/g,' ').trim()
+    ).filter(r => r.length > 3);
+  }
+
+  // Scadenza (es. "Entro 72 ore" o "72 hours")
+  const scadMatch = t.match(/entro\s+(\d+)\s+ore|(\d+)\s+hours/i);
+  if(scadMatch) out.scadenzaOre = parseInt(scadMatch[1]||scadMatch[2]);
+
+  // Ordine Amazon (pattern XXX-XXXXXXX-XXXXXXX)
+  const amzOrdMatch = t.match(/(\d{3}-\d{7}-\d{7})/);
+  if(amzOrdMatch) out.ordineAmazon = amzOrdMatch[1];
+
+  // ID reclamo (pattern SPC-EUAmazon-... oppure numerico a 13 cifre)
+  const reclamoMatch = t.match(/\b(SPC-[A-Z0-9-]+|[0-9]{13,16})\b/);
+  if(reclamoMatch) out.idReclamo = reclamoMatch[1];
+
+  // ASIN (se menzionato, B0xxxxxxxx)
+  const asinMatch = t.match(/\b(B0[A-Z0-9]{8})\b/);
+  if(asinMatch) out.asin = asinMatch[1];
+
+  // Azione richiesta (tema principale del reclamo)
+  if(/prova di avvenuta consegna|firma del destinatario|lettera di trasporto/i.test(t)){
+    out.azioneChiesta = 'Fornire prova di consegna (POD)';
+    out.tipoReclamo = 'Mancata consegna';
+  } else if(/articolo.*non ricevuto|non.*ricevut|mai ricevuto/i.test(t)){
+    out.azioneChiesta = 'Dimostrare consegna';
+    out.tipoReclamo = 'Articolo non ricevuto';
+  } else if(/reso|rimborso|restituzione/i.test(t)){
+    out.azioneChiesta = 'Gestire reso/rimborso';
+    out.tipoReclamo = 'Reso/Rimborso';
+  } else if(/articolo danneggiato|difettoso|diverso/i.test(t)){
+    out.azioneChiesta = 'Verificare condizione articolo';
+    out.tipoReclamo = 'Articolo danneggiato/difettoso';
+  }
+
+  // Almeno un dato utile
+  if(!out.ordineAmazon && !out.richieste && !out.azioneChiesta) return null;
+  return out;
+}
+
+function renderAtoZPanel(a, origText){
+  const uid = 'atoz_'+Math.random().toString(36).slice(2);
+  const esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+
+  // Colore urgenza: arancione/rosso se scadenza 72h, blu se informativo
+  const isUrgent = a.scadenzaOre && a.scadenzaOre <= 72;
+  const bgColor = isUrgent ? '#fff7ed' : '#eff6ff';
+  const borderColor = isUrgent ? '#fed7aa' : '#bfdbfe';
+  const textColor = isUrgent ? '#9a3412' : '#1a4b8f';
+
+  let h = '<div class="msg-body msg-body-plain" style="padding:0;background:transparent;box-shadow:none">';
+
+  // Header A-Z
+  h += '<div style="background:'+bgColor+';border:1.5px solid '+borderColor+';border-radius:10px;padding:14px">';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:14px;font-weight:700;color:'+textColor+'">🛡️ A-Z Guarantee · '+esc(a.tipo||'Reclamo')+'</div>';
+  if(a.scadenzaOre) h += '<div style="font-size:12px;color:#991b1b;font-weight:600;background:#fee2e2;padding:4px 10px;border-radius:12px">⏰ '+a.scadenzaOre+'h per rispondere</div>';
+  h += '</div>';
+
+  // Tipo reclamo + azione richiesta (in evidenza)
+  if(a.tipoReclamo || a.azioneChiesta){
+    h += '<div style="background:#fff;border-radius:6px;padding:10px 12px;margin-bottom:10px;border-left:3px solid '+textColor+'">';
+    if(a.tipoReclamo){
+      h += '<div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:2px">Tipo reclamo</div>';
+      h += '<div style="font-size:13px;color:#1a1a2e;font-weight:600;margin-bottom:'+(a.azioneChiesta?'8px':'0')+'">'+esc(a.tipoReclamo)+'</div>';
+    }
+    if(a.azioneChiesta){
+      h += '<div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:2px">Azione richiesta</div>';
+      h += '<div style="font-size:13px;color:#991b1b;font-weight:700">→ '+esc(a.azioneChiesta)+'</div>';
+    }
+    h += '</div>';
+  }
+
+  // Grid dati
+  h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;background:#fff;border-radius:6px;padding:10px 12px">';
+  if(a.ordineAmazon){
+    h += '<div style="color:#888">Ordine Amazon</div>';
+    const amzUrl = 'https://sellercentral.amazon.it/orders-v3/order/'+a.ordineAmazon;
+    h += '<div><a href="'+amzUrl+'" target="_blank" style="color:#ea580c;text-decoration:none;font-weight:600;font-family:monospace">'+esc(a.ordineAmazon)+' ↗</a></div>';
+  }
+  if(a.idReclamo){
+    h += '<div style="color:#888">ID Reclamo</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace;font-size:11px">'+esc(a.idReclamo)+'</div>';
+  }
+  if(a.asin){
+    h += '<div style="color:#888">ASIN</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace;font-size:11px">'+esc(a.asin)+'</div>';
+  }
+  h += '</div>';
+
+  // Documenti/info richieste (lista bullet)
+  if(a.richieste && a.richieste.length){
+    h += '<div style="background:#fff;border-radius:6px;padding:10px 12px;margin-top:10px">';
+    h += '<div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">📋 Documenti/informazioni richieste</div>';
+    h += '<ul style="margin:0;padding-left:20px;font-size:12px;color:#1a1a2e;line-height:1.6">';
+    for(const r of a.richieste){
+      h += '<li>'+esc(r)+'</li>';
+    }
+    h += '</ul></div>';
+  }
+
+  // Azioni principali
+  h += '<div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+
+  const azLink = a.ordineAmazon
+    ? 'https://sellercentral.amazon.it/gp/guarantee-claims/claim.html?orderID='+a.ordineAmazon
+    : 'https://sellercentral.amazon.it/gp/guarantee-claims/list.html';
+  h += '<a href="'+azLink+'" target="_blank" style="display:block;background:#ea580c;color:#fff;padding:11px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;text-align:center">🛡️ Apri reclamo A-Z ↗</a>';
+
+  if(a.ordineAmazon){
+    const orderUrl = 'https://sellercentral.amazon.it/orders-v3/order/'+a.ordineAmazon;
+    h += '<a href="'+orderUrl+'" target="_blank" style="display:block;background:#1a73e8;color:#fff;padding:11px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;text-align:center">📦 Vedi ordine Amazon ↗</a>';
+  } else {
+    h += '<a href="https://sellercentral.amazon.it/orders-v3" target="_blank" style="display:block;background:#1a73e8;color:#fff;padding:11px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;text-align:center">📦 Seller Central ↗</a>';
+  }
+
+  h += '</div>';
+
+  // Toggle email originale
+  h += '<div style="margin-top:10px;text-align:center">';
+  h += '<button onclick="toggleAtoZRaw(\''+uid+'\')" style="background:transparent;border:none;color:'+textColor+';font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email originale</button>';
+  h += '</div>';
+
+  h += '</div>';
+
+  // Email originale nascosta
+  h += '<div id="atoz-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:#555;max-height:400px;overflow-y:auto;margin-top:10px">'+esc(origText||'')+'</div>';
+
+  h += '</div>';
+  return h;
+}
+
+window.toggleAtoZRaw = function(uid){
+  const el = document.getElementById('atoz-raw-'+uid);
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 };
 
 // Store globale dei dati giacenza per ciascun uid (necessario per i callback WhatsApp)
