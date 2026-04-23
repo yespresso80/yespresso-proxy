@@ -10334,24 +10334,23 @@ function openFilippoPanel(){
     if(order) addStep('✅ Ordine trovato: '+order.name+' — '+order.fulfillment_status+' — €'+order.total_price);
     else addStep('ℹ️ Nessun ordine Shopify trovato');
 
-    // Step 2: simulazione regole orarie annullamento
+    // Step 2: simulazione regole orarie annullamento (vale per TUTTI i canali: sito, Amazon, Temu, TikTok)
+    // L'ora attuale (new Date()) è il momento in cui l'agente sta visualizzando il ticket,
+    // che è l'ora da confrontare con la scadenza (non l'ora di arrivo del ticket che può essere vecchia).
     var cancelSimulation = null;
     if(order && /annull/i.test(subject+' '+message)){
-      var isMarket = (order.note_attributes||[]).some(function(a){ return ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id'].includes(a.name); });
-      if(!isMarket){
-        var created = new Date(order.created_at);
-        var now = new Date();
-        var h = created.getHours()+created.getMinutes()/60;
-        var day = created.getDay();
-        var isWd = day>=1&&day<=5;
-        var deadline = null;
-        if(!isWd){ var nd=new Date(created);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);while(nd.getDay()<1||nd.getDay()>5)nd.setDate(nd.getDate()+1);nd.setHours(9,0,0,0);deadline=nd; }
-        else if(h<=9){ var d1=new Date(created);d1.setHours(9,0,0,0);deadline=d1; }
-        else if(h<=16){ var d2=new Date(created.getTime()+3600000);var d3=new Date(created);d3.setHours(16,15,0,0);deadline=d2<d3?d2:d3; }
-        else if(h<=16.75){ deadline=null; }
-        else{ var nd2=new Date(created);nd2.setHours(0,0,0,0);nd2.setDate(nd2.getDate()+1);while(nd2.getDay()<1||nd2.getDay()>5)nd2.setDate(nd2.getDate()+1);nd2.setHours(9,0,0,0);deadline=nd2; }
-        cancelSimulation = deadline ? (now<=deadline ? {canCancel:true, deadline:deadline} : {canCancel:false, deadline:deadline}) : {canCancel:false, deadline:null};
-      }
+      var created = new Date(order.created_at);
+      var now = new Date();
+      var h = created.getHours()+created.getMinutes()/60;
+      var day = created.getDay();
+      var isWd = day>=1&&day<=5;
+      var deadline = null;
+      if(!isWd){ var nd=new Date(created);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);while(nd.getDay()<1||nd.getDay()>5)nd.setDate(nd.getDate()+1);nd.setHours(9,0,0,0);deadline=nd; }
+      else if(h<=9){ var d1=new Date(created);d1.setHours(9,0,0,0);deadline=d1; }
+      else if(h<=16){ var d2=new Date(created.getTime()+3600000);var d3=new Date(created);d3.setHours(16,15,0,0);deadline=d2<d3?d2:d3; }
+      else if(h<=16.75){ deadline=null; }
+      else{ var nd2=new Date(created);nd2.setHours(0,0,0,0);nd2.setDate(nd2.getDate()+1);while(nd2.getDay()<1||nd2.getDay()>5)nd2.setDate(nd2.getDate()+1);nd2.setHours(9,0,0,0);deadline=nd2; }
+      cancelSimulation = deadline ? (now<=deadline ? {canCancel:true, deadline:deadline} : {canCancel:false, deadline:deadline}) : {canCancel:false, deadline:null};
     }
 
     // Step 3: classificazione AI
@@ -10408,15 +10407,33 @@ function openFilippoPanel(){
           istruzioni = /il cliente ha scelto la modalit.*ritiro da parte nostra/i.test(txt2)
             ? 'Il chatbot ha indicato che il cliente ha scelto il ritiro da parte nostra. Conferma che organizzeremo il ritiro BRT e che al ricevimento verrà creato un credito al netto di 8€ di gestione reso.'
             : 'Spiega procedura reso standard: entro 14 giorni, spese a carico cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, prodotti integri e non aperti. NON proporre il ritiro da parte nostra.';
-        else if(/annull/i.test(txt2))
-          istruzioni = 'Verifica condizioni annullamento e rispondi se possibile o non possibile.';
+        else if(/annull/i.test(txt2)){
+          if(cancelSimulation && cancelSimulation.canCancel){
+            istruzioni = 'Il sistema ha verificato che l\'ordine È ANCORA ANNULLABILE. '+
+              'Rispondi al cliente confermando che procediamo con l\'annullamento dell\'ordine e che non verrà spedito. '+
+              'Se era pagato con carta/PayPal precisa che il rimborso arriva in 3-5 giorni lavorativi. '+
+              'Se era in contrassegno non c\'è nulla da rimborsare. '+
+              'NON menzionare orari, scadenze, regole interne o l\'ora di visualizzazione del messaggio. '+
+              'Sii breve, cordiale e diretto.';
+          } else if(cancelSimulation && !cancelSimulation.canCancel){
+            istruzioni = 'Il sistema ha verificato che l\'ordine NON È PIÙ ANNULLABILE. '+
+              'Rispondi al cliente spiegando semplicemente che purtroppo l\'ordine è già stato elaborato dal magazzino e non è più possibile annullarlo. '+
+              'Indica che potrà effettuare un reso al ricevimento del pacco. '+
+              'NON menzionare orari, scadenze, calcoli o regole interne. Il cliente non deve sapere a che ora è stato aperto il messaggio o quando era la scadenza. '+
+              'Sii breve, cordiale e diretto.';
+          } else {
+            istruzioni = 'Il sistema non ha potuto verificare automaticamente le condizioni di annullamento (manca data ordine o ordine non trovato). '+
+              'Rispondi al cliente che stiamo verificando e lo contatteremo a breve. NON menzionare orari o calcoli interni.';
+          }
+        }
         else if(/prodotto sbagliato.*ricevu|prodotto errato|spediz.*errat/i.test(txt2))
           istruzioni = 'Chiedi: 1) descrizione prodotto ricevuto per errore, 2) foto scatola con etichetta BRT (JPG), 3) foto busta capsule (JPG). NON promettere rimborsi.';
         else
           istruzioni = 'Gestisci la richiesta chiedendo le informazioni necessarie senza promettere compensazioni economiche.';
       }
 
-      var sysPrompt = getAISystemPrompt()+'\n\nMODALITÀ AUTO-RISPOSTA:\n'+istruzioni+'\n\nREGOLA ASSOLUTA: NON promettere rimborsi, accrediti, crediti, compensazioni o sostituzioni.';
+      var nowStr = new Date().toLocaleString('it-IT', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      var sysPrompt = getAISystemPrompt()+'\n\nORA ATTUALE (momento in cui stai rispondendo al cliente): '+nowStr+'\nUsa SEMPRE questa come riferimento per calcoli di scadenze, NON l\'ora di arrivo del ticket.\n\nMODALITÀ AUTO-RISPOSTA:\n'+istruzioni+'\n\nREGOLA ASSOLUTA: NON promettere rimborsi, accrediti, crediti, compensazioni o sostituzioni.';
       var userMsg2 = 'Oggetto: '+subject+'\nDa: Cliente\nEmail: '+email+(orderInfo?'\n\nDati ordine:\n'+orderInfo:'')+'\n\nSTORICO:\n'+fullThread;
       try{
         var ar = await proxyFetch(PROXY+'/anthropic/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:500,system:sysPrompt,messages:[{role:'user',content:userMsg2}]})});
@@ -10443,14 +10460,14 @@ function openFilippoPanel(){
     if(/annull/i.test(subject+' '+message)){
       if(order){
         var isMarket2=(order.note_attributes||[]).some(function(a){return ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id'].includes(a.name);});
-        if(!isMarket2){
-          if(cancelSimulation&&cancelSimulation.canCancel){
-            azioni.push('✅ AZIONE SIMULATA: Annullamento ordine '+order.name+' su Shopify con rimborso automatico (scadenza era '+cancelSimulation.deadline.toLocaleString('it-IT')+')');
-          } else if(cancelSimulation&&!cancelSimulation.canCancel){
-            azioni.push('❌ AZIONE NON ESEGUITA: Annullamento non possibile — fuori orario'+(cancelSimulation.deadline?' (scadenza era '+cancelSimulation.deadline.toLocaleString('it-IT')+')':'— fascia 16:01-16:45'));
+        if(cancelSimulation&&cancelSimulation.canCancel){
+          if(!isMarket2){
+            azioni.push('✅ AZIONE SIMULATA: Annullamento ordine '+order.name+' su Shopify con rimborso automatico (scadenza '+cancelSimulation.deadline.toLocaleString('it-IT')+')');
+          } else {
+            azioni.push('✅ ORDINE ANCORA ANNULLABILE — scadenza '+cancelSimulation.deadline.toLocaleString('it-IT')+'. Ordine marketplace: procedi manualmente ad annullare su Amazon/Temu/TikTok Seller');
           }
-        } else {
-          azioni.push('ℹ️ Ordine marketplace (Amazon/Temu/TikTok) — annullamento non gestito automaticamente');
+        } else if(cancelSimulation&&!cancelSimulation.canCancel){
+          azioni.push('❌ ORDINE NON PIÙ ANNULLABILE — fuori orario'+(cancelSimulation.deadline?' (scadenza era '+cancelSimulation.deadline.toLocaleString('it-IT')+')':' — fascia 16:01-16:45 non annullabile'));
         }
       } else {
         azioni.push('ℹ️ Annullamento richiesto ma nessun ordine trovato — necessaria azione manuale');
@@ -12316,7 +12333,36 @@ async function autoProcessTickets(freshTickets){
               ? 'Spiega procedura ritiro da parte nostra tramite BRT con decurtazione 8€ dal credito/rimborso. Il cliente conserva il prodotto nella scatola e attende istruzioni BRT.'
               : 'Spiega procedura reso: entro 14 giorni, spese a carico cliente, indirizzo YESPRESSO via Galileo Galilei 16 20054 Segrate, includere copia ordine, prodotti integri. NON offrire sostituzione né rimborso.';
           } else if(/annull/i.test(txt)){
-            istruzioni = 'Verifica condizioni annullamento e conferma. Se non annullabile spiega il motivo.';
+            // Calcolo deterministico in JS (usa ora attuale, non arrivo ticket)
+            var _cancelSim = null;
+            if(order && order.created_at){
+              var _cr = new Date(order.created_at);
+              var _nw = new Date();
+              var _hh = _cr.getHours()+_cr.getMinutes()/60;
+              var _dy = _cr.getDay();
+              var _iswd = _dy>=1&&_dy<=5;
+              var _dl = null;
+              if(!_iswd){ var _nd=new Date(_cr);_nd.setHours(0,0,0,0);_nd.setDate(_nd.getDate()+1);while(_nd.getDay()<1||_nd.getDay()>5)_nd.setDate(_nd.getDate()+1);_nd.setHours(9,0,0,0);_dl=_nd; }
+              else if(_hh<=9){ var _dd1=new Date(_cr);_dd1.setHours(9,0,0,0);_dl=_dd1; }
+              else if(_hh<=16){ var _dd2=new Date(_cr.getTime()+3600000);var _dd3=new Date(_cr);_dd3.setHours(16,15,0,0);_dl=_dd2<_dd3?_dd2:_dd3; }
+              else if(_hh<=16.75){ _dl=null; }
+              else{ var _nd2=new Date(_cr);_nd2.setHours(0,0,0,0);_nd2.setDate(_nd2.getDate()+1);while(_nd2.getDay()<1||_nd2.getDay()>5)_nd2.setDate(_nd2.getDate()+1);_nd2.setHours(9,0,0,0);_dl=_nd2; }
+              _cancelSim = _dl ? (_nw<=_dl?{canCancel:true}:{canCancel:false}) : {canCancel:false};
+            }
+            if(_cancelSim && _cancelSim.canCancel){
+              istruzioni = 'Il sistema ha verificato che l\'ordine È ANCORA ANNULLABILE. '+
+                'Rispondi al cliente confermando che procediamo con l\'annullamento e che l\'ordine non verrà spedito. '+
+                'Se pagato con carta/PayPal precisa che il rimborso arriva in 3-5 giorni lavorativi. Se contrassegno non c\'è nulla da rimborsare. '+
+                'NON menzionare orari, scadenze o regole interne. Sii breve e cordiale.';
+            } else if(_cancelSim && !_cancelSim.canCancel){
+              istruzioni = 'Il sistema ha verificato che l\'ordine NON È PIÙ ANNULLABILE. '+
+                'Rispondi al cliente spiegando che purtroppo l\'ordine è già stato elaborato dal magazzino e non è più possibile annullarlo. '+
+                'Indica che potrà effettuare un reso al ricevimento del pacco. '+
+                'NON menzionare orari, scadenze, calcoli o regole interne. Sii breve e cordiale.';
+            } else {
+              // Nessun dato ordine → azione manuale
+              _autoReplyStatus.needsAction.add(String(tid)); continue;
+            }
           } else if(/prodotto sbagliato.*ricevu|ricevu.*prodotto sbagliato|spediz.*errat|prodotto errato/i.test(txt)){
             istruzioni = 'Chiedi: 1) descrizione prodotto ricevuto per errore, 2) foto scatola con etichetta BRT (JPG), 3) foto busta capsule ricevute (JPG). NON promettere rimborsi. Questa è la PRIMA e UNICA risposta automatica.';
             isFirstReplyOnly = true;
@@ -12326,7 +12372,8 @@ async function autoProcessTickets(freshTickets){
         }
 
         // ══ STEP 3: GENERA RISPOSTA ══
-        var sysPrompt = getAISystemPrompt()+'\n\nMODALITÀ AUTO-RISPOSTA:\n'+istruzioni+'\n\nREGOLA ASSOLUTA: NON promettere rimborsi, accrediti, crediti, compensazioni o sostituzioni.';
+        var nowStr2 = new Date().toLocaleString('it-IT', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+        var sysPrompt = getAISystemPrompt()+'\n\nORA ATTUALE (momento in cui stai rispondendo al cliente): '+nowStr2+'\nUsa SEMPRE questa come riferimento per calcoli di scadenze, NON l\'ora di arrivo del ticket.\n\nMODALITÀ AUTO-RISPOSTA:\n'+istruzioni+'\n\nREGOLA ASSOLUTA: NON promettere rimborsi, accrediti, crediti, compensazioni o sostituzioni.';
         var userMsg = 'Oggetto: '+(fullTicket.subject||'')+'\nDa: '+((fullTicket.requester&&fullTicket.requester.name)||'Cliente')+'\nEmail: '+email+(orderInfo?'\n\nDati ordine: '+orderInfo:'')+'\n\nSTORICO:\n'+fullThread+'\n\nRispondi seguendo le istruzioni. NON fare promesse economiche.';
 
         var aiRes = await proxyFetch(PROXY+'/anthropic/v1/messages',{
