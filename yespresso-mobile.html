@@ -160,7 +160,8 @@ const state = {
   aiReply: '',
   aiSummary: '',
   searchQuery: '',
-  sending: false
+  sending: false,
+  quickReplies: []  // caricato da /quick-replies
 };
 
 // Status labels
@@ -201,6 +202,44 @@ function srcLabel(email){
   if(email.includes('tiktok')) return {lbl:'TikTok',cls:'m-badge-temu'};
   if(email.includes('brt.it')||email.includes('vasnoreply')) return {lbl:'BRT',cls:'m-badge-brt'};
   return {lbl:'Sito',cls:'m-badge-sito'};
+}
+
+// Carica le risposte rapide dal server
+async function loadQuickReplies(){
+  try{
+    const r = await fetch(PROXY+'/quick-replies');
+    if(!r.ok) return;
+    const data = await r.json();
+    if(Array.isArray(data)) state.quickReplies = data;
+    else if(data && Array.isArray(data.replies)) state.quickReplies = data.replies;
+    console.log('[QR mobile] caricate', state.quickReplies.length, 'risposte rapide');
+  }catch(e){ console.warn('[QR load]', e.message); }
+}
+
+// Rileva se è un ticket Temu post-vendita
+function isTemuTicket(t){
+  if(!t) return false;
+  const email = (t.requester && t.requester.email || '').toLowerCase();
+  const subj = (t.subject || '').toLowerCase();
+  // Email Temu (seller@orders.temu.com) + subject che indica post-vendita
+  if(!email.includes('orders.temu') && !email.includes('temu')) return false;
+  return subj.includes('post-vendita') || subj.includes('notifica di ticket') || subj.includes('richiesta');
+}
+
+// Estrae il numero ordine Temu dal ticket (se presente)
+function getTemuOrderNumber(t){
+  if(!t) return '';
+  const txt = ((t.subject||'') + ' ' + ((t.events||[]).map(e=>(e.message&&e.message.text)||'').join(' '))).substring(0,3000);
+  // Pattern PO-211-XXXXXXXXXXXXXXXXX
+  const m1 = txt.match(/PO[-\s](\d{3}-)?(\d{15,18})/i);
+  if(m1) return m1[0].replace(/\s/g,'').toUpperCase();
+  // Pattern parent_order_sn o note attributes su Shopify
+  const order = state.shopifyOrder;
+  if(order && order.note_attributes){
+    const attr = order.note_attributes.find(a => ['PARENT_ORDER_SN','Temu Order Id','temu_order_id','Marketplace Order Id'].includes(a.name));
+    if(attr) return attr.value;
+  }
+  return '';
 }
 
 function showToast(msg, type){
@@ -399,6 +438,8 @@ async function loadTickets(){
   // Carica in background la mappa giacenza-wa-sent (condivisa tra agenti)
   // Al completamento, re-renderizza la lista per far apparire i pallini verdi
   try { if(typeof window.loadGiacenzaWaSent === 'function') window.loadGiacenzaWaSent().then(function(){ try { renderList(); } catch(e){} }); } catch(e){}
+  // Carica risposte rapide Temu (usate in renderDetailTemu)
+  try { if(typeof loadQuickReplies === 'function') loadQuickReplies(); } catch(e){}
   try{
     // Carica ticket Open + Pending in parallelo
     const [openRes, pendingRes] = await Promise.all([
@@ -1264,6 +1305,1021 @@ window.chiudiGiacenzaTicket = async function(){
   }
 };
 
+// ═══ RENDER DETAIL TEMU ═══
+function renderDetailTemu(t, name, src){
+  const subj = t.subject || '';
+  const order = state.shopifyOrder;
+  const temuOrderNum = getTemuOrderNumber(t);
+
+  // Filtra risposte rapide Temu
+  const temuQRs = (state.quickReplies||[]).filter(q => {
+    const cats = Array.isArray(q.cats) && q.cats.length ? q.cats : [q.cat||''];
+    return cats.some(c => String(c).toUpperCase().includes('TEMU'));
+  });
+
+  // Ultimo messaggio cliente (per vedere cosa chiede)
+  const events = (t.events||[]).filter(e => e.message && e.message.text);
+  const custMsgs = events.filter(e => e.author && e.author.type !== 'agent');
+  const lastCustMsg = custMsgs.length ? custMsgs[custMsgs.length-1] : null;
+  const lastMsgText = lastCustMsg ? lastCustMsg.message.text : '(nessun messaggio)';
+  const lastMsgTime = lastCustMsg ? timeAgo(lastCustMsg.date||lastCustMsg.createdAt) : '';
+
+  // Attachments ultimo messaggio
+  const attachments = [];
+  if(lastCustMsg){
+    const msgAtts = Array.isArray(lastCustMsg.message.attachments) ? lastCustMsg.message.attachments : [];
+    const evAtts = Array.isArray(lastCustMsg.attachments) ? lastCustMsg.attachments : [];
+    [...msgAtts, ...evAtts].forEach(a => {
+      const url = a.url || a.href || '';
+      const ct = (a.contentType||a.type||a.mimeType||'').toLowerCase();
+      if(url && (ct.startsWith('image/') || /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url))){
+        attachments.push({url, name: a.name||a.filename||'foto'});
+      }
+    });
+  }
+  window._currentAttachments = attachments;
+
+  // Box ordine Shopify + Temu
+  let orderBox = '';
+  if(order){
+    const shopifyAdminUrl = 'https://admin.shopify.com/store/yespresso-1/orders/'+order.id;
+    orderBox += '<div class="m-order-box">';
+    orderBox += '<div class="m-order-card" style="display:flex;align-items:center;justify-content:space-between">';
+    orderBox += '<div>';
+    orderBox += '<div class="m-order-label">Ordine Yespresso</div>';
+    orderBox += '<div class="m-order-value">'+h(order.name||'#'+order.id)+'</div>';
+    orderBox += '</div>';
+    orderBox += '<a href="'+h(shopifyAdminUrl)+'" target="_blank" style="background:#1a73e8;color:#fff;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:500;text-decoration:none">🛍 Shopify ↗</a>';
+    orderBox += '</div></div>';
+  }
+
+  // Link Temu Seller Central
+  let temuSellerUrl = 'https://seller-eu.temu.com/orders';
+  if(temuOrderNum){
+    // Estrai solo la parte numerica lunga (parent_order_sn)
+    const m = temuOrderNum.match(/\d{15,}/);
+    if(m) temuSellerUrl = 'https://seller-eu.temu.com/order-detail.html?parent_order_sn='+m[0];
+  }
+
+  // Attachments thumbnails
+  const attachHtml = attachments.length ?
+    '<div class="m-attach">'+attachments.map((a,i) =>
+      '<div class="m-attach-thumb" onclick="openImageViewer('+i+')">'+
+        '<img src="'+h(a.url)+'" alt="foto" loading="lazy">'+
+        '<div class="m-attach-count">'+(i+1)+'/'+attachments.length+'</div>'+
+      '</div>'
+    ).join('')+'</div>' : '';
+
+  // Pannello Temu
+  let html = '<div class="m-detail-header">'+
+    '<button class="m-back" onclick="backToList()">←</button>'+
+    '<div class="m-detail-title">'+
+      '<div class="m-detail-name">'+h(name)+'</div>'+
+      '<div class="m-detail-sub">🟠 Temu · '+h(subj.substring(0,60))+'</div>'+
+    '</div>'+
+  '</div>';
+
+  html += '<div class="m-content">';
+  html += orderBox;
+
+  // Banner Temu post-vendita
+  html += '<div style="background:#fff8f0;border:1.5px solid #ff6600;border-radius:10px;padding:14px;margin-bottom:12px">';
+  html += '<div style="font-size:13px;font-weight:700;color:#cc4400;margin-bottom:4px">⚠️ Post-vendita Temu</div>';
+  if(temuOrderNum){
+    html += '<div style="font-size:11px;color:#9a3412;margin-bottom:10px">Ordine Temu: <span style="font-family:monospace;font-weight:600">'+h(temuOrderNum)+'</span></div>';
+  }
+  html += '<div style="font-size:11px;color:#9a3412;margin-bottom:10px;line-height:1.4">'+
+          '<strong>⚠ NON rispondere come cliente.</strong> Copia la risposta e usala su Temu Seller Central.</div>';
+  html += '<a href="'+h(temuSellerUrl)+'" target="_blank" style="display:block;background:#ff6600;color:#fff;padding:11px;border-radius:8px;font-size:12px;font-weight:700;text-align:center;text-decoration:none">🟠 Apri Temu Seller Central ↗</a>';
+  html += '</div>';
+
+  // Ultimo messaggio cliente
+  html += '<div class="m-lastmsg">'+
+    '<div class="m-lastmsg-label">'+
+      '<span>Ultimo messaggio'+(lastMsgTime?' · '+h(lastMsgTime):'')+'</span>'+
+    '</div>'+
+    '<div class="m-lastmsg-text">'+h(lastMsgText)+'</div>'+
+    attachHtml+
+  '</div>';
+
+  // Griglia pulsanti risposte rapide Temu
+  if(temuQRs.length){
+    window._temuQRMobile = window._temuQRMobile || {};
+    html += '<div style="margin-top:14px">';
+    html += '<div style="font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:8px">📋 Risposte rapide (tocca per copiare)</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">';
+    temuQRs.forEach((q,i) => {
+      const qid = 'tqrm_'+i;
+      window._temuQRMobile[qid] = q.body;
+      const label = (q.name||'').replace(/TEMU\s*-\s*/i,'').trim();
+      html += '<button onclick="copyTemuQRMobile(\''+qid+'\')" '+
+              'style="background:#fff;border:1.5px solid #ff6600;color:#1a1a2e;padding:12px 8px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;text-align:center;line-height:1.25;min-height:54px">'+
+              h(label)+'</button>';
+    });
+    html += '</div>';
+    html += '</div>';
+  } else {
+    html += '<div style="margin-top:14px;padding:10px;background:#f8f9fc;border-radius:8px;text-align:center;font-size:11px;color:#888">Nessuna risposta rapida Temu configurata.<br>Puoi caricarle da desktop.</div>';
+  }
+
+  html += '</div>'; // chiude m-content
+
+  // Footer
+  html += '<div class="m-footer">'+
+    '<button class="m-footer-btn" onclick="backToList()">Indietro</button>'+
+    '<select id="temu-status-m" style="padding:8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;font-family:inherit">'+
+      '<option value="solved" selected>Solved</option>'+
+      '<option value="pending">Pending</option>'+
+      '<option value="open">Non cambiare</option>'+
+    '</select>'+
+    '<button onclick="submitTemuMobile()" style="flex:1;background:#ff6600;color:#fff;border:none;border-radius:8px;padding:12px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">🚀 Submit</button>'+
+  '</div>';
+
+  $('app').innerHTML = html;
+}
+
+// Copia testo risposta Temu in clipboard + toast
+window.copyTemuQRMobile = function(qid){
+  const text = (window._temuQRMobile||{})[qid] || '';
+  if(!text){ showToast('Risposta non trovata','error'); return; }
+  // Copia in clipboard (metodo moderno + fallback)
+  const doCopy = function(){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((res,rej) => {
+      try{
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        res();
+      }catch(e){ rej(e); }
+    });
+  };
+  doCopy().then(function(){
+    showToast('✓ Risposta copiata. Incollala su Temu Seller Central','success');
+  }).catch(function(e){
+    showToast('Errore copia: '+e.message,'error');
+  });
+};
+
+// Submit ticket Temu (solo cambio stato, non invia risposta al cliente)
+window.submitTemuMobile = async function(){
+  const t = state.currentTicket;
+  if(!t) return;
+  const sel = document.getElementById('temu-status-m');
+  const newStatus = sel ? sel.value : '';
+  if(!newStatus || newStatus === 'open'){
+    showToast('Nessuna azione','info');
+    return;
+  }
+  const tid = t.ID || t.id;
+  try{
+    await hdFetch('/tickets/'+tid, {method:'PATCH', body: JSON.stringify({status:newStatus})});
+    t.status = newStatus;
+    showToast('✓ Ticket aggiornato: '+newStatus,'success');
+    setTimeout(()=>{
+      state.view='list';
+      state.currentTicket=null;
+      state.tickets = state.tickets.filter(tk => (tk.ID||tk.id) !== tid);
+      renderList();
+    },500);
+  }catch(e){
+    showToast('Errore: '+e.message,'error');
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// PARSER PAYPAL (identico al desktop)
+// ═══════════════════════════════════════════════════════════════════
+// Copia ID transazione in clipboard (mobile)
+window.copyPayPalTxIdMobile = function(txId){
+  if(!txId) return;
+  const doCopy = navigator.clipboard && navigator.clipboard.writeText
+    ? navigator.clipboard.writeText(txId)
+    : Promise.resolve();
+  doCopy.then(()=>showToast('✓ ID transazione copiato','success')).catch(e=>showToast('Errore: '+e.message,'error'));
+};
+
+// Cerca ordine Shopify tramite PayPal Transaction ID (mobile)
+async function findShopifyOrderByTxIdMobile(txId){
+  if(!txId) return null;
+  try{
+    const d = await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(txId));
+    if(d && d.orders && d.orders.length){
+      // Verifica match nei note_attributes
+      for(const o of d.orders){
+        const na = o.note_attributes || [];
+        for(const attr of na){
+          if(attr.value && String(attr.value).includes(txId)) return o;
+        }
+      }
+      // Verifica nelle transazioni (se disponibile l'API)
+      for(const o of d.orders){
+        if(o.gateway === 'paypal' || (o.payment_gateway_names||[]).includes('paypal')){
+          try{
+            const tr = await shopifyGet('orders/'+o.id+'/transactions.json');
+            if(tr && tr.transactions){
+              for(const tx of tr.transactions){
+                if(tx.receipt && JSON.stringify(tx.receipt).includes(txId)) return o;
+                if(tx.authorization && String(tx.authorization).includes(txId)) return o;
+              }
+            }
+          }catch(e){}
+        }
+      }
+      // Fallback: primo risultato restituito da Shopify
+      return d.orders[0];
+    }
+  }catch(e){ console.warn('[PayPal txId search mobile]', e.message); }
+  return null;
+}
+
+// Handler click bottone cerca ordine (mobile)
+window.cercaOrdineDaPayPalTxMobile = async function(uid, txId){
+  const box = document.getElementById('pp-order-search-'+uid);
+  if(!box) return;
+  box.innerHTML = '<span style="color:#888;font-size:11px">🔍 Ricerca in corso...</span>';
+  try{
+    const order = await findShopifyOrderByTxIdMobile(txId);
+    if(order){
+      const orderName = order.name || ('#'+order.order_number);
+      const adminUrl = 'https://admin.shopify.com/store/yespresso-1/orders/'+order.id;
+      box.innerHTML =
+        '<a href="'+adminUrl+'" target="_blank" style="color:#1a73e8;text-decoration:none;font-weight:600">'+h(orderName)+' ↗</a>'+
+        ' <span style="color:#16a34a;font-size:10px;margin-left:4px">✓</span>';
+      // Salva l'ordine nel state per uso futuro
+      state.shopifyOrder = order;
+    } else {
+      box.innerHTML =
+        '<span style="color:#991b1b;font-size:11px">❌ Non trovato</span>'+
+        ' <button onclick="cercaOrdineDaPayPalTxMobile(\''+uid+'\',\''+txId+'\')" style="background:transparent;border:none;color:#1a73e8;font-size:11px;cursor:pointer;text-decoration:underline">Riprova</button>';
+    }
+  }catch(e){
+    box.innerHTML =
+      '<span style="color:#991b1b;font-size:11px">⚠ '+h(e.message||'errore')+'</span>'+
+      ' <button onclick="cercaOrdineDaPayPalTxMobile(\''+uid+'\',\''+txId+'\')" style="background:transparent;border:none;color:#1a73e8;font-size:11px;cursor:pointer;text-decoration:underline">Riprova</button>';
+  }
+};
+
+function parsePayPalEmail(text){
+  if(!text) return null;
+  // Strip HTML (le email PayPal arrivano come HTML)
+  let rawT = text;
+  if(/<\/?(?:td|tr|table|body|html|div|p|br|span)\b/i.test(rawT)){
+    rawT = rawT.replace(/<style[^>]*>[\s\S]*?<\/style>/gi,'')
+               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,'')
+               .replace(/<br\s*\/?>/gi,'\n')
+               .replace(/<\/?(p|div|tr|h[1-6])\b[^>]*>/gi,'\n')
+               .replace(/<[^>]+>/g,' ')
+               .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
+               .replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+               .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  }
+  const t = rawT.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
+  const out = {};
+
+  if(/hai\s+ricevuto\s+una\s+nuova\s+richiesta/i.test(t)) out.tipo = 'Nuova richiesta';
+  else if(/come\s+procede\s+la\s+pratica/i.test(t)) out.tipo = 'Promemoria pratica';
+  else if(/caso\s+chiuso/i.test(t)) out.tipo = 'Caso chiuso';
+  else if(/richiesta\s+di\s+rimborso/i.test(t)) out.tipo = 'Richiesta rimborso';
+  else if(/ha\s+aperto\s+una\s+controversia/i.test(t)) out.tipo = 'Controversia aperta';
+  else out.tipo = 'Comunicazione PayPal';
+
+  const clienteMatch = t.match(/([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+)+)\s+(?:ha\s+riscontrato|ha\s+aperto|segnala)/);
+  if(clienteMatch) out.cliente = clienteMatch[1].trim();
+
+  const casoMatch = t.match(/(?:caso|controversia|case|pratica)\s*(?:N[.°]|n\.?|ID:?|#)?\s*([A-Z]{2}-[A-Z]-\d{3,}[-\s\d]*)/i);
+  if(casoMatch) out.idCaso = casoMatch[1].trim().replace(/\s+/g,'');
+  if(!out.idCaso){
+    const altCaso = t.match(/\b(PP-[A-Z]-[\dA-Z-]+)\b/i);
+    if(altCaso) out.idCaso = altCaso[1];
+  }
+
+  // ID Transazione PayPal: 17 char alfanumerici (es. 0MT78249S8228660K)
+  let txMatch = t.match(/ID\s+(?:transazione|pagamento|operazione)[:\s]+([A-Z0-9]{15,20})/i);
+  if(!txMatch) txMatch = t.match(/(?:numero\s+transazione|transaction\s+ID)[:\s]+([A-Z0-9]{15,20})/i);
+  if(!txMatch){
+    const allMatches = t.match(/\b([0-9][A-Z][A-Z0-9]{15}|[A-Z0-9]{17})\b/g);
+    if(allMatches){
+      for(const m of allMatches){
+        if(/[A-Z]/.test(m) && /[0-9]/.test(m) && !(out.idCaso||'').includes(m)){
+          out.idTransazione = m;
+          break;
+        }
+      }
+    }
+  }
+  if(txMatch && !out.idTransazione) out.idTransazione = txMatch[1];
+
+  const importoMatch = t.match(/(?:€|EUR)\s*([\d.,]+)/);
+  if(importoMatch) out.importo = importoMatch[1];
+  const dataTxMatch = t.match(/Data\s+(?:della\s+)?transazione[:\s]+(\d{1,2}\s+[a-z]+\s+\d{4})/i);
+  if(dataTxMatch) out.dataTransazione = dataTxMatch[1].trim();
+  const scadenzaMatch = t.match(/(?:rispondi|risponda|hai|devi\s+rispondere)\s+(?:entro|al\s+più\s+tardi)\s+(?:il\s+|entro\s+il\s+)?(\d{1,2}[\s\/\.-]\s*[a-z0-9]+[\s\/\.-]\s*\d{2,4})/i);
+  if(scadenzaMatch) out.scadenza = scadenzaMatch[1].trim();
+
+  const motiviMap = [
+    {re:/oggetto\s+non\s+ricevuto|non\s+ho\s+ricevuto/i, label:'Oggetto non ricevuto'},
+    {re:/oggetto\s+(?:molto\s+)?diverso|non\s+corrispondente|non\s+conforme/i, label:'Oggetto non conforme'},
+    {re:/transazione\s+non\s+autorizzata|pagamento\s+non\s+autorizzato/i, label:'Transazione non autorizzata'},
+    {re:/rimborso\s+non\s+(?:effettuato|ricevuto)/i, label:'Rimborso non ricevuto'},
+    {re:/articolo\s+danneggiato|prodotto\s+danneggiato/i, label:'Articolo danneggiato'},
+    {re:/duplicato|addebit[oa]\s+duplicat/i, label:'Addebito duplicato'}
+  ];
+  for(const m of motiviMap){
+    if(m.re.test(t)){ out.motivoTipo = m.label; break; }
+  }
+
+  const ordMatch = t.match(/(?:ordine|order|rif\.?|n[.°])\s*[#:]?\s*(\d{6,10})/i);
+  if(ordMatch) out.ordineShopify = ordMatch[1];
+
+  const linkMatch = t.match(/https?:\/\/(?:www\.)?paypal\.com[^\s<>"']+/i);
+  if(linkMatch) out.linkPayPal = linkMatch[0];
+
+  if(!out.idCaso && !out.idTransazione && !out.cliente && !out.importo) return null;
+  return out;
+}
+
+// Rileva se il ticket è una comunicazione PayPal
+function detectPayPal(ticket){
+  if(!ticket || !ticket.events) return null;
+  for(let i = ticket.events.length-1; i >= 0; i--){
+    const ev = ticket.events[i];
+    const txt = ev && ev.message && ev.message.text;
+    if(!txt) continue;
+    if(/paypal/i.test(txt) && (
+       /hai\s+ricevuto\s+una\s+nuova\s+richiesta/i.test(txt) ||
+       /come\s+procede\s+la\s+pratica/i.test(txt) ||
+       /richiesta\s+di\s+rimborso/i.test(txt) ||
+       /ha\s+aperto\s+una\s+controversia/i.test(txt) ||
+       /caso\s+chiuso/i.test(txt) ||
+       /ID\s+transazione/i.test(txt) ||
+       /ID\s+controversia/i.test(txt))){
+      try{
+        const p = parsePayPalEmail(txt);
+        if(p) return {data: p, rawText: txt};
+      }catch(e){}
+    }
+  }
+  return null;
+}
+
+// ═══ RENDER DETAIL PAYPAL ═══
+function renderDetailPayPal(t, name, src, paypal){
+  const p = paypal.data;
+  const rawText = paypal.rawText;
+  const esc = h;
+  const isUrgent = /richiesta|controversia|promemoria|rimborso/i.test(p.tipo||'');
+  const bgColor = isUrgent ? '#fff7ed' : '#eff6ff';
+  const borderColor = isUrgent ? '#fed7aa' : '#bfdbfe';
+  const textColor = isUrgent ? '#9a3412' : '#1a4b8f';
+
+  const uid = 'pp_m_'+Math.random().toString(36).slice(2);
+  window._paypalRaw = window._paypalRaw || {};
+  window._paypalRaw[uid] = rawText;
+
+  let html = '<div class="m-detail-header">'+
+    '<button class="m-back" onclick="backToList()">←</button>'+
+    '<div class="m-detail-title">'+
+      '<div class="m-detail-name">🅿️ '+esc(p.tipo||'PayPal')+'</div>'+
+      '<div class="m-detail-sub">PayPal · '+esc((t.subject||'').substring(0,60))+'</div>'+
+    '</div>'+
+  '</div>';
+
+  html += '<div class="m-content">';
+  html += '<div style="background:'+bgColor+';border:1.5px solid '+borderColor+';border-radius:10px;padding:12px;margin-bottom:10px">';
+
+  if(p.scadenza){
+    html += '<div style="background:#fee2e2;color:#991b1b;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:600;margin-bottom:10px;text-align:center">⏰ Scadenza risposta: '+esc(p.scadenza)+'</div>';
+  }
+  if(p.motivoTipo){
+    html += '<div style="background:#fff;border-radius:6px;padding:10px 12px;margin-bottom:10px;border-left:3px solid '+textColor+'">';
+    html += '<div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:3px">Motivo disputa</div>';
+    html += '<div style="font-size:13px;color:#1a1a2e;font-weight:600">'+esc(p.motivoTipo)+'</div>';
+    html += '</div>';
+  }
+
+  html += '<div style="background:#fff;border-radius:6px;padding:10px 12px;font-size:12px">';
+  html += '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px">';
+  if(p.cliente){
+    html += '<div style="color:#888">Cliente</div>';
+    html += '<div style="color:#1a1a2e;font-weight:600">'+esc(p.cliente)+'</div>';
+  }
+  if(p.idCaso){
+    html += '<div style="color:#888">ID Caso</div>';
+    html += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace;font-size:11px">'+esc(p.idCaso)+'</div>';
+  }
+  if(p.idTransazione){
+    html += '<div style="color:#888">ID Transazione</div>';
+    html += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace;font-size:11px;display:flex;align-items:center;gap:6px">'+
+            '<span>'+esc(p.idTransazione)+'</span>'+
+            '<button onclick="copyPayPalTxIdMobile(\''+esc(p.idTransazione)+'\')" style="background:transparent;border:none;cursor:pointer;padding:0;font-size:12px" title="Copia">📋</button>'+
+            '</div>';
+  }
+  if(p.importo){
+    html += '<div style="color:#888">Importo</div>';
+    html += '<div style="color:#991b1b;font-weight:700">€ '+esc(p.importo)+'</div>';
+  }
+  if(p.ordineShopify){
+    html += '<div style="color:#888">Ordine</div>';
+    html += '<div><a href="https://admin.shopify.com/store/yespresso-1/orders?query='+esc(p.ordineShopify)+'" target="_blank" style="color:#1a73e8;text-decoration:none;font-weight:600">#'+esc(p.ordineShopify)+' ↗</a></div>';
+  } else if(p.idTransazione){
+    html += '<div style="color:#888">Ordine</div>';
+    html += '<div id="pp-order-search-'+uid+'">'+
+            '<button onclick="cercaOrdineDaPayPalTxMobile(\''+uid+'\',\''+esc(p.idTransazione)+'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit">🔍 Cerca ordine</button>'+
+            '</div>';
+  }
+  html += '</div></div>';
+  html += '</div>';
+
+  const linkPp = p.linkPayPal || 'https://www.paypal.com/resolutioncenter';
+  html += '<a href="'+esc(linkPp)+'" target="_blank" style="display:block;background:#0070ba;color:#fff;padding:12px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:10px">🅿️ Gestisci su PayPal ↗</a>';
+
+  html += '<div style="text-align:center;margin-bottom:10px">';
+  html += '<button onclick="togglePayPalRawMobile(\''+uid+'\')" style="background:transparent;border:none;color:'+textColor+';font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email PayPal originale</button>';
+  html += '<div id="pp-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:10px;font-family:monospace;font-size:10px;white-space:pre-wrap;color:#555;max-height:300px;overflow-y:auto;margin-top:8px;text-align:left">'+esc(rawText)+'</div>';
+  html += '</div>';
+
+  html += '</div>';
+  html += '<div class="m-footer">'+
+    '<button class="m-footer-btn" onclick="backToList()">Indietro</button>'+
+    '<button class="m-footer-btn-success" onclick="chiudiGiacenzaTicket()">✓ Chiudi ticket</button>'+
+  '</div>';
+
+  $('app').innerHTML = html;
+}
+
+window.togglePayPalRawMobile = function(uid){
+  const el = document.getElementById('pp-raw-'+uid);
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP D — Helpers azioni ordine
+// ═══════════════════════════════════════════════════════════════════
+
+// Indicatore colorato in base alle ore trascorse dall'ordine
+// 🟢 < 6h | 🟡 < 24h | 🟠 < 72h | 🔴 >= 72h
+function orderAgeIndicator(createdAt){
+  if(!createdAt) return {emoji:'⚪', label:'?', color:'#888'};
+  const ms = Date.now() - new Date(createdAt).getTime();
+  const hours = ms / (1000*60*60);
+  if(hours < 6) return {emoji:'🟢', label:Math.round(hours*10)/10+'h fa', color:'#16a34a', canEasyCancel:true};
+  if(hours < 24) return {emoji:'🟡', label:Math.round(hours)+'h fa', color:'#ca8a04', canEasyCancel:true};
+  if(hours < 72) return {emoji:'🟠', label:Math.round(hours/24*10)/10+'g fa', color:'#ea580c', canEasyCancel:false};
+  const days = Math.round(hours/24);
+  return {emoji:'🔴', label:days+'g fa', color:'#dc2626', canEasyCancel:false};
+}
+
+// Stato spedizione dell'ordine
+function orderShipStatus(order){
+  if(!order) return {key:'none', canCancel:false, canEditAddress:false, canContactBrt:false};
+  if(order.cancelled_at) return {key:'cancelled', canCancel:false, canEditAddress:false, canContactBrt:false};
+  const ff = (order.fulfillments||[])[0];
+  const ss = ff && ff.shipment_status || '';
+  const fs = order.fulfillment_status || '';
+  // Non ancora spedito: si può annullare + modificare indirizzo su YesClo
+  if(!ff || fs !== 'fulfilled'){
+    return {key:'not_shipped', canCancel:true, canEditAddress:true, canContactBrt:false};
+  }
+  // Spedito ma non consegnato: modificare indirizzo via BRT
+  if(ss === 'delivered') return {key:'delivered', canCancel:false, canEditAddress:false, canContactBrt:false};
+  if(ss === 'failure') return {key:'failure', canCancel:false, canEditAddress:true, canContactBrt:true};
+  if(ss === 'ready_for_pickup') return {key:'ready_for_pickup', canCancel:false, canEditAddress:false, canContactBrt:true};
+  return {key:'shipped', canCancel:false, canEditAddress:true, canContactBrt:true};
+}
+
+// Categoria prodotto → aliquota IVA
+// 10%: ginseng, orzo, cioccolata, nocciolino, tè limone, cortado, cappuccino
+// 22%: resto (caffè, macchine, accessori)
+function getIvaRateForLine(lineItem){
+  if(!lineItem) return 22;
+  const title = String(lineItem.title||'').toLowerCase();
+  const sku = String(lineItem.sku||'').toLowerCase();
+  const kw10 = ['ginseng','orzo','cioccolat','nocciolino','te limone','tè limone','cortado','cappuccino'];
+  for(const k of kw10){ if(title.includes(k) || sku.includes(k)) return 10; }
+  return 22;
+}
+
+// Calcola totale rimborso per N pezzi
+function calcRefundAmount(order, quantity){
+  if(!order || !order.line_items || !order.line_items.length) return {inc:'0.00', exc:'0.00', rate:22};
+  // Usa il line_item principale (il primo)
+  const li = order.line_items[0];
+  const unitPrice = parseFloat(li.price||'0');
+  const rate = getIvaRateForLine(li);
+  const totalInc = unitPrice * (parseInt(quantity)||1);
+  const totalExc = totalInc / (1 + rate/100);
+  return {
+    inc: totalInc.toFixed(2).replace('.',','),
+    exc: totalExc.toFixed(2).replace('.',','),
+    rate: rate
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP D — Modal azioni
+// ═══════════════════════════════════════════════════════════════════
+
+// Modal Annulla ordine
+window.openAnnullaModal = function(){
+  const order = state.shopifyOrder;
+  if(!order){ showToast('Ordine non disponibile','error'); return; }
+  const age = orderAgeIndicator(order.created_at);
+  const orderDate = new Date(order.created_at);
+  const dateStr = orderDate.toLocaleDateString('it-IT')+' '+orderDate.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:flex-end;';
+  bg.onclick = function(e){ if(e.target===bg) document.body.removeChild(bg); };
+
+  bg.innerHTML =
+    '<div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:18px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">'+
+      '<div style="text-align:center;width:40px;height:4px;background:#d1d5db;border-radius:2px;margin:0 auto 14px"></div>'+
+      '<div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px">❌ Annulla ordine</div>'+
+
+      '<div style="background:#f8f9fc;border-radius:8px;padding:12px;margin-bottom:14px">'+
+        '<div style="font-size:11px;color:#888;margin-bottom:4px">Ordine '+h(order.name||'')+'</div>'+
+        '<div style="font-size:13px;color:#1a1a2e">'+age.emoji+' Creato '+h(age.label)+' · '+h(dateStr)+'</div>'+
+      '</div>'+
+
+      (age.canEasyCancel
+        ? '<div style="background:#dcfce7;color:#166534;padding:10px 12px;border-radius:8px;font-size:12px;margin-bottom:14px">✅ Ordine recente: annullamento semplice, il cliente NON verrà addebitato (o rimborsato in 3-5gg).</div>'
+        : '<div style="background:#fef3c7;color:#92400e;padding:10px 12px;border-radius:8px;font-size:12px;margin-bottom:14px">⚠️ Ordine più vecchio di 24h: verifica che NON sia già stato preparato/spedito prima di annullare.</div>')+
+
+      '<div style="font-size:11px;color:#888;margin-bottom:6px">Motivo annullamento</div>'+
+      '<select id="annulla-reason" style="width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;font-family:inherit">'+
+        '<option value="customer">Richiesta del cliente</option>'+
+        '<option value="inventory">Prodotto non disponibile</option>'+
+        '<option value="fraud">Possibile frode</option>'+
+        '<option value="declined">Pagamento rifiutato</option>'+
+        '<option value="other">Altro</option>'+
+      '</select>'+
+
+      '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#1a1a2e;margin-bottom:14px">'+
+        '<input type="checkbox" id="annulla-refund" checked style="width:18px;height:18px">'+
+        'Rimborsa pagamento (se già incassato)'+
+      '</label>'+
+
+      '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#1a1a2e;margin-bottom:18px">'+
+        '<input type="checkbox" id="annulla-notify" checked style="width:18px;height:18px">'+
+        'Notifica cliente via email Shopify'+
+      '</label>'+
+
+      '<div style="display:flex;gap:10px">'+
+        '<button onclick="this.closest(\'.modal-bg\')?this.closest(\'.modal-bg\').remove():document.body.removeChild(this.closest(\'div[style*=fixed]\').parentNode||this.parentNode)" style="flex:1;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#6b7280;font-size:13px;font-family:inherit;cursor:pointer">Annulla</button>'+
+        '<button onclick="confermaAnnullamento()" style="flex:2;padding:12px;border:none;border-radius:8px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer">❌ Conferma annullamento</button>'+
+      '</div>'+
+
+      '<div style="margin-top:10px;text-align:center">'+
+        '<a href="https://admin.shopify.com/store/yespresso-1/orders/'+order.id+'" target="_blank" style="color:#1a73e8;font-size:11px;text-decoration:underline">Apri su Shopify (gestione manuale) ↗</a>'+
+      '</div>'+
+    '</div>';
+
+  bg.className = 'modal-bg';
+  document.body.appendChild(bg);
+};
+
+window.confermaAnnullamento = async function(){
+  const order = state.shopifyOrder;
+  if(!order) return;
+  const reason = document.getElementById('annulla-reason').value;
+  const refund = document.getElementById('annulla-refund').checked;
+  const notify = document.getElementById('annulla-notify').checked;
+
+  if(!confirm('Confermare annullamento ordine '+(order.name||'')+'?\n\nRimborso: '+(refund?'SÌ':'NO')+'\nNotifica: '+(notify?'SÌ':'NO'))) return;
+
+  try{
+    const body = { reason, email: notify, refund };
+    const r = await fetch(PROXY+'/shopify/cancel-order/'+order.id, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Proxy-Token':PROXY_TOKEN},
+      body: JSON.stringify(body)
+    });
+    const result = await r.json();
+    if(r.ok && result.ok){
+      showToast('✓ Ordine annullato','success');
+      // Chiudi modal
+      const modal = document.querySelector('.modal-bg');
+      if(modal) modal.remove();
+      // Ricarica ordine
+      setTimeout(()=>{ if(state.currentTicket) openTicket(state.currentTicket.ID||state.currentTicket.id); }, 800);
+    } else {
+      throw new Error(result.error||'Errore annullamento');
+    }
+  }catch(e){
+    // Fallback: apri Shopify manuale
+    if(confirm('Errore annullamento via API: '+e.message+'\n\nVuoi aprire Shopify per annullare manualmente?')){
+      window.open('https://admin.shopify.com/store/yespresso-1/orders/'+order.id, '_blank');
+    }
+  }
+};
+
+// Modal Modifica indirizzo
+window.openEditAddressModal = function(){
+  const order = state.shopifyOrder;
+  if(!order){ showToast('Ordine non disponibile','error'); return; }
+  const ship = orderShipStatus(order);
+  const sa = order.shipping_address || {};
+
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:flex-end;';
+  bg.className = 'modal-bg';
+  bg.onclick = function(e){ if(e.target===bg) document.body.removeChild(bg); };
+
+  let body =
+    '<div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:18px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">'+
+      '<div style="text-align:center;width:40px;height:4px;background:#d1d5db;border-radius:2px;margin:0 auto 14px"></div>'+
+      '<div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px">📍 Modifica indirizzo</div>'+
+
+      '<div style="background:#f8f9fc;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#1a1a2e;line-height:1.5">'+
+        '<div style="font-size:10px;color:#888;margin-bottom:3px;font-weight:600;text-transform:uppercase">Indirizzo attuale</div>'+
+        h(sa.name||'')+(sa.company?'<br>'+h(sa.company):'')+
+        (sa.address1?'<br>'+h(sa.address1):'')+
+        (sa.address2?', '+h(sa.address2):'')+
+        (sa.zip?'<br>'+h(sa.zip)+' ':'')+h(sa.city||'')+(sa.province_code?' ('+h(sa.province_code)+')':'')+
+        (sa.phone?'<br>📞 '+h(sa.phone):'')+
+      '</div>';
+
+  if(ship.key === 'not_shipped'){
+    body +=
+      '<div style="background:#dcfce7;color:#166534;padding:10px 12px;border-radius:8px;font-size:12px;margin-bottom:14px">✅ Ordine non ancora spedito: puoi modificare direttamente su YesClo.</div>'+
+      '<a href="https://yesclo.yespresso.it/admin/orders/edit/'+order.id+'" target="_blank" style="display:block;background:#6d28d9;color:#fff;padding:12px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:10px">🛠 Modifica su YesClo ↗</a>'+
+      '<a href="https://admin.shopify.com/store/yespresso-1/orders/'+order.id+'" target="_blank" style="display:block;background:#fff;color:#1a73e8;padding:10px;border:1px solid #1a73e8;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;text-align:center">Shopify Admin ↗</a>';
+  } else {
+    body +=
+      '<div style="background:#fef3c7;color:#92400e;padding:10px 12px;border-radius:8px;font-size:12px;margin-bottom:14px">⚠️ Ordine già spedito: per modificare l\'indirizzo bisogna contattare BRT.</div>'+
+      '<button onclick="openContattaBrtModal()" style="display:block;width:100%;background:#dc2626;color:#fff;padding:12px;border-radius:8px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:inherit;margin-bottom:10px">📞 Contatta BRT</button>';
+  }
+
+  body += '<button onclick="document.querySelector(\'.modal-bg\').remove()" style="display:block;width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#6b7280;font-size:12px;font-family:inherit;cursor:pointer">Chiudi</button>';
+  body += '</div>';
+
+  bg.innerHTML = body;
+  document.body.appendChild(bg);
+};
+
+// Modal Contatta BRT
+window.openContattaBrtModal = function(){
+  const order = state.shopifyOrder;
+  if(!order){ showToast('Ordine non disponibile','error'); return; }
+  const sa = order.shipping_address || {};
+  const ff = (order.fulfillments||[])[0];
+  const tn = ff && ff.tracking_number || '';
+  const tnClean = tn.replace(/^(2026|26)/,'');
+  const brtUrl = tn ? 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn : '';
+
+  const textBrt = 'Buongiorno,\n\n'+
+    'in riferimento alla spedizione '+(tnClean||tn)+' (ordine '+(order.name||'')+') vi chiedo gentilmente:\n\n'+
+    '[SELEZIONA MOTIVO]\n\n'+
+    'Dati destinatario:\n'+
+    (sa.name||'')+'\n'+
+    (sa.address1||'')+(sa.address2?' '+sa.address2:'')+'\n'+
+    (sa.zip||'')+' '+(sa.city||'')+(sa.province_code?' ('+sa.province_code+')':'')+'\n'+
+    (sa.phone?'Tel: '+sa.phone:'')+'\n\n'+
+    'Grazie.\nYespresso';
+
+  // Rimuovi modal esistente
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:flex-end;';
+  bg.onclick = function(e){ if(e.target===bg) bg.remove(); };
+
+  bg.innerHTML =
+    '<div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:18px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">'+
+      '<div style="text-align:center;width:40px;height:4px;background:#d1d5db;border-radius:2px;margin:0 auto 14px"></div>'+
+      '<div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px">📞 Contatta BRT</div>'+
+
+      '<div style="font-size:11px;color:#888;margin-bottom:6px">Tracking</div>'+
+      '<div style="background:#f8f9fc;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">'+
+        '<span>'+h(tnClean||tn||'—')+'</span>'+
+        (brtUrl?'<a href="'+h(brtUrl)+'" target="_blank" style="color:#c2410c;font-size:11px">Traccia ↗</a>':'')+
+      '</div>'+
+
+      '<div style="font-size:11px;color:#888;margin-bottom:6px">Template email (seleziona motivo)</div>'+
+      '<textarea id="brt-text" rows="12" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:monospace;margin-bottom:12px;box-sizing:border-box">'+h(textBrt)+'</textarea>'+
+
+      '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'+
+        '<button onclick="brtInsertMotivo(\'modifica indirizzo\')" style="background:#eff6ff;color:#1a73e8;border:1px solid #bfdbfe;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit">Modifica indirizzo</button>'+
+        '<button onclick="brtInsertMotivo(\'contattare il destinatario prima della consegna\')" style="background:#eff6ff;color:#1a73e8;border:1px solid #bfdbfe;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit">Contattare destinatario</button>'+
+        '<button onclick="brtInsertMotivo(\'fornire aggiornamento sulla consegna\')" style="background:#eff6ff;color:#1a73e8;border:1px solid #bfdbfe;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit">Aggiornamento</button>'+
+        '<button onclick="brtInsertMotivo(\'riconsegnare il pacco (tentativi falliti)\')" style="background:#eff6ff;color:#1a73e8;border:1px solid #bfdbfe;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit">Riconsegna</button>'+
+      '</div>'+
+
+      '<div style="display:flex;gap:10px;margin-bottom:10px">'+
+        '<button onclick="copyBrtText()" style="flex:1;padding:11px;background:#1a73e8;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer">📋 Copia testo</button>'+
+        '<a href="mailto:servizioclienti@brt.it?subject=Richiesta%20spedizione%20'+encodeURIComponent(tn||'')+'" style="flex:1;padding:11px;background:#dc2626;color:#fff;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;text-align:center">✉ Invia Email</a>'+
+      '</div>'+
+
+      '<button onclick="document.querySelector(\'.modal-bg\').remove()" style="display:block;width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#6b7280;font-size:12px;font-family:inherit;cursor:pointer">Chiudi</button>'+
+    '</div>';
+
+  document.body.appendChild(bg);
+};
+
+window.brtInsertMotivo = function(motivo){
+  const ta = document.getElementById('brt-text');
+  if(!ta) return;
+  ta.value = ta.value.replace('[SELEZIONA MOTIVO]','di '+motivo);
+  showToast('Motivo inserito','success');
+};
+
+window.copyBrtText = function(){
+  const ta = document.getElementById('brt-text');
+  if(!ta) return;
+  const text = ta.value;
+  const doCopy = navigator.clipboard && navigator.clipboard.writeText
+    ? navigator.clipboard.writeText(text)
+    : (function(){ ta.select(); document.execCommand('copy'); return Promise.resolve(); })();
+  doCopy.then(()=>showToast('✓ Testo copiato','success')).catch(e=>showToast('Errore: '+e.message,'error'));
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP E — Box importi con IVA
+// ═══════════════════════════════════════════════════════════════════
+function renderImportiBoxMobile(){
+  const order = state.shopifyOrder;
+  if(!order) return '';
+  const email = (state.currentTicket && state.currentTicket.requester && state.currentTicket.requester.email || '').toLowerCase();
+  const isAmazon = email.includes('marketplace.amazon');
+  const lineItem = (order.line_items||[])[0];
+  if(!lineItem) return '';
+  const unitPrice = parseFloat(lineItem.price||'0');
+  const totalQty = lineItem.quantity || 1;
+  const rate = getIvaRateForLine(lineItem);
+  const totalInc = unitPrice * totalQty;
+  const totalExc = totalInc / (1 + rate/100);
+
+  const qtyField = 'imp-qty-'+Math.random().toString(36).slice(2,6);
+
+  let html = '<div style="background:#f8f9fc;border-radius:10px;padding:12px;margin-bottom:10px">';
+  html += '<div style="font-size:11px;font-weight:600;color:#1a1a2e;margin-bottom:8px">💶 Calcolo rimborso ('+rate+'% IVA)</div>';
+  html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">';
+  html += '<label style="font-size:11px;color:#888">Quantità:</label>';
+  html += '<input type="number" id="'+qtyField+'" min="1" value="'+totalQty+'" style="width:60px;padding:6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;font-family:inherit" oninput="updateImportiMobile(\''+qtyField+'\',\''+lineItem.price+'\','+rate+')">';
+  html += '<span style="font-size:11px;color:#888">× € '+unitPrice.toFixed(2).replace('.',',')+'</span>';
+  html += '</div>';
+
+  // Credito sito (IVA incl) — verde
+  html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:10px;margin-bottom:'+(isAmazon?'8px':'0')+'">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+  html += '<div>';
+  html += '<div style="font-size:10px;color:#166534;font-weight:600;text-transform:uppercase">Credito sito / Rimborso</div>';
+  html += '<div style="font-size:16px;font-weight:700;color:#166534" id="imp-inc-'+qtyField+'">€ '+totalInc.toFixed(2).replace('.',',')+'</div>';
+  html += '<div style="font-size:9px;color:#166534">(IVA inclusa)</div>';
+  html += '</div>';
+  html += '<button onclick="copyImportoMobile(document.getElementById(\'imp-inc-'+qtyField+'\').textContent.replace(\'€ \',\'\').trim())" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">📋 Copia</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // Solo Amazon: mostra anche IVA esclusa (arancione)
+  if(isAmazon){
+    html += '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+    html += '<div>';
+    html += '<div style="font-size:10px;color:#9a3412;font-weight:600;text-transform:uppercase">Amazon IVA esclusa</div>';
+    html += '<div style="font-size:16px;font-weight:700;color:#9a3412" id="imp-exc-'+qtyField+'">€ '+totalExc.toFixed(2).replace('.',',')+'</div>';
+    html += '<div style="font-size:9px;color:#9a3412">(per rimborso su seller central)</div>';
+    html += '</div>';
+    html += '<button onclick="copyImportoMobile(document.getElementById(\'imp-exc-'+qtyField+'\').textContent.replace(\'€ \',\'\').trim())" style="background:#ea580c;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">📋 Copia</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+window.updateImportiMobile = function(qtyField, unitPriceStr, rate){
+  const qty = parseInt(document.getElementById(qtyField).value)||1;
+  const unitPrice = parseFloat(unitPriceStr);
+  const inc = unitPrice * qty;
+  const exc = inc / (1 + rate/100);
+  const incEl = document.getElementById('imp-inc-'+qtyField);
+  const excEl = document.getElementById('imp-exc-'+qtyField);
+  if(incEl) incEl.textContent = '€ '+inc.toFixed(2).replace('.',',');
+  if(excEl) excEl.textContent = '€ '+exc.toFixed(2).replace('.',',');
+};
+
+window.copyImportoMobile = function(val){
+  const doCopy = navigator.clipboard && navigator.clipboard.writeText
+    ? navigator.clipboard.writeText(val)
+    : Promise.resolve();
+  doCopy.then(()=>showToast('✓ Importo copiato: '+val,'success')).catch(e=>showToast('Errore: '+e.message,'error'));
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP D — Barra azioni ordine (bottoni contestuali)
+// ═══════════════════════════════════════════════════════════════════
+function renderOrderActionsMobile(){
+  const order = state.shopifyOrder;
+  if(!order) return '';
+  const ship = orderShipStatus(order);
+  const age = orderAgeIndicator(order.created_at);
+  const orderDate = new Date(order.created_at);
+  const dateStr = orderDate.toLocaleDateString('it-IT');
+
+  let html = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-bottom:10px">';
+  html += '<div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:8px">⚙ Azioni ordine · '+h(dateStr)+' '+age.emoji+' '+h(age.label)+'</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+
+  // Annulla (solo se non spedito)
+  if(ship.canCancel){
+    html += '<button onclick="openAnnullaModal()" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer">❌ Annulla</button>';
+  } else {
+    html += '<button disabled style="background:#f8f9fc;color:#ccc;border:1px solid #e5e7eb;border-radius:8px;padding:10px;font-size:12px;font-family:inherit">❌ Annulla N/D</button>';
+  }
+
+  // Modifica indirizzo
+  if(ship.canEditAddress){
+    html += '<button onclick="openEditAddressModal()" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;border-radius:8px;padding:10px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer">📍 Indirizzo</button>';
+  } else {
+    html += '<button disabled style="background:#f8f9fc;color:#ccc;border:1px solid #e5e7eb;border-radius:8px;padding:10px;font-size:12px;font-family:inherit">📍 Indirizzo N/D</button>';
+  }
+
+  // Contatta BRT (solo se spedito)
+  if(ship.canContactBrt){
+    html += '<button onclick="openContattaBrtModal()" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer">📞 Contatta BRT</button>';
+  } else {
+    html += '<button disabled style="background:#f8f9fc;color:#ccc;border:1px solid #e5e7eb;border-radius:8px;padding:10px;font-size:12px;font-family:inherit">📞 BRT N/D</button>';
+  }
+
+  // Ritiro BRT (sempre disponibile se c'è tracking)
+  const ff = (order.fulfillments||[])[0];
+  const tn = ff && ff.tracking_number || '';
+  if(tn){
+    const brtUrl = 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn;
+    html += '<a href="'+h(brtUrl)+'" target="_blank" style="background:#eff6ff;color:#1a4b8f;border:1px solid #bfdbfe;border-radius:8px;padding:10px;font-size:12px;font-weight:600;font-family:inherit;text-decoration:none;text-align:center">📦 Traccia BRT</a>';
+  } else {
+    html += '<button disabled style="background:#f8f9fc;color:#ccc;border:1px solid #e5e7eb;border-radius:8px;padding:10px;font-size:12px;font-family:inherit">📦 No tracking</button>';
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP C — Stati speciali BRT (Pronto al ritiro, Problema spedizione)
+// ═══════════════════════════════════════════════════════════════════
+function renderBrtStatusBoxMobile(){
+  const order = state.shopifyOrder;
+  if(!order) return '';
+  const ff = (order.fulfillments||[])[0];
+  if(!ff) return '';
+  const ss = ff.shipment_status || '';
+  const tn = ff.tracking_number || '';
+  const tnClean = tn.replace(/^(2026|26)/,'');
+  const brtUrl = tn ? 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+tn : '';
+
+  // Pronto al ritiro: suggerisce messaggio con punto ritiro
+  if(ss === 'ready_for_pickup'){
+    const sa = order.shipping_address||{};
+    const nomePrimo = (sa.first_name||sa.name||'').split(' ')[0];
+    const msg = 'Gentile '+(nomePrimo||'Cliente')+',\n\n'+
+      'il suo ordine '+(order.name||'')+' è pronto per il ritiro presso il Fermo!Point BRT.\n\n'+
+      'Le consigliamo di ritirarlo entro i giorni indicati per evitare che il pacco rientri in sede.\n\n'+
+      'Tracking: '+tnClean+'\n'+brtUrl+'\n\n'+
+      'Cordiali saluti\nYespresso';
+    let html = '<div style="background:#fef3c7;border:1.5px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:10px">';
+    html += '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">📬 Pacco pronto al ritiro</div>';
+    html += '<div style="font-size:11px;color:#92400e;margin-bottom:10px;line-height:1.4">Il pacco è disponibile al Fermo!Point. Invia messaggio di sollecito ritiro al cliente.</div>';
+    html += '<button onclick="usaMessaggioReadyMobile(\''+btoa(unescape(encodeURIComponent(msg)))+'\')" style="display:block;width:100%;background:#ca8a04;color:#fff;padding:10px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit">📝 Usa messaggio sollecito ritiro</button>';
+    html += '</div>';
+    return html;
+  }
+
+  // Problema spedizione: suggerisce 6 risposte preconfezionate
+  if(ss === 'failure'){
+    const problemi = [
+      {label:'Indirizzo non trovato', msg:'L\'indirizzo risulta non trovato dal corriere. Può confermarci l\'indirizzo esatto con riferimenti (civico, scala, citofono)?'},
+      {label:'Destinatario assente', msg:'Il corriere non ha trovato nessuno all\'indirizzo. Preferisce una riconsegna in un giorno/orario specifico, o il ritiro presso un Fermo!Point vicino?'},
+      {label:'Accesso limitato', msg:'Il corriere segnala difficoltà di accesso all\'indirizzo. Possiamo programmare una consegna alternativa o il ritiro in Fermo!Point?'},
+      {label:'Rifiutato', msg:'Il pacco è stato rifiutato al momento della consegna. Può comunicarci il motivo del rifiuto e se desidera comunque ricevere il prodotto?'},
+      {label:'Furto/Danneggiamento', msg:'Il corriere segnala un problema con il pacco. Stiamo verificando con BRT e la terremo aggiornata appena avremo dettagli.'},
+      {label:'Contattare destinatario', msg:'Il corriere ha bisogno di contattarla per la consegna. Può confermarci un numero di telefono raggiungibile?'}
+    ];
+    let html = '<div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:10px;padding:12px;margin-bottom:10px">';
+    html += '<div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:8px">❌ Problema spedizione</div>';
+    html += '<div style="font-size:11px;color:#991b1b;margin-bottom:10px">Il corriere ha segnalato un problema. Seleziona la risposta più adatta:</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+    problemi.forEach((p,i) => {
+      const encMsg = btoa(unescape(encodeURIComponent(p.msg)));
+      html += '<button onclick="usaMessaggioProblemaMobile(\''+encMsg+'\')" style="background:#fff;border:1px solid #fca5a5;color:#991b1b;border-radius:6px;padding:8px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;line-height:1.3">'+h(p.label)+'</button>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  return '';
+}
+
+window.usaMessaggioReadyMobile = function(encMsg){
+  const msg = decodeURIComponent(escape(atob(encMsg)));
+  state.aiReply = msg;
+  renderDetail();
+};
+
+window.usaMessaggioProblemaMobile = function(encMsg){
+  const msg = decodeURIComponent(escape(atob(encMsg)));
+  // Prepend saluto
+  const sa = state.shopifyOrder && state.shopifyOrder.shipping_address;
+  const nomePrimo = sa && (sa.first_name || (sa.name||'').split(' ')[0]) || '';
+  const full = 'Gentile '+(nomePrimo||'Cliente')+',\n\n'+msg+'\n\nCordiali saluti\nYespresso';
+  state.aiReply = full;
+  renderDetail();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP F — Modal Suggerimenti per rigenerare AI
+// ═══════════════════════════════════════════════════════════════════
+window.reformulateReply = function(){
+  const current = document.getElementById('reply-textarea');
+  if(!current || !current.value){ showToast('Nessuna risposta da riformulare','error'); return; }
+  const currentText = current.value;
+
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:flex-end;';
+  bg.onclick = function(e){ if(e.target===bg) bg.remove(); };
+
+  const chips = [
+    {label:'📝 Più breve', hint:'Rendi la risposta più breve e concisa, max 4 righe'},
+    {label:'🎩 Più formale', hint:'Usa un tono più formale e professionale'},
+    {label:'😊 Più amichevole', hint:'Usa un tono più caldo e amichevole'},
+    {label:'🙏 Con scuse', hint:'Aggiungi scuse sincere per il disservizio'},
+    {label:'✂️ Senza preamboli', hint:'Rimuovi tutti i preamboli e vai diretto al punto'},
+    {label:'📋 Con elenco', hint:'Riformula usando un elenco puntato chiaro'}
+  ];
+
+  bg.innerHTML =
+    '<div style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:18px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">'+
+      '<div style="text-align:center;width:40px;height:4px;background:#d1d5db;border-radius:2px;margin:0 auto 14px"></div>'+
+      '<div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px">💡 Riformula risposta</div>'+
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
+        chips.map(c => '<button onclick="applySuggestionMobile(\''+encodeURIComponent(c.hint)+'\')" style="background:#f8f9fc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;line-height:1.3">'+h(c.label)+'</button>').join('')+
+      '</div>'+
+
+      '<div style="font-size:11px;color:#888;margin-bottom:6px">O scrivi tu le istruzioni:</div>'+
+      '<textarea id="suggestion-custom" rows="3" placeholder="Es: rendi più breve e togli le scuse" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:inherit;margin-bottom:12px;box-sizing:border-box"></textarea>'+
+
+      '<div style="display:flex;gap:10px">'+
+        '<button onclick="document.querySelector(\'.modal-bg\').remove()" style="flex:1;padding:11px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#6b7280;font-size:12px;font-family:inherit;cursor:pointer">Annulla</button>'+
+        '<button onclick="applyCustomSuggestionMobile()" style="flex:2;padding:11px;border:none;border-radius:8px;background:#6d28d9;color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">✨ Riformula</button>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(bg);
+};
+
+window.applySuggestionMobile = async function(encHint){
+  const hint = decodeURIComponent(encHint);
+  await runReformulation(hint);
+};
+window.applyCustomSuggestionMobile = async function(){
+  const ta = document.getElementById('suggestion-custom');
+  const hint = ta ? ta.value.trim() : '';
+  if(!hint){ showToast('Inserisci le istruzioni','error'); return; }
+  await runReformulation(hint);
+};
+
+async function runReformulation(hint){
+  const current = document.getElementById('reply-textarea');
+  if(!current) return;
+  const currentText = current.value;
+  document.querySelector('.modal-bg')?.remove();
+  showToast('✨ Riformulazione in corso...','info');
+  try{
+    const r = await fetch(PROXY+'/anthropic/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Proxy-Token':PROXY_TOKEN},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-5',
+        max_tokens:1000,
+        system:'Sei un assistente che riformula email di customer service in italiano. Restituisci SOLO la risposta riformulata, senza commenti o spiegazioni.',
+        messages:[{role:'user',content:'Riformula questa risposta seguendo l\'istruzione: "'+hint+'"\n\nRISPOSTA ATTUALE:\n'+currentText}]
+      })
+    });
+    const data = await r.json();
+    const newText = data.content && data.content[0] && data.content[0].text || '';
+    if(newText){
+      state.aiReply = newText.trim();
+      renderDetail();
+      showToast('✓ Risposta riformulata','success');
+    } else {
+      throw new Error('Risposta vuota');
+    }
+  }catch(e){
+    showToast('Errore: '+e.message,'error');
+  }
+}
+
 // ═══ RENDER DETAIL ═══
 function renderDetail(){
   const t=state.currentTicketFull||state.currentTicket;
@@ -1280,6 +2336,20 @@ function renderDetail(){
   // Se è giacenza, renderizza il pannello specifico
   if(giacenza){
     renderDetailGiacenza(t, name, src, giacenza);
+    return;
+  }
+
+  // Rilevazione Temu: mostra pannello con pulsanti risposte rapide
+  if(isTemuTicket(t)){
+    renderDetailTemu(t, name, src);
+    return;
+  }
+
+  // Rilevazione PayPal: email da assistenza@paypal.it con contenuto disputa/controversia
+  const isPayPal = email.includes('paypal');
+  const paypal = isPayPal ? detectPayPal(state.currentTicketFull||t) : null;
+  if(paypal){
+    renderDetailPayPal(t, name, src, paypal);
     return;
   }
 
@@ -1399,6 +2469,9 @@ function renderDetail(){
     '</div>'+
     '<div class="m-content">'+
       (order?orderBox:'')+
+      (order?renderOrderActionsMobile():'')+
+      (order?renderBrtStatusBoxMobile():'')+
+      (order?renderImportiBoxMobile():'')+
       summaryHtml+
       lastMsgBox+
     '</div>'+

@@ -3138,7 +3138,20 @@ window.toggleGiacenzaRaw = function(uid){
 // ═══════════════════════════════════════════════════════════════════
 function parsePayPalEmail(text){
   if(!text) return null;
-  const t = text.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
+  // Strip HTML se il messaggio contiene tag (le email PayPal sono HTML)
+  let rawT = text;
+  if(/<\/?(?:td|tr|table|body|html|div|p|br|span)\b/i.test(rawT)){
+    // Rimuovi tag HTML mantenendo il testo
+    rawT = rawT.replace(/<style[^>]*>[\s\S]*?<\/style>/gi,'')
+               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,'')
+               .replace(/<br\s*\/?>/gi,'\n')
+               .replace(/<\/?(p|div|tr|h[1-6])\b[^>]*>/gi,'\n')
+               .replace(/<[^>]+>/g,' ')
+               .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
+               .replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+               .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  }
+  const t = rawT.replace(/\t/g,' ').replace(/[ \u00A0]{2,}/g,' ');
   const out = {};
 
   // Tipo email (usiamo per titolo box)
@@ -3153,18 +3166,38 @@ function parsePayPalEmail(text){
   const clienteMatch = t.match(/([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+)+)\s+(?:ha\s+riscontrato|ha\s+aperto|segnala)/);
   if(clienteMatch) out.cliente = clienteMatch[1].trim();
 
-  // ID Caso / ID Controversia (es. "Caso N. PP-R-XXX-YYYY" oppure "Case ID: PP-D-XXXXX")
+  // ID Caso / ID Controversia: pattern principale PP-X-XXXXXXXX
   const casoMatch = t.match(/(?:caso|controversia|case|pratica)\s*(?:N[.°]|n\.?|ID:?|#)?\s*([A-Z]{2}-[A-Z]-\d{3,}[-\s\d]*)/i);
   if(casoMatch) out.idCaso = casoMatch[1].trim().replace(/\s+/g,'');
-  // Fallback: pattern generico PayPal ID (PP-X-XXXXXXXX oppure lunga sequenza alfanumerica)
+  // Fallback: pattern generico PayPal ID
   if(!out.idCaso){
     const altCaso = t.match(/\b(PP-[A-Z]-[\dA-Z-]+)\b/i);
     if(altCaso) out.idCaso = altCaso[1];
   }
 
-  // ID Transazione (es. "ID transazione: 1AB23456CD789012E")
-  const txMatch = t.match(/ID\s+(?:transazione|pagamento|operazione)[:\s]+([A-Z0-9]{10,20})/i);
-  if(txMatch) out.idTransazione = txMatch[1];
+  // ID Transazione PayPal: 17 caratteri alfanumerici (maiuscole+cifre)
+  // Es. "0MT78249S8228660K" oppure "1AB23456CD789012E"
+  // Pattern 1: esplicito con "ID transazione:"
+  let txMatch = t.match(/ID\s+(?:transazione|pagamento|operazione)[:\s]+([A-Z0-9]{15,20})/i);
+  if(!txMatch){
+    // Pattern 2: "Numero transazione" o "Transaction ID"
+    txMatch = t.match(/(?:numero\s+transazione|transaction\s+ID)[:\s]+([A-Z0-9]{15,20})/i);
+  }
+  if(!txMatch){
+    // Pattern 3: PayPal transaction ID standalone (17 char, almeno una lettera)
+    // Match solo se NON è già un codice caso/pratica
+    const allMatches = t.match(/\b([0-9][A-Z][A-Z0-9]{15}|[A-Z0-9]{17})\b/g);
+    if(allMatches){
+      for(const m of allMatches){
+        // Deve contenere sia lettere che numeri (esclude stringhe solo numeriche)
+        if(/[A-Z]/.test(m) && /[0-9]/.test(m) && !out.idCaso?.includes(m)){
+          out.idTransazione = m;
+          break;
+        }
+      }
+    }
+  }
+  if(txMatch && !out.idTransazione) out.idTransazione = txMatch[1];
 
   // Importo (es. "€50,00 EUR" oppure "EUR 50,00")
   const importoMatch = t.match(/(?:€|EUR)\s*([\d.,]+)/);
@@ -3177,6 +3210,7 @@ function parsePayPalEmail(text){
   // Data scadenza risposta (es. "Rispondi entro il 30 aprile 2026")
   const scadenzaMatch = t.match(/(?:rispondi|risponda|hai|devi\s+rispondere)\s+(?:entro|al\s+più\s+tardi)\s+(?:il\s+|entro\s+il\s+)?(\d{1,2}[\s\/\.-]\s*[a-z0-9]+[\s\/\.-]\s*\d{2,4})/i);
   if(scadenzaMatch) out.scadenza = scadenzaMatch[1].trim();
+
 
   // Motivo disputa (keyword comuni)
   const motiviMap = [
@@ -3202,6 +3236,47 @@ function parsePayPalEmail(text){
   // Almeno un dato utile deve esserci
   if(!out.idCaso && !out.idTransazione && !out.cliente && !out.importo) return null;
   return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Cerca ordine Shopify tramite PayPal Transaction ID
+// Strategia:
+//   1. Prima prova a cercare nelle note_attributes dell'ordine (campo personalizzato)
+//   2. Fallback: query testuale Shopify
+// ═══════════════════════════════════════════════════════════════════
+async function findShopifyOrderByTxId(txId){
+  if(!txId) return null;
+  try{
+    // Shopify supporta query testuale che include anche transaction_id
+    const d = await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(txId));
+    if(d && d.orders && d.orders.length){
+      // Filtra: verifica che l'ordine abbia davvero quella transazione
+      for(const o of d.orders){
+        // Check nei note_attributes (custom fields)
+        const na = o.note_attributes || [];
+        for(const attr of na){
+          if(attr.value && String(attr.value).includes(txId)) return o;
+        }
+        // Check nel payment_id o transaction_id (se presente)
+        if(o.gateway === 'paypal' || o.payment_gateway_names?.includes('paypal')){
+          // Carica le transazioni dell'ordine per verifica precisa
+          try{
+            const tr = await shopifyGet('orders/'+o.id+'/transactions.json');
+            if(tr && tr.transactions){
+              for(const tx of tr.transactions){
+                if(tx.receipt && JSON.stringify(tx.receipt).includes(txId)) return o;
+                if(tx.authorization && String(tx.authorization).includes(txId)) return o;
+              }
+            }
+          }catch(e){}
+        }
+      }
+      // Se nessuna verifica precisa ha funzionato ma Shopify ha restituito risultati,
+      // restituisci il primo (Shopify l'ha trovato per una ragione)
+      return d.orders[0];
+    }
+  }catch(e){ console.warn('[PayPal txId search]', e.message); }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3250,7 +3325,10 @@ function renderPayPalPanel(p, origText){
   }
   if(p.idTransazione){
     h += '<div style="color:#888">ID Transazione</div>';
-    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">'+esc(p.idTransazione)+'</div>';
+    h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace;display:flex;align-items:center;gap:8px">'+
+         '<span>'+esc(p.idTransazione)+'</span>'+
+         '<button onclick="copyPayPalTxId(\''+esc(p.idTransazione)+'\')" style="background:transparent;border:none;cursor:pointer;font-size:13px;padding:0" title="Copia">📋</button>'+
+         '</div>';
   }
   if(p.importo){
     h += '<div style="color:#888">Importo</div>';
@@ -3265,6 +3343,12 @@ function renderPayPalPanel(p, origText){
     h += '<div style="color:#1a1a2e;font-weight:600">'+
       '<a href="https://admin.shopify.com/store/yespresso-1/orders?query='+esc(p.ordineShopify)+'" target="_blank" style="color:#1a73e8;text-decoration:none">#'+esc(p.ordineShopify)+' ↗</a>'+
     '</div>';
+  } else if(p.idTransazione){
+    // Ordine non trovato nel testo ma c'è ID transazione → permettiamo di cercarlo
+    h += '<div style="color:#888">Ordine Yespresso</div>';
+    h += '<div id="pp-order-search-'+uid+'" style="color:#1a1a2e">'+
+         '<button onclick="cercaOrdineDaPayPalTx(\''+uid+'\',\''+esc(p.idTransazione)+'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">🔍 Cerca ordine da ID transazione</button>'+
+         '</div>';
   }
   h += '</div>';
 
@@ -3292,6 +3376,49 @@ window.togglePaypalRaw = function(uid){
   const el = document.getElementById('paypal-raw-'+uid);
   if(!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+// Copia ID transazione in clipboard
+window.copyPayPalTxId = function(txId){
+  if(!txId) return;
+  const doCopy = navigator.clipboard && navigator.clipboard.writeText
+    ? navigator.clipboard.writeText(txId)
+    : Promise.resolve();
+  doCopy.then(function(){
+    // Toast semplice
+    const toast = document.createElement('div');
+    toast.textContent = '✓ ID transazione copiato: '+txId;
+    toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 2px 10px rgba(0,0,0,0.2)';
+    document.body.appendChild(toast);
+    setTimeout(()=>toast.remove(), 2000);
+  });
+};
+
+// Cerca ordine Shopify partendo dall'ID transazione PayPal
+window.cercaOrdineDaPayPalTx = async function(uid, txId){
+  const box = document.getElementById('pp-order-search-'+uid);
+  if(!box) return;
+  box.innerHTML = '<span style="color:#888;font-size:11px">🔍 Ricerca in corso...</span>';
+  try{
+    const order = await findShopifyOrderByTxId(txId);
+    if(order){
+      const orderName = order.name || ('#'+order.order_number);
+      const adminUrl = 'https://admin.shopify.com/store/yespresso-1/orders/'+order.id;
+      box.innerHTML =
+        '<a href="'+adminUrl+'" target="_blank" style="color:#1a73e8;text-decoration:none;font-weight:600">'+orderName+' ↗</a>'+
+        ' <span style="color:#16a34a;font-size:10px;margin-left:6px">✓ trovato</span>';
+      // Salva l'ordine nel contesto globale così il resto del sistema lo può usare
+      try{ window._lastShopifyOrder = order; }catch(e){}
+    } else {
+      box.innerHTML =
+        '<span style="color:#991b1b;font-size:11px">❌ Ordine non trovato</span>'+
+        ' <button onclick="cercaOrdineDaPayPalTx(\''+uid+'\',\''+txId+'\')" style="background:transparent;border:none;color:#1a73e8;font-size:11px;cursor:pointer;text-decoration:underline;margin-left:6px">Riprova</button>';
+    }
+  }catch(e){
+    box.innerHTML =
+      '<span style="color:#991b1b;font-size:11px">⚠ Errore: '+(e.message||'')+'</span>'+
+      ' <button onclick="cercaOrdineDaPayPalTx(\''+uid+'\',\''+txId+'\')" style="background:transparent;border:none;color:#1a73e8;font-size:11px;cursor:pointer;text-decoration:underline;margin-left:6px">Riprova</button>';
+  }
 };
 
 // Store globale dei dati giacenza per ciascun uid (necessario per i callback WhatsApp)
