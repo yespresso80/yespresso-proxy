@@ -19777,8 +19777,15 @@ function _fabOpenOrdineModal(opts){
         '<button onclick="document.getElementById(\'fab-new-ord-modal\').remove();window._fabModalClosedByUser=true;" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;padding:0 6px">×</button>'+
       '</div>'+
       '<div style="padding:16px 20px;overflow-y:auto;flex:1">'+
-        '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:6px">Fornitore</label>'+
-          '<div id="fab-ord-forn-sel" style="display:flex;gap:6px;flex-wrap:wrap">'+fornBtns+'</div></div>'+
+        // In modalità "piano" mostro solo il nome del fornitore (bloccato dalla selezione card).
+        // In modalità "manuale" mostro i bottoni di scelta fornitore.
+        (opts.mode==='piano'
+          ? '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Fornitore</label>'+
+              '<div style="display:inline-block;padding:6px 14px;background:#f5f3ff;border:1.5px solid #6d28d9;border-radius:8px;font-size:13px;font-weight:700;color:#6d28d9">\ud83c\udfe2 '+selectedForn+'</div>'+
+            '</div>'
+          : '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:6px">Fornitore</label>'+
+              '<div id="fab-ord-forn-sel" style="display:flex;gap:6px;flex-wrap:wrap">'+fornBtns+'</div></div>'
+        )+
         '<div style="display:flex;gap:14px;margin-bottom:14px">'+
           '<div style="flex:1"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Data ordine</label>'+
             '<input type="date" id="fab-ord-data-ord" value="'+dataOrdPre+'" style="width:100%;padding:6px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'+
