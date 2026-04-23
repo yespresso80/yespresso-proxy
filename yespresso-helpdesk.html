@@ -3388,6 +3388,17 @@ function renderPayPalPanel(p, origText){
   h += '<div id="paypal-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:#555;max-height:400px;overflow-y:auto;margin-top:10px">'+esc(origText||'')+'</div>';
 
   h += '</div>';
+
+  // Se c'è ID transazione ma nessun ordine → avvio AUTOMATICO della ricerca
+  // (senza che l'utente debba cliccare). La ricerca popolerà anche la sidebar.
+  if(p.idTransazione && !p.ordineShopify){
+    setTimeout(function(){
+      if(typeof window.cercaOrdineDaPayPalTx === 'function'){
+        try { window.cercaOrdineDaPayPalTx(uid, p.idTransazione); } catch(e){ console.warn('[PayPal auto-search]', e); }
+      }
+    }, 300);
+  }
+
   return h;
 }
 
