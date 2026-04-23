@@ -19489,6 +19489,418 @@ function renderFabPiano(body){
   body.innerHTML=html;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Piano Fabbisogno — selezione card + creazione ordine fornitore
+// ═══════════════════════════════════════════════════════════════════
+
+// Toggle selezione singola card del Piano Fabbisogno
+window.fabTogglePianoCard = function(cardEl){
+  if(!cardEl) return;
+  window._fabSelectedCards = window._fabSelectedCards || {};
+  var cardId = cardEl.id;
+  if(!cardId) return;
+  var chk = document.getElementById('chk_'+cardId);
+  var isSelected = !!window._fabSelectedCards[cardId];
+  if(isSelected){
+    delete window._fabSelectedCards[cardId];
+    if(chk) chk.innerHTML = '&#9744;';
+    cardEl.style.boxShadow = '';
+    cardEl.style.filter = '';
+  } else {
+    try {
+      var raw = cardEl.getAttribute('data-card');
+      window._fabSelectedCards[cardId] = raw ? JSON.parse(decodeURIComponent(raw)) : {id:cardId};
+    } catch(e){ window._fabSelectedCards[cardId] = {id:cardId}; }
+    if(chk) chk.innerHTML = '&#9745;';
+    cardEl.style.boxShadow = '0 0 0 3px rgba(109,40,217,.35)';
+    cardEl.style.filter = 'brightness(1.02)';
+  }
+};
+
+// Deseleziona tutte le card
+window.fabAnnullaSelezioneCard = function(){
+  window._fabSelectedCards = window._fabSelectedCards || {};
+  Object.keys(window._fabSelectedCards).forEach(function(cardId){
+    var el = document.getElementById(cardId);
+    if(el){
+      el.style.boxShadow = '';
+      el.style.filter = '';
+      var chk = document.getElementById('chk_'+cardId);
+      if(chk) chk.innerHTML = '&#9744;';
+    }
+  });
+  window._fabSelectedCards = {};
+};
+
+// Crea ordine fornitore partendo dalle card selezionate nel Piano Fabbisogno
+// Apre una modal PRE-COMPILATA per ogni fornitore, che l'utente può modificare
+// prima di confermare. Se più card hanno stesso fornitore+data di consegna
+// vengono unite; se le date sono diverse apre modal separate.
+window.fabCreaPianoOrdine = function(){
+  window._fabSelectedCards = window._fabSelectedCards || {};
+  var selected = Object.values(window._fabSelectedCards);
+  if(!selected.length){
+    alert('Seleziona almeno una card prima di creare un ordine.');
+    return;
+  }
+
+  // Raggruppa per FORNITORE. Ogni riga mantiene la sua data di consegna specifica.
+  // Se una stessa SKU compare in più card con date diverse → righe separate.
+  var gruppi = {};
+  selected.forEach(function(c){
+    var key = (c.fornitore||'—');
+    if(!gruppi[key]){
+      gruppi[key] = {
+        fornitore: c.fornitore||'—',
+        dataOrdine: c.dataOrdine||new Date().toISOString().substring(0,10),
+        urgente: !!c.urgente,
+        righe: []
+      };
+    }
+    if(c.dataOrdine && c.dataOrdine < gruppi[key].dataOrdine) gruppi[key].dataOrdine = c.dataOrdine;
+    if(c.urgente) gruppi[key].urgente = true;
+    (c.righe||[]).forEach(function(r){
+      // Stessa SKU + stessa data → somma; stessa SKU + data diversa → riga separata
+      var existing = gruppi[key].righe.find(function(rr){
+        var sameSku = (rr.sku_shopify && rr.sku_shopify===r.sku_shopify) ||
+                      (rr.sku && rr.sku===r.sku);
+        return sameSku && rr.dataConsegna === (c.dataConsegna||'');
+      });
+      if(existing){
+        existing.qty = (parseInt(existing.qty)||0) + (parseInt(r.qty)||0);
+      } else {
+        gruppi[key].righe.push({
+          sku_shopify: r.sku_shopify||'',
+          sku: r.sku||'',
+          qty: parseInt(r.qty)||0,
+          ms: r.ms||1,
+          dataConsegna: c.dataConsegna||'',
+          urgenteRiga: !!c.urgente
+        });
+      }
+    });
+  });
+
+  var gruppiArr = Object.values(gruppi);
+  if(!gruppiArr.length){ alert('Nessuna riga valida nelle card selezionate.'); return; }
+
+  // Deseleziona subito
+  window.fabAnnullaSelezioneCard();
+
+  var idx = 0;
+  function openNext(){
+    if(idx >= gruppiArr.length){
+      if(typeof renderFabTab === 'function'){
+        try{ renderFabTab('fabbisogno'); }catch(e){}
+      }
+      return;
+    }
+    var g = gruppiArr[idx++];
+    // Date distinte nelle righe
+    var dateCons = [...new Set(g.righe.map(function(r){return r.dataConsegna;}).filter(Boolean))].sort();
+    _fabOpenOrdineModal({
+      mode: 'piano',
+      fornitore: g.fornitore,
+      dataOrdine: g.dataOrdine,
+      dataConsegna: dateCons.length===1 ? dateCons[0] : '',
+      multiDate: dateCons.length > 1,
+      urgente: g.urgente,
+      prefilledRighe: g.righe,
+      onClose: openNext,
+      onSaved: openNext,
+      headerLabel: gruppiArr.length>1 ? 'Fornitore '+idx+'/'+gruppiArr.length+' — '+g.fornitore : null
+    });
+  }
+  openNext();
+};
+
+// Apre modal vuoto per inserire nuovo ordine fornitore manualmente
+window.fabNewOrdine = function(){
+  _fabOpenOrdineModal({ mode: 'new' });
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Modal unificato: usato sia da "+ Nuovo ordine" (vuoto) sia da
+// "Crea ordine" dal Piano Fabbisogno (pre-compilato e modificabile).
+// opts = { mode, fornitore, dataOrdine, dataConsegna, urgente,
+//          prefilledRighe: [{sku,sku_shopify,qty,ms}],
+//          onClose, onSaved, headerLabel }
+// ═══════════════════════════════════════════════════════════════════
+function _fabOpenOrdineModal(opts){
+  opts = opts || {};
+  if(typeof fabProducts === 'undefined' || !Array.isArray(fabProducts) || !fabProducts.length){
+    alert('Nessun prodotto disponibile. Carica la struttura prodotti.');
+    if(opts.onClose) opts.onClose();
+    return;
+  }
+
+  var fornitori = [...new Set(fabProducts.map(function(p){return p.fornitore;}).filter(Boolean))];
+  if(!fornitori.length){
+    alert('Nessun fornitore definito nei prodotti.');
+    if(opts.onClose) opts.onClose();
+    return;
+  }
+
+  var fornSel = opts.fornitore && fornitori.indexOf(opts.fornitore)>=0 ? opts.fornitore : fornitori[0];
+  var today = new Date().toISOString().substring(0,10);
+  var dataOrdPre = opts.dataOrdine || today;
+  var dataConsPre = opts.dataConsegna || '';
+  var urgente = !!opts.urgente;
+  var multiDate = !!opts.multiDate;
+  // prefilledRows: array di {sku, sku_shopify, qty, ms, dataConsegna, urgenteRiga}
+  // Se multiDate=true: ogni entry è una riga distinta (stessa SKU può comparire più volte con date diverse).
+  // Se multiDate=false: somma per SKU
+  var prefilledSingleMap = {}; // per non-multiDate
+  var prefilledMultiRows = (opts.prefilledRighe||[]).slice(); // per multiDate
+  (opts.prefilledRighe||[]).forEach(function(r){
+    var k = (r.sku||r.sku_shopify||'').toUpperCase();
+    if(k) prefilledSingleMap[k] = (parseInt(r.qty)||0) + (prefilledSingleMap[k]||0);
+  });
+
+  var modal = document.createElement('div');
+  modal.id = 'fab-new-ord-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+
+  function buildContent(selectedForn){
+    var prodsForn = fabProducts.filter(function(p){return p.fornitore===selectedForn;});
+    var fornBtns = fornitori.map(function(f){
+      var act = f===selectedForn;
+      return '<button data-forn="'+f.replace(/"/g,'&quot;')+'" class="fab-ord-forn-btn" style="padding:5px 12px;border:1.5px solid '+(act?'#6d28d9':'#e0e4ea')+';background:'+(act?'#f5f3ff':'#fff')+';color:'+(act?'#6d28d9':'#666')+';border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+f+'</button>';
+    }).join('');
+
+    var righeHtml = '';
+    var preSkusCovered = new Set();
+
+    if(multiDate){
+      // Modalità multi-date: ogni prefilledRow è una riga a sé con la sua data
+      // Ordina per data consegna poi per nome prodotto
+      var sortedPre = prefilledMultiRows.slice().sort(function(a,b){
+        if(a.dataConsegna !== b.dataConsegna) return (a.dataConsegna||'').localeCompare(b.dataConsegna||'');
+        return (a.sku||'').localeCompare(b.sku||'');
+      });
+      sortedPre.forEach(function(row){
+        var p = prodsForn.find(function(pp){
+          return (pp.sku_shopify && pp.sku_shopify===row.sku_shopify) ||
+                 (pp.sku && pp.sku===row.sku);
+        });
+        if(!p) return;
+        preSkusCovered.add((p.sku||p.sku_shopify||'').toUpperCase());
+        var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
+        var urgBadge = row.urgenteRiga ? ' <span style="background:#fee2e2;color:#dc2626;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px">URG</span>' : '';
+        righeHtml += '<div style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;background:#f5f3ff;border-radius:4px;margin-bottom:2px">'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+urgBadge+'</div>'+
+            '<div style="font-size:10px;color:#6d28d9">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+' · <em>suggerito dal piano</em></div>'+
+          '</div>'+
+          '<input type="date" class="fab-ord-datacons" value="'+(row.dataConsegna||'')+'" style="width:135px;padding:6px 8px;border:1.5px solid #c5d8fa;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box">'+
+          '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="'+(row.qty||'')+'" placeholder="0" style="width:80px;padding:6px 8px;border:1.5px solid #6d28d9;border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none;font-weight:700">'+
+          '<span style="font-size:11px;color:#888;width:20px">pz</span>'+
+        '</div>';
+      });
+      // Separatore prima degli altri articoli
+      var altriArticoli = prodsForn.filter(function(p){return !preSkusCovered.has((p.sku||p.sku_shopify||'').toUpperCase());});
+      if(altriArticoli.length){
+        righeHtml += '<div style="font-size:10px;color:#aaa;text-align:center;padding:10px 0 4px;font-style:italic;border-top:1px dashed #e8eaf0;margin-top:8px">— altri articoli di questo fornitore (vuoti) —</div>';
+        altriArticoli.forEach(function(p){
+          var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
+          righeHtml += '<div style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5">'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+'</div>'+
+              '<div style="font-size:10px;color:#888">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+'</div>'+
+            '</div>'+
+            '<input type="date" class="fab-ord-datacons" value="" style="width:135px;padding:6px 8px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box">'+
+            '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="" placeholder="0" style="width:80px;padding:6px 8px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none">'+
+            '<span style="font-size:11px;color:#888;width:20px">pz</span>'+
+          '</div>';
+        });
+      }
+    } else {
+      // Modalità single-date: una riga per SKU, somma su quantità se pre-fill
+      righeHtml = prodsForn.map(function(p){
+        var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
+        var key = (p.sku||p.sku_shopify||'').toUpperCase();
+        var preQty = prefilledSingleMap[key] || 0;
+        var rowBg = preQty>0 ? 'background:#f5f3ff;' : '';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;'+rowBg+'border-radius:4px">'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+(preQty>0?' <span style="color:#6d28d9;font-size:10px">• suggerito</span>':'')+'</div>'+
+            '<div style="font-size:10px;color:#888">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+'</div>'+
+          '</div>'+
+          '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="'+(preQty||'')+'" placeholder="0" style="width:90px;padding:6px 8px;border:1.5px solid '+(preQty>0?'#6d28d9':'#e0e4ea')+';border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none;font-weight:'+(preQty>0?'700':'400')+'">'+
+          '<span style="font-size:11px;color:#888;width:24px">pz</span>'+
+        '</div>';
+      }).join('');
+    }
+
+    var headerTitle = opts.mode==='piano' ? '🔮 Conferma ordine dal Piano Fabbisogno' : '🛒 Nuovo ordine fornitore';
+    var headerSub = opts.headerLabel ? '<div style="font-size:11px;color:#888;margin-top:2px">'+opts.headerLabel+'</div>' : '';
+    var urgentBadge = urgente ? '<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;margin-left:8px">⚠️ URGENTE</span>' : '';
+
+    // Header colonne se multiDate
+    var colHeaderHtml = '';
+    if(multiDate){
+      colHeaderHtml = '<div style="display:flex;align-items:center;gap:8px;padding:6px 6px 4px;border-bottom:2px solid #e8eaf0;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.5px">'+
+        '<div style="flex:1">Prodotto</div>'+
+        '<div style="width:135px;text-align:center">Data consegna</div>'+
+        '<div style="width:80px;text-align:right">Qtà</div>'+
+        '<div style="width:20px"></div>'+
+      '</div>';
+    }
+
+    // Nota info se multi-data
+    var multiDateNote = multiDate ? '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#1e40af"><strong>ℹ️ Più date di consegna</strong>: le card selezionate hanno date diverse. Ogni riga mantiene la sua data modificabile individualmente.</div>' : '';
+
+    // Campo data consegna globale (solo in single-date mode)
+    var dataConsFieldHtml = multiDate
+      ? '<div style="flex:1;opacity:0.5;pointer-events:none"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Consegna (multi — vedi righe)</label>'+
+        '<input type="date" disabled value="" style="width:100%;padding:6px 10px;border:1.5px dashed #c5d8fa;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box;background:#f8f9fc"></div>'
+      : '<div style="flex:1"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Consegna prevista</label>'+
+        '<input type="date" id="fab-ord-data-cons" value="'+dataConsPre+'" style="width:100%;padding:6px 10px;border:1.5px solid #c5d8fa;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>';
+
+    return '<div style="background:#fff;border-radius:12px;width:'+(multiDate?'720px':'620px')+';max-width:98vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3)">'+
+      '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:flex-start;justify-content:space-between">'+
+        '<div><div style="font-size:15px;font-weight:700;color:#6d28d9">'+headerTitle+urgentBadge+'</div>'+headerSub+'</div>'+
+        '<button onclick="document.getElementById(\'fab-new-ord-modal\').remove();window._fabModalClosedByUser=true;" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;padding:0 6px">×</button>'+
+      '</div>'+
+      '<div style="padding:16px 20px;overflow-y:auto;flex:1">'+
+        '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:6px">Fornitore</label>'+
+          '<div id="fab-ord-forn-sel" style="display:flex;gap:6px;flex-wrap:wrap">'+fornBtns+'</div></div>'+
+        '<div style="display:flex;gap:14px;margin-bottom:14px">'+
+          '<div style="flex:1"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Data ordine</label>'+
+            '<input type="date" id="fab-ord-data-ord" value="'+dataOrdPre+'" style="width:100%;padding:6px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'+
+          dataConsFieldHtml+
+        '</div>'+
+        multiDateNote+
+        '<div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between"><label style="font-size:11px;font-weight:600;color:#555">Articoli</label>'+
+          (opts.mode==='piano'?'<span style="font-size:10px;color:#6d28d9;font-style:italic">Righe viola: suggerite dal piano</span>':'')+
+        '</div>'+
+        colHeaderHtml+
+        '<div id="fab-ord-righe">'+righeHtml+'</div>'+
+        '<div style="margin-top:14px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Note</label>'+
+          '<input type="text" id="fab-ord-note" value="'+(urgente?'Ordine urgente generato dal Piano Fabbisogno':(opts.mode==='piano'?'Generato dal Piano Fabbisogno':''))+'" placeholder="Opzionale" style="width:100%;padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'+
+      '</div>'+
+      '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:flex-end;background:#fafbfc">'+
+        '<button id="fab-ord-cancel-btn" style="padding:8px 18px;border:1px solid #e0e4ea;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-family:inherit">Annulla</button>'+
+        '<button id="fab-ord-save-btn" style="padding:8px 20px;border:none;border-radius:8px;background:#6d28d9;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Crea ordine</button>'+
+      '</div>'+
+    '</div>';
+  }
+
+  modal.innerHTML = buildContent(fornSel);
+  document.body.appendChild(modal);
+  window._fabModalClosedByUser = false;
+
+  modal.addEventListener('click', function(e){
+    var btn = e.target.closest('.fab-ord-forn-btn');
+    if(btn){
+      // Cambio fornitore: azzera prefill (è solo sul fornitore originale)
+      if(opts.mode==='piano'){
+        prefilledSingleMap = {};
+        prefilledMultiRows = [];
+        multiDate = false; // tornare a single date semplice
+      }
+      var f = btn.getAttribute('data-forn');
+      fornSel = f;
+      var dataOrdEl = document.getElementById('fab-ord-data-ord');
+      var dataConsEl2 = document.getElementById('fab-ord-data-cons');
+      var noteEl = document.getElementById('fab-ord-note');
+      var dataOrd = dataOrdEl ? dataOrdEl.value : dataOrdPre;
+      var dataCons = dataConsEl2 ? dataConsEl2.value : dataConsPre;
+      var note = noteEl ? noteEl.value : '';
+      dataOrdPre = dataOrd || dataOrdPre;
+      dataConsPre = dataCons || dataConsPre;
+      modal.innerHTML = buildContent(f);
+      setTimeout(function(){
+        var nt1 = document.getElementById('fab-ord-note');
+        if(nt1 && note) nt1.value = note;
+      }, 0);
+    }
+    if(e.target && e.target.id === 'fab-ord-cancel-btn'){
+      modal.remove();
+      window._fabModalClosedByUser = true;
+      if(opts.onClose) opts.onClose();
+    }
+    if(e.target && e.target.id === 'fab-ord-save-btn'){
+      var saved = _fabSalvaOrdineFromModal(modal, fornSel, urgente, opts.mode, multiDate);
+      if(saved){
+        modal.remove();
+        if(opts.onSaved) opts.onSaved();
+      }
+    }
+  });
+
+  // ESC per chiudere
+  var escHandler = function(e){
+    if(e.key === 'Escape' && document.getElementById('fab-new-ord-modal')){
+      modal.remove();
+      window._fabModalClosedByUser = true;
+      document.removeEventListener('keydown', escHandler);
+      if(opts.onClose) opts.onClose();
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
+function _fabSalvaOrdineFromModal(modal, fornSel, urgente, mode, multiDate){
+  var dataOrd = document.getElementById('fab-ord-data-ord').value;
+  var dataConsEl = document.getElementById('fab-ord-data-cons');
+  var dataConsGlobal = dataConsEl ? dataConsEl.value : '';
+  var note = document.getElementById('fab-ord-note').value;
+  var righe = [];
+  modal.querySelectorAll('.fab-ord-qty').forEach(function(inp){
+    var q = parseInt(inp.value)||0;
+    if(q<=0) return;
+    // Se multiDate: trova il data input nella stessa riga
+    var dataRiga = dataConsGlobal;
+    if(multiDate){
+      var rowDiv = inp.closest('div[style*="display:flex"]');
+      var dataInp = rowDiv ? rowDiv.querySelector('.fab-ord-datacons') : null;
+      if(dataInp) dataRiga = dataInp.value;
+    }
+    righe.push({
+      sku: inp.getAttribute('data-sku')||'',
+      sku_shopify: inp.getAttribute('data-sku-shopify')||'',
+      nome_prodotto: inp.getAttribute('data-nome')||'',
+      codice_forn: inp.getAttribute('data-codforn')||'',
+      qty_ordinata: q,
+      qty_ricevuta: 0,
+      ms: parseInt(inp.getAttribute('data-ms'))||1,
+      data_cons_riga: dataRiga||''
+    });
+  });
+  if(!righe.length){ alert('Inserisci almeno una quantità.'); return false; }
+  if(!dataOrd){ alert('Data ordine obbligatoria.'); return false; }
+
+  // Data consegna principale dell'ordine: se multiDate, usa la più imminente; altrimenti la globale
+  var dataConsOrd = dataConsGlobal;
+  if(multiDate){
+    var allD = righe.map(function(r){return r.data_cons_riga;}).filter(Boolean).sort();
+    dataConsOrd = allD[0] || '';
+  }
+
+  var newOrd = {
+    id: 'ord_' + Date.now() + '_' + Math.random().toString(36).substring(2,8),
+    fornitore: fornSel,
+    data_ordine: dataOrd,
+    data_consegna_prevista: dataConsOrd,
+    urgente: !!urgente,
+    stato: 'attesa',
+    note: note||'',
+    righe: righe,
+    createdAt: new Date().toISOString(),
+    source: mode==='piano' ? 'piano_fabbisogno' : 'manuale'
+  };
+
+  if(typeof fabOrdini !== 'undefined' && Array.isArray(fabOrdini)){
+    fabOrdini.push(newOrd);
+    if(typeof saveFabState === 'function'){ try{ saveFabState(); }catch(e){} }
+    // Se sono su tab ordini rerender, se su fabbisogno lo faccio alla fine (dopo tutte le modali)
+    return true;
+  }
+  alert('Errore: variabile fabOrdini non disponibile.');
+  return false;
+}
+
 function fabDebugArticolo(){
   var existing=document.getElementById('fab-debug-picker');
   if(existing) existing.remove();
@@ -20128,12 +20540,15 @@ function renderOrdiniInviati(){
             return uniche.map(function(d){return _fmtDataOrd(d);}).join('<br>');
           })()+
         '</td>'+
-        '<td style="padding:8px 12px"><span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px">'+sl+'</span></td>'+
+        '<td style="padding:8px 12px"><span style="background:'+(sc+'22')+';color:'+sc+';padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px">'+sl+'</span>'+
+          (ord.email_inviata_at?'<br><span title="'+(ord.email_inviata_to||'')+' \u2014 '+new Date(ord.email_inviata_at).toLocaleString("it-IT")+'" style="display:inline-block;margin-top:4px;background:#eff6ff;color:#1d4ed8;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">\ud83d\udce7 Inviata '+new Date(ord.email_inviata_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"})+'</span>':'')+
+        '</td>'+
         '<td style="padding:8px 12px;color:#555">'+nProd+' art.</td>'+
         '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1a1a2e">'+totPz.toLocaleString('it-IT')+'</td>'+
         '<td style="padding:8px 12px;text-align:center;display:flex;gap:6px;justify-content:center">'+
           '<button onclick="apriDettaglioOrdine(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">👁 Apri</button>'+
           '<button onclick="copiaEmailOrdine(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📧 Copia</button>'+
+          '<button onclick="inviaEmailOrdine(\''+ord.id+'\')" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Invia</button>'+
           '<button onclick="scaricaPDFOrdine(\''+ord.id+'\')" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⬇ PDF</button>'+
         '</td>'+
       '</tr>';
@@ -20176,7 +20591,9 @@ function apriDettaglioOrdine(id){
         '</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px;align-items:center">'+
-        '<button onclick="scaricaPDFOrdine(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⬇ PDF</button>'+
+        '<button onclick="copiaEmailOrdine(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📧 Copia</button>'+
+        '<button onclick="inviaEmailOrdine(\''+ord.id+'\')" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Invia</button>'+
+        '<button onclick="scaricaPDFOrdine(\''+ord.id+'\')" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⇓ PDF</button>'+
         '<button id="ord-det-close" style="background:#f0f2f5;border:none;color:#555;font-size:18px;width:28px;height:28px;border-radius:6px;cursor:pointer">×</button>'+
       '</div>'+
     '</div>'+
@@ -20310,6 +20727,219 @@ function copiaEmailOrdine(id){
   }).catch(function(){
     mostraModal(testo);
   });
+}
+
+// Invia email ordine direttamente al fornitore via mailto:
+// Precompila destinatario, oggetto, testo. Apre il client email di default.
+function inviaEmailOrdine(id){
+  var ord=fabOrdini.find(function(o){return String(o.id)===String(id);});
+  if(!ord) return;
+  var righe=ord.righe.filter(function(r){return r.qty_ordinata>0;});
+  if(!righe.length){ alert('Ordine senza righe.'); return; }
+
+  // Mappa email fornitori "forzate" — per fornitori che vogliamo sempre usare
+  // una email precisa, indipendentemente da quella nei prodotti
+  var FORNITORI_EMAIL_OVERRIDE = {
+    'simfed srl': 'daniele.grilli@sim-fed.it',
+    'simfed': 'daniele.grilli@sim-fed.it',
+    'sim-fed srl': 'daniele.grilli@sim-fed.it',
+    'sim-fed': 'daniele.grilli@sim-fed.it'
+  };
+
+  var emailForn = '';
+  var fornKeyLower = String(ord.fornitore||'').toLowerCase().trim();
+
+  // 1. Controlla prima la mappa override (ha priorità su tutto)
+  if(FORNITORI_EMAIL_OVERRIDE[fornKeyLower]){
+    emailForn = FORNITORI_EMAIL_OVERRIDE[fornKeyLower];
+  } else {
+    // 2. Recupera email fornitore dal primo prodotto del fornitore
+    var prodForn=fabProducts.find(function(p){return p.fornitore===ord.fornitore && p.email;});
+    emailForn = prodForn ? (prodForn.email||'') : '';
+    // 3. Se non trovata su quel fornitore, cerca tutti i prodotti con qualsiasi email del fornitore
+    if(!emailForn){
+      var anyProd=fabProducts.find(function(p){return p.fornitore===ord.fornitore;});
+      if(anyProd && anyProd.email) emailForn = anyProd.email;
+    }
+  }
+
+  // Costruisci corpo email (stesso template di copiaEmailOrdine)
+  var lines=[];
+  lines.push('Ciao,');
+  lines.push('');
+  lines.push('ti mandiamo il seguente ordine:');
+  lines.push('');
+  lines.push('Ordine N\u00b0 '+(ord.numero_ordine||'\u2014')+' del '+ord.data_ordine);
+  lines.push('');
+
+  righe.forEach(function(r){
+    var p=fabProducts.find(function(x){return x.sku_shopify===r.sku_shopify;})||{};
+    var ms=getMasterSize(p);
+    var qta=ms>1?(Math.ceil(r.qty_ordinata/ms)+' master'):r.qty_ordinata+' pz';
+    var dataCons=r.data_cons_riga?_fmtDataOrd(r.data_cons_riga):(ord.data_consegna_prevista?_fmtDataOrd(ord.data_consegna_prevista):'\u2014');
+    var cod=p.codice_forn||'\u2014';
+    lines.push('Codice: '+cod);
+    lines.push('Prodotto: '+r.sku);
+    lines.push('Quantit\u00e0: '+qta);
+    lines.push('Consegna richiesta: '+dataCons);
+    lines.push('');
+  });
+
+  if(ord.note){lines.push('');lines.push('Note: '+ord.note);}
+  lines.push('');
+  lines.push('Grazie,');
+  lines.push('Yespresso');
+
+  var testo=lines.join('\n');
+  var oggetto='Ordine Yespresso del '+ord.data_ordine;
+
+  // Mostra modal di conferma prima di inviare
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;width:580px;max-width:98vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden">'+
+    '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
+      '<span style="font-weight:700;color:#1a1a2e">\u2709\ufe0f Invia email ordine \u2014 '+ord.fornitore+'</span>'+
+      '<button id="em-inv-close" style="background:#f0f2f5;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">\u00d7</button>'+
+    '</div>'+
+    '<div style="padding:14px 20px;flex:1;overflow-y:auto">'+
+      '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">A:</label>'+
+        '<input id="em-inv-to" type="email" value="'+(emailForn||'')+'" placeholder="destinatario@fornitore.it" style="width:100%;padding:8px 10px;border:1.5px solid '+(emailForn?'#e0e4ea':'#fca5a5')+';border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+      (emailForn?'':'<div style="background:#fef3c7;color:#92400e;font-size:11px;padding:6px 10px;border-radius:6px;margin-bottom:10px">\u26a0\ufe0f Email fornitore non trovata nei prodotti. Inseriscila manualmente.</div>')+
+      '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">CC:</label>'+
+        '<input id="em-inv-cc" type="text" value="commerciale@yespresso.it" placeholder="cc1@..., cc2@..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+      '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Oggetto:</label>'+
+        '<input id="em-inv-subj" type="text" value="'+oggetto+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+      '<div><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Testo email:</label>'+
+        '<textarea id="em-inv-body" style="width:100%;padding:10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:monospace;min-height:260px;box-sizing:border-box;outline:none;resize:vertical;white-space:pre">'+testo+'</textarea></div>'+
+    '</div>'+
+    '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:space-between;align-items:center;flex-shrink:0;background:#fafbfc;flex-wrap:wrap">'+
+      '<div style="display:flex;gap:8px">'+
+        '<button id="em-inv-copy" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copia testo</button>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button id="em-inv-cancel" style="background:#fff;border:1px solid #e0e4ea;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">Annulla</button>'+
+        '<button id="em-inv-mailto" style="background:#fff;border:1.5px solid #1d4ed8;color:#1d4ed8;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Apre il client email installato (Outlook, Mail, Thunderbird...)">\ud83d\udcbb Client locale</button>'+
+        '<button id="em-inv-send" style="background:#1d4ed8;border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" title="Invia direttamente dal server Yespresso">\ud83d\ude80 Invia dal server</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(modal);
+
+  function closeModal(){ modal.remove(); }
+  modal.querySelector('#em-inv-close').onclick=closeModal;
+  modal.querySelector('#em-inv-cancel').onclick=closeModal;
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  modal.querySelector('#em-inv-copy').onclick=function(){
+    var body=modal.querySelector('#em-inv-body').value;
+    navigator.clipboard.writeText(body).then(function(){
+      showToast('\u2705 Testo copiato negli appunti');
+    }).catch(function(){
+      var ta=modal.querySelector('#em-inv-body'); ta.select(); document.execCommand('copy');
+      showToast('\u2705 Testo copiato');
+    });
+  };
+
+  // Segna ordine come inviato (utility condivisa)
+  function _markOrdineInviato(to){
+    ord.email_inviata_at = new Date().toISOString();
+    ord.email_inviata_to = to;
+    if(typeof saveFabState==='function'){ try{ saveFabState(); }catch(e){} }
+    if(typeof renderFabTab==='function'){ try{ renderFabTab('ordini'); }catch(e){} }
+    try{
+      var invWin=document.getElementById('ordini-inviati-overlay');
+      if(invWin && typeof renderOrdiniInviati==='function'){ renderOrdiniInviati(); }
+    }catch(e){}
+  }
+
+  // --- Opzione 1: apri client email locale (mailto:) ---
+  modal.querySelector('#em-inv-mailto').onclick=function(){
+    var to=modal.querySelector('#em-inv-to').value.trim();
+    var cc=modal.querySelector('#em-inv-cc').value.trim();
+    var subj=modal.querySelector('#em-inv-subj').value.trim();
+    var body=modal.querySelector('#em-inv-body').value;
+    if(!to){ alert('Inserisci l\'indirizzo email del destinatario.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ alert('Indirizzo email non valido.'); return; }
+
+    var mailtoUrl='mailto:'+encodeURIComponent(to);
+    var params=[];
+    if(cc) params.push('cc='+encodeURIComponent(cc));
+    if(subj) params.push('subject='+encodeURIComponent(subj));
+    params.push('body='+encodeURIComponent(body));
+    mailtoUrl+='?'+params.join('&');
+
+    if(mailtoUrl.length > 2000){
+      navigator.clipboard.writeText(body).catch(function(){});
+      alert('Il testo è stato copiato negli appunti. Incollalo nel corpo del client email dopo che si sarà aperto.');
+      mailtoUrl='mailto:'+encodeURIComponent(to)+'?'+(cc?'cc='+encodeURIComponent(cc)+'&':'')+'subject='+encodeURIComponent(subj);
+    }
+
+    window.location.href=mailtoUrl;
+    _markOrdineInviato(to);
+    setTimeout(function(){ showToast('\u2709\ufe0f Client email aperto'); closeModal(); }, 400);
+  };
+
+  // --- Opzione 2: invio SMTP dal server ---
+  modal.querySelector('#em-inv-send').onclick=async function(){
+    var btn=this;
+    var to=modal.querySelector('#em-inv-to').value.trim();
+    var cc=modal.querySelector('#em-inv-cc').value.trim();
+    var subj=modal.querySelector('#em-inv-subj').value.trim();
+    var body=modal.querySelector('#em-inv-body').value;
+    if(!to){ alert('Inserisci l\'indirizzo email del destinatario.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ alert('Indirizzo email non valido.'); return; }
+    if(cc){
+      // Valida ogni email in CC
+      var ccList=cc.split(/[,;]/).map(function(s){return s.trim();}).filter(Boolean);
+      for(var i=0;i<ccList.length;i++){
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ccList[i])){
+          alert('Indirizzo CC non valido: '+ccList[i]); return;
+        }
+      }
+    }
+    if(!confirm('Invio email a:\n\n'+to+(cc?'\nCC: '+cc:'')+'\n\nOggetto: '+subj+'\n\nProcedere?')) return;
+
+    btn.disabled=true;
+    var oldLabel=btn.textContent;
+    btn.textContent='\u23f3 Invio...';
+    try{
+      var res=await proxyFetch(PROXY+'/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          to: to,
+          cc: cc || '',
+          subject: subj,
+          body: body,
+          orderId: ord.id,
+          fornitore: ord.fornitore
+        })
+      });
+      if(!res.ok){
+        var errText=await res.text();
+        throw new Error('HTTP '+res.status+': '+errText.substring(0,200));
+      }
+      var result=await res.json();
+      if(result && result.ok){
+        _markOrdineInviato(to);
+        showToast('\u2705 Email inviata con successo a '+to);
+        closeModal();
+      } else {
+        throw new Error(result && result.error ? result.error : 'Errore sconosciuto');
+      }
+    }catch(e){
+      console.error('[send-email]', e);
+      alert('Errore invio email: '+e.message+'\n\nPuoi provare con "Client locale" come alternativa.');
+      btn.disabled=false;
+      btn.textContent=oldLabel;
+    }
+  };
+
+  // Focus automatico
+  setTimeout(function(){
+    var focusEl = emailForn ? modal.querySelector('#em-inv-body') : modal.querySelector('#em-inv-to');
+    if(focusEl) focusEl.focus();
+  }, 100);
 }
 
 
