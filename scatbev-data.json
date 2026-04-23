@@ -1,1 +1,1 @@
-{"ordini":[{"id":"sb_1775720939528","qty":1500,"qty_ricevuta":0,"data_ordine":"2026-04-09","data_consegna":"2026-04-23","stato":"attesa","note":""}]}
+{"ordini":[{"id":"sb_1775720939528","qty":1500,"qty_ricevuta":1500,"data_ordine":"2026-04-09","data_consegna":"2026-04-23","stato":"ricevuto","note":""}]}
