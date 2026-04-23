@@ -2653,3 +2653,131 @@ async function brtRestPost(path, body) {
 server.listen(PORT, "0.0.0.0", function() {
   console.log("✅ Server Yespresso avviato su porta " + PORT);
 });
+
+
+// ════════════════════════════════════════════════════════════════════
+// ── SMTP IONOS — invio email ordini fornitori ──────────────────────
+// ════════════════════════════════════════════════════════════════════
+let _smtpTransporter = null;
+function getSmtpTransporter() {
+  if (_smtpTransporter) return _smtpTransporter;
+  try {
+    const nodemailer = require('nodemailer');
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    if (!smtpUser || !smtpPass) {
+      console.log('[SMTP] SMTP_USER o SMTP_PASS non configurate');
+      return null;
+    }
+    _smtpTransporter = nodemailer.createTransport({
+      host: 'smtp.ionos.it',
+      port: 465,
+      secure: true,
+      auth: { user: smtpUser, pass: smtpPass }
+    });
+    _smtpTransporter.verify(function(err){
+      if (err) console.error('[SMTP] Verifica fallita:', err.message);
+      else console.log('[SMTP] Pronto per inviare email da', smtpUser);
+    });
+    return _smtpTransporter;
+  } catch(e) {
+    console.error('[SMTP] nodemailer non disponibile:', e.message);
+    return null;
+  }
+}
+setTimeout(() => { getSmtpTransporter(); }, 5000);
+
+// Intercetta richieste /send-email PRIMA del proxy generico.
+// Uso un "wrapper" su server.emit che controlla solo /send-email
+// e lascia passare tutto il resto invariato.
+const _originalEmit = server.emit.bind(server);
+server.emit = function(eventName, req, res) {
+  if (eventName !== 'request' || !req || !req.url) {
+    return _originalEmit.apply(server, arguments);
+  }
+  if (req.url !== '/send-email') {
+    return _originalEmit.apply(server, arguments);
+  }
+  // Preflight CORS
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type,x-app-token'
+    });
+    res.end();
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.writeHead(405, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
+    res.end(JSON.stringify({ok:false, error:'Method not allowed'}));
+    return;
+  }
+  const CORS_SE = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+  const transporter = getSmtpTransporter();
+  if (!transporter) {
+    res.writeHead(500, CORS_SE);
+    res.end(JSON.stringify({ok:false, error:'SMTP non configurato. Verifica SMTP_USER e SMTP_PASS nelle env variables di Render.'}));
+    return;
+  }
+  const chunksSE = [];
+  req.on('data', c => chunksSE.push(c));
+  req.on('end', async function(){
+    try {
+      const payload = JSON.parse(Buffer.concat(chunksSE).toString() || '{}');
+      const { to, cc, subject, body, orderId, fornitore } = payload;
+      if (!to || !subject || !body) {
+        res.writeHead(400, CORS_SE);
+        res.end(JSON.stringify({ok:false, error:'Campi obbligatori: to, subject, body'}));
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(to)) {
+        res.writeHead(400, CORS_SE);
+        res.end(JSON.stringify({ok:false, error:'Indirizzo "to" non valido'}));
+        return;
+      }
+      let ccList = [];
+      if (cc) {
+        ccList = String(cc).split(/[,;]/).map(s => s.trim()).filter(Boolean);
+        for (const addr of ccList) {
+          if (!emailRegex.test(addr)) {
+            res.writeHead(400, CORS_SE);
+            res.end(JSON.stringify({ok:false, error:'Indirizzo CC non valido: '+addr}));
+            return;
+          }
+        }
+      }
+      const smtpUser = process.env.SMTP_USER;
+      const smtpFromName = process.env.SMTP_FROM_NAME || 'Yespresso';
+      const info = await transporter.sendMail({
+        from: `"${smtpFromName}" <${smtpUser}>`,
+        to: to,
+        cc: ccList.length ? ccList.join(', ') : undefined,
+        subject: subject,
+        text: body
+      });
+      console.log(`[send-email] OK a ${to}${cc?' cc:'+cc:''} — ord:${orderId||'?'} — forn:${fornitore||'?'} — msgId:${info.messageId}`);
+      res.writeHead(200, CORS_SE);
+      res.end(JSON.stringify({
+        ok: true,
+        messageId: info.messageId,
+        to: to,
+        cc: ccList.join(', ') || null,
+        sentAt: new Date().toISOString()
+      }));
+    } catch(err) {
+      console.error('[send-email] Errore:', err.message);
+      res.writeHead(500, CORS_SE);
+      res.end(JSON.stringify({ok:false, error: err.message}));
+    }
+  });
+  req.on('error', function(err){
+    console.error('[send-email] Errore request:', err.message);
+    try {
+      res.writeHead(500, CORS_SE);
+      res.end(JSON.stringify({ok:false, error: err.message}));
+    } catch(e2) {}
+  });
+};
+console.log('[SMTP] Endpoint /send-email registrato');
