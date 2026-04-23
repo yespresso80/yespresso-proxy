@@ -4,6 +4,7 @@
   "main": "server.js",
   "dependencies": {
     "imapflow": "^1.0.169",
+    "nodemailer": "^6.9.14",
     "ssh2-sftp-client": "^10.0.0"
   }
 }
