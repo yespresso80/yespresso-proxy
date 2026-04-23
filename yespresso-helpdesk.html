@@ -5558,6 +5558,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   if(t&&t.events){
     const seenHD=new Set((window._ticketAttachments||[]).map(a=>a.filename));
     const hdImgsToAdd=[];
+    // Per email BRT filtriamo gli allegati firma (image001.png, logo, banner)
+    const isBrtEmailHd=(email||"").toLowerCase().includes("brt.it")||(email||"").toLowerCase().includes("vasnoreply");
     for(const ev of (t.events||[])){
       const msgAtts=Array.isArray(ev.message&&ev.message.attachments)?ev.message.attachments:[];
       for(const a of msgAtts){
@@ -5565,6 +5567,11 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         const ct=(a.contentType||a.type||'').toLowerCase();
         const nm=(a.name||a.filename||'').toLowerCase();
         if(!ct.startsWith('image/')&&!/\.(png|jpg|jpeg|gif|webp)$/i.test(nm))continue;
+        // Filtro firma BRT
+        if(isBrtEmailHd){
+          if(/^image0*[0-9]{1,3}\.(png|jpe?g|gif)$/i.test(nm)){ console.log('[HD IMG] skip firma BRT:',nm); continue; }
+          if(/^(logo|footer|banner|header|signature|firma|geopost|brt)[_-]?[0-9]*\.(png|jpe?g|gif)$/i.test(nm)){ console.log('[HD IMG] skip firma BRT:',nm); continue; }
+        }
         try{
           const imgR=await fetch(a.url);
           if(!imgR.ok)continue;
@@ -6077,7 +6084,29 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     if(subject&&!isAmazonEmail) url += "&subject="+encodeURIComponent(subject);
     const imapRes0=await proxyFetch(url);
     const imapData0=await imapRes0.json();
-    const imapAtts0=imapData0.attachments||[];
+    let imapAtts0=imapData0.attachments||[];
+
+    // ═══ FILTRO ALLEGATI FIRMA BRT ═══
+    // Per email da BRT (servizioclienti@brt.it, ticketcare@brt.it, vasnoreply)
+    // gli allegati tipo image001.png/image002.png/image003.png sono loghi + banner
+    // della firma email (logo BRT, Geopost, banner pubblicitario). Li filtriamo
+    // mantenendo solo allegati con nomi "utili" (foto cliente, POD, etichette).
+    const isBrtEmail=(email||"").toLowerCase().includes("brt.it")||(email||"").toLowerCase().includes("vasnoreply");
+    if(isBrtEmail && imapAtts0.length){
+      const beforeCount=imapAtts0.length;
+      imapAtts0=imapAtts0.filter(function(a){
+        const fn=String(a.filename||a.name||"").toLowerCase();
+        // Pattern della firma BRT/Geopost: image001.png, image002.png, ..., logo.png, footer.jpg, ecc.
+        if(/^image0*[0-9]{1,3}\.(png|jpe?g|gif)$/i.test(fn)) return false;
+        if(/^(logo|footer|banner|header|signature|firma|geopost|brt)[_-]?[0-9]*\.(png|jpe?g|gif)$/i.test(fn)) return false;
+        // Dimensione molto piccola (tipicamente icone/loghi) — opzionale, solo se data è disponibile
+        if(a.data && a.data.length<5000) return false; // <5KB base64 = immagine molto piccola
+        return true;
+      });
+      const removed=beforeCount-imapAtts0.length;
+      if(removed>0) console.log("[BRT attach filter] rimossi "+removed+" allegati firma");
+    }
+
     if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
     // Controlla se i data URL IMAP sono già presenti nell'area IMAP allegati
     // (evita doppio caricamento ma non blocca su filename generici)
