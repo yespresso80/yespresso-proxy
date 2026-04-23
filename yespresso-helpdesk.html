@@ -19507,10 +19507,22 @@ window.fabTogglePianoCard = function(cardEl){
     cardEl.style.boxShadow = '';
     cardEl.style.filter = '';
   } else {
+    // Prima di selezionare, verifica che il fornitore sia uguale a quelli gi\u00e0 selezionati
+    var newCardData = null;
     try {
       var raw = cardEl.getAttribute('data-card');
-      window._fabSelectedCards[cardId] = raw ? JSON.parse(decodeURIComponent(raw)) : {id:cardId};
-    } catch(e){ window._fabSelectedCards[cardId] = {id:cardId}; }
+      newCardData = raw ? JSON.parse(decodeURIComponent(raw)) : {id:cardId};
+    } catch(e){ newCardData = {id:cardId}; }
+    var newForn = (newCardData && newCardData.fornitore) || '';
+    var selectedCards = Object.values(window._fabSelectedCards);
+    if(selectedCards.length > 0 && newForn){
+      var existingForn = selectedCards[0].fornitore || '';
+      if(existingForn && existingForn !== newForn){
+        alert('\u26a0\ufe0f Selezione solo stesso fornitore.\n\nHai gi\u00e0 selezionato card di "'+existingForn+'".\nDeseleziona prima le card correnti oppure crea prima questo ordine.');
+        return;
+      }
+    }
+    window._fabSelectedCards[cardId] = newCardData;
     if(chk) chk.innerHTML = '&#9745;';
     cardEl.style.boxShadow = '0 0 0 3px rgba(109,40,217,.35)';
     cardEl.style.filter = 'brightness(1.02)';
@@ -19587,31 +19599,29 @@ window.fabCreaPianoOrdine = function(){
   // Deseleziona subito
   window.fabAnnullaSelezioneCard();
 
-  var idx = 0;
-  function openNext(){
-    if(idx >= gruppiArr.length){
+  // Dato che la selezione card è bloccata su un solo fornitore,
+  // gruppiArr ha sempre lunghezza 1. Apri quindi UNA sola modal.
+  var g = gruppiArr[0];
+  var dateCons = [...new Set(g.righe.map(function(r){return r.dataConsegna;}).filter(Boolean))].sort();
+  _fabOpenOrdineModal({
+    mode: 'piano',
+    fornitore: g.fornitore,
+    dataOrdine: g.dataOrdine,
+    dataConsegna: dateCons.length===1 ? dateCons[0] : '',
+    multiDate: dateCons.length > 1,
+    urgente: g.urgente,
+    prefilledRighe: g.righe,
+    onClose: function(){
       if(typeof renderFabTab === 'function'){
         try{ renderFabTab('fabbisogno'); }catch(e){}
       }
-      return;
+    },
+    onSaved: function(){
+      if(typeof renderFabTab === 'function'){
+        try{ renderFabTab('fabbisogno'); }catch(e){}
+      }
     }
-    var g = gruppiArr[idx++];
-    // Date distinte nelle righe
-    var dateCons = [...new Set(g.righe.map(function(r){return r.dataConsegna;}).filter(Boolean))].sort();
-    _fabOpenOrdineModal({
-      mode: 'piano',
-      fornitore: g.fornitore,
-      dataOrdine: g.dataOrdine,
-      dataConsegna: dateCons.length===1 ? dateCons[0] : '',
-      multiDate: dateCons.length > 1,
-      urgente: g.urgente,
-      prefilledRighe: g.righe,
-      onClose: openNext,
-      onSaved: openNext,
-      headerLabel: gruppiArr.length>1 ? 'Fornitore '+idx+'/'+gruppiArr.length+' — '+g.fornitore : null
-    });
-  }
-  openNext();
+  });
 };
 
 // Apre modal vuoto per inserire nuovo ordine fornitore manualmente
@@ -19673,12 +19683,15 @@ function _fabOpenOrdineModal(opts){
 
     if(multiDate){
       // Modalità multi-date: ogni prefilledRow è una riga a sé con la sua data
-      // Ordina per data consegna poi per nome prodotto
+      // Ordina per PRODOTTO (SKU) prima, poi per data consegna crescente
+      // Così stesso prodotto con date diverse appare in righe consecutive
       var sortedPre = prefilledMultiRows.slice().sort(function(a,b){
-        if(a.dataConsegna !== b.dataConsegna) return (a.dataConsegna||'').localeCompare(b.dataConsegna||'');
-        return (a.sku||'').localeCompare(b.sku||'');
+        var skuA = (a.sku||a.sku_shopify||'').toLowerCase();
+        var skuB = (b.sku||b.sku_shopify||'').toLowerCase();
+        if(skuA !== skuB) return skuA.localeCompare(skuB);
+        return (a.dataConsegna||'').localeCompare(b.dataConsegna||'');
       });
-      sortedPre.forEach(function(row){
+      sortedPre.forEach(function(row, idx){
         var p = prodsForn.find(function(pp){
           return (pp.sku_shopify && pp.sku_shopify===row.sku_shopify) ||
                  (pp.sku && pp.sku===row.sku);
@@ -19687,7 +19700,7 @@ function _fabOpenOrdineModal(opts){
         preSkusCovered.add((p.sku||p.sku_shopify||'').toUpperCase());
         var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
         var urgBadge = row.urgenteRiga ? ' <span style="background:#fee2e2;color:#dc2626;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px">URG</span>' : '';
-        righeHtml += '<div style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;background:#f5f3ff;border-radius:4px;margin-bottom:2px">'+
+        righeHtml += '<div class="fab-ord-riga" style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;background:#f5f3ff;border-radius:4px;margin-bottom:2px">'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+urgBadge+'</div>'+
             '<div style="font-size:10px;color:#6d28d9">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+' · <em>suggerito dal piano</em></div>'+
@@ -19695,41 +19708,41 @@ function _fabOpenOrdineModal(opts){
           '<input type="date" class="fab-ord-datacons" value="'+(row.dataConsegna||'')+'" style="width:135px;padding:6px 8px;border:1.5px solid #c5d8fa;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box">'+
           '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="'+(row.qty||'')+'" placeholder="0" style="width:80px;padding:6px 8px;border:1.5px solid #6d28d9;border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none;font-weight:700">'+
           '<span style="font-size:11px;color:#888;width:20px">pz</span>'+
+          '<button type="button" class="fab-ord-del-riga" title="Elimina riga" style="background:#fef2f2;border:1.5px solid #fecaca;color:#dc2626;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0">\u2715</button>'+
         '</div>';
       });
-      // Separatore prima degli altri articoli
-      var altriArticoli = prodsForn.filter(function(p){return !preSkusCovered.has((p.sku||p.sku_shopify||'').toUpperCase());});
-      if(altriArticoli.length){
-        righeHtml += '<div style="font-size:10px;color:#aaa;text-align:center;padding:10px 0 4px;font-style:italic;border-top:1px dashed #e8eaf0;margin-top:8px">— altri articoli di questo fornitore (vuoti) —</div>';
-        altriArticoli.forEach(function(p){
-          var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
-          righeHtml += '<div style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5">'+
-            '<div style="flex:1;min-width:0">'+
-              '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+'</div>'+
-              '<div style="font-size:10px;color:#888">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+'</div>'+
-            '</div>'+
-            '<input type="date" class="fab-ord-datacons" value="" style="width:135px;padding:6px 8px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box">'+
-            '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="" placeholder="0" style="width:80px;padding:6px 8px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none">'+
-            '<span style="font-size:11px;color:#888;width:20px">pz</span>'+
-          '</div>';
-        });
-      }
+      // Rimosso blocco "altri articoli di questo fornitore (vuoti)" — sostituito da bottone "+ Aggiungi prodotto"
     } else {
       // Modalità single-date: una riga per SKU, somma su quantità se pre-fill
-      righeHtml = prodsForn.map(function(p){
-        var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
+      // Modalità single-date: mostra SOLO prodotti con quantità preriempita (dal piano o da nuovo ordine manuale)
+      // I prodotti senza quantità si aggiungono con il bottone "+ Aggiungi prodotto"
+      var prodsConQty = prodsForn.filter(function(p){
         var key = (p.sku||p.sku_shopify||'').toUpperCase();
-        var preQty = prefilledSingleMap[key] || 0;
-        var rowBg = preQty>0 ? 'background:#f5f3ff;' : '';
-        return '<div style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;'+rowBg+'border-radius:4px">'+
-          '<div style="flex:1;min-width:0">'+
-            '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+(preQty>0?' <span style="color:#6d28d9;font-size:10px">• suggerito</span>':'')+'</div>'+
-            '<div style="font-size:10px;color:#888">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+'</div>'+
-          '</div>'+
-          '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="'+(preQty||'')+'" placeholder="0" style="width:90px;padding:6px 8px;border:1.5px solid '+(preQty>0?'#6d28d9':'#e0e4ea')+';border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none;font-weight:'+(preQty>0?'700':'400')+'">'+
-          '<span style="font-size:11px;color:#888;width:24px">pz</span>'+
-        '</div>';
-      }).join('');
+        return (prefilledSingleMap[key]||0) > 0;
+      });
+      // Ordina alfabeticamente per nome prodotto
+      prodsConQty.sort(function(a,b){
+        return (a.nome||a.sku||'').toLowerCase().localeCompare((b.nome||b.sku||'').toLowerCase());
+      });
+      if(!prodsConQty.length && opts.mode !== 'piano'){
+        // Per "nuovo ordine manuale" senza prefill, mostra messaggio informativo
+        righeHtml = '<div style="text-align:center;padding:30px 20px;color:#888;font-size:13px;font-style:italic">Nessun articolo ancora aggiunto.<br>Usa il bottone <strong style="color:#6d28d9">+ Aggiungi prodotto</strong> in basso per iniziare.</div>';
+      } else {
+        righeHtml = prodsConQty.map(function(p){
+          var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
+          var key = (p.sku||p.sku_shopify||'').toUpperCase();
+          var preQty = prefilledSingleMap[key] || 0;
+          return '<div class="fab-ord-riga" style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;background:#f5f3ff;border-radius:4px;margin-bottom:2px">'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+(preQty>0&&opts.mode==='piano'?' <span style="color:#6d28d9;font-size:10px">\u2022 suggerito</span>':'')+'</div>'+
+              '<div style="font-size:10px;color:#888">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+'</div>'+
+            '</div>'+
+            '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="'+(preQty||'')+'" placeholder="0" style="width:90px;padding:6px 8px;border:1.5px solid #6d28d9;border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none;font-weight:700">'+
+            '<span style="font-size:11px;color:#888;width:24px">pz</span>'+
+            '<button type="button" class="fab-ord-del-riga" title="Elimina riga" style="background:#fef2f2;border:1.5px solid #fecaca;color:#dc2626;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0">\u2715</button>'+
+          '</div>';
+        }).join('');
+      }
     }
 
     var headerTitle = opts.mode==='piano' ? '🔮 Conferma ordine dal Piano Fabbisogno' : '🛒 Nuovo ordine fornitore';
@@ -19744,6 +19757,7 @@ function _fabOpenOrdineModal(opts){
         '<div style="width:135px;text-align:center">Data consegna</div>'+
         '<div style="width:80px;text-align:right">Qtà</div>'+
         '<div style="width:20px"></div>'+
+        '<div style="width:28px"></div>'+
       '</div>';
     }
 
@@ -19776,6 +19790,18 @@ function _fabOpenOrdineModal(opts){
         '</div>'+
         colHeaderHtml+
         '<div id="fab-ord-righe">'+righeHtml+'</div>'+
+        // Bottone "+ Aggiungi prodotto" con dropdown
+        '<div style="margin-top:10px;display:flex;gap:8px;align-items:center">'+
+          '<select id="fab-ord-add-prod-sel" style="flex:1;padding:7px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;background:#fff;cursor:pointer">'+
+            '<option value="">-- seleziona prodotto da aggiungere --</option>'+
+            prodsForn.slice().sort(function(a,b){return (a.nome||a.sku||'').toLowerCase().localeCompare((b.nome||b.sku||'').toLowerCase());}).map(function(p){
+              var codF = p.codice_forn?'['+p.codice_forn+'] ':'';
+              var label = codF+(p.nome||p.sku||'—');
+              return '<option value="'+(p.sku_shopify||p.sku||'').replace(/"/g,'&quot;')+'">'+label.replace(/</g,'&lt;')+'</option>';
+            }).join('')+
+          '</select>'+
+          '<button type="button" id="fab-ord-add-prod-btn" style="padding:7px 14px;border:1.5px solid #6d28d9;background:#f5f3ff;color:#6d28d9;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Aggiungi</button>'+
+        '</div>'+
         '<div style="margin-top:14px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Note</label>'+
           '<input type="text" id="fab-ord-note" value="'+(urgente?'Ordine urgente generato dal Piano Fabbisogno':(opts.mode==='piano'?'Generato dal Piano Fabbisogno':''))+'" placeholder="Opzionale" style="width:100%;padding:6px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'+
       '</div>'+
@@ -19827,6 +19853,115 @@ function _fabOpenOrdineModal(opts){
         if(opts.onSaved) opts.onSaved();
       }
     }
+    // Elimina riga con conferma
+    var delBtn = e.target.closest('.fab-ord-del-riga');
+    if(delBtn){
+      var riga = delBtn.closest('.fab-ord-riga');
+      if(riga){
+        var qtyIn = riga.querySelector('.fab-ord-qty');
+        var nomeProd = qtyIn ? (qtyIn.getAttribute('data-nome')||qtyIn.getAttribute('data-sku')||'questo prodotto') : 'questa riga';
+        if(confirm('Sei sicuro di voler eliminare la riga "'+nomeProd+'"?')){
+          riga.remove();
+        }
+      }
+    }
+    // Aggiungi prodotto
+    if(e.target && e.target.id === 'fab-ord-add-prod-btn'){
+      var sel = document.getElementById('fab-ord-add-prod-sel');
+      if(!sel || !sel.value){ alert('Seleziona prima un prodotto dal menu a tendina.'); return; }
+      var skuAdd = sel.value;
+      var p = fabProducts.find(function(pp){
+        return (pp.sku_shopify && pp.sku_shopify===skuAdd) || (pp.sku && pp.sku===skuAdd);
+      });
+      if(!p){ alert('Prodotto non trovato.'); return; }
+      var righeDiv = document.getElementById('fab-ord-righe');
+      if(!righeDiv) return;
+      // Se il messaggio "Nessun articolo" è presente, rimuovilo
+      var emptyMsg = righeDiv.querySelector('div[style*="text-align:center"]');
+      if(emptyMsg && /nessun articolo/i.test(emptyMsg.textContent||'')) emptyMsg.remove();
+
+      // Verifica se il prodotto è già presente nell'ordine
+      var skuAddLower = skuAdd.toLowerCase();
+      var righeEsistenti = righeDiv.querySelectorAll('.fab-ord-riga');
+      var rigaEsistente = null;
+      righeEsistenti.forEach(function(r){
+        var qtyIn = r.querySelector('.fab-ord-qty');
+        if(!qtyIn) return;
+        var existingSku = (qtyIn.getAttribute('data-sku-shopify')||qtyIn.getAttribute('data-sku')||'').toLowerCase();
+        if(existingSku === skuAddLower) rigaEsistente = r;
+      });
+
+      if(rigaEsistente && !multiDate){
+        // Single-date: prodotto già presente, non posso avere 2 righe con stessa data
+        // Faccio lampeggiare la riga esistente e avviso l'utente
+        alert('\u26a0\ufe0f Questo prodotto è già presente nell\'ordine.\n\nPer modificarne la quantità, usa la riga esistente evidenziata.');
+        // Evidenzia la riga con animazione flash gialla
+        var originalBg = rigaEsistente.style.background;
+        rigaEsistente.style.transition = 'background 0.3s';
+        rigaEsistente.style.background = '#fef08a';
+        // Scroll alla riga
+        rigaEsistente.scrollIntoView({behavior:'smooth', block:'center'});
+        // Focus sul campo quantità
+        var qtyFocus = rigaEsistente.querySelector('.fab-ord-qty');
+        if(qtyFocus){
+          setTimeout(function(){ qtyFocus.focus(); qtyFocus.select(); }, 300);
+        }
+        // Ripristina sfondo dopo 2 secondi
+        setTimeout(function(){ rigaEsistente.style.background = originalBg; }, 2000);
+        // Reset dropdown
+        sel.value = '';
+        return;
+      }
+
+      // Se multi-date, consento l'aggiunta come nuova riga (per data consegna diversa)
+      // ma prima avviso l'utente se c'è già la stessa data nelle righe esistenti
+      var codF = p.codice_forn?('['+p.codice_forn+'] '):'';
+      var dataConsDefault = '';
+      if(multiDate){
+        // Prova a prendere data da ultima riga oppure lascia vuota
+        var ultimaRiga = righeDiv.querySelector('.fab-ord-riga:last-child .fab-ord-datacons');
+        if(ultimaRiga && ultimaRiga.value) dataConsDefault = ultimaRiga.value;
+      }
+      var nuovaRiga = document.createElement('div');
+      nuovaRiga.className = 'fab-ord-riga';
+      nuovaRiga.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #f0f2f5;background:#fefce8;border-radius:4px;margin-bottom:2px';
+      var labelAggiunto = rigaEsistente && multiDate ? 'nuova data consegna' : 'aggiunto manualmente';
+      nuovaRiga.innerHTML = '<div style="flex:1;min-width:0">'+
+        '<div style="font-weight:600;font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+codF+(p.nome||p.sku||'—')+' <span style="color:#ca8a04;font-size:10px">\u2022 '+labelAggiunto+'</span></div>'+
+        '<div style="font-size:10px;color:#888">SKU: '+(p.sku||'—')+(p.ms>1?' · ms '+p.ms:'')+'</div>'+
+      '</div>'+
+      (multiDate ? '<input type="date" class="fab-ord-datacons" value="'+dataConsDefault+'" style="width:135px;padding:6px 8px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box">' : '')+
+      '<input type="number" class="fab-ord-qty" data-sku="'+(p.sku||'').replace(/"/g,'&quot;')+'" data-sku-shopify="'+(p.sku_shopify||'').replace(/"/g,'&quot;')+'" data-nome="'+(p.nome||p.sku||'').replace(/"/g,'&quot;')+'" data-codforn="'+(p.codice_forn||'').replace(/"/g,'&quot;')+'" data-ms="'+(p.ms||1)+'" min="0" value="" placeholder="0" style="width:'+(multiDate?'80':'90')+'px;padding:6px 8px;border:1.5px solid #ca8a04;border-radius:6px;font-size:13px;text-align:right;font-family:inherit;outline:none;font-weight:700">'+
+      '<span style="font-size:11px;color:#888;width:'+(multiDate?'20':'24')+'px">pz</span>'+
+      '<button type="button" class="fab-ord-del-riga" title="Elimina riga" style="background:#fef2f2;border:1.5px solid #fecaca;color:#dc2626;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0">\u2715</button>';
+
+      // Se è lo stesso prodotto in multi-date, inseriscilo SUBITO DOPO la riga esistente
+      // (per raggruppare stesso prodotto insieme, in ordine cronologico)
+      if(rigaEsistente && multiDate){
+        // Trova l'ultima riga con lo stesso SKU (potrebbero essere più di una)
+        var ultimaRigaStessoSku = null;
+        righeEsistenti.forEach(function(r){
+          var qtyIn = r.querySelector('.fab-ord-qty');
+          if(!qtyIn) return;
+          var existingSku = (qtyIn.getAttribute('data-sku-shopify')||qtyIn.getAttribute('data-sku')||'').toLowerCase();
+          if(existingSku === skuAddLower) ultimaRigaStessoSku = r;
+        });
+        if(ultimaRigaStessoSku && ultimaRigaStessoSku.nextSibling){
+          righeDiv.insertBefore(nuovaRiga, ultimaRigaStessoSku.nextSibling);
+        } else if(ultimaRigaStessoSku){
+          righeDiv.appendChild(nuovaRiga);
+        } else {
+          righeDiv.appendChild(nuovaRiga);
+        }
+      } else {
+        righeDiv.appendChild(nuovaRiga);
+      }
+
+      // Reset dropdown e focus sulla quantità
+      sel.value = '';
+      var newQtyInput = nuovaRiga.querySelector('.fab-ord-qty');
+      if(newQtyInput) newQtyInput.focus();
+    }
   });
 
   // ESC per chiudere
@@ -19853,7 +19988,7 @@ function _fabSalvaOrdineFromModal(modal, fornSel, urgente, mode, multiDate){
     // Se multiDate: trova il data input nella stessa riga
     var dataRiga = dataConsGlobal;
     if(multiDate){
-      var rowDiv = inp.closest('div[style*="display:flex"]');
+      var rowDiv = inp.closest('.fab-ord-riga') || inp.closest('div[style*="display:flex"]');
       var dataInp = rowDiv ? rowDiv.querySelector('.fab-ord-datacons') : null;
       if(dataInp) dataRiga = dataInp.value;
     }
