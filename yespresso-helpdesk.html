@@ -2942,6 +2942,27 @@ function renderMsgBlock(text, attachments){
     }
   }
 
+  // ═══ PARSER BRT SERVIZIO CLIENTI ═══
+  // Email da servizioclienti@brt.it / ticketcare@brt.it con risposta operatore filiale
+  // Il testo contiene sia la risposta dell'operatore BRT sia il messaggio originale annidato
+  // + firma operatore + footer automatico. Lo compattiamo mantenendo solo la risposta utile.
+  // Riconoscimento: contiene "Ticket]" + numero + firma tipo "Filiale di" oppure header BRT
+  if(text && (
+       /\[Ticket\]\s*\d+/i.test(text) ||
+       /Filiale\s+di\s+[A-Z]/i.test(text) ||
+       /Numero\s+Spedizione\s*:/i.test(text) ||
+       /BRT\s+Spa\s+https?:\/\/www\.brt\.it/i.test(text)
+     )){
+    try{
+      const brtcc = parseBrtCcEmail(text);
+      if(brtcc){
+        return renderBrtCcPanel(brtcc, text);
+      }
+    }catch(e){
+      console.warn("[BRT CC parser]", e);
+    }
+  }
+
   const rendered = renderMessageHtml(text, attachments);
   const isHtml = rendered.includes('email-inner');
   if(isHtml){
@@ -3388,17 +3409,6 @@ function renderPayPalPanel(p, origText){
   h += '<div id="paypal-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:#555;max-height:400px;overflow-y:auto;margin-top:10px">'+esc(origText||'')+'</div>';
 
   h += '</div>';
-
-  // Se c'è ID transazione ma nessun ordine → avvio AUTOMATICO della ricerca
-  // (senza che l'utente debba cliccare). La ricerca popolerà anche la sidebar.
-  if(p.idTransazione && !p.ordineShopify){
-    setTimeout(function(){
-      if(typeof window.cercaOrdineDaPayPalTx === 'function'){
-        try { window.cercaOrdineDaPayPalTx(uid, p.idTransazione); } catch(e){ console.warn('[PayPal auto-search]', e); }
-      }
-    }, 300);
-  }
-
   return h;
 }
 
@@ -3697,6 +3707,173 @@ function renderAtoZPanel(a, origText){
 
 window.toggleAtoZRaw = function(uid){
   const el = document.getElementById('atoz-raw-'+uid);
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Parser email BRT Servizio Clienti (servizioclienti@brt.it / ticketcare@brt.it)
+// ═══════════════════════════════════════════════════════════════════
+function parseBrtCcEmail(text){
+  if(!text) return null;
+
+  // Strip HTML se presente
+  let rawT = text;
+  if(/<\/?(?:td|tr|table|body|html|div|p|br|span)\b/i.test(rawT)){
+    rawT = rawT.replace(/<style[^>]*>[\s\S]*?<\/style>/gi,'')
+               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,'')
+               .replace(/<br\s*\/?>/gi,'\n')
+               .replace(/<\/?(p|div|tr|h[1-6])\b[^>]*>/gi,'\n')
+               .replace(/<[^>]+>/g,' ')
+               .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
+               .replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+               .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  }
+
+  const out = {};
+
+  // Numero ticket BRT (es. "[Ticket] 29279779" o "Ticket: 29279779")
+  const ticketMatch = rawT.match(/(?:\[Ticket\]|Ticket\s*:)\s*(\d{5,10})/i);
+  if(ticketMatch) out.numeroTicket = ticketMatch[1];
+
+  // Numero spedizione BRT (es. "Numero Spedizione: 26179010784625" oppure nel subject "Spedizioni 26179010784625")
+  const spedMatch = rawT.match(/(?:Numero\s+Spedizione|Spedizion[ie])\s*:?\s*(\d{10,16})/i);
+  if(spedMatch){
+    let sp = spedMatch[1];
+    // Rimuovi prefisso 26 (anno interno BRT)
+    if(sp.startsWith('26')) sp = sp.substring(2);
+    out.tracking = sp;
+  }
+
+  // Codice cliente (es. "Codice Cliente: 1791201")
+  const codCliMatch = rawT.match(/Codice\s+Cliente\s*:?\s*(\d+)/i);
+  if(codCliMatch) out.codiceCliente = codCliMatch[1];
+
+  // ═══ Estrai il corpo utile (la risposta dell'operatore BRT) ═══
+  // Taglia tutto dal separatore messaggio originale in giù
+  let body = rawT;
+  const separators = [
+    /-{3,}\s*Messaggio\s+originale\s*-{3,}[\s\S]*/i,
+    /From:\s*BRT\s+Ticket\s+Care[\s\S]*/i,
+    /Da:\s*BRT\s+Ticket\s+Care[\s\S]*/i,
+    /Inviato:\s*\d+\/\d+\/\d+[\s\S]*Oggetto:[\s\S]*/i,
+    /thread::[\w-]+::[\s\S]*/i,
+    /BRT\s+Spa\s+https?:\/\/www\.brt\.it[\s\S]*/i,
+    /Questo\s+è\s+un\s+messaggio\s+automatico[\s\S]*/i
+  ];
+  for(const sep of separators){
+    const m = body.match(sep);
+    if(m) body = body.substring(0, m.index);
+  }
+
+  // Taglia header "Gentile cliente" se è all'inizio (usato nel messaggio automatico BRT)
+  body = body.replace(/^\s*Gentile\s+cliente[\s\S]*?richiesta\.[^\n]*/i, '');
+
+  // Estrai firma (nome operatore + filiale) prima di rimuoverla
+  // Pattern tipico: "Grazie.\n<Nome Cognome>\nFiliale di <Città>\n<Indirizzo>"
+  const firmaMatch = body.match(/(?:Grazie\.?|Cordiali\s+saluti|Saluti|Distinti\s+saluti)[,.]?\s*\n+([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+)+)\s*\n+(?:Filiale\s+di\s+[^\n]+|BRT[^\n]*)/i);
+  if(firmaMatch){
+    out.operatore = firmaMatch[1].trim();
+    const fil = firmaMatch[0].match(/Filiale\s+di\s+([^\n,]+)/i);
+    if(fil) out.filiale = fil[1].trim();
+  }
+  // Fallback: solo "Filiale di Milano Centro" anche senza nome
+  if(!out.filiale){
+    const filOnly = body.match(/Filiale\s+di\s+([^\n,]+)/i);
+    if(filOnly) out.filiale = filOnly[1].trim();
+  }
+
+  // Rimuovi firma dal body: tutto dopo "Grazie." / "Cordiali saluti" / "Saluti"
+  body = body.replace(/(?:Grazie\.?|Cordiali\s+saluti|Saluti|Distinti\s+saluti)[,.]?\s*\n+[A-Z][\s\S]*/i, '');
+  // Rimuovi chiusura "Grazie." solitaria alla fine se non c'era firma
+  body = body.replace(/\n*(?:Grazie\.?|Cordiali\s+saluti|Saluti)\s*\.?\s*$/i, '');
+
+  // Compatta righe vuote multiple e spazi
+  body = body.split(/\n+/).map(l => l.trim()).filter(l => l.length > 0).join('\n\n');
+  body = body.replace(/[ \u00A0]{2,}/g, ' ').trim();
+
+  out.corpoPulito = body;
+
+  // Tipo email (info ricavabile dal contenuto)
+  if(/fermopoint.*conferma|punto.*consegn/i.test(rawT) && /non\s+è\s+mai\s+arrivata|non\s+arrivata/i.test(rawT)){
+    out.tipo = 'Risposta da Filiale BRT';
+  } else if(/ticketcare@brt\.it/i.test(rawT) && /abbiamo\s+ricevuto/i.test(rawT)){
+    out.tipo = 'Conferma apertura ticket BRT';
+  } else if(/Filiale\s+di/i.test(rawT)){
+    out.tipo = 'Risposta da Filiale BRT';
+  } else {
+    out.tipo = 'Risposta BRT Servizio Clienti';
+  }
+
+  // Richiede almeno il corpo o il ticket BRT per essere valido
+  if(!out.corpoPulito || out.corpoPulito.length < 10){
+    if(!out.numeroTicket) return null;
+  }
+  return out;
+}
+
+// Render pannello BRT Servizio Clienti compatto
+function renderBrtCcPanel(b, origText){
+  const uid = 'brtcc_'+Math.random().toString(36).slice(2);
+  const esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+
+  let h = '<div class="msg-body msg-body-plain" style="padding:0;background:transparent;box-shadow:none">';
+
+  h += '<div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:14px">';
+
+  // Header
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:14px;font-weight:700;color:#9a3412">📦 '+esc(b.tipo||'BRT Servizio Clienti')+'</div>';
+  if(b.operatore){
+    h += '<div style="font-size:11px;color:#9a3412">👤 '+esc(b.operatore)+(b.filiale?' · '+esc(b.filiale):'')+'</div>';
+  } else if(b.filiale){
+    h += '<div style="font-size:11px;color:#9a3412">📍 '+esc(b.filiale)+'</div>';
+  }
+  h += '</div>';
+
+  // Grid riferimenti
+  if(b.numeroTicket || b.tracking || b.codiceCliente){
+    h += '<div style="background:#fff;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px">';
+    h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px">';
+    if(b.numeroTicket){
+      h += '<div style="color:#888">Ticket BRT</div>';
+      h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">#'+esc(b.numeroTicket)+'</div>';
+    }
+    if(b.tracking){
+      const brtUrl = 'https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz='+b.tracking;
+      h += '<div style="color:#888">Spedizione</div>';
+      h += '<div><a href="'+brtUrl+'" target="_blank" style="color:#c2410c;text-decoration:none;font-weight:600;font-family:monospace">'+esc(b.tracking)+' ↗</a></div>';
+    }
+    if(b.codiceCliente){
+      h += '<div style="color:#888">Cod. Cliente</div>';
+      h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">'+esc(b.codiceCliente)+'</div>';
+    }
+    h += '</div></div>';
+  }
+
+  // Corpo messaggio pulito (la vera risposta dell'operatore BRT)
+  if(b.corpoPulito){
+    h += '<div style="background:#fff;border-radius:6px;padding:12px 14px;font-size:13px;line-height:1.55;color:#1a1a2e;white-space:pre-wrap">';
+    h += esc(b.corpoPulito);
+    h += '</div>';
+  }
+
+  // Toggle email originale
+  h += '<div style="margin-top:10px;text-align:center">';
+  h += '<button onclick="toggleBrtCcRaw(\''+uid+'\')" style="background:transparent;border:none;color:#9a3412;font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email BRT originale</button>';
+  h += '</div>';
+
+  h += '</div>'; // chiude header box
+
+  // Email originale nascosta
+  h += '<div id="brtcc-raw-'+uid+'" style="display:none;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:#555;max-height:400px;overflow-y:auto;margin-top:10px">'+esc(origText||'')+'</div>';
+
+  h += '</div>';
+  return h;
+}
+
+window.toggleBrtCcRaw = function(uid){
+  const el = document.getElementById('brtcc-raw-'+uid);
   if(!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
 };
@@ -4699,6 +4876,28 @@ async function fetchShopifyOrder(message,email,requesterName){
             if(hit){console.log("✅ confirmation_number "+code);if(hit.customer)window._lastShopifyCustomerId=hit.customer.id;window._lastShopifyOrder=hit;return hit;}
           }
         }catch(e){console.warn('Ricerca confirmation_number:',e.message);}
+      }
+    }
+
+    // 3d. Ricerca PayPal Transaction ID (es. 0MT78249S8228660K)
+    // Shopify indicizza il txId nei campi transazione e lo trova via query=
+    // Pattern: 17 caratteri alfanumerici con almeno una lettera e una cifra
+    const isPayPalTicket = (email||"").includes("paypal");
+    if(isPayPalTicket){
+      const ppTxMatches = message.match(/\b([0-9][A-Z][A-Z0-9]{15}|[A-Z0-9]{17})\b/g) || [];
+      for(const candidateTxId of ppTxMatches.slice(0,3)){
+        // Deve avere sia lettere che numeri (esclude codici solo numerici)
+        if(!/[A-Z]/.test(candidateTxId) || !/[0-9]/.test(candidateTxId)) continue;
+        try{
+          const dPp = await shopifyGet('orders.json?status=any&limit=5&query='+encodeURIComponent(candidateTxId));
+          if(dPp && dPp.orders && dPp.orders.length){
+            const ppHit = dPp.orders[0];
+            console.log("✅ PayPal txId "+candidateTxId+" → ordine "+(ppHit.name||ppHit.id));
+            if(ppHit.customer) window._lastShopifyCustomerId = ppHit.customer.id;
+            window._lastShopifyOrder = ppHit;
+            return ppHit;
+          }
+        }catch(e){ console.warn('Ricerca PayPal txId:', e.message); }
       }
     }
 
