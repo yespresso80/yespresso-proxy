@@ -6164,47 +6164,7 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     const imapRes0=await proxyFetch(url);
     const imapData0=await imapRes0.json();
     const imapAtts0=imapData0.attachments||[];
-    if(!imapAtts0.length){
-      // Fallback: IMAP non ha indicizzato questa email (tipico per gmail/TikTok).
-      // Mostra gli allegati immagine presi direttamente dal ticket HelpDesk.
-      try{
-        const oAreaFb = document.getElementById("imap-attachments-area") || document.getElementById("order-info-area");
-        if(oAreaFb && typeof selectedTicket !== 'undefined' && selectedTicket && selectedTicket.events){
-          const hdAtts = [];
-          const seenFb = new Set();
-          for(const ev of (selectedTicket.events||[])){
-            const atts = Array.isArray(ev.message && ev.message.attachments) ? ev.message.attachments : [];
-            for(const a of atts){
-              if(!a.url) continue;
-              const nm = a.name || a.filename || 'allegato';
-              if(seenFb.has(nm+a.url)) continue;
-              seenFb.add(nm+a.url);
-              const ct = (a.contentType||a.type||'').toLowerCase();
-              const isImg = ct.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(nm.toLowerCase());
-              if(!isImg) continue;
-              hdAtts.push({url:a.url, name:nm});
-            }
-          }
-          if(hdAtts.length){
-            let htmlFb = '<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
-            htmlFb += '<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">📎 ALLEGATI EMAIL ('+hdAtts.length+')</div>';
-            hdAtts.slice(0,6).forEach(img => {
-              htmlFb += '<div style="margin-bottom:6px">';
-              htmlFb += '<img src="'+img.url+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+img.name+'">';
-              htmlFb += '<div style="font-size:10px;color:#888;margin-top:2px">'+img.name+'</div>';
-              htmlFb += '</div>';
-            });
-            htmlFb += '</div>';
-            window._imapAttachmentsHtml = htmlFb;
-            oAreaFb.innerHTML = htmlFb;
-            console.log("✅ Allegati HelpDesk (fallback, IMAP vuoto):", hdAtts.length);
-            return;
-          }
-        }
-      }catch(eFb){ console.warn('[HD attach fallback]', eFb); }
-      window._imapAttachmentsHtml="";
-      return;
-    }
+    if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
     // Controlla se i data URL IMAP sono già presenti nell'area IMAP allegati
     // (evita doppio caricamento ma non blocca su filename generici)
     const imapArea=document.getElementById("imap-attachments-area");
