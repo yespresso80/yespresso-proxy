@@ -4901,6 +4901,68 @@ async function fetchShopifyOrder(message,email,requesterName){
       }
     }
 
+    // 3e. Ricerca ordini marketplace con numeri lunghi (TikTok/Temu/altri)
+    // Caso 1: Yespresso importa ordini TikTok/Temu su Shopify usando il numero marketplace
+    //         come "name" dell'ordine (es. name="576883935506504066", senza #).
+    // Caso 2: Il numero è salvato nei note_attributes (TikTok Order Id, Temu Order Id, ecc.)
+    // Strategia: prima chiamata diretta per name, poi fallback su query + validazione.
+    const longNumMatches = (message.match(/\b\d{15,20}\b/g) || []).filter(function(num){
+      // Escludiamo tracking BRT (prefissi 26/2026 tipici)
+      if(/^(26|2026)\d+$/.test(num) && num.length <= 17) return false;
+      return true;
+    });
+    for(const candidateTk of longNumMatches.slice(0,3)){
+      try{
+        // Tentativo 1: ricerca diretta per name (senza #) — il modo più affidabile
+        // quando Shopify ha l'ordine con name uguale al numero marketplace
+        const dTkDirect = await shopifyGet('orders.json?status=any&name='+encodeURIComponent(candidateTk));
+        if(dTkDirect && dTkDirect.orders && dTkDirect.orders.length){
+          const directHit = dTkDirect.orders[0];
+          console.log("✅ Marketplace order "+candidateTk+" via name= → ordine "+(directHit.name||directHit.id));
+          if(directHit.customer) window._lastShopifyCustomerId = directHit.customer.id;
+          window._lastShopifyOrder = directHit;
+          return directHit;
+        }
+      }catch(e){ console.warn('Ricerca name diretto long-num:', e.message); }
+
+      try{
+        // Tentativo 2: full-text query su tutti gli ordini
+        const dTk = await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(candidateTk));
+        if(dTk && dTk.orders && dTk.orders.length){
+          const mktFields = ['TikTok Order Id','tiktok_order_id','PARENT_ORDER_SN','Temu Order Id','temu_order_id','order_id','Marketplace Order Id','Amazon Order Id'];
+          let preciseHit = null;
+          for(const o of dTk.orders){
+            // (a) match diretto su name o order_number (caso import TikTok→Shopify)
+            if(String(o.name||'').indexOf(candidateTk) >= 0 || String(o.order_number||'').indexOf(candidateTk) >= 0){
+              preciseHit = o; break;
+            }
+            // (b) match nei note_attributes marketplace
+            const nas = o.note_attributes || [];
+            for(const attr of nas){
+              if(mktFields.indexOf(attr.name) >= 0 && String(attr.value||'').indexOf(candidateTk) >= 0){
+                preciseHit = o; break;
+              }
+            }
+            if(preciseHit) break;
+          }
+          if(preciseHit){
+            console.log("✅ Marketplace order "+candidateTk+" via query → ordine "+(preciseHit.name||preciseHit.id));
+            if(preciseHit.customer) window._lastShopifyCustomerId = preciseHit.customer.id;
+            window._lastShopifyOrder = preciseHit;
+            return preciseHit;
+          }
+          // Fallback single-match: se Shopify ha restituito UN solo ordine, è molto probabile sia lui
+          if(dTk.orders.length === 1){
+            const singleHit = dTk.orders[0];
+            console.log("✅ Marketplace order "+candidateTk+" via single-match → ordine "+(singleHit.name||singleHit.id));
+            if(singleHit.customer) window._lastShopifyCustomerId = singleHit.customer.id;
+            window._lastShopifyOrder = singleHit;
+            return singleHit;
+          }
+        }
+      }catch(e){ console.warn('Ricerca marketplace long-num:', e.message); }
+    }
+
     // 4. Numero spedizione BRT
     const isBrtTicket=(email||"").includes("brt.it")||(email||"").includes("vasnoreply@brt")||(email||"").includes("servizioclienti@brt");
     if(isBrtTicket){
@@ -5076,6 +5138,22 @@ function formatOrderInfo(order){
     if(f.tracking_company)info+=" | "+f.tracking_company;
     if(f.tracking_number)info+=" | Tracking: "+f.tracking_number+" | BRT: https://vas.brt.it/vas/sped_det_show.hsm?referer=sped_numspe_par.htm&Nspediz="+f.tracking_number;
     if(f.created_at)info+=" | Spedito: "+new Date(f.created_at).toLocaleDateString("it-IT");
+    // ═══ WARNING stato consegna esplicito per l'AI ═══
+    // Per evitare che l'AI inventi date di consegna o dica "consegnato" quando non lo è
+    const ss=f.shipment_status||'';
+    if(ss==='delivered'){
+      // È consegnato davvero: possiamo dirlo
+      info+=" | ✅ PACCO CONSEGNATO — ok dire al cliente che è stato consegnato";
+    } else if(ss==='in_transit' || ss==='out_for_delivery' || ss==='confirmed'){
+      info+=" | ⚠️ PACCO NON ANCORA CONSEGNATO (stato: "+(sS[ss]||ss)+") — NON dire al cliente che è stato consegnato, NON inventare date di consegna. Il pacco è spedito ma ancora in viaggio: invitalo a controllare il tracking BRT.";
+    } else if(ss==='failure' || ss==='attempted_delivery'){
+      info+=" | ⚠️ PROBLEMA CONSEGNA (stato: "+(sS[ss]||ss)+") — c'è stato un tentativo fallito o problema di consegna, NON dire che è consegnato.";
+    } else if(ss==='ready_for_pickup'){
+      info+=" | 📬 IN ATTESA DI RITIRO FERMOPOINT — il cliente deve andare a ritirarlo, NON è stato ancora consegnato.";
+    } else if(!ss && order.fulfillment_status==='fulfilled'){
+      // Fulfilled ma senza shipment_status dettagliato → spedito ma stato reale ignoto
+      info+=" | ⚠️ PACCO SPEDITO (etichetta creata) ma stato consegna non confermato da BRT — NON affermare che sia stato consegnato, invita il cliente a controllare il tracking.";
+    }
   }
   if(order.shipping_address){const a=order.shipping_address;info+=" | "+[a.address1,a.city,a.zip].filter(Boolean).join(", ")}
   // Metodo di pagamento — utile per rimborsi
@@ -5549,7 +5627,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     "4. NON ripetere cose che abbiamo già scritto nei messaggi precedenti (scuse, spiegazioni già date, link già inviati): il cliente le ha già lette.\n"+
     "5. NON rifare domande a cui il cliente ha già risposto in messaggi precedenti.\n"+
     "6. NON introdurre il contesto (\"come da precedente conversazione\", \"come le avevamo già scritto\"): vai al punto.\n"+
-    "7. Risposta BREVE e CONCRETA: se il cliente chiede X, rispondi X. Niente preamboli lunghi, niente riepiloghi inutili.";
+    "7. Risposta BREVE e CONCRETA: se il cliente chiede X, rispondi X. Niente preamboli lunghi, niente riepiloghi inutili.\n"+
+    "8. CRITICO — STATO CONSEGNA: usa SOLO lo stato dichiarato nei 'Dati ordine' sopra. NON inventare date di consegna, NON affermare che il pacco è stato consegnato a meno che nei dati ordine appaia esplicitamente '✅ PACCO CONSEGNATO'. Se lo stato è 'In transito', 'In consegna', 'Tentativo fallito' o simili, comunicalo come tale al cliente e invitalo a verificare il tracking BRT. Se non hai una data di consegna certa dai dati, NON inventarla.";
 
   // Se stato spedizione critico → non chiamare Claude
   if(order && order._criticalShipping){ return; }
