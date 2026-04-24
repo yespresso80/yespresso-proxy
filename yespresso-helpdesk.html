@@ -22235,14 +22235,16 @@ function renderRicezioneTable(){
   '</tr></thead><tbody>';
 
   fabProducts.forEach(function(p,idx){
-    // Trova tutte le righe aperte per questo prodotto ordinate per data consegna
+    // Trova tutte le righe aperte per questo prodotto ordinate per data consegna DELLA RIGA
+    // (negli ordini multi-date ogni riga ha la sua data specifica)
     var righeAperte=[];
     openOrds.forEach(function(ord){
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
         if(residuo<=0) return;
-        righeAperte.push({ord:ord,riga:r,residuo:residuo,data:ord.data_consegna_prevista||'9999-99-99'});
+        var dataRiga=r.data_cons_riga||ord.data_consegna_prevista||'9999-99-99';
+        righeAperte.push({ord:ord,riga:r,residuo:residuo,data:dataRiga});
       });
     });
     righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
@@ -22304,13 +22306,16 @@ window.ricezioneSalva=async function(){
     processed++;
 
     // Scala dagli ordini aperti dal più vicino al più lontano
+    // IMPORTANTE: ordina per data consegna della RIGA (non dell'ordine intero),
+    // perché negli ordini multi-date ogni riga può avere una data diversa.
     var righeAperte=[];
     openOrds.forEach(function(ord){
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==sku) return;
         var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
         if(residuo<=0) return;
-        righeAperte.push({ord:ord,riga:r,residuo:residuo,data:ord.data_consegna_prevista||'9999-99-99'});
+        var dataRiga=r.data_cons_riga||ord.data_consegna_prevista||'9999-99-99';
+        righeAperte.push({ord:ord,riga:r,residuo:residuo,data:dataRiga});
       });
     });
     righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
