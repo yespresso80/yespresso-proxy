@@ -19266,6 +19266,10 @@ function renderFabPiano(body){
     }
 
     // ── PASS 2: pianificazione normale settimana per settimana ──────
+    // REGOLE:
+    // - Se il deficit di sicurezza è < ord_min → IGNORA (non vale la pena)
+    // - Se deficit ≥ 50% scorta sicurezza → ordine CRITICO (rosso/arancione)
+    // - Se deficit < 50% scorta sicurezza → ordine OPZIONALE (giallo soft)
     for(var w=0;w<=HORIZON_WEEKS+LEAD_WEEKS;w++){
       var arrivoGia=arriviGia[w]||0;
       var arrivoNuovo=nuoviOrdini[w]||0;
@@ -19280,15 +19284,29 @@ function renderFabPiano(body){
 
         if(scortaAllaConsegna<scortaSic){
           var deficit=scortaSic-scortaAllaConsegna;
-          var qtyUnita;
-          if(ms>1) qtyUnita=Math.ceil(deficit/ms)*ms;
-          else if(p.multiplo>1) qtyUnita=Math.ceil(deficit/p.multiplo)*p.multiplo;
-          else qtyUnita=Math.ceil(deficit);
-          qtyUnita=Math.max(qtyUnita,p.ord_min);
 
-          var wi_c=w+LEAD_WEEKS;
-          nuoviOrdini[wi_c]=(nuoviOrdini[wi_c]||0)+qtyUnita;
-          arriviGia[wi_c]=(arriviGia[wi_c]||0)+qtyUnita;
+          // REGOLA B: ignora buchi troppo piccoli (< ord_min)
+          // Significa che mancherebbero pochi pezzi alla sicurezza,
+          // non vale la pena aprire un ordine a parte.
+          if(deficit < p.ord_min){
+            // Salta: buco troppo piccolo
+          } else {
+            var qtyUnita;
+            if(ms>1) qtyUnita=Math.ceil(deficit/ms)*ms;
+            else if(p.multiplo>1) qtyUnita=Math.ceil(deficit/p.multiplo)*p.multiplo;
+            else qtyUnita=Math.ceil(deficit);
+            qtyUnita=Math.max(qtyUnita,p.ord_min);
+
+            var wi_c=w+LEAD_WEEKS;
+            nuoviOrdini[wi_c]=(nuoviOrdini[wi_c]||0)+qtyUnita;
+            arriviGia[wi_c]=(arriviGia[wi_c]||0)+qtyUnita;
+
+            // REGOLA D: marca come OPZIONALE se deficit < 50% scorta sicurezza
+            // (è un ordine "di precauzione" non strettamente necessario)
+            if(deficit < scortaSic*0.5){
+              nuoviOrdini['_opzionale_'+wi_c]=true;
+            }
+          }
         }
 
         var wkDate=new Date(today);wkDate.setDate(today.getDate()+w*7);
@@ -19328,11 +19346,13 @@ function renderFabPiano(body){
       var wc=wo+LEAD_WEEKS;
       var qty=nuoviOrdini[wc]||0;
       if(qty===0) continue;
+      var isOpzionale=!!nuoviOrdini['_opzionale_'+wc];
       var dataOrdine=_dataLavorativa(today,wo*7);
       var dataConsegna=_dataLavorativa(today,wc*7);
       var qm=ms>1?Math.ceil(qty/ms):null;
       ordiniDaEmettere.push({
         wo:wo,urgente:false,
+        opzionale:isOpzionale,
         dataOrdine:dataOrdine,
         dataConsegna:dataConsegna,
         qty:qty,qm:qm,
@@ -19409,9 +19429,16 @@ function renderFabPiano(body){
   }
 
   // ── PIANO ORDINI PER FORNITORE — una card per settimana ────────
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px">'+
     '<h3 style="font-size:14px;font-weight:700;color:#1a1a2e;margin:0">📅 Ordini da emettere per settimana</h3>'+
     '<span style="font-size:11px;color:#888;background:#f5f3ff;border-radius:6px;padding:4px 10px">Clicca le card per selezionarle e creare un ordine</span>'+
+  '</div>'+
+  '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:#666">'+
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#dc2626;border-radius:2px;vertical-align:middle;margin-right:4px"></span>🚨 Urgente</span>'+
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Da inviare oggi</span>'+
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Prossimi 14gg</span>'+
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Futuri</span>'+
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#fefce8;border:1.5px dashed #eab308;border-radius:2px;vertical-align:middle;margin-right:4px"></span>💡 Opzionale (scorta sicurezza)</span>'+
   '</div>'+
   '<div id="fab-piano-crea-bar" style="display:none;background:#6d28d9;color:#fff;padding:10px 16px;border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 16px rgba(109,40,217,.3)">'+
     '<span id="fab-piano-crea-label" style="font-size:13px;font-weight:700"></span>'+
@@ -19449,23 +19476,34 @@ function renderFabPiano(body){
     settKeys.forEach(function(k){
       var sg=settMap[k];
       var hasUrgente=sg.items.some(function(x){return x.o.urgente;});
-      var isOggi=!hasUrgente&&k===0;
-      var isNormale=!hasUrgente;
-      var bc=hasUrgente?'#dc2626':isOggi?'#16a34a':k<2?'#f59e0b':'#c4b5fd';
-      var bg=hasUrgente?'#fff5f5':isOggi?'#f0fdf4':k<2?'#fffbeb':'#faf8ff';
-      var labelTop=hasUrgente?
-        '🚨 URGENTE — consegna tra '+sg.items[0].o.giorniConsegna+'gg':
-        isOggi?'✅ DA INVIARE OGGI':
-        k===1?'📤 Tra 7 giorni':
-        '📤 Tra '+(k*7)+' giorni';
+      // Card completamente opzionale = tutti gli item hanno flag opzionale
+      // (se anche UN solo item è critico, la card intera è critica)
+      var tuttiOpzionali=!hasUrgente && sg.items.length>0 && sg.items.every(function(x){return x.o.opzionale;});
+      var isOggi=!hasUrgente&&!tuttiOpzionali&&k===0;
+      var isNormale=!hasUrgente&&!tuttiOpzionali;
+
+      // Colori: rosso = urgente | giallo soft = opzionale | verde = oggi | arancione = 7-14gg | viola = futuro
+      var bc, bg;
+      if(hasUrgente){ bc='#dc2626'; bg='#fff5f5'; }
+      else if(tuttiOpzionali){ bc='#eab308'; bg='#fefce8'; } // giallo soft
+      else if(isOggi){ bc='#16a34a'; bg='#f0fdf4'; }
+      else if(k<2){ bc='#f59e0b'; bg='#fffbeb'; }
+      else { bc='#c4b5fd'; bg='#faf8ff'; }
+
+      var labelTop;
+      if(hasUrgente) labelTop='🚨 URGENTE — consegna tra '+sg.items[0].o.giorniConsegna+'gg';
+      else if(tuttiOpzionali) labelTop='💡 Ordine opzionale (scorta sicurezza)';
+      else if(isOggi) labelTop='✅ DA INVIARE OGGI';
+      else if(k===1) labelTop='📤 Tra 7 giorni';
+      else labelTop='📤 Tra '+(k*7)+' giorni';
       // Dati card serializzati
       var cardId='fc_'+forn.replace(/[^a-z0-9]/gi,'')+'_'+k;
       var cardRighe=sg.items.map(function(it){return {sku_shopify:it.p.sku_shopify,sku:it.p.sku,qty:it.o.qty,ms:it.plan.ms};});
-      var cardInfo={fornitore:forn,dataOrdine:sg.dataOrdine.toISOString().substring(0,10),dataConsegna:sg.dataConsegna.toISOString().substring(0,10),urgente:hasUrgente,righe:cardRighe};
+      var cardInfo={fornitore:forn,dataOrdine:sg.dataOrdine.toISOString().substring(0,10),dataConsegna:sg.dataConsegna.toISOString().substring(0,10),urgente:hasUrgente,opzionale:tuttiOpzionali,righe:cardRighe};
       html+='<div id="'+cardId+'" '+
         'data-card="'+encodeURIComponent(JSON.stringify(cardInfo))+'" '+
         'onclick="fabTogglePianoCard(this)" '+
-        'style="border:2px solid '+bc+';border-radius:8px;padding:10px 14px;min-width:200px;max-width:260px;background:'+bg+';cursor:pointer;position:relative;user-select:none">'+
+        'style="border:2px '+(tuttiOpzionali?'dashed':'solid')+' '+bc+';border-radius:8px;padding:10px 14px;min-width:200px;max-width:260px;background:'+bg+';cursor:pointer;position:relative;user-select:none'+(tuttiOpzionali?';opacity:0.9':'')+'">'+
         '<div style="position:absolute;top:8px;right:8px;font-size:16px;color:'+bc+'" id="chk_'+cardId+'">&#9744;</div>'+
         '<div style="font-size:11px;font-weight:700;color:'+bc+';margin-bottom:2px">'+labelTop+'</div>'+
         '<div style="font-size:11px;color:#555;margin-bottom:2px">&#128228; Emissione: <strong>'+sg.dataOrdine.toLocaleDateString('it-IT')+'</strong></div>'+
@@ -19473,9 +19511,10 @@ function renderFabPiano(body){
           (hasUrgente?' <span style="color:#dc2626;font-weight:700">(anticipata!)</span>':'')+
         '</div>'+
         sg.items.map(function(item){
+          var color = item.o.urgente ? '#dc2626' : (item.o.opzionale ? '#ca8a04' : '#16a34a');
           return '<div style="font-size:12px;color:#1a1a2e;padding:2px 0;border-top:1px solid #f0f2f5">'+
             '<span style="font-weight:600">'+item.p.sku+'</span><br>'+
-            '<span style="color:'+(item.o.urgente?'#dc2626':'#16a34a')+';font-weight:700">'+item.o.label+'</span>'+
+            '<span style="color:'+color+';font-weight:700">'+item.o.label+'</span>'+
             ' <span style="color:#aaa;font-size:10px">cons.'+item.plan.consumoSett+'/sett</span>'+
           '</div>';
         }).join('')+
