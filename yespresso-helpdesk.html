@@ -12184,15 +12184,29 @@ async function loadOrdiniDaPreparareData(){
     });
 
     // Categorizza per complessità
-    // I prodotti con "scatola multipla" hanno un fattore di accorpamento:
-    // es. "10 NESPRESSO - ORZO" 8pz = 1 quantità (fattore 8)
-    // es. "16 DOLCE GUSTO - CAPPUCCINO" 4pz = 1 quantità (fattore 4)
-    // Per questi prodotti la quantità "vera" da contare è ceil(pezzi / fattore)
+    // I prodotti con "scatola multipla" hanno un fattore di accorpamento.
+    // La chiave usata è il SKU tecnico Shopify (campo "sku" nei line items).
+    // Mantengo anche il nome leggibile come commento per chiarezza.
     var SCATOLA_FATTORE = {
-      // Fattore 8 (Nespresso speciali)
+      // Fattore 8 (Nespresso speciali da 10 capsule × 8 confezioni = 80 caps)
+      'CNBX10SOL93':  8,  // 10 NESPRESSO - ORZO
+      'CNBX10SOL94':  8,  // 10 NESPRESSO - GINSENG
+      // Fattore 4 (Dolce Gusto speciali da 16 capsule × 4 confezioni = 64 caps)
+      'CDGE16CAF010': 4,  // 16 DOLCE GUSTO - DECA
+      'CDG16SOL229':  4,  // 16 DOLCE GUSTO - ORZO
+      'CDG16SOL230':  4,  // 16 DOLCE GUSTO - CAPPUCCINO
+      'CDG16SOL231':  4,  // 16 DOLCE GUSTO - CORTADO
+      'CDG16SOL232':  4   // 16 DOLCE GUSTO - CIOCCOLATA
+      // NB: NOCCIOLINO, LIMONE, GRANGINSENG hanno SKU che cercheremo in fabProducts a runtime
+    };
+
+    // Costruisci dinamicamente la mappa dei fattori usando i nomi presenti
+    // nella Struttura Prodotti (per intercettare anche NOCCIOLINO, LIMONE, GRANGINSENG)
+    var FATT_PER_NOME = {
+      // Fattore 8
       '10 NESPRESSO - ORZO': 8,
       '10 NESPRESSO - GINSENG': 8,
-      // Fattore 4 (Dolce Gusto speciali)
+      // Fattore 4
       '16 DOLCE GUSTO - DECA': 4,
       '16 DOLCE GUSTO - ORZO': 4,
       '16 DOLCE GUSTO - CAPPUCCINO': 4,
@@ -12202,18 +12216,29 @@ async function loadOrdiniDaPreparareData(){
       '16 DOLCE GUSTO - LIMONE': 4,
       '16 DOLCE GUSTO - GRANGINSENG': 4
     };
-    // Helper: dato uno SKU e una quantità reale, restituisci la quantità "scatole"
-    // (per i prodotti con fattore) oppure la quantità reale (per gli altri)
+    var _fabProdsForFatt = (typeof fabProducts !== 'undefined' && Array.isArray(fabProducts)) ? fabProducts : [];
+    _fabProdsForFatt.forEach(function(p){
+      if(!p || !p.sku || !p.sku_shopify) return;
+      var nome = p.sku.toUpperCase().trim();
+      if(FATT_PER_NOME[nome] != null && !SCATOLA_FATTORE[p.sku_shopify]){
+        SCATOLA_FATTORE[p.sku_shopify] = FATT_PER_NOME[nome];
+      }
+    });
+    console.log('[ODP] Fattori scatola attivi:', SCATOLA_FATTORE);
+
+    // Helper: dato uno SKU (tecnico Shopify) e una quantità reale,
+    // restituisci la quantità in "scatole" applicando il fattore (se previsto)
     var qtyScatole = function(sku, qty){
-      var skuUp = (sku||'').toUpperCase().trim();
-      // Match case-insensitive sui fattori
+      if(!sku) return qty;
+      var f = SCATOLA_FATTORE[sku];
+      if(f) return Math.ceil(qty / f);
+      // Fallback case-insensitive
+      var skuUp = sku.toUpperCase();
       var keys = Object.keys(SCATOLA_FATTORE);
       for(var i=0;i<keys.length;i++){
-        if(keys[i].toUpperCase() === skuUp){
-          return Math.ceil(qty / SCATOLA_FATTORE[keys[i]]);
-        }
+        if(keys[i].toUpperCase() === skuUp) return Math.ceil(qty / SCATOLA_FATTORE[keys[i]]);
       }
-      return qty; // nessun fattore: usa quantità reale
+      return qty;
     };
 
     var cat = {
@@ -12391,13 +12416,8 @@ async function loadOrdiniDaPreparareData(){
           if(v === 0 || v < 0.005) return '<td style="padding:8px 10px;text-align:center;color:#ccc">—</td>';
           return '<td style="padding:8px 10px;text-align:center;font-weight:600;color:#1a1a2e">'+formatNum(v)+'</td>';
         };
-        // Verifica se questo prodotto ha un fattore di accorpamento
-        var labelUp = (p.label||'').toUpperCase().trim();
-        var fattore = null;
-        var fattKeys = Object.keys(SCATOLA_FATTORE);
-        for(var fi=0;fi<fattKeys.length;fi++){
-          if(fattKeys[fi].toUpperCase() === labelUp){ fattore = SCATOLA_FATTORE[fattKeys[fi]]; break; }
-        }
+        // Verifica se questo prodotto ha un fattore di accorpamento (tramite sku_shopify)
+        var fattore = SCATOLA_FATTORE[p.sku_shopify] || null;
         var fattBadge = fattore ? ' <span title="Scatola da '+fattore+' pezzi: la quantità mostrata è in scatole, non pezzi singoli" style="background:#fef3c7;color:#92400e;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px">×'+fattore+'</span>' : '';
         return '<tr style="border-top:1px solid #f0f2f5">'+
           '<td style="padding:8px 12px;font-weight:600;color:#1a1a2e">'+p.label+fattBadge+'</td>'+
