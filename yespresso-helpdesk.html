@@ -2113,7 +2113,79 @@ async function selectTicket(tid){
           '<span class="msg-author '+(isPrivate?'msg-author-private':isAgent?'msg-author-agent':'msg-author-client')+'">'+authorName+'</span>'+
           '<span class="msg-date">'+evDate+'</span>'+
           '</div>';
-        messagesHtml+=renderMsgBlock(evText,evAttachments);
+        // ── COMPATTAZIONE EMAIL AMAZON RICHIESTA ANNULLAMENTO ────────────
+        // Se il messaggio è una notifica automatica Amazon (donotreply@amazon.com
+        // con oggetto "Richiesta di annullamento"), mostriamo un box compatto
+        // con le info chiave invece del lungo testo originale.
+        var _fromMail = ((ev.author&&ev.author.email)||'').toLowerCase();
+        var _tkSubj = (tk.subject||'').toLowerCase();
+        var _isAmazonCancelEmail = (_fromMail.indexOf('donotreply@amazon')>=0 || _fromMail.indexOf('do-not-reply@amazon')>=0)
+                                && _tkSubj.indexOf('annullamento')>=0;
+        if(_isAmazonCancelEmail){
+          // Estrai numero ordine Amazon dal subject (formato: 407-1234567-1234567)
+          var _ordMatch = (tk.subject||'').match(/(\d{3}-\d{7}-\d{7})/);
+          var _ordNum = _ordMatch ? _ordMatch[1] : '';
+          // Calcola se ordine annullabile (basato sul nostro ordine Shopify, se esiste)
+          // Usa l'ora attuale come riferimento (= apertura ticket dall'agente)
+          var _shopOrd = window._lastShopifyOrder;
+          var _annullabileBox = '';
+          if(_shopOrd && _shopOrd.created_at){
+            var _cr = new Date(_shopOrd.created_at);
+            var _nw = new Date();
+            var _hh = _cr.getHours()+_cr.getMinutes()/60;
+            var _dy = _cr.getDay();
+            var _iswd = _dy>=1&&_dy<=5;
+            var _dl = null;
+            if(!_iswd){ var _nd=new Date(_cr);_nd.setHours(0,0,0,0);_nd.setDate(_nd.getDate()+1);while(_nd.getDay()<1||_nd.getDay()>5)_nd.setDate(_nd.getDate()+1);_nd.setHours(9,0,0,0);_dl=_nd; }
+            else if(_hh<=9){ var _dd1=new Date(_cr);_dd1.setHours(9,0,0,0);_dl=_dd1; }
+            else if(_hh<=16){ var _dd2=new Date(_cr.getTime()+3600000);var _dd3=new Date(_cr);_dd3.setHours(16,15,0,0);_dl=_dd2<_dd3?_dd2:_dd3; }
+            else if(_hh<=16.75){ _dl=null; }
+            else{ var _nd2=new Date(_cr);_nd2.setHours(0,0,0,0);_nd2.setDate(_nd2.getDate()+1);while(_nd2.getDay()<1||_nd2.getDay()>5)_nd2.setDate(_nd2.getDate()+1);_nd2.setHours(9,0,0,0);_dl=_nd2; }
+            var _canCancel = _dl ? (_nw<=_dl) : false;
+            var _isShipped = _shopOrd.fulfillment_status==='fulfilled' || _shopOrd.fulfillment_status==='partial';
+            if(_canCancel && !_isShipped){
+              _annullabileBox = '<div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+                '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:8px">✅ Ordine ANNULLABILE su Seller Central</div>'+
+                '<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700">🔗 Annulla su Amazon</a>'+
+                '<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;margin-left:8px;background:#fff;color:#1a73e8;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1.5px solid #1a73e8">📋 Vedi ordine</a>'+
+              '</div>';
+            } else {
+              var _motivo = _isShipped ? 'Ordine già spedito' : 'Fuori orario di annullabilità';
+              _annullabileBox = '<div style="background:#fff8f0;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+                '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚠️ Ordine NON annullabile — '+_motivo+'</div>'+
+                '<div style="font-size:11px;color:#92400e">Contatta l\'acquirente per chiedere il rifiuto della spedizione, o avviare un reso.</div>'+
+                '<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;margin-top:8px;background:#fff;color:#1a73e8;text-decoration:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;border:1.5px solid #1a73e8">📋 Vedi ordine in Seller Central</a>'+
+              '</div>';
+            }
+          } else {
+            // Nessun ordine Shopify trovato: mostra solo link
+            _annullabileBox = '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+              '<div style="font-size:12px;color:#6d28d9;margin-bottom:6px">ℹ️ Verifica lo stato dell\'ordine su Seller Central per gestire l\'annullamento</div>'+
+              (_ordNum?'<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700">📋 Apri ordine in Seller Central</a>':'')+
+            '</div>';
+          }
+          // Box compatto principale con dettagli + bottone "mostra originale"
+          var _msgBoxId = 'amzcancel_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
+          messagesHtml+='<div style="padding:0 4px">'+
+            '<div style="background:#fffaeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px">'+
+              '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+                '<span style="font-size:18px">📦</span>'+
+                '<span style="font-size:14px;font-weight:700;color:#92400e">Richiesta annullamento Amazon</span>'+
+                '<span style="margin-left:auto;font-size:10px;color:#888;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #f59e0b">notifica automatica</span>'+
+              '</div>'+
+              (_ordNum?'<div style="font-size:13px;color:#1a1a2e;margin-bottom:6px"><strong>Numero ordine:</strong> <span style="font-family:monospace;background:#fff;padding:3px 8px;border-radius:4px;border:1px solid #f0e0c0">'+_ordNum+'</span> <button onclick="navigator.clipboard.writeText(\''+_ordNum+'\').then(()=>showToast&&showToast(\'Numero ordine copiato\',\'success\'))" style="margin-left:6px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">📋 Copia</button></div>':'')+
+              _annullabileBox +
+              '<div style="margin-top:10px;text-align:right">'+
+                '<button onclick="(function(b){var d=document.getElementById(\''+_msgBoxId+'\');if(d){d.style.display=d.style.display===\'none\'?\'block\':\'none\';b.textContent=d.style.display===\'none\'?\'▸ Mostra messaggio originale\':\'▾ Nascondi messaggio originale\';}})(this)" style="background:none;border:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline">▸ Mostra messaggio originale</button>'+
+              '</div>'+
+              '<div id="'+_msgBoxId+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed #f0e0c0;font-size:12px;color:#666;max-height:200px;overflow-y:auto;background:#fff;border-radius:6px;padding:8px 10px">'+
+                renderMsgBlock(evText,evAttachments)+
+              '</div>'+
+            '</div>'+
+          '</div>';
+        } else {
+          messagesHtml+=renderMsgBlock(evText,evAttachments);
+        }
         messagesHtml+='</div>';
       });
     }
