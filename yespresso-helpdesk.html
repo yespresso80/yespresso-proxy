@@ -8101,6 +8101,8 @@ function openFilippoPanel(){
   },{
     id:'ordini_da_preparare',label:'🚚 Ordini da Preparare',periodo:'',custom:true,groups:[]
   },{
+    id:'ordini_preparati',label:'📈 Ordini Preparati 30/60/90',periodo:'',custom:true,groups:[]
+  },{
     id:'ordini_ritardo',label:'⏰ Ordini in Ritardo',periodo:'',custom:true,groups:[]
   },{
     id:'attivita',label:'✅ Attività da Fare',periodo:'',custom:true,groups:[]
@@ -8147,6 +8149,7 @@ function openFilippoPanel(){
         if(sec.id==='corrispettivi_it') setTimeout(function(){renderCorrispettivi(null,panel,null);},0);
         else if(sec.id==='merce_inserita') setTimeout(function(){renderMerceInserita(null,panel,null);},0);
         else if(sec.id==='ordini_da_preparare') setTimeout(function(){renderOrdiniDaPreparare(panel);},0);
+        else if(sec.id==='ordini_preparati') setTimeout(function(){renderOrdiniPreparati(panel);},0);
         else if(sec.id==='ordini_ritardo') setTimeout(function(){renderOrdiniRitardo(null,panel,null);},0);
         else if(sec.id==='attivita') setTimeout(function(){renderAttivita(null,panel,null);},0);
         else if(sec.id==='sandbox_ai') setTimeout(function(){renderSandboxAI(panel);},0);
@@ -12513,23 +12516,6 @@ async function loadOrdiniDaPreparareData(){
       '</div>';
     }
 
-    // ── SEZIONE ANALISI STORICO (30/60/90 giorni) ─────────────────────
-    // Placeholder che verrà popolato da loadAnalisiStoricoData()
-    html += '<div id="odp-analisi-storico" style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px;margin-bottom:16px">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">'+
-        '<div style="font-size:14px;font-weight:700;color:#374151">📈 Analisi Storico (ordini ricevuti — sia evasi che inevasi)</div>'+
-        '<div style="display:flex;gap:8px;align-items:center">'+
-          '<span style="font-size:11px;color:#888">Periodo:</span>'+
-          '<select id="odp-storico-periodo" onchange="loadAnalisiStoricoData(this.value)" style="padding:5px 10px;border:1px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:inherit;font-weight:600">'+
-            '<option value="30">Ultimi 30 giorni</option>'+
-            '<option value="60">Ultimi 60 giorni</option>'+
-            '<option value="90">Ultimi 90 giorni</option>'+
-          '</select>'+
-        '</div>'+
-      '</div>'+
-      '<div id="odp-storico-content" style="text-align:center;color:#888;padding:30px"><div style="display:inline-flex;align-items:center;gap:10px"><div class="spinner" style="width:18px;height:18px"></div> Caricamento...</div></div>'+
-    '</div>';
-
     // Tabella dettaglio (default: tutti, ordinati per attesa decrescente)
     html += '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden">'+
       '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
@@ -12612,8 +12598,6 @@ async function loadOrdiniDaPreparareData(){
         '</tr></thead><tbody>'+rows+'</tbody></table>';
     };
     window._odpRenderList(); // primo render
-    // Carica analisi storico in background (30 giorni di default)
-    loadAnalisiStoricoData(30);
 
   }catch(err){
     console.error('Errore caricamento ordini da preparare:', err);
@@ -12624,6 +12608,33 @@ async function loadOrdiniDaPreparareData(){
       '<button onclick="loadOrdiniDaPreparareData()" style="margin-top:14px;background:#dc2626;border:none;border-radius:6px;padding:8px 16px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">🔄 Riprova</button>'+
     '</div>';
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGINA DEDICATA: Ordini Preparati 30/60/90
+// Mostra l'analisi storico degli ordini ricevuti negli ultimi 30/60/90 giorni
+// ════════════════════════════════════════════════════════════════
+function renderOrdiniPreparati(panel){
+  var ca = panel.querySelector('#filippo-content');
+  if(!ca) return;
+  ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:6px">📈 Ordini Preparati 30/60/90</div>'+
+    '<div style="font-size:12px;color:#888;margin-bottom:20px">Analisi storica degli ordini ricevuti (sia evasi che inevasi) — clienti privati. Fabio e Molnar sono aggregati separatamente come Ingrosso.</div>'+
+    '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">'+
+        '<div style="font-size:14px;font-weight:700;color:#374151">📊 Riepilogo per periodo</div>'+
+        '<div style="display:flex;gap:8px;align-items:center">'+
+          '<span style="font-size:11px;color:#888">Periodo:</span>'+
+          '<select id="odp-storico-periodo" onchange="loadAnalisiStoricoData(this.value)" style="padding:6px 12px;border:1px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;font-weight:600">'+
+            '<option value="30">Ultimi 30 giorni</option>'+
+            '<option value="60">Ultimi 60 giorni</option>'+
+            '<option value="90">Ultimi 90 giorni</option>'+
+          '</select>'+
+        '</div>'+
+      '</div>'+
+      '<div id="odp-storico-content" style="text-align:center;color:#888;padding:30px"><div style="display:inline-flex;align-items:center;gap:10px"><div class="spinner" style="width:18px;height:18px"></div> Caricamento...</div></div>'+
+    '</div>';
+  // Avvia caricamento 30 giorni di default
+  setTimeout(function(){ loadAnalisiStoricoData(30); }, 50);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -12674,11 +12685,14 @@ async function loadAnalisiStoricoData(giorni){
       }`;
     };
 
-    // Loop paginazione (max 20 pagine = 5000 ordini per coprire 90 giorni)
+    // Loop paginazione: per supportare alti volumi (10-20k ordini/mese)
+    // 30gg = max 80 pagine = 20.000 ordini
+    // 60gg = max 160 pagine = 40.000 ordini
+    // 90gg = max 240 pagine = 60.000 ordini
     var allEdges = [];
     var cursor = null;
     var pageNum = 0;
-    var maxPages = giorni >= 90 ? 20 : (giorni >= 60 ? 15 : 10);
+    var maxPages = giorni >= 90 ? 240 : (giorni >= 60 ? 160 : 80);
     while(pageNum < maxPages){
       pageNum++;
       content.innerHTML = '<div style="display:inline-flex;align-items:center;gap:10px"><div class="spinner" style="width:18px;height:18px"></div> Caricamento pagina '+pageNum+'... ('+allEdges.length+' ordini finora)</div>';
@@ -12902,20 +12916,20 @@ async function loadAnalisiStoricoData(giorni){
     }
     html += '</div>';
 
-    // Tabella prodotti (compatta, stessa logica della vista principale)
+    // Tabella prodotti (con prodotto allineato a sinistra e caratteri più grandi)
     var c2 = function(v){
-      if(v === 0 || v < 0.005) return '<td style="padding:6px 8px;text-align:center;color:#ccc;border-right:1px solid #f0f2f5">—</td>';
-      return '<td style="padding:6px 8px;text-align:center;font-weight:600;color:#1a1a2e;border-right:1px solid #f0f2f5">'+formatNum(v)+'</td>';
+      if(v === 0 || v < 0.005) return '<td style="padding:8px 10px;text-align:center;color:#ccc;border-right:1px solid #f0f2f5;font-size:13px">—</td>';
+      return '<td style="padding:8px 10px;text-align:center;font-weight:600;color:#1a1a2e;border-right:1px solid #f0f2f5;font-size:13px">'+formatNum(v)+'</td>';
     };
     var prodRows = prodList.map(function(p){
       var fattore = SCATOLA_FATTORE[p.sku_shopify] || null;
-      var fattBadge = fattore ? ' <span style="background:#fef3c7;color:#92400e;font-size:9px;padding:1px 5px;border-radius:8px;font-weight:700;margin-left:3px">×'+fattore+'</span>' : '';
+      var fattBadge = fattore ? ' <span style="background:#fef3c7;color:#92400e;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px">×'+fattore+'</span>' : '';
       return '<tr style="border-top:1px solid #e8eaf0">'+
-        '<td style="padding:6px 10px;font-weight:600;color:#1a1a2e;border-right:2px solid #e8eaf0;font-size:11px">'+p.label+fattBadge+'</td>'+
+        '<td style="padding:10px 14px;font-weight:600;color:#1a1a2e;border-right:2px solid #e8eaf0;font-size:13px;text-align:left">'+p.label+fattBadge+'</td>'+
         c2(p.c1q1)+c2(p.c1q2)+c2(p.c1q3)+c2(p.c1q4)+c2(p.c1q5)+c2(p.c1q6plus)+
-        '<td style="padding:6px 8px;text-align:center;font-weight:700;color:#6d28d9;border-right:2px solid #e8eaf0;background:#faf8ff">'+formatNum(p.multi)+'</td>'+
-        '<td style="padding:6px 8px;text-align:center;font-weight:700;color:#16a34a;background:#f0fdf4;border-right:2px solid #bbf7d0">'+formatNum(p.totOrdini)+'</td>'+
-        '<td style="padding:6px 8px;text-align:right;font-weight:700;color:#1a1a2e">'+formatNum(p.totPezzi)+'</td>'+
+        '<td style="padding:8px 10px;text-align:center;font-weight:700;color:#6d28d9;border-right:2px solid #e8eaf0;background:#faf8ff;font-size:13px">'+formatNum(p.multi)+'</td>'+
+        '<td style="padding:8px 10px;text-align:center;font-weight:700;color:#16a34a;background:#f0fdf4;border-right:2px solid #bbf7d0;font-size:14px">'+formatNum(p.totOrdini)+'</td>'+
+        '<td style="padding:8px 10px;text-align:right;font-weight:700;color:#1a1a2e;font-size:14px">'+formatNum(p.totPezzi)+'</td>'+
       '</tr>';
     }).join('');
 
@@ -12927,31 +12941,31 @@ async function loadAnalisiStoricoData(giorni){
     }, {c1q1:0,c1q2:0,c1q3:0,c1q4:0,c1q5:0,c1q6plus:0,multi:0,totOrdini:0,totPezzi:0});
 
     var totRowHtml = '<tr style="border-top:2px solid #166534;background:#f0fdf4">'+
-      '<td style="padding:8px 10px;font-weight:700;color:#166534;border-right:2px solid #bbf7d0">TOTALE</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0">'+formatNum(totRow.c1q1)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0">'+formatNum(totRow.c1q2)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0">'+formatNum(totRow.c1q3)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0">'+formatNum(totRow.c1q4)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0">'+formatNum(totRow.c1q5)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0">'+formatNum(totRow.c1q6plus)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#6d28d9;border-right:2px solid #bbf7d0">'+formatNum(totRow.multi)+'</td>'+
-      '<td style="padding:8px;text-align:center;font-weight:700;color:#166534;border-right:2px solid #bbf7d0">'+formatNum(totRow.totOrdini)+'</td>'+
-      '<td style="padding:8px;text-align:right;font-weight:700;color:#166534">'+formatNum(totRow.totPezzi)+'</td>'+
+      '<td style="padding:10px 14px;font-weight:700;color:#166534;border-right:2px solid #bbf7d0;font-size:14px;text-align:left">TOTALE</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0;font-size:14px">'+formatNum(totRow.c1q1)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0;font-size:14px">'+formatNum(totRow.c1q2)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0;font-size:14px">'+formatNum(totRow.c1q3)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0;font-size:14px">'+formatNum(totRow.c1q4)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0;font-size:14px">'+formatNum(totRow.c1q5)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:1px solid #bbf7d0;font-size:14px">'+formatNum(totRow.c1q6plus)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#6d28d9;border-right:2px solid #bbf7d0;font-size:14px">'+formatNum(totRow.multi)+'</td>'+
+      '<td style="padding:10px;text-align:center;font-weight:700;color:#166534;border-right:2px solid #bbf7d0;font-size:15px">'+formatNum(totRow.totOrdini)+'</td>'+
+      '<td style="padding:10px;text-align:right;font-weight:700;color:#166534;font-size:15px">'+formatNum(totRow.totPezzi)+'</td>'+
     '</tr>';
 
-    html += '<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px">📊 Vista per prodotto · '+prodList.length+' prodotti coinvolti</div>'+
-      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">'+
-      '<thead><tr style="background:#f8f9fc;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:2px solid #e8eaf0">'+
-        '<th style="text-align:left;padding:8px 10px;border-right:2px solid #e8eaf0">Prodotto</th>'+
-        '<th style="text-align:center;padding:8px 4px;border-right:1px solid #e8eaf0">1×1</th>'+
-        '<th style="text-align:center;padding:8px 4px;border-right:1px solid #e8eaf0">1×2</th>'+
-        '<th style="text-align:center;padding:8px 4px;border-right:1px solid #e8eaf0">1×3</th>'+
-        '<th style="text-align:center;padding:8px 4px;border-right:1px solid #e8eaf0">1×4</th>'+
-        '<th style="text-align:center;padding:8px 4px;border-right:1px solid #e8eaf0">1×5</th>'+
-        '<th style="text-align:center;padding:8px 4px;border-right:1px solid #e8eaf0">1×6+</th>'+
-        '<th style="text-align:center;padding:8px 4px;color:#6d28d9;border-right:2px solid #e8eaf0;background:#faf8ff">Multi</th>'+
-        '<th style="text-align:center;padding:8px 4px;background:#f0fdf4;color:#166534;border-right:2px solid #bbf7d0">TOT ord.</th>'+
-        '<th style="text-align:right;padding:8px 8px">TOT pz</th>'+
+    html += '<div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:10px">📊 Vista per prodotto · '+prodList.length+' prodotti coinvolti</div>'+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
+      '<thead><tr style="background:#f8f9fc;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:2px solid #e8eaf0">'+
+        '<th style="text-align:left;padding:10px 14px;border-right:2px solid #e8eaf0">Prodotto</th>'+
+        '<th style="text-align:center;padding:10px 6px;border-right:1px solid #e8eaf0">1×1</th>'+
+        '<th style="text-align:center;padding:10px 6px;border-right:1px solid #e8eaf0">1×2</th>'+
+        '<th style="text-align:center;padding:10px 6px;border-right:1px solid #e8eaf0">1×3</th>'+
+        '<th style="text-align:center;padding:10px 6px;border-right:1px solid #e8eaf0">1×4</th>'+
+        '<th style="text-align:center;padding:10px 6px;border-right:1px solid #e8eaf0">1×5</th>'+
+        '<th style="text-align:center;padding:10px 6px;border-right:1px solid #e8eaf0">1×6+</th>'+
+        '<th style="text-align:center;padding:10px 6px;color:#6d28d9;border-right:2px solid #e8eaf0;background:#faf8ff">Multi</th>'+
+        '<th style="text-align:center;padding:10px 6px;background:#f0fdf4;color:#166534;border-right:2px solid #bbf7d0">TOT ord.</th>'+
+        '<th style="text-align:right;padding:10px 10px">TOT pz</th>'+
       '</tr></thead><tbody>'+prodRows+totRowHtml+'</tbody></table></div>';
 
     content.innerHTML = html;
