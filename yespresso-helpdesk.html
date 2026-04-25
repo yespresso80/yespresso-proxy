@@ -2157,6 +2157,14 @@ async function selectTicket(tid){
           '<span class="msg-author '+(isPrivate?'msg-author-private':isAgent?'msg-author-agent':'msg-author-client')+'">'+authorName+'</span>'+
           '<span class="msg-date">'+evDate+'</span>'+
           '</div>';
+        // ── COMPATTAZIONE TRANSCRIPT CHATBOT ─────────────────────────────
+        // Se il messaggio inizia con "Conversation transcript", estraiamo solo
+        // i messaggi del cliente e i selettori di menu importanti, scartando
+        // i "Chicco sent rich message" e le variabili custom.
+        var _evTextRaw = (evMsg.text||evMsg.richTextHtml||evMsg.html||'');
+        var _isChatbotTranscript = (_evTextRaw.indexOf('Conversation transcript')>=0);
+        var _isCustomVarsBlock = (_evTextRaw.indexOf('Custom variables')>=0 && _evTextRaw.indexOf('cca_platform')>=0);
+
         // ── COMPATTAZIONE EMAIL AMAZON RICHIESTA ANNULLAMENTO ────────────
         // Se il messaggio è una notifica automatica Amazon (donotreply@amazon.com
         // con oggetto "Richiesta di annullamento"), mostriamo un box compatto
@@ -2165,51 +2173,38 @@ async function selectTicket(tid){
         var _tkSubj = (tk.subject||'').toLowerCase();
         var _isAmazonCancelEmail = (_fromMail.indexOf('donotreply@amazon')>=0 || _fromMail.indexOf('do-not-reply@amazon')>=0)
                                 && _tkSubj.indexOf('annullamento')>=0;
-        if(_isAmazonCancelEmail){
+
+        if(_isChatbotTranscript || _isCustomVarsBlock){
+          // Costruisci un box compatto chatbot
+          var _cbBoxId = 'cbtr_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
+          var _cbStripped = _evTextRaw.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ');
+          var _summary = parseChatbotTranscript(_cbStripped, _isCustomVarsBlock);
+          _outBuf += '<div style="padding:0 4px">'+
+            '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:14px 16px">'+
+              '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+
+                '<span style="font-size:18px">🤖</span>'+
+                '<span style="font-size:14px;font-weight:700;color:#1e40af">'+(_isCustomVarsBlock?'Variabili tecniche chatbot':'Conversazione chatbot Chicco')+'</span>'+
+                '<span style="margin-left:auto;font-size:10px;color:#888;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #93c5fd">'+(_isCustomVarsBlock?'metadata':'transcript')+'</span>'+
+              '</div>'+
+              _summary +
+              '<div style="margin-top:10px;text-align:right">'+
+                '<button onclick="(function(b){var d=document.getElementById(\''+_cbBoxId+'\');if(d){d.style.display=d.style.display===\'none\'?\'block\':\'none\';b.textContent=d.style.display===\'none\'?\'▸ Mostra trascrizione completa\':\'▾ Nascondi trascrizione completa\';}})(this)" style="background:none;border:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline">▸ Mostra trascrizione completa</button>'+
+              '</div>'+
+              '<div id="'+_cbBoxId+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed #c7d6f0;font-size:12px;color:#666;max-height:300px;overflow-y:auto;background:#fff;border-radius:6px;padding:8px 10px">'+
+                renderMsgBlock(evText,evAttachments)+
+              '</div>'+
+            '</div>'+
+          '</div>';
+        } else if(_isAmazonCancelEmail){
           // Estrai numero ordine Amazon dal subject (formato: 407-1234567-1234567)
           var _ordMatch = (tk.subject||'').match(/(\d{3}-\d{7}-\d{7})/);
           var _ordNum = _ordMatch ? _ordMatch[1] : '';
-          // Calcola se ordine annullabile (basato sul nostro ordine Shopify, se esiste)
-          // Usa l'ora attuale come riferimento (= apertura ticket dall'agente)
-          var _shopOrd = window._lastShopifyOrder;
-          var _annullabileBox = '';
-          if(_shopOrd && _shopOrd.created_at){
-            var _cr = new Date(_shopOrd.created_at);
-            var _nw = new Date();
-            var _hh = _cr.getHours()+_cr.getMinutes()/60;
-            var _dy = _cr.getDay();
-            var _iswd = _dy>=1&&_dy<=5;
-            var _dl = null;
-            if(!_iswd){ var _nd=new Date(_cr);_nd.setHours(0,0,0,0);_nd.setDate(_nd.getDate()+1);while(_nd.getDay()<1||_nd.getDay()>5)_nd.setDate(_nd.getDate()+1);_nd.setHours(9,0,0,0);_dl=_nd; }
-            else if(_hh<=9){ var _dd1=new Date(_cr);_dd1.setHours(9,0,0,0);_dl=_dd1; }
-            else if(_hh<=16){ var _dd2=new Date(_cr.getTime()+3600000);var _dd3=new Date(_cr);_dd3.setHours(16,15,0,0);_dl=_dd2<_dd3?_dd2:_dd3; }
-            else if(_hh<=16.75){ _dl=null; }
-            else{ var _nd2=new Date(_cr);_nd2.setHours(0,0,0,0);_nd2.setDate(_nd2.getDate()+1);while(_nd2.getDay()<1||_nd2.getDay()>5)_nd2.setDate(_nd2.getDate()+1);_nd2.setHours(9,0,0,0);_dl=_nd2; }
-            var _canCancel = _dl ? (_nw<=_dl) : false;
-            var _isShipped = _shopOrd.fulfillment_status==='fulfilled' || _shopOrd.fulfillment_status==='partial';
-            if(_canCancel && !_isShipped){
-              _annullabileBox = '<div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px;padding:10px 14px;margin-top:8px">'+
-                '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:8px">✅ Ordine ANNULLABILE su Seller Central</div>'+
-                '<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700">🔗 Annulla su Amazon</a>'+
-                '<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;margin-left:8px;background:#fff;color:#1a73e8;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1.5px solid #1a73e8">📋 Vedi ordine</a>'+
-              '</div>';
-            } else {
-              var _motivo = _isShipped ? 'Ordine già spedito' : 'Fuori orario di annullabilità';
-              _annullabileBox = '<div style="background:#fff8f0;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-top:8px">'+
-                '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚠️ Ordine NON annullabile — '+_motivo+'</div>'+
-                '<div style="font-size:11px;color:#92400e">Contatta l\'acquirente per chiedere il rifiuto della spedizione, o avviare un reso.</div>'+
-                '<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;margin-top:8px;background:#fff;color:#1a73e8;text-decoration:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;border:1.5px solid #1a73e8">📋 Vedi ordine in Seller Central</a>'+
-              '</div>';
-            }
-          } else {
-            // Nessun ordine Shopify trovato: mostra solo link
-            _annullabileBox = '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;margin-top:8px">'+
-              '<div style="font-size:12px;color:#6d28d9;margin-bottom:6px">ℹ️ Verifica lo stato dell\'ordine su Seller Central per gestire l\'annullamento</div>'+
-              (_ordNum?'<a href="https://sellercentral.amazon.it/orders-v3/order/'+_ordNum+'" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700">📋 Apri ordine in Seller Central</a>':'')+
-            '</div>';
-          }
-          // Box compatto principale con dettagli + bottone "mostra originale"
+          // Box compatto principale con dettagli
+          // Il box di annullabilità viene renderizzato con un ID univoco e
+          // popolato da updateAmazonCancelBox() che usa il VERO ordine attuale
+          // (non window._lastShopifyOrder che potrebbe essere obsoleto).
           var _msgBoxId = 'amzcancel_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
+          var _annBoxId = 'amzcancelbox_'+_msgBoxId;
           _outBuf+='<div style="padding:0 4px">'+
             '<div style="background:#fffaeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px">'+
               '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
@@ -2218,7 +2213,11 @@ async function selectTicket(tid){
                 '<span style="margin-left:auto;font-size:10px;color:#888;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #f59e0b">notifica automatica</span>'+
               '</div>'+
               (_ordNum?'<div style="font-size:13px;color:#1a1a2e;margin-bottom:6px"><strong>Numero ordine:</strong> <span style="font-family:monospace;background:#fff;padding:3px 8px;border-radius:4px;border:1px solid #f0e0c0">'+_ordNum+'</span> <button onclick="navigator.clipboard.writeText(\''+_ordNum+'\').then(()=>showToast&&showToast(\'Numero ordine copiato\',\'success\'))" style="margin-left:6px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">📋 Copia</button></div>':'')+
-              _annullabileBox +
+              '<div id="'+_annBoxId+'" data-amzord="'+_ordNum+'">'+
+                '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+                  '<div style="font-size:12px;color:#6d28d9;display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border:2px solid #6d28d9;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></div> Verifica stato ordine in corso...</div>'+
+                '</div>'+
+              '</div>'+
               '<div style="margin-top:10px;text-align:right">'+
                 '<button onclick="(function(b){var d=document.getElementById(\''+_msgBoxId+'\');if(d){d.style.display=d.style.display===\'none\'?\'block\':\'none\';b.textContent=d.style.display===\'none\'?\'▸ Mostra messaggio originale\':\'▾ Nascondi messaggio originale\';}})(this)" style="background:none;border:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline">▸ Mostra messaggio originale</button>'+
               '</div>'+
@@ -2227,6 +2226,14 @@ async function selectTicket(tid){
               '</div>'+
             '</div>'+
           '</div>';
+          // Schedula l'aggiornamento del box quando l'ordine Shopify è disponibile
+          (function(annBoxId, ordNum){
+            // Prova subito (se l'ordine è già caricato)
+            setTimeout(function(){ updateAmazonCancelBox(annBoxId, ordNum); }, 100);
+            // Riprova quando l'ordine viene caricato (con delay progressivi)
+            setTimeout(function(){ updateAmazonCancelBox(annBoxId, ordNum); }, 1500);
+            setTimeout(function(){ updateAmazonCancelBox(annBoxId, ordNum); }, 3500);
+          })(_annBoxId, _ordNum);
         } else {
           _outBuf+=renderMsgBlock(evText,evAttachments);
         }
@@ -5447,6 +5454,195 @@ window.useReplyNonAnnullabile = function(){
 };
 
 // ══════════════════════════════════════════════════════════════════
+// UPDATE AMAZON CANCEL BOX — aggiorna lo stato annullabilità del box
+// con i dati VERI dell'ordine attuale (non quelli obsoleti).
+// Viene chiamata più volte con delay progressivi finché l'ordine non è caricato.
+// ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// PARSE CHATBOT TRANSCRIPT — estrae le info chiave da un transcript Chicco
+// Restituisce HTML compatto con: nome, email, selezioni menu, messaggi cliente
+// ══════════════════════════════════════════════════════════════════
+window.parseChatbotTranscript = function(rawText, isCustomVars){
+  if(isCustomVars){
+    // Per il blocco "Custom variables": estraiamo solo nome e email
+    var name = '', email = '';
+    var nm = rawText.match(/default_Nome\s*:\s*([^\n\r]+)/);
+    if(nm) name = nm[1].trim();
+    var em = rawText.match(/default_E-mail\s*:\s*([^\n\r]+)/);
+    if(em) email = em[1].trim();
+    var html = '<div style="font-size:13px;color:#1a1a2e">';
+    if(name) html += '<div><strong>Nome:</strong> '+name+'</div>';
+    if(email) html += '<div><strong>Email:</strong> '+email+'</div>';
+    if(!name && !email) html += '<div style="color:#888;font-style:italic">Variabili tecniche del chatbot (carrello, store, lingua) — clicca sotto per dettagli.</div>';
+    html += '</div>';
+    return html;
+  }
+
+  // Parser per "Conversation transcript"
+  var lines = rawText.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  var name='', email='';
+  var customerMessages = []; // messaggi del cliente
+  var menuSelections = []; // selezioni di menu (es. "ALTRE RICHIESTE", "PARLA CON OPERATORE")
+  var botResponses = []; // risposte bot non automatiche
+
+  // Pattern: "Sylvia Wagman (Sat, 4/25/2026, 07:13:56 am)" → riga successiva è il messaggio
+  // Pattern: "Chicco (Sat, 4/25/2026, 07:13:50 am)" → riga successiva spesso è "Chicco sent rich message" o un testo bot
+  var i = 0;
+  while(i < lines.length){
+    var line = lines[i];
+    // Estrai nome/email dall'header del transcript
+    var nm = line.match(/^Nome\s*:\s*(.+)/i);
+    if(nm){ name = nm[1].trim(); i++; continue; }
+    var em = line.match(/^E-mail\s*:\s*([^\s\[]+)/i);
+    if(em){ email = em[1].trim(); i++; continue; }
+
+    // Riga "Persona (Sat, data, ora)"
+    var hdr = line.match(/^([^(]+)\s*\((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s*[\d/]+,\s*[\d:]+\s*(?:am|pm)?[^)]*\)$/i);
+    if(hdr){
+      var who = hdr[1].trim();
+      // Il messaggio è nelle righe successive fino al prossimo header
+      var msg = '';
+      i++;
+      while(i < lines.length && !lines[i].match(/^[^(]+\((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s*[\d/]+,/i)){
+        if(msg) msg += ' ';
+        msg += lines[i];
+        i++;
+      }
+      msg = msg.trim();
+      if(!msg) continue;
+      // Filtra messaggi di sistema
+      if(/^Chicco sent rich message\.?$/i.test(msg)) continue;
+      if(/^Serve Aiuto\s*🙂?\s*$/i.test(msg)) continue;
+      if(/^Sono Chicco il tuo assistente virtuale/i.test(msg)) continue;
+      if(/^Vuoi informazioni e desideri assistenza/i.test(msg)) continue;
+      // Categorizza
+      var msgEsc = msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if(who.toLowerCase()==='chicco'){
+        // Risposta bot — la mostriamo solo se non è un menu prompt generico
+        if(!/^Spiega il motivo della tua richiesta$/i.test(msg)){
+          botResponses.push(msgEsc);
+        }
+      } else {
+        // Cliente: distingui se è una selezione menu (tutto MAIUSCOLO) o un messaggio reale
+        if(/^[A-Z\s]+$/.test(msg) && msg.length<40){
+          menuSelections.push(msgEsc);
+        } else {
+          customerMessages.push(msgEsc);
+        }
+      }
+      continue;
+    }
+    i++;
+  }
+
+  // Build HTML
+  var html = '<div style="font-size:13px;color:#1a1a2e;line-height:1.5">';
+  if(name) html += '<div style="margin-bottom:4px"><strong>👤 Cliente:</strong> '+name+(email?' &lt;'+email+'&gt;':'')+'</div>';
+
+  if(menuSelections.length){
+    html += '<div style="margin-top:8px"><strong>🔘 Percorso menu:</strong> ';
+    html += menuSelections.map(function(s){return '<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;margin:0 4px 4px 0;display:inline-block">'+s+'</span>';}).join('');
+    html += '</div>';
+  }
+
+  if(customerMessages.length){
+    html += '<div style="margin-top:10px;padding:8px 12px;background:#fff;border-left:3px solid #1e40af;border-radius:0 6px 6px 0">';
+    html += '<div style="font-size:11px;color:#1e40af;font-weight:700;margin-bottom:4px">💬 RICHIESTE DEL CLIENTE</div>';
+    html += customerMessages.map(function(m,idx){return '<div style="margin-top:'+(idx?'6px':'0')+'">' + m + '</div>';}).join('');
+    html += '</div>';
+  }
+
+  if(botResponses.length){
+    html += '<div style="margin-top:8px;font-size:11px;color:#888"><strong>🤖 Risposte bot:</strong> ';
+    html += botResponses.map(function(r){return r.length>80?r.substring(0,80)+'…':r;}).join(' · ');
+    html += '</div>';
+  }
+
+  if(!customerMessages.length && !menuSelections.length){
+    html += '<div style="color:#888;font-style:italic;margin-top:6px">Conversazione chatbot senza richieste rilevanti — clicca sotto per dettagli.</div>';
+  }
+
+  html += '</div>';
+  return html;
+};
+
+window.updateAmazonCancelBox = function(annBoxId, ordNum){
+  var box = document.getElementById(annBoxId);
+  if(!box) return; // box non più presente (cambio ticket)
+
+  // Trova l'ordine Shopify giusto: prima _lastShopifyOrder, ma verifica che
+  // contenga il numero ordine Amazon corrispondente (per non usare uno obsoleto)
+  var shopOrd = window._lastShopifyOrder;
+  if(shopOrd && ordNum){
+    // Verifica che _lastShopifyOrder corrisponda al numero ordine del messaggio
+    var matchAmzOrd = (shopOrd.note_attributes||[]).some(function(a){
+      return a.name==='Amazon Order Id' && a.value===ordNum;
+    });
+    // Anche cerca in line_items o subject originale come fallback
+    if(!matchAmzOrd){
+      // Non corrisponde: probabilmente è un ordine obsoleto. Non usarlo.
+      shopOrd = null;
+    }
+  }
+
+  // Se non abbiamo l'ordine corretto, mostra il fallback viola con solo link
+  if(!shopOrd || !shopOrd.created_at){
+    box.innerHTML = '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+      '<div style="font-size:12px;color:#6d28d9;margin-bottom:6px">ℹ️ Verifica lo stato dell\'ordine su Seller Central per gestire l\'annullamento</div>'+
+      (ordNum?'<a href="https://sellercentral.amazon.it/orders-v3/order/'+ordNum+'" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700">📋 Apri ordine in Seller Central</a>':'')+
+    '</div>';
+    return;
+  }
+
+  // Calcola annullabilità basata su ora attuale (= quando l'agente apre il ticket)
+  var cr = new Date(shopOrd.created_at);
+  var nw = new Date();
+  var hh = cr.getHours()+cr.getMinutes()/60;
+  var dy = cr.getDay();
+  var iswd = dy>=1 && dy<=5;
+  var dl = null;
+  if(!iswd){
+    var nd=new Date(cr); nd.setHours(0,0,0,0); nd.setDate(nd.getDate()+1);
+    while(nd.getDay()<1||nd.getDay()>5) nd.setDate(nd.getDate()+1);
+    nd.setHours(9,0,0,0); dl=nd;
+  } else if(hh<=9){
+    var dd1=new Date(cr); dd1.setHours(9,0,0,0); dl=dd1;
+  } else if(hh<=16){
+    var dd2=new Date(cr.getTime()+3600000);
+    var dd3=new Date(cr); dd3.setHours(16,15,0,0);
+    dl=dd2<dd3?dd2:dd3;
+  } else if(hh<=16.75){
+    dl=null;
+  } else {
+    var nd2=new Date(cr); nd2.setHours(0,0,0,0); nd2.setDate(nd2.getDate()+1);
+    while(nd2.getDay()<1||nd2.getDay()>5) nd2.setDate(nd2.getDate()+1);
+    nd2.setHours(9,0,0,0); dl=nd2;
+  }
+  var canCancel = dl ? (nw<=dl) : false;
+
+  // Stato spedizione: usa fulfillment_status (null/empty = non spedito)
+  // Valori possibili: null, 'fulfilled', 'partial', 'restocked', 'unfulfilled'
+  var fs = shopOrd.fulfillment_status||'';
+  var isShipped = fs==='fulfilled' || fs==='partial';
+
+  // Render box
+  if(canCancel && !isShipped){
+    box.innerHTML = '<div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+      '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:8px">✅ Ordine ANNULLABILE su Seller Central</div>'+
+      '<a href="https://sellercentral.amazon.it/orders-v3/order/'+ordNum+'" target="_blank" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700">🔗 Annulla su Amazon</a>'+
+      '<a href="https://sellercentral.amazon.it/orders-v3/order/'+ordNum+'" target="_blank" style="display:inline-block;margin-left:8px;background:#fff;color:#1a73e8;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1.5px solid #1a73e8">📋 Vedi ordine</a>'+
+    '</div>';
+  } else {
+    var motivo = isShipped ? 'Ordine già spedito' : 'Fuori orario di annullabilità';
+    box.innerHTML = '<div style="background:#fff8f0;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-top:8px">'+
+      '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚠️ Ordine NON annullabile — '+motivo+'</div>'+
+      '<div style="font-size:11px;color:#92400e">Contatta l\'acquirente per chiedere il rifiuto della spedizione, o avviare un reso.</div>'+
+      '<a href="https://sellercentral.amazon.it/orders-v3/order/'+ordNum+'" target="_blank" style="display:inline-block;margin-top:8px;background:#fff;color:#1a73e8;text-decoration:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;border:1.5px solid #1a73e8">📋 Vedi ordine in Seller Central</a>'+
+    '</div>';
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
 // REOPEN TICKET — riapre un ticket in stato Solved/Closed
 // ══════════════════════════════════════════════════════════════════
 window.reopenTicket = async function(tid){
@@ -5523,17 +5719,24 @@ window.generateThreadSummary = async function(tkId, wrapId){
       'Solo questo formato. Nessuna introduzione, nessuna conclusione. Massimo 1 riga per ogni punto.\n\n'+
       'CONVERSAZIONE:\n'+transcript;
 
-    var resp = await fetch(PROXY+'/anthropic-proxy', {
+    var resp = await proxyFetch(PROXY+'/anthropic/v1/messages', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        model:'claude-sonnet-4-5-20250929',
+        model:'claude-sonnet-4-5',
         max_tokens:600,
         messages:[{role:'user',content:promptSum}]
       })
     });
     var data = await resp.json();
-    var summary = (data.content && data.content[0] && data.content[0].text) || '(nessun riassunto generato)';
+    var summary = '';
+    if(data && Array.isArray(data.content)){
+      summary = data.content.map(function(c){return c.text||'';}).filter(Boolean).join('\n');
+    }
+    if(!summary){
+      console.error('Risposta AI vuota:', data);
+      throw new Error('Risposta AI vuota — riprova');
+    }
 
     // Renderizza con markdown semplice (grassetto + a capo)
     var summaryHtml = summary
@@ -5605,6 +5808,7 @@ async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
 
 async function generateReplyNotaInterna(lastMsg,email,fullThread){
   const t=selectedTicket;
+  const _genGuardTid=(t&&(t.ID||t.id))||null;
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Genero nota interna...';
   try{
@@ -5613,6 +5817,12 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
         messages:[{role:"user",content:(window._lastTemuOrder?"\n\nDati ordine:\n"+formatOrderInfo(window._lastTemuOrder):"")+"\n\nUltimo messaggio:\n"+(lastMsg||"")+(fullThread?"\n\nThread:\n"+fullThread:"")}]})});
     if(!res.ok)throw new Error(res.status);
     const data=await res.json();const reply=data.content?.[0]?.text||"";
+    // GUARD: verifica che il ticket non sia cambiato durante la generazione
+    var _curTid=(selectedTicket&&(selectedTicket.ID||selectedTicket.id))||null;
+    if(_genGuardTid && _curTid && _genGuardTid!==_curTid){
+      console.log("🛡️ generateReplyNotaInterna: ticket cambiato, scarto risultato");
+      return;
+    }
     if(reply){const rt=document.getElementById("reply-text");const aa=document.getElementById("action-area");
       if(genBox)genBox.style.display="none";if(aa){aa.style.display="block";if(rt)rt.value=reply;}}
   }catch(e){console.error("generateReplyNotaInterna:",e);if(genBox)genBox.style.display="none";}
@@ -5656,6 +5866,10 @@ async function generateReplyWithFermopoint(){
 async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log("🚀 generateReply CHIAMATA email:",email);
   const _skipAI=skipAI||isNoAiEmail(email);
   const t=selectedTicket;
+  // GUARD: salvo il ticket ID corrente. Se l'utente cambia ticket prima
+  // che la risposta AI sia pronta, scartiamo il risultato (non sovrascrivere
+  // il textarea del nuovo ticket con la risposta del vecchio).
+  const _genGuardTid=(t&&(t.ID||t.id))||null;
   const genBox=document.getElementById("gen-box");
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Cerco ordine su Shopify...';
 
@@ -6218,6 +6432,12 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       return;
     }
     // Show response
+    // GUARD: se l'utente ha cambiato ticket nel frattempo, scarta il risultato
+    var _curTid=(selectedTicket&&(selectedTicket.ID||selectedTicket.id))||null;
+    if(_genGuardTid && _curTid && _genGuardTid!==_curTid){
+      console.log("🛡️ generateReply: ticket cambiato durante generazione AI ("+_genGuardTid+" → "+_curTid+"), scarto risultato");
+      return;
+    }
     const lbl=document.getElementById("ai-label");
     if(lbl)lbl.textContent="✨ Risposta suggerita dall'AI";
     const gb=document.getElementById("gen-box");
@@ -6232,8 +6452,13 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       rt.style.minHeight="180px";
       setupQRPopup(rt);
     }
-    // Sicurezza: forza visibilità dopo breve delay
+    // Sicurezza: forza visibilità dopo breve delay (con guard)
     setTimeout(()=>{
+      var _curTid2=(selectedTicket&&(selectedTicket.ID||selectedTicket.id))||null;
+      if(_genGuardTid && _curTid2 && _genGuardTid!==_curTid2){
+        console.log("🛡️ generateReply (delayed): ticket cambiato, skip");
+        return;
+      }
       const aa2=document.getElementById("action-area");
       const rt2=document.getElementById("reply-text");
       if(aa2)aa2.style.cssText="display:block!important;visibility:visible!important";
