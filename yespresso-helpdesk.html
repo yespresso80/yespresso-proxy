@@ -8099,6 +8099,8 @@ function openFilippoPanel(){
   },{
     id:'merce_inserita',label:'📦 Merce Inserita',periodo:'',custom:true,groups:[]
   },{
+    id:'ordini_da_preparare',label:'🚚 Ordini da Preparare',periodo:'',custom:true,groups:[]
+  },{
     id:'ordini_ritardo',label:'⏰ Ordini in Ritardo',periodo:'',custom:true,groups:[]
   },{
     id:'attivita',label:'✅ Attività da Fare',periodo:'',custom:true,groups:[]
@@ -8144,6 +8146,7 @@ function openFilippoPanel(){
       if(sec.custom){
         if(sec.id==='corrispettivi_it') setTimeout(function(){renderCorrispettivi(null,panel,null);},0);
         else if(sec.id==='merce_inserita') setTimeout(function(){renderMerceInserita(null,panel,null);},0);
+        else if(sec.id==='ordini_da_preparare') setTimeout(function(){renderOrdiniDaPreparare(panel);},0);
         else if(sec.id==='ordini_ritardo') setTimeout(function(){renderOrdiniRitardo(null,panel,null);},0);
         else if(sec.id==='attivita') setTimeout(function(){renderAttivita(null,panel,null);},0);
         else if(sec.id==='sandbox_ai') setTimeout(function(){renderSandboxAI(panel);},0);
@@ -12043,6 +12046,217 @@ window.attivitaElimina = function(id) {
 };
 
 // ═══ ORDINI IN RITARDO ═══
+function renderOrdiniDaPreparare(panel) {
+  var ca = panel.querySelector('#filippo-content');
+  if (!ca) return;
+
+  // Header iniziale con loader
+  ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:6px">🚚 Ordini da Preparare</div>'+
+    '<div style="font-size:12px;color:#888;margin-bottom:20px">Ordini Shopify non ancora spediti — ultimi 7 giorni (incluso oggi)</div>'+
+    '<div id="odp-content"><div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#888;max-width:800px">'+
+      '<div style="display:inline-flex;align-items:center;gap:10px"><div class="spinner" style="width:18px;height:18px"></div> Caricamento ordini Shopify...</div>'+
+    '</div></div>';
+
+  loadOrdiniDaPreparareData();
+}
+
+async function loadOrdiniDaPreparareData(){
+  var content = document.getElementById('odp-content');
+  if(!content) return;
+  try{
+    // Calcola data 7 giorni fa (compreso oggi)
+    var ggIndietro = 7;
+    var dataIniziale = new Date();
+    dataIniziale.setDate(dataIniziale.getDate() - (ggIndietro - 1));
+    dataIniziale.setHours(0, 0, 0, 0);
+    var isoFrom = dataIniziale.toISOString();
+
+    // Fetch ordini inevasi (Shopify API: fulfillment_status=unshipped)
+    var params = new URLSearchParams({
+      status: 'open',
+      fulfillment_status: 'unshipped',
+      created_at_min: isoFrom,
+      limit: '250',
+      fields: 'id,name,created_at,fulfillment_status,financial_status,cancelled_at,total_price,line_items,customer,shipping_address,note_attributes,payment_gateway_names'
+    });
+    var res = await fetch(PROXY + '/shopify/orders.json?' + params.toString());
+    if(!res.ok) throw new Error('Errore Shopify: HTTP '+res.status);
+    var data = await res.json();
+    var allOrders = data.orders || [];
+
+    // Filtra: non cancellati, non completamente evasi
+    var inevasi = allOrders.filter(function(o){
+      return !o.cancelled_at && (o.fulfillment_status === null || o.fulfillment_status === 'partial');
+    });
+
+    // Categorizza per complessità
+    var cat = {
+      '1sku_1qty':[], '1sku_2qty':[], '1sku_3qty':[],
+      '1sku_4qty':[], '1sku_5qty':[], '1sku_6plus':[], 'multi_sku':[]
+    };
+    inevasi.forEach(function(o){
+      var items = o.line_items || [];
+      var skus = new Set(items.map(function(i){return i.sku || i.variant_id || i.product_id;}));
+      if(skus.size === 1){
+        var totQty = items.reduce(function(s,i){return s+(i.quantity||0);},0);
+        if(totQty===1) cat['1sku_1qty'].push(o);
+        else if(totQty===2) cat['1sku_2qty'].push(o);
+        else if(totQty===3) cat['1sku_3qty'].push(o);
+        else if(totQty===4) cat['1sku_4qty'].push(o);
+        else if(totQty===5) cat['1sku_5qty'].push(o);
+        else cat['1sku_6plus'].push(o);
+      } else {
+        cat['multi_sku'].push(o);
+      }
+    });
+
+    // Statistiche aggregate
+    var totValore = inevasi.reduce(function(s,o){return s+parseFloat(o.total_price||0);},0);
+    var totPezzi = inevasi.reduce(function(s,o){
+      return s + (o.line_items||[]).reduce(function(s2,i){return s2+(i.quantity||0);},0);
+    },0);
+
+    // Salva in window per debug
+    window._odpData = { tutti: inevasi, perCategoria: cat };
+
+    // Render UI
+    var html = '';
+
+    // Riepilogo in alto
+    html += '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px;margin-bottom:16px;display:flex;gap:30px;flex-wrap:wrap">'+
+      '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Totale ordini</div><div style="font-size:28px;font-weight:700;color:#166534">'+inevasi.length+'</div></div>'+
+      '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Pezzi totali</div><div style="font-size:28px;font-weight:700;color:#1a1a2e">'+totPezzi.toLocaleString('it-IT')+'</div></div>'+
+      '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Valore</div><div style="font-size:28px;font-weight:700;color:#6d28d9">€ '+totValore.toFixed(2)+'</div></div>'+
+      '<div style="margin-left:auto;align-self:center"><button onclick="loadOrdiniDaPreparareData()" style="background:#16a34a;border:none;border-radius:8px;padding:10px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Aggiorna</button></div>'+
+    '</div>';
+
+    if(!inevasi.length){
+      html += '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#aaa">'+
+        '<div style="font-size:32px;margin-bottom:10px">✅</div>'+
+        '<div style="font-size:14px">Nessun ordine inevaso negli ultimi 7 giorni!</div>'+
+      '</div>';
+      content.innerHTML = html;
+      return;
+    }
+
+    // Cards riepilogo per categoria
+    var catLabels = [
+      {key:'1sku_1qty',label:'1 SKU × 1 pz',color:'#16a34a',bg:'#f0fdf4'},
+      {key:'1sku_2qty',label:'1 SKU × 2 pz',color:'#16a34a',bg:'#f0fdf4'},
+      {key:'1sku_3qty',label:'1 SKU × 3 pz',color:'#1a73e8',bg:'#eff6ff'},
+      {key:'1sku_4qty',label:'1 SKU × 4 pz',color:'#1a73e8',bg:'#eff6ff'},
+      {key:'1sku_5qty',label:'1 SKU × 5 pz',color:'#f59e0b',bg:'#fffbeb'},
+      {key:'1sku_6plus',label:'1 SKU × 6+ pz',color:'#f59e0b',bg:'#fffbeb'},
+      {key:'multi_sku',label:'Multi SKU (2+)',color:'#6d28d9',bg:'#f5f3ff'}
+    ];
+
+    html += '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px;margin-bottom:16px">'+
+      '<div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px">📊 Raggruppamento per complessità</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">';
+    catLabels.forEach(function(c){
+      var n = cat[c.key].length;
+      html += '<div onclick="window._odpToggleCat(\''+c.key+'\')" style="background:'+c.bg+';border:1.5px solid '+c.color+';border-radius:10px;padding:12px;cursor:pointer;transition:transform .1s">'+
+        '<div style="font-size:11px;color:'+c.color+';font-weight:700;margin-bottom:4px">'+c.label+'</div>'+
+        '<div style="font-size:24px;font-weight:700;color:#1a1a2e">'+n+'</div>'+
+        '<div style="font-size:10px;color:#888;margin-top:4px">'+(n===1?'ordine':'ordini')+'</div>'+
+      '</div>';
+    });
+    html += '</div></div>';
+
+    // Tabella dettaglio (default: tutti, ordinati per attesa decrescente)
+    html += '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden">'+
+      '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
+        '<div style="font-size:14px;font-weight:700;color:#374151" id="odp-list-title">Tutti gli ordini ('+inevasi.length+')</div>'+
+        '<div style="display:flex;gap:6px;align-items:center;font-size:11px;color:#888">'+
+          '<span>Ordina per:</span>'+
+          '<select id="odp-sort" onchange="window._odpRenderList()" style="padding:4px 8px;border:1px solid #e0e4ea;border-radius:6px;font-size:11px;font-family:inherit">'+
+            '<option value="oldest">Più vecchio prima</option>'+
+            '<option value="newest">Più recente prima</option>'+
+            '<option value="value_desc">Valore decrescente</option>'+
+            '<option value="value_asc">Valore crescente</option>'+
+          '</select>'+
+        '</div>'+
+      '</div>'+
+      '<div id="odp-list-body" style="overflow-x:auto"></div>'+
+    '</div>';
+
+    content.innerHTML = html;
+
+    // Funzioni di interazione
+    window._odpCurrentCategory = 'all';
+    window._odpToggleCat = function(catKey){
+      window._odpCurrentCategory = (window._odpCurrentCategory === catKey) ? 'all' : catKey;
+      window._odpRenderList();
+    };
+    window._odpRenderList = function(){
+      var body = document.getElementById('odp-list-body');
+      var title = document.getElementById('odp-list-title');
+      var sortSel = document.getElementById('odp-sort');
+      if(!body) return;
+      var list = window._odpCurrentCategory === 'all' ? window._odpData.tutti.slice() : window._odpData.perCategoria[window._odpCurrentCategory].slice();
+      var sortMode = (sortSel && sortSel.value) || 'oldest';
+      list.sort(function(a,b){
+        if(sortMode==='oldest') return new Date(a.created_at) - new Date(b.created_at);
+        if(sortMode==='newest') return new Date(b.created_at) - new Date(a.created_at);
+        if(sortMode==='value_desc') return parseFloat(b.total_price||0) - parseFloat(a.total_price||0);
+        if(sortMode==='value_asc') return parseFloat(a.total_price||0) - parseFloat(b.total_price||0);
+        return 0;
+      });
+
+      var catLbl = (catLabels.find(function(c){return c.key===window._odpCurrentCategory;})||{}).label || 'Tutti';
+      if(title) title.innerHTML = (window._odpCurrentCategory==='all'?'Tutti gli ordini':catLbl) + ' ('+list.length+')' +
+        (window._odpCurrentCategory!=='all'?' <button onclick="window._odpToggleCat(\''+window._odpCurrentCategory+'\')" style="margin-left:8px;background:#f0f2f5;border:none;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer">✕ tutti</button>':'');
+
+      var nowMs = Date.now();
+      var rows = list.map(function(o){
+        var items = o.line_items || [];
+        var skus = new Set(items.map(function(i){return i.sku || i.variant_id || i.product_id;}));
+        var totQty = items.reduce(function(s,i){return s+(i.quantity||0);},0);
+        var ggAttesa = Math.floor((nowMs - new Date(o.created_at).getTime()) / (1000*60*60*24));
+        var attesaCol = ggAttesa>=4 ? '#dc2626' : (ggAttesa>=2 ? '#f59e0b' : '#16a34a');
+        var nomeCl = (((o.customer||{}).first_name||'') + ' ' + ((o.customer||{}).last_name||'')).trim() || '—';
+        var citta = ((o.shipping_address||{}).city || '—');
+        // Lista prodotti compatta
+        var prodHtml = items.slice(0,3).map(function(i){
+          return '<div style="font-size:11px;color:#555;line-height:1.3">'+(i.quantity||0)+'× '+(i.title||i.name||'?')+'</div>';
+        }).join('');
+        if(items.length>3) prodHtml += '<div style="font-size:10px;color:#888">+'+(items.length-3)+' altri</div>';
+        var orderUrl = 'https://admin.shopify.com/store/40f758-3/orders/'+o.id;
+        return '<tr style="border-top:1px solid #f0f2f5">'+
+          '<td style="padding:10px 12px;font-weight:700;color:#1a1a2e"><a href="'+orderUrl+'" target="_blank" style="color:#1a73e8;text-decoration:none">'+o.name+'</a></td>'+
+          '<td style="padding:10px 12px;font-size:12px;color:#555">'+new Date(o.created_at).toLocaleDateString('it-IT')+'<br><span style="font-size:10px;color:#aaa">'+new Date(o.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})+'</span></td>'+
+          '<td style="padding:10px 12px;text-align:center;font-weight:700;color:'+attesaCol+';font-size:13px">'+ggAttesa+' gg</td>'+
+          '<td style="padding:10px 12px;text-align:center;font-size:12px"><span style="background:#f0f2f5;border-radius:4px;padding:2px 8px;font-weight:700">'+skus.size+' SKU × '+totQty+' pz</span></td>'+
+          '<td style="padding:10px 12px">'+prodHtml+'</td>'+
+          '<td style="padding:10px 12px;font-size:12px;color:#1a1a2e">'+nomeCl+'<br><span style="font-size:11px;color:#888">'+citta+'</span></td>'+
+          '<td style="padding:10px 12px;text-align:right;font-weight:700;color:#16a34a">€ '+parseFloat(o.total_price||0).toFixed(2)+'</td>'+
+        '</tr>';
+      }).join('');
+
+      body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">'+
+        '<thead><tr style="background:#f8f9fc;font-size:10px;font-weight:700;color:#888;text-transform:uppercase">'+
+          '<th style="text-align:left;padding:10px 12px">Ordine</th>'+
+          '<th style="text-align:left;padding:10px 12px">Data</th>'+
+          '<th style="text-align:center;padding:10px 12px">Attesa</th>'+
+          '<th style="text-align:center;padding:10px 12px">Composizione</th>'+
+          '<th style="text-align:left;padding:10px 12px">Prodotti</th>'+
+          '<th style="text-align:left;padding:10px 12px">Cliente</th>'+
+          '<th style="text-align:right;padding:10px 12px">Valore</th>'+
+        '</tr></thead><tbody>'+rows+'</tbody></table>';
+    };
+    window._odpRenderList(); // primo render
+
+  }catch(err){
+    console.error('Errore caricamento ordini da preparare:', err);
+    content.innerHTML = '<div style="background:#fff5f5;border:1.5px solid #fecaca;border-radius:12px;padding:30px;text-align:center;color:#dc2626;max-width:800px">'+
+      '<div style="font-size:24px;margin-bottom:8px">⚠️</div>'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:6px">Errore caricamento ordini</div>'+
+      '<div style="font-size:12px;color:#888">'+(err.message||err)+'</div>'+
+      '<button onclick="loadOrdiniDaPreparareData()" style="margin-top:14px;background:#dc2626;border:none;border-radius:6px;padding:8px 16px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">🔄 Riprova</button>'+
+    '</div>';
+  }
+}
+
 function renderOrdiniRitardo(ignored, panel, ignored2) {
   var ca = panel.querySelector('#filippo-content');
   if (!ca) return;
