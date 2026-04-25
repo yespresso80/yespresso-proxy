@@ -2095,6 +2095,32 @@ async function selectTicket(tid){
     _allTicketIds.push(tk.ID||tk.id);
   });
   var _showGlobalSummary = hasMultiple && _totalEvents >= 6;
+  // Per il caso aggregato: identifica l'ID del ticket che contiene l'ULTIMO
+  // messaggio cliente cronologicamente. Solo quello resterà visibile per intero.
+  var _lastClientTicketId = null;
+  if(_showGlobalSummary){
+    // Ordina tutti gli eventi cronologicamente e trova l'ultimo cliente
+    var _evWithTk = [];
+    ticketsToShow.forEach(function(tk){
+      var evs = (tk.events||[]).filter(function(e){return e.message&&(e.message.text||e.message.richTextHtml||e.message.html);});
+      evs.forEach(function(e){_evWithTk.push({ev:e, tkId:tk.ID||tk.id});});
+    });
+    _evWithTk.sort(function(a,b){
+      var da = new Date(a.ev.date||a.ev.createdAt||a.ev.created_at||0);
+      var db = new Date(b.ev.date||b.ev.createdAt||b.ev.created_at||0);
+      return da-db;
+    });
+    for(var _ki=_evWithTk.length-1; _ki>=0; _ki--){
+      if(_evWithTk[_ki].ev.author && _evWithTk[_ki].ev.author.type==='client'){
+        _lastClientTicketId = _evWithTk[_ki].tkId;
+        break;
+      }
+    }
+    // Fallback: se non c'è messaggio cliente, prendi l'ultimo ticket
+    if(!_lastClientTicketId && ticketsToShow.length>0){
+      _lastClientTicketId = ticketsToShow[ticketsToShow.length-1].ID || ticketsToShow[ticketsToShow.length-1].id;
+    }
+  }
   if(_showGlobalSummary){
     var _gsWrapId = 'global-summary-'+(t.ID||t.id)+'-'+Math.random().toString(36).substr(2,5);
     var _nClientGS = _allEventsForSummary.filter(function(e){return e.author&&e.author.type==='client';}).length;
@@ -2111,13 +2137,26 @@ async function selectTicket(tid){
       '</div>'+
       '<div id="sum-content-'+_gsWrapId+'" style="font-size:12px;color:#888;font-style:italic">Clicca "Genera riassunto AI" per ottenere un riepilogo strutturato di tutta la conversazione (problema, foto richieste, soluzioni proposte, stato attuale).</div>'+
     '</div>';
+    // Toggle bottone + placeholder per lo storico ticket precedenti (nascosto di default)
+    var _aggHistId = 'agg-hist-'+_gsWrapId;
+    messagesHtml += '<div style="margin:8px 0">'+
+      '<button onclick="(function(b){var d=document.getElementById(\''+_aggHistId+'\');if(d){var open=d.style.display==='+'\'none\''+';d.style.display=open?\'block\':\'none\';b.innerHTML=open?\'▾ Nascondi storico ('+(ticketsToShow.length-1)+' ticket precedenti)\':\'▸ Mostra storico ('+(ticketsToShow.length-1)+' ticket precedenti)\';}})(this)" style="background:#fff;border:1.5px solid #e0e4ea;color:#1a73e8;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;text-align:left">▸ Mostra storico ('+(ticketsToShow.length-1)+' ticket precedenti)</button>'+
+      '<div id="'+_aggHistId+'" style="display:none;margin-top:8px"></div>'+
+    '</div>';
   }
 
+
+  var _aggHiddenHtml = ''; // accumula HTML dei ticket precedenti per il placeholder storico (solo se _showGlobalSummary)
 
   for(const tk of ticketsToShow){
     const tkId=tk.ID||tk.id;
     const tkEvents=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml||e.message.html));
     const isMain=tkId===tid2;
+    // Per il caso aggregato: salva la posizione di partenza in messagesHtml.
+    // Alla fine del ticket, se NON è il ticket dell'ultimo messaggio cliente,
+    // sposta il chunk generato dentro _aggHiddenHtml (lo storico nascosto).
+    var _tkStartLen = _showGlobalSummary ? messagesHtml.length : 0;
+    var _tkShouldHide = _showGlobalSummary && (tkId !== _lastClientTicketId);
     // Header ticket
     const tkDate=(tkEvents[0]&&(tkEvents[0].date||tkEvents[0].createdAt))||"";
     const tkDateStr=tkDate?new Date(tkDate).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
@@ -2322,6 +2361,25 @@ async function selectTicket(tid){
       }
     }
     messagesHtml+='</div>';
+
+    // Per thread Amazon aggregato: se questo ticket NON è quello con
+    // l'ultimo messaggio cliente, spostiamo il suo HTML nello storico nascosto.
+    if(_tkShouldHide){
+      var _tkChunk = messagesHtml.substring(_tkStartLen);
+      messagesHtml = messagesHtml.substring(0, _tkStartLen);
+      _aggHiddenHtml += _tkChunk;
+    }
+  }
+
+  // Inietta HTML storico nascosto nel placeholder (deve essere fatto dopo che
+  // il DOM è stato costruito tramite document.getElementById)
+  if(_showGlobalSummary && _aggHiddenHtml){
+    var _aggHistIdRef = 'agg-hist-'+_gsWrapId;
+    var _aggHiddenHtmlRef = _aggHiddenHtml;
+    setTimeout(function(){
+      var _d = document.getElementById(_aggHistIdRef);
+      if(_d) _d.innerHTML = _aggHiddenHtmlRef;
+    }, 50);
   }
 
   // Render main area
