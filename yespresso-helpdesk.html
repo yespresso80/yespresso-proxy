@@ -12054,7 +12054,7 @@ function renderOrdiniDaPreparare(panel) {
   ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:6px">🚚 Ordini da Preparare</div>'+
     '<div style="font-size:12px;color:#888;margin-bottom:20px">Ordini Shopify non ancora spediti — ultimi 7 giorni (incluso oggi)</div>'+
     '<div id="odp-content"><div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#888;max-width:800px">'+
-      '<div style="display:inline-flex;align-items:center;gap:10px"><div class="spinner" style="width:18px;height:18px"></div> Caricamento ordini Shopify...</div>'+
+      '<div style="display:inline-flex;align-items:center;gap:10px"><div class="spinner" style="width:18px;height:18px"></div> <span class="odp-loading-msg">Caricamento ordini Shopify...</span></div>'+
     '</div></div>';
 
   loadOrdiniDaPreparareData();
@@ -12079,42 +12079,74 @@ async function loadOrdiniDaPreparareData(){
     // Includiamo unshipped (null) e partial — Shopify GraphQL accetta entrambi insieme
     var searchQ = "fulfillment_status:unshipped OR fulfillment_status:partial AND created_at:>="+dataYMD+" AND status:open";
 
-    var gqlQuery = `{
-      orders(first: 250, query: "${searchQ}", sortKey: CREATED_AT, reverse: false) {
-        edges {
-          node {
-            id
-            name
-            createdAt
-            displayFulfillmentStatus
-            displayFinancialStatus
-            cancelledAt
-            currentTotalPriceSet { shopMoney { amount currencyCode } }
-            customer { firstName lastName }
-            shippingAddress { city }
-            lineItems(first: 50) {
-              edges {
-                node {
-                  title
-                  quantity
-                  sku
-                  variant { id }
-                  product { id }
+    var buildQuery = function(afterCursor){
+      var afterClause = afterCursor ? ', after: "'+afterCursor+'"' : '';
+      return `{
+        orders(first: 250, query: "${searchQ}", sortKey: CREATED_AT, reverse: false${afterClause}) {
+          edges {
+            cursor
+            node {
+              id
+              name
+              createdAt
+              displayFulfillmentStatus
+              displayFinancialStatus
+              cancelledAt
+              currentTotalPriceSet { shopMoney { amount currencyCode } }
+              customer { firstName lastName }
+              shippingAddress { city }
+              lineItems(first: 50) {
+                edges {
+                  node {
+                    title
+                    quantity
+                    sku
+                    variant { id }
+                    product { id }
+                  }
                 }
               }
             }
           }
+          pageInfo { hasNextPage endCursor }
         }
-        pageInfo { hasNextPage }
-      }
-    }`;
+      }`;
+    };
 
-    var resp = await shopifyGQL(gqlQuery);
-    if(!resp || resp.errors){
-      console.error('[ODP] errore GraphQL:', resp && resp.errors);
-      throw new Error('GraphQL: '+(resp && resp.errors ? JSON.stringify(resp.errors) : 'risposta vuota'));
+    // Loop di paginazione: continua finché hasNextPage è true (max 10 pagine = 2500 ordini)
+    var allEdges = [];
+    var cursor = null;
+    var pageNum = 0;
+    var maxPages = 10;
+    while(pageNum < maxPages){
+      pageNum++;
+      // Aggiorna messaggio di caricamento
+      var loadingDiv = content.querySelector('.odp-loading-msg');
+      if(loadingDiv) loadingDiv.textContent = 'Caricamento pagina '+pageNum+'... ('+allEdges.length+' ordini finora)';
+
+      var resp = await shopifyGQL(buildQuery(cursor));
+      if(!resp || resp.errors){
+        console.error('[ODP] errore GraphQL pagina '+pageNum+':', resp && resp.errors);
+        if(allEdges.length === 0){
+          throw new Error('GraphQL: '+(resp && resp.errors ? JSON.stringify(resp.errors) : 'risposta vuota'));
+        }
+        // Se abbiamo già qualche pagina, usa quello che abbiamo
+        break;
+      }
+      var ordersConn = resp.data && resp.data.orders;
+      if(!ordersConn) break;
+      var edges = ordersConn.edges || [];
+      allEdges = allEdges.concat(edges);
+
+      var pageInfo = ordersConn.pageInfo || {};
+      if(!pageInfo.hasNextPage) break;
+      cursor = pageInfo.endCursor;
+      if(!cursor) break;
     }
-    var edges = (resp.data && resp.data.orders && resp.data.orders.edges) || [];
+
+    console.log('[ODP] caricati '+allEdges.length+' ordini in '+pageNum+' pagine');
+
+    var edges = allEdges;
 
     // Normalizza in formato simile a REST per il resto del codice
     var inevasi = edges.map(function(e){
