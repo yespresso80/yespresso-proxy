@@ -2049,6 +2049,38 @@ async function selectTicket(tid){
   const allText=ticketsToShow.map(tk=>(tk.events||[]).map(ev=>(ev.message?.text||"")).join(" ")).join(" ").toLowerCase();
   const hasAttachmentKeywords=/allego|allegato|allegati|foto|immagini|screenshot|invio foto|mando foto|ti mando|in allegato|vi allego|vi ho allegato|see attached|attached|attachment/i.test(allText);
 
+  // ── SINTESI GLOBALE per thread aggregati Amazon (≥6 messaggi totali) ─
+  // Se la vista è concatenata (più ticket dello stesso ordine Amazon),
+  // calcoliamo il totale messaggi di TUTTI i sub-ticket. Se ≥6 mostriamo
+  // UN solo box di sintesi globale prima di tutti i sub-ticket.
+  var _totalEvents = 0;
+  var _allEventsForSummary = [];
+  var _allTicketIds = [];
+  ticketsToShow.forEach(function(tk){
+    var evs = (tk.events||[]).filter(function(e){return e.message&&(e.message.text||e.message.richTextHtml||e.message.html);});
+    _totalEvents += evs.length;
+    _allEventsForSummary = _allEventsForSummary.concat(evs);
+    _allTicketIds.push(tk.ID||tk.id);
+  });
+  var _showGlobalSummary = hasMultiple && _totalEvents >= 6;
+  if(_showGlobalSummary){
+    var _gsWrapId = 'global-summary-'+(t.ID||t.id)+'-'+Math.random().toString(36).substr(2,5);
+    var _nClientGS = _allEventsForSummary.filter(function(e){return e.author&&e.author.type==='client';}).length;
+    var _nAgentGS = _allEventsForSummary.filter(function(e){return e.author&&e.author.type==='agent';}).length;
+    // Salva globalmente gli eventi aggregati per uso dalla funzione di riassunto
+    window._globalThreadEvents = window._globalThreadEvents || {};
+    window._globalThreadEvents[_gsWrapId] = _allEventsForSummary;
+    messagesHtml += '<div id="'+_gsWrapId+'" style="background:#fefce8;border:1.5px solid #eab308;border-radius:10px;padding:14px 16px;margin:8px 0">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+
+        '<span style="font-size:18px">📝</span>'+
+        '<span style="font-size:14px;font-weight:700;color:#713f12">Conversazione lunga aggregata</span>'+
+        '<span style="font-size:11px;color:#888;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #eab308">'+_totalEvents+' messaggi · '+_nClientGS+' cliente · '+_nAgentGS+' agente · '+ticketsToShow.length+' ticket</span>'+
+        '<button onclick="generateGlobalThreadSummary(\''+_gsWrapId+'\')" id="btn-sum-'+_gsWrapId+'" style="margin-left:auto;background:#eab308;border:none;border-radius:6px;padding:6px 14px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Genera riassunto AI</button>'+
+      '</div>'+
+      '<div id="sum-content-'+_gsWrapId+'" style="font-size:12px;color:#888;font-style:italic">Clicca "Genera riassunto AI" per ottenere un riepilogo strutturato di tutta la conversazione (problema, foto richieste, soluzioni proposte, stato attuale).</div>'+
+    '</div>';
+  }
+
 
   for(const tk of ticketsToShow){
     const tkId=tk.ID||tk.id;
@@ -2075,7 +2107,8 @@ async function selectTicket(tid){
     // ── SINTESI AUTOMATICA per thread lunghi (≥6 messaggi) ────────────
     // Mostra in cima: bottone "Riassumi" + ultimo messaggio cliente per intero
     // I messaggi precedenti vengono nascosti dietro un toggle "Mostra tutti i messaggi"
-    var _shouldSummarize = tkEvents.length >= 6;
+    // NB: se è già stato mostrato il box globale (thread aggregato Amazon), saltiamo
+    var _shouldSummarize = !_showGlobalSummary && tkEvents.length >= 6;
     var _summaryWrapId = 'thread-summary-'+tkId+'-'+Math.random().toString(36).substr(2,5);
     var _hiddenMsgsId = 'thread-hidden-msgs-'+tkId+'-'+Math.random().toString(36).substr(2,5);
     if(_shouldSummarize){
@@ -5675,6 +5708,85 @@ window.reopenTicket = async function(tid){
   }catch(err){
     console.error('Errore riapertura ticket:', err);
     if(typeof showToast==='function') showToast('❌ Errore: '+(err.message||err),'error');
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// GENERATE GLOBAL THREAD SUMMARY — riassunto AI per thread Amazon aggregati
+// ══════════════════════════════════════════════════════════════════
+window.generateGlobalThreadSummary = async function(wrapId){
+  var btn = document.getElementById('btn-sum-'+wrapId);
+  var content = document.getElementById('sum-content-'+wrapId);
+  if(!btn || !content) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Genero...';
+  btn.style.background = '#9ca3af';
+  content.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#888"><div style="width:14px;height:14px;border:2px solid #eab308;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></div> Sto leggendo la conversazione aggregata...</div>';
+
+  try{
+    var evs = (window._globalThreadEvents && window._globalThreadEvents[wrapId]) || [];
+    if(!evs.length) throw new Error('Nessun messaggio aggregato disponibile');
+
+    // Ordina cronologicamente (nei thread Amazon i ticket potrebbero essere fuori ordine)
+    evs = evs.slice().sort(function(a,b){
+      var da = new Date(a.date||a.createdAt||a.created_at||0);
+      var db = new Date(b.date||b.createdAt||b.created_at||0);
+      return da-db;
+    });
+
+    var transcript = evs.map(function(ev){
+      var who = ev.author && ev.author.type==='agent' ? 'AGENTE' : (ev.author && ev.author.type==='client' ? 'CLIENTE' : 'SISTEMA');
+      var date = ev.date||ev.createdAt||ev.created_at||'';
+      var dateStr = date ? new Date(date).toLocaleString('it-IT') : '';
+      var txt = (ev.message.text||ev.message.richTextHtml||ev.message.html||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().substring(0,1500);
+      return '['+dateStr+'] '+who+': '+txt;
+    }).join('\n\n');
+
+    var promptSum = 'Sei un assistente per il customer service di Yespresso (e-commerce di caffè e capsule). '+
+      'Analizza questa conversazione di un ticket di assistenza e genera un riassunto strutturato in italiano, conciso e preciso. '+
+      'Usa ESATTAMENTE questo formato Markdown:\n\n'+
+      '**🔴 Problema iniziale:** [una frase breve sul problema riportato dal cliente]\n\n'+
+      '**📷 Foto/info richieste:** [se l\'agente ha chiesto foto o info, elencale brevemente; altrimenti scrivi "nessuna"]\n\n'+
+      '**📩 Foto/info ricevute:** [se il cliente ha fornito foto/info, sintetizza; altrimenti scrivi "nessuna"]\n\n'+
+      '**💡 Soluzione proposta:** [se l\'agente ha proposto una soluzione (rimborso, credito, sostituzione, reso, ecc.), specificala]\n\n'+
+      '**📍 Stato attuale:** [in che punto è la conversazione: in attesa di info dal cliente, soluzione confermata, attesa rimborso, ecc.]\n\n'+
+      'Solo questo formato. Nessuna introduzione, nessuna conclusione. Massimo 1 riga per ogni punto.\n\n'+
+      'CONVERSAZIONE:\n'+transcript;
+
+    var resp = await proxyFetch(PROXY+'/anthropic/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-5',
+        max_tokens:600,
+        messages:[{role:'user',content:promptSum}]
+      })
+    });
+    var data = await resp.json();
+    var summary = '';
+    if(data && Array.isArray(data.content)){
+      summary = data.content.map(function(c){return c.text||'';}).filter(Boolean).join('\n');
+    }
+    if(!summary){
+      console.error('Risposta AI vuota:', data);
+      throw new Error('Risposta AI vuota — riprova');
+    }
+
+    var summaryHtml = summary
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\n/g,'<br>');
+
+    content.innerHTML = '<div style="font-size:13px;color:#1a1a2e;line-height:1.6">'+summaryHtml+'</div>';
+    btn.textContent = '🔄 Rigenera';
+    btn.disabled = false;
+    btn.style.background = '#eab308';
+  }catch(err){
+    console.error('Errore riassunto globale:', err);
+    content.innerHTML = '<div style="color:#dc2626;font-size:12px">❌ Errore: '+(err.message||err)+'</div>';
+    btn.textContent = '🔍 Riprova';
+    btn.disabled = false;
+    btn.style.background = '#eab308';
   }
 };
 
