@@ -1772,7 +1772,39 @@ async function selectTicket(tid){
   if(noConcat){
     openTickets = [base];
   } else if(isAmazonGroup){
-    // Per Amazon: tutti i ticket (qualsiasi stato) con stessa email E stesso ordine
+    // Per Amazon: tutti i ticket (qualsiasi stato) con stessa email E stesso ordine.
+    // FIX: la cache `tickets[]` di solito contiene solo open+pending. Per vedere
+    // l'intero storico (anche solved/closed) andiamo a cercarli sull'API HelpDesk
+    // tramite query full-text sul numero ordine Amazon.
+    try{
+      // Cerca direttamente per il numero ordine Amazon (full-text su subject/body)
+      const _amzSearch = await hdFetch("/v1/tickets?pageSize=50&q="+encodeURIComponent(amazonOrderNum)+"&sortBy=lastMessageAt&order=desc").catch(function(){return [];});
+      const _foundList = Array.isArray(_amzSearch)?_amzSearch:(_amzSearch.tickets||_amzSearch.data||[]);
+      // Carica anche gli eventi per ogni ticket trovato (necessari per vedere i messaggi)
+      // Solo per quelli che NON sono già in cache con eventi
+      for(const _ft of _foundList){
+        const _tid = _ft.ID||_ft.id;
+        const _ix = tickets.findIndex(function(x){return (x.ID||x.id)===_tid;});
+        const _existing = _ix>=0 ? tickets[_ix] : null;
+        // Se non in cache O non ha eventi, scarica il ticket completo
+        if(!_existing || !(_existing.events && _existing.events.length)){
+          try{
+            const _full = await hdFetch("/v1/tickets/"+_tid).catch(function(){return null;});
+            if(_full){
+              if(_ix>=0){
+                tickets[_ix] = {...tickets[_ix], ..._full};
+              } else {
+                tickets.push(_full);
+              }
+            }
+          }catch(_e){ /* skip */ }
+        }
+      }
+      console.log('[Amazon group] caricati '+_foundList.length+' ticket per ordine '+amazonOrderNum);
+    }catch(_amzErr){
+      console.warn('[Amazon group] errore caricamento storico:', _amzErr);
+    }
+
     openTickets = tickets.filter(t=>{
       const te = (t.requester && t.requester.email) || '';
       if(te !== email) return false;
