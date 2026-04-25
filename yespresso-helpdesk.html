@@ -12071,21 +12071,83 @@ async function loadOrdiniDaPreparareData(){
     dataIniziale.setHours(0, 0, 0, 0);
     var isoFrom = dataIniziale.toISOString();
 
-    // Fetch ordini inevasi (Shopify API: fulfillment_status=unshipped)
-    var params = new URLSearchParams({
-      status: 'open',
-      fulfillment_status: 'unshipped',
-      created_at_min: isoFrom,
-      limit: '250',
-      fields: 'id,name,created_at,fulfillment_status,financial_status,cancelled_at,total_price,line_items,customer,shipping_address,note_attributes,payment_gateway_names'
-    });
-    var res = await fetch(PROXY + '/shopify/orders.json?' + params.toString());
-    if(!res.ok) throw new Error('Errore Shopify: HTTP '+res.status);
-    var data = await res.json();
-    var allOrders = data.orders || [];
+    // Query GraphQL: ordini non spediti, non cancellati, creati negli ultimi 7 giorni
+    // Shopify search syntax: fulfillment_status:unshipped + created_at:>=YYYY-MM-DD
+    var dataYMD = dataIniziale.getFullYear()+'-'+
+                  String(dataIniziale.getMonth()+1).padStart(2,'0')+'-'+
+                  String(dataIniziale.getDate()).padStart(2,'0');
+    // Includiamo unshipped (null) e partial — Shopify GraphQL accetta entrambi insieme
+    var searchQ = "fulfillment_status:unshipped OR fulfillment_status:partial AND created_at:>="+dataYMD+" AND status:open";
 
-    // Filtra: non cancellati, non completamente evasi
-    var inevasi = allOrders.filter(function(o){
+    var gqlQuery = `{
+      orders(first: 250, query: "${searchQ}", sortKey: CREATED_AT, reverse: false) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            displayFulfillmentStatus
+            displayFinancialStatus
+            cancelledAt
+            currentTotalPriceSet { shopMoney { amount currencyCode } }
+            customer { firstName lastName }
+            shippingAddress { city }
+            lineItems(first: 50) {
+              edges {
+                node {
+                  title
+                  quantity
+                  sku
+                  variant { id }
+                  product { id }
+                }
+              }
+            }
+          }
+        }
+        pageInfo { hasNextPage }
+      }
+    }`;
+
+    var resp = await shopifyGQL(gqlQuery);
+    if(!resp || resp.errors){
+      console.error('[ODP] errore GraphQL:', resp && resp.errors);
+      throw new Error('GraphQL: '+(resp && resp.errors ? JSON.stringify(resp.errors) : 'risposta vuota'));
+    }
+    var edges = (resp.data && resp.data.orders && resp.data.orders.edges) || [];
+
+    // Normalizza in formato simile a REST per il resto del codice
+    var inevasi = edges.map(function(e){
+      var n = e.node;
+      var liEdges = (n.lineItems && n.lineItems.edges) || [];
+      var lineItems = liEdges.map(function(le){
+        var li = le.node;
+        return {
+          title: li.title,
+          quantity: li.quantity,
+          sku: li.sku,
+          variant_id: li.variant && li.variant.id,
+          product_id: li.product && li.product.id
+        };
+      });
+      // Estrai numero ID (Shopify GraphQL ID format: gid://shopify/Order/123456789)
+      var idNum = (n.id||'').replace(/^gid:\/\/shopify\/Order\//,'');
+      return {
+        id: idNum,
+        name: n.name,
+        created_at: n.createdAt,
+        fulfillment_status: n.displayFulfillmentStatus === 'FULFILLED' ? 'fulfilled' :
+                            (n.displayFulfillmentStatus === 'PARTIALLY_FULFILLED' ? 'partial' : null),
+        cancelled_at: n.cancelledAt,
+        total_price: (n.currentTotalPriceSet && n.currentTotalPriceSet.shopMoney && n.currentTotalPriceSet.shopMoney.amount) || '0',
+        customer: n.customer ? { first_name: n.customer.firstName, last_name: n.customer.lastName } : null,
+        shipping_address: n.shippingAddress ? { city: n.shippingAddress.city } : null,
+        line_items: lineItems
+      };
+    });
+
+    // Filtra: non cancellati, solo non/parzialmente spediti (ridondante con query ma sicurezza)
+    inevasi = inevasi.filter(function(o){
       return !o.cancelled_at && (o.fulfillment_status === null || o.fulfillment_status === 'partial');
     });
 
