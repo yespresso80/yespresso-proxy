@@ -2071,11 +2071,55 @@ async function selectTicket(tid){
         '<span class="concat-ticket-label">'+(hasMultiple?(isMain?'&#128204; Ticket principale: ':'&#128206; '):'')+'<span class="'+(isMain?'s-open':'s-pending')+' status-pill" style="font-size:10px">'+(tk.subject||"Senza oggetto")+'</span>'+tkStatusBadge+'</span>'+
         '<span class="concat-ticket-date">'+tkDateStr+'</span>'+
       '</div>';
+
+    // ── SINTESI AUTOMATICA per thread lunghi (≥6 messaggi) ────────────
+    // Mostra in cima: bottone "Riassumi" + ultimo messaggio cliente per intero
+    // I messaggi precedenti vengono nascosti dietro un toggle "Mostra tutti i messaggi"
+    var _shouldSummarize = tkEvents.length >= 6;
+    var _summaryWrapId = 'thread-summary-'+tkId+'-'+Math.random().toString(36).substr(2,5);
+    var _hiddenMsgsId = 'thread-hidden-msgs-'+tkId+'-'+Math.random().toString(36).substr(2,5);
+    if(_shouldSummarize){
+      // Trova l'ultimo messaggio del cliente
+      var _lastClientIdx = -1;
+      for(var _i=tkEvents.length-1; _i>=0; _i--){
+        if(tkEvents[_i].author && tkEvents[_i].author.type==='client'){
+          _lastClientIdx = _i;
+          break;
+        }
+      }
+      // Conta messaggi cliente / agente
+      var _nClient = tkEvents.filter(function(e){return e.author&&e.author.type==='client';}).length;
+      var _nAgent = tkEvents.filter(function(e){return e.author&&e.author.type==='agent';}).length;
+
+      messagesHtml+='<div id="'+_summaryWrapId+'" style="background:#fefce8;border:1.5px solid #eab308;border-radius:10px;padding:14px 16px;margin:8px 0">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+
+          '<span style="font-size:18px">📝</span>'+
+          '<span style="font-size:14px;font-weight:700;color:#713f12">Conversazione lunga</span>'+
+          '<span style="font-size:11px;color:#888;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #eab308">'+tkEvents.length+' messaggi · '+_nClient+' cliente · '+_nAgent+' agente</span>'+
+          '<button onclick="generateThreadSummary(\''+tkId+'\',\''+_summaryWrapId+'\')" id="btn-sum-'+_summaryWrapId+'" style="margin-left:auto;background:#eab308;border:none;border-radius:6px;padding:6px 14px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Genera riassunto AI</button>'+
+        '</div>'+
+        '<div id="sum-content-'+_summaryWrapId+'" style="font-size:12px;color:#888;font-style:italic">Clicca "Genera riassunto AI" per ottenere un riepilogo strutturato della conversazione (problema, foto richieste, soluzioni proposte, stato attuale).</div>'+
+      '</div>';
+    }
+
     // Mostra tutti gli eventi (messaggi cliente + risposte agente)
     if(tkEvents.length===0){
       messagesHtml+=renderMsgBlock("",[]); 
-    } else {
+    } else if(_shouldSummarize){
+      // Wrappa i messaggi precedenti dentro un div nascosto, mostra solo l'ultimo cliente per intero
+      messagesHtml+='<div style="margin:8px 0">'+
+        '<button onclick="(function(b){var d=document.getElementById(\''+_hiddenMsgsId+'\');if(d){var open=d.style.display==='+'\'none\''+';d.style.display=open?\'block\':\'none\';b.innerHTML=open?\'▾ Nascondi storico ('+tkEvents.length+' messaggi)\':\'▸ Mostra storico ('+tkEvents.length+' messaggi)\';}})(this)" style="background:#fff;border:1.5px solid #e0e4ea;color:#1a73e8;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;text-align:left">▸ Mostra storico ('+tkEvents.length+' messaggi)</button>'+
+        '<div id="'+_hiddenMsgsId+'" style="display:none;margin-top:8px"></div>'+
+      '</div>';
+    }
+    if(tkEvents.length>0){
+      // Per thread lunghi, renderizza messaggi precedenti nel div nascosto e l'ultimo cliente per intero fuori
+      var _hiddenHtml = '';
       tkEvents.forEach((ev,idx)=>{
+        // Determina dove andrà il blocco di questo messaggio
+        // Per thread lunghi: solo l'ultimo cliente + eventuali messaggi DOPO restano visibili
+        var _isLastClientOrAfter = !_shouldSummarize || (_lastClientIdx>=0 && idx>=_lastClientIdx);
+        var _outBuf = ''; // buffer locale per questo messaggio
         const evMsg=ev.message||{};
         const evText=evMsg.richTextHtml||evMsg.html||evMsg.text||"";
         const _evAttFiles=Array.isArray(ev.attachments)?ev.attachments:(ev.attachments&&ev.attachments.files?ev.attachments.files:[]);
@@ -2107,7 +2151,7 @@ async function selectTicket(tid){
         const avatarClass=isPrivate?"msg-avatar msg-avatar-private":isAgent?"msg-avatar msg-avatar-agent":"msg-avatar msg-avatar-client";
         const avatarIcon=isPrivate?"🔒":isAgent?"👤":"🙋";
         const authorName=isPrivate?"Nota Privata":isAgent?"Agente":isClient?(ev.author&&ev.author.name)||"Cliente":"Sistema";
-        messagesHtml+='<div class="'+blockClass+'">'+
+        _outBuf+='<div class="'+blockClass+'">'+
           '<div class="msg-block-header">'+
           '<div class="'+avatarClass+'">'+avatarIcon+'</div>'+
           '<span class="msg-author '+(isPrivate?'msg-author-private':isAgent?'msg-author-agent':'msg-author-client')+'">'+authorName+'</span>'+
@@ -2166,7 +2210,7 @@ async function selectTicket(tid){
           }
           // Box compatto principale con dettagli + bottone "mostra originale"
           var _msgBoxId = 'amzcancel_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
-          messagesHtml+='<div style="padding:0 4px">'+
+          _outBuf+='<div style="padding:0 4px">'+
             '<div style="background:#fffaeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px">'+
               '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
                 '<span style="font-size:18px">📦</span>'+
@@ -2184,10 +2228,26 @@ async function selectTicket(tid){
             '</div>'+
           '</div>';
         } else {
-          messagesHtml+=renderMsgBlock(evText,evAttachments);
+          _outBuf+=renderMsgBlock(evText,evAttachments);
         }
-        messagesHtml+='</div>';
+        _outBuf+='</div>';
+        // Indirizza il blocco completo nel buffer giusto
+        if(_isLastClientOrAfter){
+          messagesHtml+=_outBuf;
+        } else {
+          _hiddenHtml+=_outBuf;
+        }
       });
+      // Inietta lo storico nascosto nel div toggle (se thread lungo)
+      if(_shouldSummarize && _hiddenHtml){
+        // Sostituisce il div placeholder con i messaggi precedenti
+        // Lo facciamo via setTimeout per dare tempo al DOM di essere costruito
+        var _hmId = _hiddenMsgsId, _hmHtml = _hiddenHtml;
+        setTimeout(function(){
+          var _d = document.getElementById(_hmId);
+          if(_d) _d.innerHTML = _hmHtml;
+        }, 50);
+      }
     }
     messagesHtml+='</div>';
   }
@@ -2329,7 +2389,13 @@ async function selectTicket(tid){
   const isSolved=(base.status==="solved"||base.status==="closed");
   if(isSolved){
     const aiReplyBox=document.querySelector(".ai-reply-box");
-    if(aiReplyBox)aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>';
+    if(aiReplyBox){
+      var _tidReopen=base.ID||base.id;
+      aiReplyBox.outerHTML='<div style="background:#f8f9fc;border:1px solid #e8eaf0;border-radius:10px;padding:16px;text-align:center;color:#aaa;font-size:12px">'+
+        '<div style="margin-bottom:10px">✅ Ticket risolto — se il cliente risponde, il ticket si riaprirà automaticamente</div>'+
+        '<button onclick="reopenTicket(\''+_tidReopen+'\')" style="background:#1a73e8;border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">🔄 Riapri ticket</button>'+
+      '</div>';
+    }
   } else if(isTemuInfoSospeso){
     // Cerca ordine Shopify anche per ticket Temu post-vendita
     (async()=>{
@@ -5378,6 +5444,114 @@ window.useReplyNonAnnullabile = function(){
     rt.value = window._replyNonAnnullabile;
   }
   if(typeof showToast==='function') showToast('💬 Messaggio "non annullabile" impostato','info');
+};
+
+// ══════════════════════════════════════════════════════════════════
+// REOPEN TICKET — riapre un ticket in stato Solved/Closed
+// ══════════════════════════════════════════════════════════════════
+window.reopenTicket = async function(tid){
+  if(!tid){ if(typeof showToast==='function') showToast('❌ ID ticket mancante','error'); return; }
+  if(!confirm('Vuoi riaprire questo ticket? Lo stato passerà a "Open".')) return;
+  try{
+    // Tenta prima PATCH (metodo standard)
+    var ok=false;
+    try{
+      await hdFetch("/v1/tickets/"+tid,{method:"PATCH",body:JSON.stringify({status:"open"})});
+      ok=true;
+    }catch(e1){
+      // Fallback PUT se PATCH fallisce
+      try{
+        await hdFetch("/v1/tickets/"+tid,{method:"PUT",body:JSON.stringify({status:"open"})});
+        ok=true;
+      }catch(e2){
+        throw e2;
+      }
+    }
+    if(ok){
+      // Aggiorna lo stato locale
+      var idx=tickets.findIndex(function(t){return (t.ID||t.id)===tid;});
+      if(idx>=0) tickets[idx].status="open";
+      if(selectedTicket && (selectedTicket.ID||selectedTicket.id)===tid) selectedTicket.status="open";
+      if(typeof showToast==='function') showToast('🔄 Ticket riaperto — stato: Open','success');
+      // Ricarica il ticket nel pannello
+      setTimeout(function(){ if(typeof selectTicket==='function') selectTicket(tid); }, 500);
+    }
+  }catch(err){
+    console.error('Errore riapertura ticket:', err);
+    if(typeof showToast==='function') showToast('❌ Errore: '+(err.message||err),'error');
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// GENERATE THREAD SUMMARY — riassunto AI strutturato per thread lunghi
+// ══════════════════════════════════════════════════════════════════
+window.generateThreadSummary = async function(tkId, wrapId){
+  var btn = document.getElementById('btn-sum-'+wrapId);
+  var content = document.getElementById('sum-content-'+wrapId);
+  if(!btn || !content) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Genero...';
+  btn.style.background = '#9ca3af';
+  content.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#888"><div style="width:14px;height:14px;border:2px solid #eab308;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></div> Sto leggendo la conversazione...</div>';
+
+  try{
+    // Trova il ticket nei tickets caricati
+    var tk = tickets.find(function(t){return (t.ID||t.id)===tkId;});
+    if(!tk && selectedTicket && (selectedTicket.ID||selectedTicket.id)===tkId) tk = selectedTicket;
+    if(!tk) throw new Error('Ticket non trovato');
+
+    var evs = (tk.events||[]).filter(function(e){return e.message&&(e.message.text||e.message.richTextHtml||e.message.html);});
+    if(!evs.length) throw new Error('Nessun messaggio');
+
+    // Costruisci la trascrizione completa per il prompt
+    var transcript = evs.map(function(ev){
+      var who = ev.author && ev.author.type==='agent' ? 'AGENTE' : (ev.author && ev.author.type==='client' ? 'CLIENTE' : 'SISTEMA');
+      var date = ev.date||ev.createdAt||ev.created_at||'';
+      var dateStr = date ? new Date(date).toLocaleString('it-IT') : '';
+      var txt = (ev.message.text||ev.message.richTextHtml||ev.message.html||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().substring(0,1500);
+      return '['+dateStr+'] '+who+': '+txt;
+    }).join('\n\n');
+
+    var promptSum = 'Sei un assistente per il customer service di Yespresso (e-commerce di caffè e capsule). '+
+      'Analizza questa conversazione di un ticket di assistenza e genera un riassunto strutturato in italiano, conciso e preciso. '+
+      'Usa ESATTAMENTE questo formato Markdown:\n\n'+
+      '**🔴 Problema iniziale:** [una frase breve sul problema riportato dal cliente]\n\n'+
+      '**📷 Foto/info richieste:** [se l\'agente ha chiesto foto o info, elencale brevemente; altrimenti scrivi "nessuna"]\n\n'+
+      '**📩 Foto/info ricevute:** [se il cliente ha fornito foto/info, sintetizza; altrimenti scrivi "nessuna"]\n\n'+
+      '**💡 Soluzione proposta:** [se l\'agente ha proposto una soluzione (rimborso, credito, sostituzione, reso, ecc.), specificala]\n\n'+
+      '**📍 Stato attuale:** [in che punto è la conversazione: in attesa di info dal cliente, soluzione confermata, attesa rimborso, ecc.]\n\n'+
+      'Solo questo formato. Nessuna introduzione, nessuna conclusione. Massimo 1 riga per ogni punto.\n\n'+
+      'CONVERSAZIONE:\n'+transcript;
+
+    var resp = await fetch(PROXY+'/anthropic-proxy', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-5-20250929',
+        max_tokens:600,
+        messages:[{role:'user',content:promptSum}]
+      })
+    });
+    var data = await resp.json();
+    var summary = (data.content && data.content[0] && data.content[0].text) || '(nessun riassunto generato)';
+
+    // Renderizza con markdown semplice (grassetto + a capo)
+    var summaryHtml = summary
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\n/g,'<br>');
+
+    content.innerHTML = '<div style="font-size:13px;color:#1a1a2e;line-height:1.6">'+summaryHtml+'</div>';
+    btn.textContent = '🔄 Rigenera';
+    btn.disabled = false;
+    btn.style.background = '#eab308';
+  }catch(err){
+    console.error('Errore riassunto:', err);
+    content.innerHTML = '<div style="color:#dc2626;font-size:12px">❌ Errore: '+(err.message||err)+'</div>';
+    btn.textContent = '🔍 Riprova';
+    btn.disabled = false;
+    btn.style.background = '#eab308';
+  }
 };
 
 async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
