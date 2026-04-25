@@ -1724,6 +1724,11 @@ async function selectTicket(tid){
   window._imapAttachmentsHtml=""; // Reset allegati IMAP ad ogni cambio ticket
   window._ticketAttachments=[]; // Reset allegati ticket precedente
   window._podData={}; // Reset POD data ticket precedente
+  // BUG-FIX: resetta anche l'innerHTML dell'area allegati IMAP, altrimenti
+  // il check alreadyShown dentro loadImapAttachments può vedere allegati
+  // del ticket precedente e bloccare il caricamento dei nuovi.
+  var _imapArea=document.getElementById("imap-attachments-area");
+  if(_imapArea) _imapArea.innerHTML="";
   var _onb=document.getElementById('order-note-box');if(_onb)_onb.remove();
   var _mpBox=document.getElementById('mp-orders-box');if(_mpBox)_mpBox.parentNode.removeChild(_mpBox);
   // Find all open tickets for same customer and redirect to newest
@@ -5165,6 +5170,144 @@ function formatOrderInfo(order){
 }
 
 
+// ══════════════════════════════════════════════════════════════════
+// BOTTONI ANNULLAMENTO SITO — 2 opzioni esplicite per l'agente
+// ══════════════════════════════════════════════════════════════════
+window._replyAnnullabile = null; // testo risposta "annullabile" pronta
+window._replyNonAnnullabile = null; // testo risposta "non annullabile" pronta
+
+function renderAnnullamentoButtons(){
+  // Rimuovi eventuali bottoni precedenti
+  const old = document.getElementById('ann-btns-wrap');
+  if(old) old.remove();
+
+  const dati = window._annullamentoDati;
+  if(!dati) return; // non è un ticket di annullamento
+
+  // Verifica che sia ordine SITO (non marketplace)
+  const order = window._lastShopifyOrder;
+  if(order){
+    const isMarket = (order.note_attributes||[]).some(function(a){
+      return ['Amazon Order Id','PARENT_ORDER_SN','Temu Order Id','tiktok_order'].includes(a.name);
+    });
+    if(isMarket) return; // per marketplace l'AI risponde da sola
+  }
+
+  // Prepara i testi pronti dei 2 messaggi
+  const isPrepagato = dati.paymentGateway && dati.paymentGateway !== 'cash_on_delivery' &&
+                     dati.paymentGateway.toLowerCase().indexOf('contrassegno')<0 &&
+                     dati.paymentGateway.toLowerCase().indexOf('cash')<0;
+
+  let msgAnnullabile = 'Buongiorno,\nabbiamo ricevuto la sua richiesta di annullamento e le confermiamo che procediamo con l\'annullamento del suo ordine. L\'ordine non verrà spedito.\n';
+  if(isPrepagato){
+    msgAnnullabile += 'Il rimborso dell\'importo pagato verrà accreditato entro 3-5 giorni lavorativi sulla carta/account utilizzato per il pagamento.\n';
+  } else {
+    msgAnnullabile += 'Essendo un ordine in contrassegno, non c\'è nulla da rimborsare.\n';
+  }
+  msgAnnullabile += 'Ci scusiamo per il disagio e la ringraziamo per averci scelto.\nCordiali saluti,\nIl Team Yespresso';
+
+  const msgNonAnnullabile = 'Buongiorno,\nabbiamo ricevuto la sua richiesta di annullamento. Purtroppo l\'ordine è già stato elaborato dal magazzino e non è possibile annullarlo.\nAppena riceverà il pacco potrà effettuare un reso dei prodotti seguendo la procedura standard indicata sul nostro sito.\nCi scusiamo per il disagio.\nCordiali saluti,\nIl Team Yespresso';
+
+  window._replyAnnullabile = msgAnnullabile;
+  window._replyNonAnnullabile = msgNonAnnullabile;
+
+  // Trova il container dove inserire i bottoni
+  const aa = document.getElementById('action-area');
+  if(!aa) return;
+  const rt = document.getElementById('reply-text');
+  if(!rt) return;
+
+  // Crea wrapper con i 2 bottoni
+  const wrap = document.createElement('div');
+  wrap.id = 'ann-btns-wrap';
+  wrap.style.cssText = 'margin:10px 0;padding:12px 14px;background:#fff8f0;border:1.5px solid #f59e0b;border-radius:10px';
+
+  const deadlineStr = dati.deadline ? new Date(dati.deadline).toLocaleString('it-IT', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '(fascia non annullabile)';
+  const suggerimento = dati.canCancel
+    ? '<span style="color:#16a34a;font-weight:700">✅ Sistema suggerisce: ANNULLABILE</span> · scadenza '+deadlineStr
+    : '<span style="color:#dc2626;font-weight:700">❌ Sistema suggerisce: NON annullabile</span> · scadenza era '+deadlineStr;
+
+  wrap.innerHTML =
+    '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">⚠️ Richiesta annullamento — scegli la risposta</div>'+
+    '<div style="font-size:11px;color:#888;margin-bottom:10px">'+suggerimento+' · pagamento: '+(isPrepagato?'<strong>prepagato</strong> (rimborso automatico)':'<strong>contrassegno</strong> (nessun rimborso)')+'</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+      '<button id="btn-ann-si" onclick="useReplyAnnullabile()" style="flex:1;min-width:160px;background:#16a34a;border:none;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Annullabile'+(isPrepagato?' + rimborso':'')+'</button>'+
+      '<button id="btn-ann-no" onclick="useReplyNonAnnullabile()" style="flex:1;min-width:160px;background:#dc2626;border:none;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">❌ Non annullabile</button>'+
+    '</div>';
+
+  // Inserisci sopra il textarea reply-text
+  rt.parentNode.insertBefore(wrap, rt);
+}
+
+window.useReplyAnnullabile = async function(){
+  const rt = document.getElementById('reply-text');
+  if(rt && window._replyAnnullabile){
+    rt.value = window._replyAnnullabile;
+  }
+
+  const dati = window._annullamentoDati;
+  if(!dati) return;
+
+  // Se prepagato, chiede conferma e annulla su Shopify
+  const isPrepagato = dati.paymentGateway && dati.paymentGateway !== 'cash_on_delivery' &&
+                     dati.paymentGateway.toLowerCase().indexOf('contrassegno')<0 &&
+                     dati.paymentGateway.toLowerCase().indexOf('cash')<0;
+
+  if(isPrepagato){
+    if(!confirm('⚠️ CONFERMA ANNULLAMENTO\n\nStai per:\n1. Annullare l\'ordine '+(dati.orderName||'')+' su Shopify\n2. Emettere rimborso automatico al cliente\n\nIl cliente NON riceverà il pacco.\n\nProcedere?')) return;
+
+    try{
+      const btnSi = document.getElementById('btn-ann-si');
+      if(btnSi){ btnSi.disabled=true; btnSi.textContent='⏳ Annullamento in corso...'; btnSi.style.background='#9ca3af'; }
+
+      // Usa il flusso Shopify REST: refunds/calculate → refunds → cancel
+      const orderId = dati.orderId;
+      // Step 1: calcola rimborso
+      const calcRes = await proxyFetch(PROXY+'/shopify/orders/'+orderId+'/refunds/calculate.json', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({refund:{currency:'EUR',shipping:{full_refund:true},refund_line_items:[]}})
+      });
+      const calcData = await calcRes.json();
+
+      // Step 2: emetti rimborso
+      if(calcData && calcData.refund){
+        await proxyFetch(PROXY+'/shopify/orders/'+orderId+'/refunds.json', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({refund:{currency:'EUR',notify:true,note:'Annullamento ordine richiesto da cliente',shipping:{full_refund:true},transactions:(calcData.refund.transactions||[]).map(function(tx){return {parent_id:tx.parent_id,amount:tx.amount,kind:'refund',gateway:tx.gateway};})}})
+        });
+      }
+
+      // Step 3: annulla ordine
+      await proxyFetch(PROXY+'/shopify/orders/'+orderId+'/cancel.json', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({reason:'customer',email:false,refund:false})
+      });
+
+      if(typeof showToast==='function') showToast('✅ Ordine '+(dati.orderName||'')+' annullato e rimborsato su Shopify','success');
+      if(btnSi){ btnSi.textContent='✅ Annullato + rimborsato'; btnSi.style.background='#16a34a'; }
+    }catch(err){
+      console.error('Errore annullamento:', err);
+      if(typeof showToast==='function') showToast('❌ Errore annullamento: '+(err.message||err),'error');
+      const btnSi = document.getElementById('btn-ann-si');
+      if(btnSi){ btnSi.disabled=false; btnSi.textContent='⚠️ Riprova'; btnSi.style.background='#dc2626'; }
+    }
+  } else {
+    // Contrassegno: solo messaggio, nessuna azione Shopify
+    if(typeof showToast==='function') showToast('💬 Messaggio impostato — contrassegno, nessun rimborso da emettere','info');
+  }
+};
+
+window.useReplyNonAnnullabile = function(){
+  const rt = document.getElementById('reply-text');
+  if(rt && window._replyNonAnnullabile){
+    rt.value = window._replyNonAnnullabile;
+  }
+  if(typeof showToast==='function') showToast('💬 Messaggio "non annullabile" impostato','info');
+};
+
 async function loadLastCustomerOrder(email, currentOrderId, prefetchedOrder){
   const loArea=document.getElementById("last-order-area");
   if(!loArea||!email)return;
@@ -5609,11 +5752,50 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   const _lastCustEv = (t.events||[]).filter(ev => ev.message && (ev.message.text||ev.message.richTextHtml) && !(ev.author && ev.author.type==='agent')).slice(-1)[0];
   const _lastCustMsg = _lastCustEv ? (_lastCustEv.message.text || _lastCustEv.message.richTextHtml || '').substring(0, 2500) : '';
 
+  // ═══ CALCOLO ANNULLABILITÀ ORDINE (se il ticket parla di annullamento) ═══
+  // Usa l'ORA ATTUALE (= momento in cui l'agente apre il ticket) come
+  // riferimento, non l'ora di arrivo del ticket.
+  let _annullamentoInfo = '';
+  let _annullamentoDati = null;
+  const _txtAnnull = ((t.subject||'')+' '+(_lastCustMsg||'')+' '+fullThread).toLowerCase();
+  if(order && order.created_at && /annull|cancell.*ordin/i.test(_txtAnnull) && !order.cancelled_at){
+    const _cr = new Date(order.created_at);
+    const _nw = new Date();
+    const _hh = _cr.getHours()+_cr.getMinutes()/60;
+    const _dy = _cr.getDay();
+    const _iswd = _dy>=1&&_dy<=5;
+    let _dl = null;
+    if(!_iswd){ const _nd=new Date(_cr);_nd.setHours(0,0,0,0);_nd.setDate(_nd.getDate()+1);while(_nd.getDay()<1||_nd.getDay()>5)_nd.setDate(_nd.getDate()+1);_nd.setHours(9,0,0,0);_dl=_nd; }
+    else if(_hh<=9){ const _dd1=new Date(_cr);_dd1.setHours(9,0,0,0);_dl=_dd1; }
+    else if(_hh<=16){ const _dd2=new Date(_cr.getTime()+3600000);const _dd3=new Date(_cr);_dd3.setHours(16,15,0,0);_dl=_dd2<_dd3?_dd2:_dd3; }
+    else if(_hh<=16.75){ _dl=null; }
+    else{ const _nd2=new Date(_cr);_nd2.setHours(0,0,0,0);_nd2.setDate(_nd2.getDate()+1);while(_nd2.getDay()<1||_nd2.getDay()>5)_nd2.setDate(_nd2.getDate()+1);_nd2.setHours(9,0,0,0);_dl=_nd2; }
+    const _canCancel = _dl ? (_nw<=_dl) : false;
+    _annullamentoDati = { canCancel: _canCancel, deadline: _dl, paymentGateway: order.payment_gateway||'', orderId: order.id, orderName: order.name };
+    window._annullamentoDati = _annullamentoDati;
+    if(_canCancel){
+      _annullamentoInfo = '\n\n═══ ⚠️ VERIFICA ANNULLAMENTO (calcolata dal sistema) ═══\n'+
+        '→ L\'ordine È ANCORA ANNULLABILE in questo momento.\n'+
+        '→ Rispondi al cliente confermando che procediamo con l\'annullamento e che l\'ordine non verrà spedito.\n'+
+        '→ Se pagato con carta/PayPal: rimborso in 3-5 giorni lavorativi. Se contrassegno: nulla da rimborsare.\n'+
+        '→ NON menzionare orari, scadenze, regole interne o calcoli. Sii breve e cordiale.';
+    } else {
+      _annullamentoInfo = '\n\n═══ ⚠️ VERIFICA ANNULLAMENTO (calcolata dal sistema) ═══\n'+
+        '→ L\'ordine NON È PIÙ ANNULLABILE (fuori orario regole interne).\n'+
+        '→ Rispondi spiegando che purtroppo l\'ordine è già stato elaborato dal magazzino e non è più possibile annullarlo.\n'+
+        '→ Indica che potrà effettuare un reso al ricevimento del pacco.\n'+
+        '→ NON menzionare orari, scadenze o calcoli. Sii breve e cordiale.';
+    }
+  } else {
+    window._annullamentoDati = null;
+  }
+
   const prompt =
     "Oggetto: "+t.subject+
     "\nDa: "+((t.requester&&t.requester.name)||"Cliente")+
     "\nEmail: "+(email||"")+
     (orderInfoFull?"\n\nDati ordine: "+orderInfoFull:"")+
+    _annullamentoInfo+
     "\n\n═══ ULTIMO MESSAGGIO DEL CLIENTE (rispondi a QUESTO) ═══\n"+
     (_lastCustMsg||"(nessun messaggio cliente — usa lo storico sotto)")+
     "\n\n═══ STORICO COMPLETO (solo per contesto, dal più vecchio al più recente) ═══\n"+
@@ -5811,6 +5993,12 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       if(rt2&&!rt2.value)rt2.value=reply;
     },200);
     console.log("✅ AI reply set, action-area:",aa?"found":"NOT FOUND","reply-text:",rt?"found":"NOT FOUND");
+
+    // ═══ BOTTONI ANNULLAMENTO SITO (se ticket parla di annullamento) ═══
+    // Mostra 2 bottoni sotto il campo risposta per permettere all'agente di
+    // scegliere esplicitamente quale messaggio inviare al cliente.
+    // Per ordini prepagati il bottone "Annullabile" annulla anche su Shopify.
+    renderAnnullamentoButtons();
     // Cerca importi monetari e mostra bottoni copia
     if(rt&&rt.value){
       const tagMatch = rt.value.match(/\[COPIA_IMPORTO:([\d,.|]+)\]/);
@@ -6166,24 +6354,47 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     const imapAtts0=imapData0.attachments||[];
     if(!imapAtts0.length){window._imapAttachmentsHtml="";return;}
     // Controlla se i data URL IMAP sono già presenti nell'area IMAP allegati
-    // (evita doppio caricamento ma non blocca su filename generici)
+    // (evita doppio rendering ma garantiamo comunque window._ticketAttachments)
     const imapArea=document.getElementById("imap-attachments-area");
     const imapAreaHtml=(imapArea&&imapArea.innerHTML)||"";
     const alreadyShown=imapAtts0.length>0&&imapAtts0.every(a=>{
       return imapAreaHtml.includes("data:"+a.contentType+";base64,"+a.data.substring(0,30));
     });
-    if(alreadyShown){return;}
+    if(alreadyShown){
+      // BUG-FIX: anche se l'HTML è già renderizzato, garantiamo che
+      // window._ticketAttachments contenga gli allegati immagine, altrimenti
+      // l'AI non li vedrà nei rigenerati successivi.
+      const imgsAlready=imapAtts0.filter(function(a){return a.contentType&&a.contentType.startsWith("image/");}).slice(0,3);
+      const keyOfA=function(a){ return (a.filename||'')+'|'+(a.data||'').substring(0,50); };
+      const existA=new Set((window._ticketAttachments||[]).map(keyOfA));
+      const toAdd=imgsAlready.filter(function(a){return !existA.has(keyOfA(a));});
+      if(toAdd.length>0){
+        window._ticketAttachments=(window._ticketAttachments||[]).concat(toAdd);
+        console.log("📎 IMAP: già renderizzati ma aggiunti", toAdd.length, "allegati a window._ticketAttachments");
+      }
+      return;
+    }
     const attachments=imapAtts0;
     if(false){// placeholder per evitare duplicazione fetch sotto
     } // fine if(false)
     if(!attachments.length){window._imapAttachmentsHtml="";return;}
     // Salva allegati immagine globalmente per l'AI
-    const existing=new Set((window._ticketAttachments||[]).map(a=>a.filename+a.data.length));
+    // BUG-FIX: usa una chiave più robusta (filename + primi 50 char di data)
+    // perché data.length può variare per via del padding base64.
+    // Inoltre, NON sovrascriviamo _ticketAttachments, lo accumuliamo.
+    const _keyOf = function(a){ return (a.filename||'')+'|'+(a.data||'').substring(0,50); };
+    const existing=new Set((window._ticketAttachments||[]).map(_keyOf));
     const newImgs=attachments.filter(a=>
       a.contentType&&a.contentType.startsWith("image/")&&
-      !existing.has(a.filename+a.data.length)
+      !existing.has(_keyOf(a))
     ).slice(0,3);
-    window._ticketAttachments=newImgs; // Solo allegati del ticket corrente
+    // Accumula invece di sovrascrivere — non perdiamo allegati già caricati da HelpDesk
+    if(newImgs.length>0){
+      window._ticketAttachments=(window._ticketAttachments||[]).concat(newImgs);
+      console.log("📎 IMAP: aggiunti", newImgs.length, "nuovi allegati (totale:", window._ticketAttachments.length, ")");
+    } else {
+      console.log("📎 IMAP: tutti gli allegati erano già presenti, nessuna aggiunta");
+    }
     // Mostra allegati nella sidebar
     const oArea=document.getElementById("imap-attachments-area")||document.getElementById("order-info-area");
     let html='<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
@@ -20814,6 +21025,11 @@ window.openStoricoRicezioni=function(){
         '<option value="30">Ultimi 30 giorni</option>'+
         '<option value="90">Ultimi 90 giorni</option>'+
       '</select>'+
+      '<select id="stric-group" style="padding:6px 10px;border:1.5px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:6px;font-size:12px;font-family:inherit;font-weight:700">'+
+        '<option value="data">📅 Raggruppa per Data</option>'+
+        '<option value="articolo">📦 Raggruppa per Articolo</option>'+
+        '<option value="fornitore">🏭 Raggruppa per Fornitore</option>'+
+      '</select>'+
     '</div>';
   page.appendChild(hdr);
   var body=document.createElement('div');
@@ -20826,9 +21042,11 @@ window.openStoricoRicezioni=function(){
     var s1=document.getElementById('stric-search');
     var s2=document.getElementById('stric-forn');
     var s3=document.getElementById('stric-periodo');
+    var s4=document.getElementById('stric-group');
     if(s1) s1.oninput=renderStoricoRicezioni;
     if(s2) s2.onchange=renderStoricoRicezioni;
     if(s3) s3.onchange=renderStoricoRicezioni;
+    if(s4) s4.onchange=renderStoricoRicezioni;
   },50);
   renderStoricoRicezioni();
 };
@@ -20897,14 +21115,30 @@ function renderStoricoRicezioni(){
   var totRicezioni=ricezFiltr.length;
   var totPezzi=ricezFiltr.reduce(function(s,x){return s+x.qtyRic;},0);
 
-  // Raggruppa per data
-  var byDate={};
+  // Raggruppamento dinamico (data | articolo | fornitore)
+  var groupBy=(document.getElementById('stric-group')||{}).value||'data';
+  var gruppi={};
   ricezFiltr.forEach(function(x){
-    var k=x.dataRic||'??';
-    if(!byDate[k])byDate[k]=[];
-    byDate[k].push(x);
+    var k;
+    if(groupBy==='articolo') k=x.sku;
+    else if(groupBy==='fornitore') k=x.fornitore;
+    else k=x.dataRic||'??';
+    if(!gruppi[k])gruppi[k]=[];
+    gruppi[k].push(x);
   });
-  var dateKeys=Object.keys(byDate).sort(function(a,b){return b.localeCompare(a);});
+  var gruppoKeys=Object.keys(gruppi);
+  if(groupBy==='data'){
+    gruppoKeys.sort(function(a,b){return b.localeCompare(a);});
+  } else if(groupBy==='articolo'){
+    // Ordina per totale pz decrescente per ogni articolo
+    gruppoKeys.sort(function(a,b){
+      var sa=gruppi[a].reduce(function(s,x){return s+x.qtyRic;},0);
+      var sb=gruppi[b].reduce(function(s,x){return s+x.qtyRic;},0);
+      return sb-sa;
+    });
+  } else { // fornitore
+    gruppoKeys.sort(function(a,b){return a.localeCompare(b);});
+  }
 
   var html='';
 
@@ -20927,20 +21161,44 @@ function renderStoricoRicezioni(){
     return;
   }
 
-  // Tabella per data
-  dateKeys.forEach(function(d){
-    var items=byDate[d];
-    var dataLbl=d==='??'?'Data non specificata':_fmtDataOrd(d);
-    var totGiorno=items.reduce(function(s,x){return s+x.qtyRic;},0);
+  // Tabella per gruppo
+  gruppoKeys.forEach(function(k){
+    var items=gruppi[k];
+    // Ordina gli items del gruppo per data desc
+    items.sort(function(a,b){return (b.dataRic||'').localeCompare(a.dataRic||'');});
+
+    var hdrIcon, hdrLabel, hdrBg, hdrFg, hdrBorder;
+    if(groupBy==='data'){
+      hdrIcon='📅';
+      hdrLabel=k==='??'?'Data non specificata':_fmtDataOrd(k);
+      hdrBg='#f0fdf4';hdrFg='#166534';hdrBorder='#bbf7d0';
+    } else if(groupBy==='articolo'){
+      hdrIcon='📦';
+      hdrLabel=k||'Prodotto sconosciuto';
+      hdrBg='#eff6ff';hdrFg='#1d4ed8';hdrBorder='#bfdbfe';
+    } else {
+      hdrIcon='🏭';
+      hdrLabel=k||'Fornitore sconosciuto';
+      hdrBg='#f5f3ff';hdrFg='#6d28d9';hdrBorder='#ddd6fe';
+    }
+
+    var totGruppo=items.reduce(function(s,x){return s+x.qtyRic;},0);
+
+    // Colonne dinamiche in base al raggruppamento (ometto la colonna usata per raggruppare)
+    var colProdotto=groupBy!=='articolo';
+    var colFornitore=groupBy!=='fornitore';
+    var colData=groupBy!=='data';
+
     html+='<div style="background:#fff;border:1px solid #e8eaf0;border-radius:10px;margin-bottom:14px;overflow:hidden">'+
-      '<div style="background:#f0fdf4;padding:10px 16px;font-size:13px;font-weight:700;color:#166534;border-bottom:1px solid #bbf7d0;display:flex;justify-content:space-between;align-items:center">'+
-        '<span>📅 '+dataLbl+'</span>'+
-        '<span style="font-size:11px;color:#888;font-weight:600">'+items.length+' ricezioni · '+totGiorno.toLocaleString('it-IT')+' pz</span>'+
+      '<div style="background:'+hdrBg+';padding:10px 16px;font-size:13px;font-weight:700;color:'+hdrFg+';border-bottom:1px solid '+hdrBorder+';display:flex;justify-content:space-between;align-items:center">'+
+        '<span>'+hdrIcon+' '+hdrLabel+'</span>'+
+        '<span style="font-size:11px;color:#888;font-weight:600">'+items.length+' ricezioni · '+totGruppo.toLocaleString('it-IT')+' pz</span>'+
       '</div>'+
       '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'+
       '<thead><tr style="background:#f8f9fc;font-size:10px;font-weight:700;color:#888;text-transform:uppercase">'+
-        '<th style="text-align:left;padding:8px 12px">Prodotto</th>'+
-        '<th style="text-align:left;padding:8px 12px">Fornitore</th>'+
+        (colData?'<th style="text-align:center;padding:8px 12px">Data ric.</th>':'')+
+        (colProdotto?'<th style="text-align:left;padding:8px 12px">Prodotto</th>':'')+
+        (colFornitore?'<th style="text-align:left;padding:8px 12px">Fornitore</th>':'')+
         '<th style="text-align:right;padding:8px 12px">Qtà ricevuta</th>'+
         '<th style="text-align:right;padding:8px 12px">Qtà ordinata</th>'+
         '<th style="text-align:center;padding:8px 12px">Data ordine</th>'+
@@ -20949,8 +21207,9 @@ function renderStoricoRicezioni(){
     items.forEach(function(x){
       var isCompleto=x.qtyRic>=x.qtyOrd;
       html+='<tr style="border-top:1px solid #f0f2f5">'+
-        '<td style="padding:10px 12px;font-weight:600;color:#1a1a2e">'+x.sku+'</td>'+
-        '<td style="padding:10px 12px;color:#555">'+x.fornitore+'</td>'+
+        (colData?'<td style="padding:10px 12px;text-align:center;color:#555;font-size:12px;font-weight:600">'+(x.dataRic?_fmtDataOrd(x.dataRic):'—')+'</td>':'')+
+        (colProdotto?'<td style="padding:10px 12px;font-weight:600;color:#1a1a2e">'+x.sku+'</td>':'')+
+        (colFornitore?'<td style="padding:10px 12px;color:#555">'+x.fornitore+'</td>':'')+
         '<td style="padding:10px 12px;text-align:right;font-weight:700;color:#16a34a">'+x.qtyRic.toLocaleString('it-IT')+' pz</td>'+
         '<td style="padding:10px 12px;text-align:right;color:#888">'+x.qtyOrd.toLocaleString('it-IT')+' pz '+(isCompleto?'<span title="Completo" style="color:#16a34a">✓</span>':'<span title="Parziale" style="color:#f59e0b">◐</span>')+'</td>'+
         '<td style="padding:10px 12px;text-align:center;color:#888;font-size:12px">'+(x.dataOrd?_fmtDataOrd(x.dataOrd):'—')+'</td>'+
