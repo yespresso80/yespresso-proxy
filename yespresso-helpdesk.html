@@ -5501,6 +5501,43 @@ function formatOrderInfo(order){
     const pgMap={shopify_payments:"Shopify Payments (carta)",paypal:"PayPal",amazon:"Amazon Pay",cash_on_delivery:"Contanti alla consegna (COD)",klarna:"Klarna",apple_pay:"Apple Pay",google_pay:"Google Pay"};
     info+=" | Metodo pagamento: "+(pgMap[order.payment_gateway]||order.payment_gateway);
   }
+  // ═══ DATI FATTURA — fondamentali per regola fattura ═══
+  // Estrai i campi di fatturazione dai note_attributes per dirli all'AI
+  const _attrs = order.note_attributes || [];
+  const _findAttr = function(names){
+    for(var i=0;i<_attrs.length;i++){
+      for(var j=0;j<names.length;j++){
+        if((_attrs[i].name||'').toLowerCase() === names[j].toLowerCase()) return _attrs[i].value;
+      }
+    }
+    return null;
+  };
+  const _invoice = _findAttr(['invoice','fattura','richiedi_fattura']);
+  const _ragSoc = _findAttr(['ragione_sociale','company','azienda','denominazione']);
+  const _piva = _findAttr(['partita_iva','p_iva','vat','vat_number','piva']);
+  const _cf = _findAttr(['codice_fiscale','cf','tax_code','fiscal_code']);
+  const _sdi = _findAttr(['codice_sdi','sdi','codice_destinatario','recipient_code']);
+  const _pec = _findAttr(['pec','pec_email','email_pec']);
+  const _indFatt = _findAttr(['indirizzo_fatturazione','billing_address','indirizzo_fattura']);
+  const _hasInvoice = (_invoice && (_invoice.toLowerCase()==='yes' || _invoice.toLowerCase()==='si' || _invoice.toLowerCase()==='true' || _invoice==='1'));
+  // Anche se non c'è invoice:yes, la presenza di P.IVA o ragione sociale indica che il cliente ha richiesto fattura
+  const _fatturaRichiesta = _hasInvoice || _piva || _ragSoc;
+  if(_fatturaRichiesta){
+    info += "\n\n═══ FATTURA RICHIESTA AL CHECKOUT (invoice: yes o presenza dati fiscali) ═══";
+    info += "\n→ La fattura è stata richiesta correttamente al momento dell'ordine e verrà emessa/è stata emessa tramite SDI dell'Agenzia delle Entrate.";
+    info += "\n→ Dati di fatturazione presenti nell'ordine:";
+    if(_ragSoc) info += "\n  • Ragione sociale: " + _ragSoc;
+    if(_piva)   info += "\n  • Partita IVA: " + _piva;
+    if(_cf)     info += "\n  • Codice fiscale: " + _cf;
+    if(_sdi)    info += "\n  • Codice SDI: " + _sdi;
+    if(_pec)    info += "\n  • PEC: " + _pec;
+    if(_indFatt)info += "\n  • Indirizzo fatturazione: " + _indFatt;
+    info += "\n→ Se il cliente segnala che i dati sono sbagliati, confronta i dati QUI sopra con quelli che fornisce il cliente, segnala le differenze e conferma se procederete con la correzione (se l'ordine è ancora gestibile) o se la fattura è già stata trasmessa allo SDI.";
+  } else {
+    info += "\n\n═══ FATTURA NON RICHIESTA AL CHECKOUT ═══";
+    info += "\n→ Nei dettagli aggiuntivi NON è presente il campo invoice:yes né dati di fatturazione (P.IVA, ragione sociale).";
+    info += "\n→ Se il cliente chiede ORA la fattura: per legge non è possibile emetterla in un secondo momento (art. 21 comma 4 DPR 633/1972). Indica come richiederla per i prossimi ordini.";
+  }
   return info;
 }
 
