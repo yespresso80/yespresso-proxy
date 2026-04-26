@@ -12908,6 +12908,97 @@ async function loadAnalisiStoricoData(giorni){
     var nFabio = ordiniIngrosso.filter(function(o){return (o.tags||[]).indexOf('fabio-gs-caffe')>=0;}).length;
     var nMolnar = ordiniIngrosso.filter(function(o){return (o.tags||[]).indexOf('molnar')>=0;}).length;
 
+    // ── CALCOLO MINUTI DI PREPARAZIONE ────────────────────────────────
+    var SEC_CAT = {
+      '1sku_1qty':  30,
+      '1sku_2qty':  45,
+      '1sku_3qty':  60,
+      '1sku_4qty':  75,
+      '1sku_5qty':  90,
+      '1sku_6plus': 90,
+      'multi_sku':  120
+    };
+    var SEC_INGROSSO = 20 * 60;
+    var totSecondi = 0;
+    Object.keys(SEC_CAT).forEach(function(k){
+      totSecondi += (cat[k] ? cat[k].length : 0) * SEC_CAT[k];
+    });
+    totSecondi += ingrosso * SEC_INGROSSO;
+    var totMinutiPrep = Math.round(totSecondi / 60);
+    var hh = Math.floor(totMinutiPrep / 60);
+    var mm = totMinutiPrep % 60;
+    var minutiStr = hh > 0 ? hh+'h '+mm+'min' : totMinutiPrep+' min';
+
+    // ── CALCOLO GIORNI LAVORATIVI nell'intervallo ─────────────────────
+    // Escludiamo sabato/domenica + festività italiane fisse e mobili (Pasqua/Pasquetta)
+    function getEasterDate(year){
+      // Algoritmo di Gauss per la Pasqua cattolica
+      var a = year % 19;
+      var b = Math.floor(year / 100);
+      var c = year % 100;
+      var d = Math.floor(b / 4);
+      var e = b % 4;
+      var f = Math.floor((b + 8) / 25);
+      var g = Math.floor((b - f + 1) / 3);
+      var h = (19*a + b - d - g + 15) % 30;
+      var i = Math.floor(c / 4);
+      var k = c % 4;
+      var L = (32 + 2*e + 2*i - h - k) % 7;
+      var m = Math.floor((a + 11*h + 22*L) / 451);
+      var month = Math.floor((h + L - 7*m + 114) / 31);
+      var day = ((h + L - 7*m + 114) % 31) + 1;
+      return new Date(year, month-1, day);
+    }
+    function getFestivitaItaliane(year){
+      var easter = getEasterDate(year);
+      var pasquetta = new Date(easter); pasquetta.setDate(easter.getDate()+1);
+      return [
+        new Date(year, 0, 1),    // Capodanno
+        new Date(year, 0, 6),    // Epifania
+        easter,                   // Pasqua
+        pasquetta,                // Pasquetta
+        new Date(year, 3, 25),   // Liberazione
+        new Date(year, 4, 1),    // Festa del Lavoro
+        new Date(year, 5, 2),    // Festa della Repubblica
+        new Date(year, 7, 15),   // Ferragosto
+        new Date(year, 10, 1),   // Tutti i Santi
+        new Date(year, 11, 8),   // Immacolata
+        new Date(year, 11, 25),  // Natale
+        new Date(year, 11, 26)   // S. Stefano
+      ].map(function(d){return d.toISOString().substring(0,10);});
+    }
+    function calcGiorniLavorativi(dataDa, dataA){
+      var festivi = {};
+      var anni = new Set([dataDa.getFullYear(), dataA.getFullYear()]);
+      anni.forEach(function(y){
+        getFestivitaItaliane(y).forEach(function(d){festivi[d]=true;});
+      });
+      var count = 0;
+      var d = new Date(dataDa); d.setHours(0,0,0,0);
+      var fine = new Date(dataA); fine.setHours(0,0,0,0);
+      while(d <= fine){
+        var dow = d.getDay();
+        var iso = d.toISOString().substring(0,10);
+        if(dow !== 0 && dow !== 6 && !festivi[iso]) count++;
+        d.setDate(d.getDate()+1);
+      }
+      return count;
+    }
+    var oggiDate = new Date();
+    var giorniLav = calcGiorniLavorativi(dataIniziale, oggiDate);
+    var minPerGiorno = giorniLav > 0 ? Math.round(totMinutiPrep / giorniLav) : 0;
+    var hhPg = Math.floor(minPerGiorno / 60);
+    var mmPg = minPerGiorno % 60;
+    var minPerGiornoStr = hhPg > 0 ? hhPg+'h '+mmPg+'min' : minPerGiorno+' min';
+
+    // Tooltip dettaglio
+    var dettagliTempo = [];
+    Object.keys(SEC_CAT).forEach(function(k){
+      var n = (cat[k] ? cat[k].length : 0);
+      if(n > 0) dettagliTempo.push(n+' × '+SEC_CAT[k]+'s');
+    });
+    if(ingrosso > 0) dettagliTempo.push(ingrosso+' ingrosso × 20min');
+
     var html = '';
 
     // Riepilogo numerico
@@ -12915,7 +13006,9 @@ async function loadAnalisiStoricoData(giorni){
       '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Tot ordini privati</div><div style="font-size:22px;font-weight:700;color:#166534">'+totOrdiniCat+'</div></div>'+
       '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Pezzi</div><div style="font-size:22px;font-weight:700;color:#1a1a2e">'+totPezzi.toLocaleString('it-IT')+'</div></div>'+
       '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Valore</div><div style="font-size:22px;font-weight:700;color:#6d28d9">€ '+totValore.toFixed(2)+'</div></div>'+
-      '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Media giorno</div><div style="font-size:22px;font-weight:700;color:#1a73e8">'+(totOrdiniCat/giorni).toFixed(1)+' ord</div></div>'+
+      '<div><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Media ord/gg</div><div style="font-size:22px;font-weight:700;color:#1a73e8">'+(totOrdiniCat/giorni).toFixed(1)+'</div></div>'+
+      '<div title="'+dettagliTempo.join(' + ')+'"><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">⏱️ Minuti prep.</div><div style="font-size:22px;font-weight:700;color:#ea580c">'+minutiStr+'</div></div>'+
+      '<div title="Giorni lavorativi nel periodo: '+giorniLav+' (escl. weekend e festivi italiani)"><div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">📅 Min/giorno lav.</div><div style="font-size:22px;font-weight:700;color:#dc2626">'+minPerGiornoStr+'</div><div style="font-size:9px;color:#aaa;margin-top:1px">'+giorniLav+' gg lavorativi</div></div>'+
     '</div>';
 
     // Card categorie + ingrosso
