@@ -2278,16 +2278,22 @@ async function selectTicket(tid){
         var _isAmazonCancelEmail = (_fromMail.indexOf('donotreply@amazon')>=0 || _fromMail.indexOf('do-not-reply@amazon')>=0)
                                 && _tkSubj.indexOf('annullamento')>=0;
 
-        // ── COMPATTAZIONE RISPOSTA A EMAIL TRANSAZIONALE YESPRESSO ────────
-        // Quando un cliente risponde a una mail Yespresso (es. "Ordine confermato",
-        // "Spedizione", ecc.) il client di posta include tutta la mail HTML originale.
-        // Riconosciamo questi casi cercando i marker tipici delle nostre mail
-        // e estraiamo solo il testo del cliente (prima del quote).
-        var _isYespressoQuote = false;
-        var _clientReplyText = '';
+        // ── TRIM CRONOLOGIA QUOTATA NELLE RISPOSTE CLIENTE ─────────────────
+        // Quando un cliente risponde a una nostra mail (HelpDesk/transazionale),
+        // il client di posta include tutta la mail originale come quote.
+        // Tagliamo questa parte per migliorare la leggibilità del thread.
+        // - Quote "nostro" (Yespresso/HelpDesk): taglio netto, niente bottone
+        //   (la cronologia è già visibile nei messaggi precedenti del ticket).
+        // - Quote "esterno" (forward, generic): taglio + bottone discreto per
+        //   espandere, perché la cronologia potrebbe contenere info nuove.
+        var _quoteCutIdx = -1;
+        var _quoteIsOurs = false;
         if(isClient && !_isChatbotTranscript && !_isAmazonCancelEmail){
-          // Marker che indicano la presenza di una mail Yespresso quotata
-          var _markersQuote = [
+          var _txtCheck = _evTextRaw;
+
+          // ── Marker "NOSTRI" (alta confidenza che la cronologia sia gia nel ticket) ──
+          // Marker testuali da template Yespresso/HelpDesk
+          var _ourTextMarkers = [
             'yespresso ha scritto:',
             'yespresso.it ha scritto:',
             'noreply@yespresso',
@@ -2297,55 +2303,94 @@ async function selectTicket(tid){
             'Riepilogo ordine',
             'Visita il nostro negozio',
             'Carica per tracciare i tuoi colli',
-            'ORDINE #'
+            'ORDINE #',
+            'PREVIOUS MESSAGES'
           ];
-          var _foundIdx = -1;
-          var _txtCheck = _evTextRaw;
-          for(var _mi=0; _mi<_markersQuote.length; _mi++){
-            var _idx = _txtCheck.toLowerCase().indexOf(_markersQuote[_mi].toLowerCase());
-            if(_idx >= 0 && (_foundIdx === -1 || _idx < _foundIdx)) _foundIdx = _idx;
+          var _ourIdx = -1;
+          for(var _omi=0; _omi<_ourTextMarkers.length; _omi++){
+            var _omIdx = _txtCheck.toLowerCase().indexOf(_ourTextMarkers[_omi].toLowerCase());
+            if(_omIdx >= 0 && (_ourIdx === -1 || _omIdx < _ourIdx)) _ourIdx = _omIdx;
           }
-          // Pattern aggiuntivo: "Il GG/MM/AAAA HH:MM CET/CEST Yespresso ha scritto:"
-          var _gmailQuoteMatch = _txtCheck.match(/Il\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}\s*(CET|CEST)?\s*Yespresso/i);
-          if(_gmailQuoteMatch){
-            var _gqIdx = _txtCheck.indexOf(_gmailQuoteMatch[0]);
-            if(_gqIdx >= 0 && (_foundIdx === -1 || _gqIdx < _foundIdx)) _foundIdx = _gqIdx;
+          // Pattern Gmail breve "Il GG/MM/AAAA HH:MM CET Yespresso ha scritto:"
+          var _ourGmailShort = _txtCheck.match(/Il\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}\s*(CET|CEST)?\s*Yespresso/i);
+          if(_ourGmailShort){
+            var _ogsIdx = _txtCheck.indexOf(_ourGmailShort[0]);
+            if(_ogsIdx >= 0 && (_ourIdx === -1 || _ogsIdx < _ourIdx)) _ourIdx = _ogsIdx;
           }
-          if(_foundIdx > 30){
-            // Il testo prima del marker è il messaggio reale del cliente
-            _clientReplyText = _txtCheck.substring(0, _foundIdx).trim();
-            // Rimuovi spazi/newline finali eccessivi
-            _clientReplyText = _clientReplyText.replace(/[\s\n\r]+$/g, '');
-            // Solo se rimane un testo significativo (>10 char), considera valido
-            if(_clientReplyText.length > 10 && _clientReplyText.length < 2000){
-              _isYespressoQuote = true;
+          // Pattern Gmail esteso "Il giorno [day] DD mese YYYY alle ore HH:MM Yespresso ... ha scritto:"
+          var _ourGmailLong = _txtCheck.match(/Il\s+giorno\s+\S{2,}\s+\d{1,2}\s+\S{2,}\s+\d{4}\s+alle\s+ore\s+\d{1,2}[:.]\d{2}\s*[\s\S]{0,200}?(yespresso|assistenza@yespresso|noreply@yespresso)[\s\S]{0,80}?ha\s+scritto\s*:/i);
+          if(_ourGmailLong){
+            var _oglIdx = _txtCheck.indexOf(_ourGmailLong[0]);
+            if(_oglIdx >= 0 && (_ourIdx === -1 || _oglIdx < _ourIdx)) _ourIdx = _oglIdx;
+          }
+          // Pattern footer firma HelpDesk "Ticket ID: NNNN"
+          var _ourTicketSig = _txtCheck.match(/Ticket\s+ID\s*:\s*\d+/i);
+          if(_ourTicketSig){
+            var _otsIdx = _txtCheck.indexOf(_ourTicketSig[0]);
+            if(_otsIdx >= 0 && (_ourIdx === -1 || _otsIdx < _ourIdx)) _ourIdx = _otsIdx;
+          }
+
+          // ── Marker "ESTERNI" (cronologia potenzialmente sconosciuta al ticket) ──
+          var _extIdx = -1;
+          // Pattern Gmail italiano generico "Il giorno ... ha scritto:" SENZA riferimento a Yespresso
+          var _extGenericIt = _txtCheck.match(/Il\s+giorno\s+[\s\S]{5,250}?ha\s+scritto\s*:/i);
+          if(_extGenericIt){
+            var _egiIdx = _txtCheck.indexOf(_extGenericIt[0]);
+            // Se il match contiene yespresso, non è esterno (dovrebbe già essere coperto sopra)
+            if(_egiIdx >= 0 && !/yespresso/i.test(_extGenericIt[0])){
+              if(_extIdx === -1 || _egiIdx < _extIdx) _extIdx = _egiIdx;
+            }
+          }
+          // Pattern Gmail inglese "On [date] ... wrote:"
+          var _extGenericEn = _txtCheck.match(/On\s+[\s\S]{5,250}?\bwrote\s*:/i);
+          if(_extGenericEn){
+            var _egeIdx = _txtCheck.indexOf(_extGenericEn[0]);
+            if(_egeIdx >= 0 && !/yespresso/i.test(_extGenericEn[0])){
+              if(_extIdx === -1 || _egeIdx < _extIdx) _extIdx = _egeIdx;
+            }
+          }
+          // Pattern Outlook "-----Messaggio originale-----" / "-----Original Message-----" / Forwarded
+          var _extOutlookSep = _txtCheck.match(/-{2,}\s*(Messaggio\s+originale|Original\s+Message|Forwarded\s+message)\s*-{2,}/i);
+          if(_extOutlookSep){
+            var _eosIdx = _txtCheck.indexOf(_extOutlookSep[0]);
+            if(_eosIdx >= 0 && (_extIdx === -1 || _eosIdx < _extIdx)) _extIdx = _eosIdx;
+          }
+          // Pattern Outlook header "Da: ... Inviato: ..." / "From: ... Sent: ..."
+          var _extOutlookHdr = _txtCheck.match(/(?:^|\n)\s*(Da|From)\s*:[^\n]{3,200}\n\s*(Inviato|Sent|Data|Date)\s*:/i);
+          if(_extOutlookHdr){
+            var _eohIdx = _txtCheck.indexOf(_extOutlookHdr[0]);
+            if(_eohIdx >= 0 && (_extIdx === -1 || _eohIdx < _extIdx)) _extIdx = _eohIdx;
+          }
+          // Pattern blocco di 3+ righe consecutive citate con ">"
+          var _extCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
+          if(_extCitedLines){
+            var _eclIdx = _txtCheck.indexOf(_extCitedLines[0]);
+            if(_eclIdx >= 0 && _txtCheck.charAt(_eclIdx) === '\n') _eclIdx++;
+            if(_eclIdx >= 0 && (_extIdx === -1 || _eclIdx < _extIdx)) _extIdx = _eclIdx;
+          }
+
+          // ── Decisione: il marker più "in alto" vince (taglia il più presto possibile) ──
+          if(_ourIdx >= 0 && (_extIdx === -1 || _ourIdx <= _extIdx)){
+            _quoteCutIdx = _ourIdx;
+            _quoteIsOurs = true;
+          } else if(_extIdx >= 0){
+            _quoteCutIdx = _extIdx;
+            _quoteIsOurs = false;
+          }
+
+          // Sicurezza: solo se taglia >15 char (evita falsi positivi su msg cortissimi)
+          // e se rimane testo significativo (>=10 char e almeno 2 parole)
+          if(_quoteCutIdx >= 0){
+            var _newPart = _txtCheck.substring(0, _quoteCutIdx).trim();
+            var _wordCount = _newPart.split(/\s+/).filter(function(w){return w.length>0;}).length;
+            if(_quoteCutIdx <= 15 || _newPart.length < 10 || _wordCount < 2){
+              _quoteCutIdx = -1;
+              _quoteIsOurs = false;
             }
           }
         }
 
-        if(_isYespressoQuote){
-          // Box compatto con solo il messaggio del cliente, mail originale nascosta
-          var _yqBoxId = 'yqbox_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
-          var _clienteEsc = _clientReplyText
-            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-            .replace(/\n/g,'<br>');
-          _outBuf += '<div style="padding:0 4px">'+
-            '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:14px 16px">'+
-              '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+
-                '<span style="font-size:18px">💬</span>'+
-                '<span style="font-size:14px;font-weight:700;color:#1e40af">Risposta del cliente</span>'+
-                '<span style="margin-left:auto;font-size:10px;color:#888;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #93c5fd">mail Yespresso quotata</span>'+
-              '</div>'+
-              '<div style="background:#fff;border-left:3px solid #1e40af;border-radius:0 6px 6px 0;padding:10px 14px;font-size:13px;color:#1a1a2e;line-height:1.5">'+_clienteEsc+'</div>'+
-              '<div style="margin-top:10px;text-align:right">'+
-                '<button onclick="(function(b){var d=document.getElementById(\''+_yqBoxId+'\');if(d){d.style.display=d.style.display===\'none\'?\'block\':\'none\';b.textContent=d.style.display===\'none\'?\'▸ Mostra mail originale Yespresso\':\'▾ Nascondi mail originale\';}})(this)" style="background:none;border:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline">▸ Mostra mail originale Yespresso</button>'+
-              '</div>'+
-              '<div id="'+_yqBoxId+'" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed #c7d6f0;font-size:12px;color:#666;max-height:300px;overflow-y:auto;background:#fff;border-radius:6px;padding:8px 10px">'+
-                renderMsgBlock(evText,evAttachments)+
-              '</div>'+
-            '</div>'+
-          '</div>';
-        } else if(_isChatbotTranscript || _isCustomVarsBlock){
+        if(_isChatbotTranscript || _isCustomVarsBlock){
           // Costruisci un box compatto chatbot
           var _cbBoxId = 'cbtr_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
           var _cbStripped = _evTextRaw.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ');
@@ -2406,7 +2451,27 @@ async function selectTicket(tid){
             setTimeout(function(){ updateAmazonCancelBox(annBoxId, ordNum); }, 3500);
           })(_annBoxId, _ordNum);
         } else {
-          _outBuf+=renderMsgBlock(evText,evAttachments);
+          // Default: messaggio normale. Applica trim quote se rilevato.
+          if(_quoteCutIdx > 15){
+            var _evTextNew = _evTextRaw.substring(0, _quoteCutIdx).replace(/[\s\n\r]+$/g, '');
+            var _evTextQuoted = _evTextRaw.substring(_quoteCutIdx);
+            if(_quoteIsOurs){
+              // Quote nostro: taglio netto, niente bottone (la cronologia è già nel ticket)
+              _outBuf += renderMsgBlock(_evTextNew, evAttachments);
+            } else {
+              // Quote esterno: rendering del nuovo + bottone discreto per mostrare la cronologia
+              var _qExtBoxId = 'qext_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
+              _outBuf += renderMsgBlock(_evTextNew, evAttachments);
+              _outBuf += '<div style="padding:4px 16px 8px">'+
+                '<button onclick="(function(b){var d=document.getElementById(\''+_qExtBoxId+'\');if(d){d.style.display=d.style.display===\'none\'?\'block\':\'none\';b.textContent=d.style.display===\'none\'?\'▸ Mostra cronologia citata\':\'▾ Nascondi cronologia citata\';}})(this)" style="background:none;border:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline;padding:4px 0">▸ Mostra cronologia citata</button>'+
+                '<div id="'+_qExtBoxId+'" style="display:none;margin-top:8px;padding:10px;background:#f7f9fc;border-left:2px solid #ddd;border-radius:0 6px 6px 0;font-size:12px;color:#666;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word">'+
+                  _evTextQuoted.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+
+                '</div>'+
+              '</div>';
+            }
+          } else {
+            _outBuf+=renderMsgBlock(evText,evAttachments);
+          }
         }
         _outBuf+='</div>';
         // Indirizza il blocco completo nel buffer giusto
