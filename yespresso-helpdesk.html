@@ -6417,9 +6417,13 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   // ═══ CALCOLO ANNULLABILITÀ ORDINE (se il ticket parla di annullamento) ═══
   // Usa l'ORA ATTUALE (= momento in cui l'agente apre il ticket) come
   // riferimento, non l'ora di arrivo del ticket.
+  // IMPORTANTE: cerchiamo "annull" SOLO nel subject e nell'ULTIMO messaggio cliente,
+  // NON nel thread storico, altrimenti basta che la parola "annullamento" compaia
+  // in qualunque messaggio precedente per attivare il banner sbagliato (es. ticket
+  // di assistenza dove si parlava di "annullamento del credito" ecc.)
   let _annullamentoInfo = '';
   let _annullamentoDati = null;
-  const _txtAnnull = ((t.subject||'')+' '+(_lastCustMsg||'')+' '+fullThread).toLowerCase();
+  const _txtAnnull = ((t.subject||'')+' '+(_lastCustMsg||'')).toLowerCase();
   if(order && order.created_at && /annull|cancell.*ordin/i.test(_txtAnnull) && !order.cancelled_at){
     const _cr = new Date(order.created_at);
     const _nw = new Date();
