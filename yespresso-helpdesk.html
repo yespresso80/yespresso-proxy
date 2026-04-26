@@ -5518,21 +5518,21 @@ function formatOrderInfo(order){
   const _cf = _findAttr(['codice_fiscale','cf','tax_code','fiscal_code']);
   const _sdi = _findAttr(['codice_sdi','sdi','codice_destinatario','recipient_code']);
   const _pec = _findAttr(['pec','pec_email','email_pec']);
-  const _indFatt = _findAttr(['indirizzo_fatturazione','billing_address','indirizzo_fattura']);
   const _hasInvoice = (_invoice && (_invoice.toLowerCase()==='yes' || _invoice.toLowerCase()==='si' || _invoice.toLowerCase()==='true' || _invoice==='1'));
   // Anche se non c'è invoice:yes, la presenza di P.IVA o ragione sociale indica che il cliente ha richiesto fattura
   const _fatturaRichiesta = _hasInvoice || _piva || _ragSoc;
   if(_fatturaRichiesta){
-    info += "\n\n═══ FATTURA RICHIESTA AL CHECKOUT (invoice: yes o presenza dati fiscali) ═══";
+    info += "\n\n═══ FATTURA RICHIESTA AL CHECKOUT (presenza dati fiscali) ═══";
     info += "\n→ La fattura è stata richiesta correttamente al momento dell'ordine e verrà emessa/è stata emessa tramite SDI dell'Agenzia delle Entrate.";
-    info += "\n→ Dati di fatturazione presenti nell'ordine:";
+    info += "\n→ Dati FISCALI di fatturazione presenti nell'ordine (NON includere indirizzo postale, è irrilevante per la fattura elettronica):";
     if(_ragSoc) info += "\n  • Ragione sociale: " + _ragSoc;
     if(_piva)   info += "\n  • Partita IVA: " + _piva;
     if(_cf)     info += "\n  • Codice fiscale: " + _cf;
     if(_sdi)    info += "\n  • Codice SDI: " + _sdi;
     if(_pec)    info += "\n  • PEC: " + _pec;
-    if(_indFatt)info += "\n  • Indirizzo fatturazione: " + _indFatt;
-    info += "\n→ Se il cliente segnala che i dati sono sbagliati, confronta i dati QUI sopra con quelli che fornisce il cliente, segnala le differenze e conferma se procederete con la correzione (se l'ordine è ancora gestibile) o se la fattura è già stata trasmessa allo SDI.";
+    info += "\n→ ATTENZIONE PER P.IVA: la P.IVA italiana è SEMPRE di 11 cifre. Se il cliente fornisce una P.IVA con 10 cifre (es. \"0870981003\") e nell'ordine ce n'è una di 11 cifre molto simile (es. \"08720981003\"), molto probabilmente è la stessa e il cliente ha solo dimenticato uno zero. NON segnalare differenze in questi casi: chiedi al cliente di confermare la P.IVA completa di 11 cifre o conferma che è già corretta nell'ordine.";
+    info += "\n→ ATTENZIONE PER INDIRIZZO: per la fattura elettronica italiana NON è rilevante l'indirizzo postale. Se il cliente segnala che 'l'indirizzo di fatturazione è sbagliato', concentrati SOLO sui dati fiscali (P.IVA, codice fiscale, SDI/PEC). Se i dati fiscali sono corretti, rassicura il cliente che la fattura sarà emessa correttamente al SDI con i dati fiscali, indipendentemente dall'indirizzo postale visualizzato sulla mail di conferma ordine.";
+    info += "\n→ Se il cliente segnala che i dati FISCALI sono sbagliati, confronta i dati QUI sopra con quelli che fornisce il cliente, segnala SOLO le differenze reali sui dati fiscali e conferma se procederete con la correzione (se l'ordine è ancora gestibile).";
   } else {
     info += "\n\n═══ FATTURA NON RICHIESTA AL CHECKOUT ═══";
     info += "\n→ Nei dettagli aggiuntivi NON è presente il campo invoice:yes né dati di fatturazione (P.IVA, ragione sociale).";
