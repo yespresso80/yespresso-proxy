@@ -2278,40 +2278,38 @@ async function selectTicket(tid){
         var _isAmazonCancelEmail = (_fromMail.indexOf('donotreply@amazon')>=0 || _fromMail.indexOf('do-not-reply@amazon')>=0)
                                 && _tkSubj.indexOf('annullamento')>=0;
 
-        // ── TRIM CRONOLOGIA QUOTATA NEI MESSAGGI ───────────────────────────
+        // ── TRIM CRONOLOGIA QUOTATA NEI MESSAGGI (v4) ──────────────────────
         // Quando un cliente risponde a una nostra mail (HelpDesk/transazionale),
         // o quando un nostro messaggio agente arriva via API HelpDesk con il
         // footer template + cronologia, il client/server include tutta la mail
         // originale come quote. Tagliamo questa parte per migliorare la
         // leggibilita' del thread.
-        // - Quote "nostro" (Yespresso/HelpDesk): taglio netto, niente bottone
-        //   (la cronologia e' gia' visibile nei messaggi precedenti del ticket).
-        // - Quote "esterno" (forward, generic): taglio + bottone discreto per
-        //   espandere, perche' la cronologia potrebbe contenere info nuove.
-        // - Messaggi agente: applica solo il taglio "nostro" (mai esterno).
         var _quoteCutIdx = -1;
         var _quoteIsOurs = false;
-        var _quoteCutIdxPlain = -1; // posizione del taglio nel plain text (per fallback)
-        var _quotePlainText = '';   // plain text estratto (per il rendering tagliato)
+        var _quotePlainText = '';
         if(!_isChatbotTranscript && !_isAmazonCancelEmail){
-          // Estraiamo plain text dall'HTML/richText per matchare i pattern regex.
-          // _evTextRaw potrebbe essere HTML (richTextHtml/html) e in quel caso
-          // i pattern come "CEST Yespresso ha scritto:" sono frammentati tra tag
-          // (es. "CEST <a>Yespresso</a> ha scritto:"). Estraendo plain text i match scattano.
           var _txtCheck = _evTextRaw;
+          // 1) Estrazione plain text se HTML
           if(/<[a-z!\/][^>]*>/i.test(_txtCheck)){
-            // Sembra HTML: estraggo testo
             try {
               var _tmpDiv = document.createElement('div');
               _tmpDiv.innerHTML = _txtCheck;
               _txtCheck = _tmpDiv.innerText || _tmpDiv.textContent || _txtCheck;
             } catch(e){
-              // Fallback: rimuovo tag con regex
-              _txtCheck = _txtCheck.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+              _txtCheck = _txtCheck.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<\/div>/gi,'\n').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
             }
           }
+          // 2) Normalizzazione whitespace AGGRESSIVA: \r\n -> \n, NBSP -> spazio,
+          //    spazi multipli -> singolo, tab -> spazio. Questo permette ai pattern
+          //    regex di matchare anche con whitespace anomali.
+          _txtCheck = _txtCheck
+            .replace(/\r\n?/g, '\n')         // CRLF/CR -> LF
+            .replace(/\u00A0/g, ' ')         // NBSP -> spazio
+            .replace(/\u200B/g, '')          // zero-width space
+            .replace(/[ \t]+/g, ' ')         // spazi/tab multipli -> singolo
+            .replace(/ *\n */g, '\n');       // pulisci spazi attorno ai newline
 
-          // ── Marker "NOSTRI" (alta confidenza che la cronologia sia gia nel ticket) ──
+          // ── Marker "NOSTRI" ──
           var _ourTextMarkers = [
             'yespresso ha scritto:',
             'yespresso.it ha scritto:',
@@ -2326,12 +2324,13 @@ async function selectTicket(tid){
             'PREVIOUS MESSAGES'
           ];
           var _ourIdx = -1;
+          var _txtLower = _txtCheck.toLowerCase();
           for(var _omi=0; _omi<_ourTextMarkers.length; _omi++){
-            var _omIdx = _txtCheck.toLowerCase().indexOf(_ourTextMarkers[_omi].toLowerCase());
+            var _omIdx = _txtLower.indexOf(_ourTextMarkers[_omi].toLowerCase());
             if(_omIdx >= 0 && (_ourIdx === -1 || _omIdx < _ourIdx)) _ourIdx = _omIdx;
           }
-          // Pattern Gmail breve "Il GG/MM/AAAA HH:MM CET Yespresso[\s]*ha scritto:"
-          // Tollera doppi spazi e variazioni
+          // Pattern Gmail breve: "Il GG/MM/AAAA HH:MM CET/CEST Yespresso ha scritto:"
+          // (dopo normalizzazione whitespace, lo spazio singolo e' garantito)
           var _ourGmailShort = _txtCheck.match(/Il\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}\s*(CET|CEST)?\s*Yespresso/i);
           if(_ourGmailShort){
             var _ogsIdx = _txtCheck.indexOf(_ourGmailShort[0]);
@@ -2343,7 +2342,7 @@ async function selectTicket(tid){
             var _oglIdx = _txtCheck.indexOf(_ourGmailLong[0]);
             if(_oglIdx >= 0 && (_ourIdx === -1 || _oglIdx < _ourIdx)) _ourIdx = _oglIdx;
           }
-          // Pattern footer firma HelpDesk "Ticket ID: NNNNNN" (alfanumerico anche)
+          // Pattern footer firma HelpDesk "Ticket ID: XXXX" (alfanumerico)
           var _ourTicketSig = _txtCheck.match(/Ticket\s+ID\s*:\s*[A-Z0-9]{3,}/i);
           if(_ourTicketSig){
             var _otsIdx = _txtCheck.indexOf(_ourTicketSig[0]);
@@ -2399,32 +2398,33 @@ async function selectTicket(tid){
             }
           }
 
-          // ── Decisione: il marker piu' "in alto" vince ──
+          // ── Decisione ──
           if(_ourIdx >= 0 && (_extIdx === -1 || _ourIdx <= _extIdx)){
-            _quoteCutIdxPlain = _ourIdx;
+            _quoteCutIdx = _ourIdx;
             _quoteIsOurs = true;
           } else if(_extIdx >= 0){
-            _quoteCutIdxPlain = _extIdx;
+            _quoteCutIdx = _extIdx;
             _quoteIsOurs = false;
           }
 
           // Sicurezza
-          if(_quoteCutIdxPlain >= 0){
-            var _newPart = _txtCheck.substring(0, _quoteCutIdxPlain).trim();
+          if(_quoteCutIdx >= 0){
+            var _newPart = _txtCheck.substring(0, _quoteCutIdx).trim();
             var _wordCount = _newPart.split(/\s+/).filter(function(w){return w.length>0;}).length;
-            if(_quoteCutIdxPlain <= 15 || _newPart.length < 10 || _wordCount < 2){
-              _quoteCutIdxPlain = -1;
+            if(_quoteCutIdx <= 15 || _newPart.length < 10 || _wordCount < 2){
+              _quoteCutIdx = -1;
               _quoteIsOurs = false;
             }
           }
 
-          // Se il taglio e' valido, lo applichiamo direttamente al testo plain.
-          // Per il rendering, useremo il plain text tagliato (renderMsgBlock fa
-          // la conversione necessaria).
-          _quoteCutIdx = _quoteCutIdxPlain;
           if(_quoteCutIdx >= 0){
-            // Il plain text estratto sara' usato per ricostruire i due segmenti
             _quotePlainText = _txtCheck;
+          }
+
+          // DEBUG: log diagnostico per capire perche' il taglio non scatta
+          // (rimuovere dopo verifica in produzione)
+          if(window._yqDebug){
+            console.log('[YQ-DEBUG]', isClient?'CLI':'AGT', 'len='+_txtCheck.length, 'ourIdx='+_ourIdx, 'extIdx='+_extIdx, 'cutIdx='+_quoteCutIdx, 'isOurs='+_quoteIsOurs, 'preview='+JSON.stringify(_txtCheck.substring(0,80)));
           }
         }
 
@@ -2497,7 +2497,7 @@ async function selectTicket(tid){
               // Quote nostro: taglio netto, niente bottone
               _outBuf += renderMsgBlock(_evTextNew, evAttachments);
             } else {
-              // Quote esterno: rendering del nuovo + bottone discreto per mostrare la cronologia
+              // Quote esterno: rendering del nuovo + bottone discreto
               var _qExtBoxId = 'qext_'+(ev.id||idx)+'_'+Math.random().toString(36).substr(2,5);
               _outBuf += renderMsgBlock(_evTextNew, evAttachments);
               _outBuf += '<div style="padding:4px 16px 8px">'+
