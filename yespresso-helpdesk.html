@@ -21386,11 +21386,13 @@ function renderFabPiano(body){
     // wi=0 → questa settimana (0-6gg), wi=1 → prossima (7-13gg), ecc.
     var arriviGia={};
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
+      var isAnnul=ord.tipo==='annullamento'&&ord.stato==='confermato';
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!isAnnul) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
-        if(res<=0) return;
+        if(!isAnnul && res<=0) return;
+        if(isAnnul && res>=0) return;
         // Usa data_cons_riga se presente, altrimenti data_consegna_prevista dell'ordine
         var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
         if(!dcStr) return;
@@ -21420,11 +21422,13 @@ function renderFabPiano(body){
     var BUCO_TOLLERANZA_GG = _fabBucoTolleranzaGg;
     var arriviGiaOrdinatiGio={}; // giorno → qty (dagli ordini aperti, per giorno reale)
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
+      var isAnnul=ord.tipo==='annullamento'&&ord.stato==='confermato';
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!isAnnul) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
-        if(res<=0) return;
+        if(!isAnnul && res<=0) return;
+        if(isAnnul && res>=0) return;
         var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
         if(!dcStr) return;
         var dc=parseDataLocale(dcStr);
@@ -21575,27 +21579,35 @@ function renderFabPiano(body){
 
     // ── CALCOLO ECCEDENZE ─────────────────────────────────────────
     // Sommo tutti gli ordini in attesa per questo SKU (qty residue)
-    // entro un orizzonte molto lungo (1 anno) per coprire ordini lontani
+    // entro un orizzonte molto lungo (1 anno) per coprire ordini lontani.
+    // Includo anche ordini di annullamento confermati (qty negative).
     var totaleInArrivo=0;
     var righeInArrivo=[]; // [{ordine, riga, qtyResidua, dataConsegna(Date), giorniDaOggi}]
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
+      var isAnnul=ord.tipo==='annullamento'&&ord.stato==='confermato';
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!isAnnul) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
-        if(res<=0) return;
+        // Per ordini normali: skippa righe già ricevute (res<=0)
+        // Per ordini annullamento: includi sempre (qty negativa è valida)
+        if(!isAnnul && res<=0) return;
+        if(isAnnul && res>=0) return; // annullamento "vuoto", skippa
         var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
         if(!dcStr) return;
         var dc=parseDataLocale(dcStr);
         if(!dc) return;
         var giorniDaOggi=Math.round((dc-today)/86400000);
-        totaleInArrivo+=res;
-        righeInArrivo.push({
-          ordine:ord, riga:r,
-          qtyResidua:res,
-          dataConsegna:dc,
-          giorniDaOggi:giorniDaOggi
-        });
+        totaleInArrivo+=res; // somma include qty negative degli annullamenti
+        // Le righe di annullamento NON vengono aggiunte ai candidati per nuovi annullamenti
+        if(!isAnnul){
+          righeInArrivo.push({
+            ordine:ord, riga:r,
+            qtyResidua:res,
+            dataConsegna:dc,
+            giorniDaOggi:giorniDaOggi
+          });
+        }
       });
     });
     var coperturaGiorni=avgDay>0?Math.floor((inv+totaleInArrivo)/avgDay):0;
@@ -22928,11 +22940,13 @@ function fabDebugRun(skuShopify){
   var arriviGia={};
   var nOrd=0;
   fabOrdini.forEach(function(ord){
-    if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
+    var isAnnulD=ord.tipo==='annullamento'&&ord.stato==='confermato';
+    if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!isAnnulD) return;
     ord.righe.forEach(function(r){
       if(r.sku_shopify!==p.sku_shopify) return;
       var res=r.qty_ordinata-(r.qty_ricevuta||0);
-      if(res<=0) return;
+      if(!isAnnulD && res<=0) return;
+      if(isAnnulD && res>=0) return;
       var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
       if(!dcStr) return;
       var dc=parseDataLocale(dcStr);
@@ -22955,11 +22969,13 @@ function fabDebugRun(skuShopify){
   var BUCO_TOLLERANZA_GG_DBG = _fabBucoTolleranzaGg;
   // Distribuisco gli arrivi al giorno reale (non al primo giorno della settimana)
   fabOrdini.forEach(function(ord){
-    if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
+    var isAnnulD=ord.tipo==='annullamento'&&ord.stato==='confermato';
+    if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!isAnnulD) return;
     ord.righe.forEach(function(r){
       if(r.sku_shopify!==p.sku_shopify) return;
       var res=r.qty_ordinata-(r.qty_ricevuta||0);
-      if(res<=0) return;
+      if(!isAnnulD && res<=0) return;
+      if(isAnnulD && res>=0) return;
       var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
       if(!dcStr) return;
       var dc=parseDataLocale(dcStr);
