@@ -2291,8 +2291,25 @@ async function selectTicket(tid){
         // - Messaggi agente: applica solo il taglio "nostro" (mai esterno).
         var _quoteCutIdx = -1;
         var _quoteIsOurs = false;
+        var _quoteCutIdxPlain = -1; // posizione del taglio nel plain text (per fallback)
+        var _quotePlainText = '';   // plain text estratto (per il rendering tagliato)
         if(!_isChatbotTranscript && !_isAmazonCancelEmail){
+          // Estraiamo plain text dall'HTML/richText per matchare i pattern regex.
+          // _evTextRaw potrebbe essere HTML (richTextHtml/html) e in quel caso
+          // i pattern come "CEST Yespresso ha scritto:" sono frammentati tra tag
+          // (es. "CEST <a>Yespresso</a> ha scritto:"). Estraendo plain text i match scattano.
           var _txtCheck = _evTextRaw;
+          if(/<[a-z!\/][^>]*>/i.test(_txtCheck)){
+            // Sembra HTML: estraggo testo
+            try {
+              var _tmpDiv = document.createElement('div');
+              _tmpDiv.innerHTML = _txtCheck;
+              _txtCheck = _tmpDiv.innerText || _tmpDiv.textContent || _txtCheck;
+            } catch(e){
+              // Fallback: rimuovo tag con regex
+              _txtCheck = _txtCheck.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+            }
+          }
 
           // ── Marker "NOSTRI" (alta confidenza che la cronologia sia gia nel ticket) ──
           var _ourTextMarkers = [
@@ -2313,7 +2330,8 @@ async function selectTicket(tid){
             var _omIdx = _txtCheck.toLowerCase().indexOf(_ourTextMarkers[_omi].toLowerCase());
             if(_omIdx >= 0 && (_ourIdx === -1 || _omIdx < _ourIdx)) _ourIdx = _omIdx;
           }
-          // Pattern Gmail breve "Il GG/MM/AAAA HH:MM CET Yespresso ha scritto:"
+          // Pattern Gmail breve "Il GG/MM/AAAA HH:MM CET Yespresso[\s]*ha scritto:"
+          // Tollera doppi spazi e variazioni
           var _ourGmailShort = _txtCheck.match(/Il\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}\s*(CET|CEST)?\s*Yespresso/i);
           if(_ourGmailShort){
             var _ogsIdx = _txtCheck.indexOf(_ourGmailShort[0]);
@@ -2325,7 +2343,7 @@ async function selectTicket(tid){
             var _oglIdx = _txtCheck.indexOf(_ourGmailLong[0]);
             if(_oglIdx >= 0 && (_ourIdx === -1 || _oglIdx < _ourIdx)) _ourIdx = _oglIdx;
           }
-          // Pattern footer firma HelpDesk "Ticket ID: NNNN" (alfanumerico anche)
+          // Pattern footer firma HelpDesk "Ticket ID: NNNNNN" (alfanumerico anche)
           var _ourTicketSig = _txtCheck.match(/Ticket\s+ID\s*:\s*[A-Z0-9]{3,}/i);
           if(_ourTicketSig){
             var _otsIdx = _txtCheck.indexOf(_ourTicketSig[0]);
@@ -2341,7 +2359,6 @@ async function selectTicket(tid){
           // ── Marker "ESTERNI" (solo per messaggi cliente) ──
           var _extIdx = -1;
           if(isClient){
-            // Pattern Gmail it generico "Il giorno ... ha scritto:" SENZA Yespresso
             var _extGenericIt = _txtCheck.match(/Il\s+giorno\s+[\s\S]{5,250}?ha\s+scritto\s*:/i);
             if(_extGenericIt){
               var _egiIdx = _txtCheck.indexOf(_extGenericIt[0]);
@@ -2349,7 +2366,6 @@ async function selectTicket(tid){
                 if(_extIdx === -1 || _egiIdx < _extIdx) _extIdx = _egiIdx;
               }
             }
-            // Pattern Gmail inglese "On ... wrote:"
             var _extGenericEn = _txtCheck.match(/On\s+[\s\S]{5,250}?\bwrote\s*:/i);
             if(_extGenericEn){
               var _egeIdx = _txtCheck.indexOf(_extGenericEn[0]);
@@ -2357,19 +2373,16 @@ async function selectTicket(tid){
                 if(_extIdx === -1 || _egeIdx < _extIdx) _extIdx = _egeIdx;
               }
             }
-            // Pattern Outlook separator
             var _extOutlookSep = _txtCheck.match(/-{2,}\s*(Messaggio\s+originale|Original\s+Message|Forwarded\s+message)\s*-{2,}/i);
             if(_extOutlookSep){
               var _eosIdx = _txtCheck.indexOf(_extOutlookSep[0]);
               if(_eosIdx >= 0 && (_extIdx === -1 || _eosIdx < _extIdx)) _extIdx = _eosIdx;
             }
-            // Pattern Outlook header
             var _extOutlookHdr = _txtCheck.match(/(?:^|\n)\s*(Da|From)\s*:[^\n]{3,200}\n\s*(Inviato|Sent|Data|Date)\s*:/i);
             if(_extOutlookHdr){
               var _eohIdx = _txtCheck.indexOf(_extOutlookHdr[0]);
               if(_eohIdx >= 0 && (_extIdx === -1 || _eohIdx < _extIdx)) _extIdx = _eohIdx;
             }
-            // Pattern blocco di 3+ righe consecutive citate con ">"
             var _extCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
             if(_extCitedLines){
               var _eclIdx = _txtCheck.indexOf(_extCitedLines[0]);
@@ -2378,7 +2391,6 @@ async function selectTicket(tid){
             }
           } else {
             // Per messaggi agente: 3+ righe con ">" sono SEMPRE cronologia "nostra"
-            // (tipico forward del thread fatto via HelpDesk API)
             var _agentCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
             if(_agentCitedLines){
               var _aclIdx = _txtCheck.indexOf(_agentCitedLines[0]);
@@ -2387,24 +2399,32 @@ async function selectTicket(tid){
             }
           }
 
-          // ── Decisione: il marker piu' "in alto" vince (taglia il piu' presto possibile) ──
+          // ── Decisione: il marker piu' "in alto" vince ──
           if(_ourIdx >= 0 && (_extIdx === -1 || _ourIdx <= _extIdx)){
-            _quoteCutIdx = _ourIdx;
+            _quoteCutIdxPlain = _ourIdx;
             _quoteIsOurs = true;
           } else if(_extIdx >= 0){
-            _quoteCutIdx = _extIdx;
+            _quoteCutIdxPlain = _extIdx;
             _quoteIsOurs = false;
           }
 
-          // Sicurezza: solo se taglia >15 char (evita falsi positivi su msg cortissimi)
-          // e se rimane testo significativo (>=10 char e almeno 2 parole)
-          if(_quoteCutIdx >= 0){
-            var _newPart = _txtCheck.substring(0, _quoteCutIdx).trim();
+          // Sicurezza
+          if(_quoteCutIdxPlain >= 0){
+            var _newPart = _txtCheck.substring(0, _quoteCutIdxPlain).trim();
             var _wordCount = _newPart.split(/\s+/).filter(function(w){return w.length>0;}).length;
-            if(_quoteCutIdx <= 15 || _newPart.length < 10 || _wordCount < 2){
-              _quoteCutIdx = -1;
+            if(_quoteCutIdxPlain <= 15 || _newPart.length < 10 || _wordCount < 2){
+              _quoteCutIdxPlain = -1;
               _quoteIsOurs = false;
             }
+          }
+
+          // Se il taglio e' valido, lo applichiamo direttamente al testo plain.
+          // Per il rendering, useremo il plain text tagliato (renderMsgBlock fa
+          // la conversione necessaria).
+          _quoteCutIdx = _quoteCutIdxPlain;
+          if(_quoteCutIdx >= 0){
+            // Il plain text estratto sara' usato per ricostruire i due segmenti
+            _quotePlainText = _txtCheck;
           }
         }
 
@@ -2470,11 +2490,11 @@ async function selectTicket(tid){
           })(_annBoxId, _ordNum);
         } else {
           // Default: messaggio normale. Applica trim quote se rilevato.
-          if(_quoteCutIdx > 15){
-            var _evTextNew = _evTextRaw.substring(0, _quoteCutIdx).replace(/[\s\n\r]+$/g, '');
-            var _evTextQuoted = _evTextRaw.substring(_quoteCutIdx);
+          if(_quoteCutIdx > 15 && _quotePlainText){
+            var _evTextNew = _quotePlainText.substring(0, _quoteCutIdx).replace(/[\s\n\r]+$/g, '');
+            var _evTextQuoted = _quotePlainText.substring(_quoteCutIdx);
             if(_quoteIsOurs){
-              // Quote nostro: taglio netto, niente bottone (la cronologia e' gia' nel ticket)
+              // Quote nostro: taglio netto, niente bottone
               _outBuf += renderMsgBlock(_evTextNew, evAttachments);
             } else {
               // Quote esterno: rendering del nuovo + bottone discreto per mostrare la cronologia
