@@ -22514,7 +22514,7 @@ function fabApriEccedenzaModal(eccId){
   if(existing) existing.remove();
   var modal=document.createElement('div');
   modal.id='fab-ecc-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9300;display:flex;align-items:center;justify-content:center';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11050;display:flex;align-items:center;justify-content:center';
 
   var righeHtml=sug.map(function(s){
     var ordineId=s.ordine.id||s.ordine.numero||'?';
@@ -22569,7 +22569,11 @@ function fabApriEccedenzaModal(eccId){
   '</div>';
 
   document.body.appendChild(modal);
-  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  // Ritardo l'aggiunta del listener backdrop per evitare che il click di apertura
+  // del modal (che ancora si sta propagando) lo chiuda immediatamente
+  setTimeout(function(){
+    modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  },50);
   modal.querySelector('#fab-ecc-close').onclick=function(){modal.remove();};
 
   // Apri in client di posta
