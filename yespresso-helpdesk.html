@@ -21386,7 +21386,7 @@ function renderFabPiano(body){
     // wi=0 → questa settimana (0-6gg), wi=1 → prossima (7-13gg), ecc.
     var arriviGia={};
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
@@ -21420,7 +21420,7 @@ function renderFabPiano(body){
     var BUCO_TOLLERANZA_GG = _fabBucoTolleranzaGg;
     var arriviGiaOrdinatiGio={}; // giorno → qty (dagli ordini aperti, per giorno reale)
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
@@ -21579,7 +21579,7 @@ function renderFabPiano(body){
     var totaleInArrivo=0;
     var righeInArrivo=[]; // [{ordine, riga, qtyResidua, dataConsegna(Date), giorniDaOggi}]
     fabOrdini.forEach(function(ord){
-      if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
       ord.righe.forEach(function(r){
         if(r.sku_shopify!==p.sku_shopify) return;
         var res=r.qty_ordinata-(r.qty_ricevuta||0);
@@ -22514,7 +22514,7 @@ function fabApriEccedenzaModal(eccId){
   if(existing) existing.remove();
   var modal=document.createElement('div');
   modal.id='fab-ecc-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11050;display:flex;align-items:center;justify-content:center';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999999;display:flex;align-items:center;justify-content:center';
 
   var righeHtml=sug.map(function(s){
     var ordineId=s.ordine.id||s.ordine.numero||'?';
@@ -22562,6 +22562,7 @@ function fabApriEccedenzaModal(eccId){
       '</div>'+
     '</div>'+
     '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0">'+
+      '<button id="fab-ecc-crea-annul" style="background:#fff;border:1.5px solid #A32D2D;color:#A32D2D;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:auto">↩ Crea ordine annullamento</button>'+
       '<button id="fab-ecc-mailto" style="background:#fff;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📨 Apri in Outlook/Gmail</button>'+
       '<button id="fab-ecc-copy" style="background:#fff;border:1.5px solid #6d28d9;color:#6d28d9;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copia testo</button>'+
       '<button id="fab-ecc-smtp" style="background:#16a34a;border:1.5px solid #16a34a;color:#fff;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📤 Invia via SMTP</button>'+
@@ -22575,6 +22576,85 @@ function fabApriEccedenzaModal(eccId){
     modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
   },50);
   modal.querySelector('#fab-ecc-close').onclick=function(){modal.remove();};
+
+  // Crea ordine di annullamento nel sistema
+  modal.querySelector('#fab-ecc-crea-annul').onclick=function(){
+    var btn=this;
+    var nRighe=sug.length;
+    var totPz=sug.reduce(function(s,x){return s+x.deltaPz;},0);
+    var conf='Crea un ordine di annullamento con queste modifiche?\n\n'+
+      '• Articolo: '+a.p.sku+'\n'+
+      '• Fornitore: '+fornitore+'\n'+
+      '• N. righe: '+nRighe+'\n'+
+      '• Pezzi totali da rimuovere: '+totPz+'\n\n'+
+      'L\'ordine di annullamento sarà inserito subito nel sistema con stato "confermato".\n'+
+      'Il Piano Fabbisogno verrà ricalcolato automaticamente.\n\n'+
+      'Se il fornitore rifiuta, potrai eliminarlo dalla vista Elenco/Articolo.\n\n'+
+      'Procedere?';
+    if(!confirm(conf)) return;
+    // Crea il record di annullamento per ogni riga suggerita
+    var oggi=new Date();
+    var oggiStr=oggi.getFullYear()+'-'+String(oggi.getMonth()+1).padStart(2,'0')+'-'+String(oggi.getDate()).padStart(2,'0');
+    var righeAnnul=sug.map(function(s){
+      var ordineId=s.ordine.id||s.ordine.numero||'';
+      var ms=s.riga.ms||1;
+      var dataConsegnaStr=s.dataConsegna instanceof Date?
+        s.dataConsegna.getFullYear()+'-'+String(s.dataConsegna.getMonth()+1).padStart(2,'0')+'-'+String(s.dataConsegna.getDate()).padStart(2,'0'):
+        '';
+      return {
+        sku_shopify:s.riga.sku_shopify,
+        descrizione:s.riga.descrizione||'',
+        qty_ordinata:-s.deltaPz, // QUANTITA' NEGATIVA
+        qty_ricevuta:0,
+        ms:ms,
+        data_cons_riga:dataConsegnaStr,
+        annul_riga_originale:{ // tracciabilità
+          ordine_id:ordineId,
+          qty_originale:s.qtyOriginale,
+          qty_nuova:s.qtyNuova,
+          tipo:s.tipo // 'elimina' o 'riduci'
+        }
+      };
+    });
+    // Raggruppo per ordine_riferimento + data_consegna (1 ordine annul per ogni ordine originale toccato)
+    var annulPerOrdine={};
+    righeAnnul.forEach(function(r){
+      var key=r.annul_riga_originale.ordine_id;
+      if(!annulPerOrdine[key]) annulPerOrdine[key]={
+        ordine_id:r.annul_riga_originale.ordine_id,
+        data_cons:r.data_cons_riga,
+        righe:[]
+      };
+      annulPerOrdine[key].righe.push(r);
+    });
+    var nuoviAnnulCreati=[];
+    Object.keys(annulPerOrdine).forEach(function(k){
+      var grp=annulPerOrdine[k];
+      var newOrdAnnul={
+        id:'ord_annul_'+Date.now()+'_'+Math.random().toString(36).substring(2,8),
+        fornitore:fornitore,
+        data_ordine:oggiStr,
+        data_consegna_prevista:grp.data_cons,
+        urgente:false,
+        stato:'confermato', // applico subito
+        tipo:'annullamento', // FLAG ORDINE ANNULLAMENTO
+        ordine_riferimento:grp.ordine_id,
+        note:'Annullamento creato da Piano Fabbisogno > Eccedenze il '+oggiStr,
+        righe:grp.righe,
+        createdAt:new Date().toISOString(),
+        source:'eccedenza_auto'
+      };
+      fabOrdini.push(newOrdAnnul);
+      nuoviAnnulCreati.push(newOrdAnnul.id);
+    });
+    if(typeof saveFabState==='function'){ try{ saveFabState(); }catch(e){} }
+    showToast('✅ Creat'+(nuoviAnnulCreati.length===1?'o':'i')+' '+nuoviAnnulCreati.length+' ordin'+(nuoviAnnulCreati.length===1?'e':'i')+' di annullamento','success');
+    // Chiudi modal e ricalcola piano
+    setTimeout(function(){
+      modal.remove();
+      if(typeof renderFabTab==='function'){ try{ renderFabTab('fabbisogno'); }catch(e){} }
+    },800);
+  };
 
   // Apri in client di posta
   modal.querySelector('#fab-ecc-mailto').onclick=function(){
@@ -22717,7 +22797,7 @@ function fabDebugRun(skuShopify){
   var arriviGia={};
   var nOrd=0;
   fabOrdini.forEach(function(ord){
-    if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+    if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
     ord.righe.forEach(function(r){
       if(r.sku_shopify!==p.sku_shopify) return;
       var res=r.qty_ordinata-(r.qty_ricevuta||0);
@@ -22744,7 +22824,7 @@ function fabDebugRun(skuShopify){
   var BUCO_TOLLERANZA_GG_DBG = _fabBucoTolleranzaGg;
   // Distribuisco gli arrivi al giorno reale (non al primo giorno della settimana)
   fabOrdini.forEach(function(ord){
-    if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+    if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato')) return;
     ord.righe.forEach(function(r){
       if(r.sku_shopify!==p.sku_shopify) return;
       var res=r.qty_ordinata-(r.qty_ricevuta||0);
@@ -22867,7 +22947,7 @@ function fabExportPiano(){
     var avgDay=(avg30*0.6+avg90*0.4);
     var inv=fabInventoryCache&&fabInventoryCache[p.sku_shopify]!=null?fabInventoryCache[p.sku_shopify]:0;
     var inArrivo=0;
-    fabOrdini.forEach(function(ord){if(ord.stato!=='attesa'&&ord.stato!=='parziale')return;ord.righe.forEach(function(r){if(r.sku_shopify===p.sku_shopify)inArrivo+=r.qty_ordinata-(r.qty_ricevuta||0);});});
+    fabOrdini.forEach(function(ord){if(ord.stato!=='attesa'&&ord.stato!=='parziale'&&!(ord.tipo==='annullamento'&&ord.stato==='confermato'))return;ord.righe.forEach(function(r){if(r.sku_shopify===p.sku_shopify)inArrivo+=r.qty_ordinata-(r.qty_ricevuta||0);});});
     var runout=avgDay>0?Math.floor((inv+inArrivo)/avgDay):999;
     var sugg=Math.max(p.ord_min,Math.ceil(avgDay*90/p.multiplo)*p.multiplo);
     var gaps=horizons.map(function(h){var needed=Math.ceil(avgDay*h)+Math.ceil(avgDay*7);return needed-(inv+inArrivo);});
@@ -23963,7 +24043,12 @@ function renderFabOrdini(body){
     return;
   }
 
-  var openOrds=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
+  var openOrds=fabOrdini.filter(function(o){
+    if(o.stato==='attesa'||o.stato==='parziale') return true;
+    // Ordini di annullamento confermati: trattali come "aperti" per visualizzazione
+    if(o.tipo==='annullamento'&&o.stato==='confermato') return true;
+    return false;
+  });
   var closedOrds=fabOrdini.filter(function(o){return o.stato==='ricevuto'||o.stato==='annullato';});
 
   if(_fabOrdiniView==='tabella'){
@@ -23992,7 +24077,10 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
       var qOrd = r.qty_ordinata || r.qty || 0;
       var qRic = r.qty_ricevuta || 0;
       var qRes = qOrd - qRic;
-      if(qRes<=0) return; // riga già completa, escludi
+      var isAnnul = o.tipo === 'annullamento';
+      // Includi: righe normali con residuo positivo, OPPURE righe di annullamento (qty negativa)
+      if(!isAnnul && qRes<=0) return; // riga normale già completa, escludi
+      if(isAnnul && qRes>=0) return; // annullamento "vuoto" (qty 0 o positiva), escludi
       var key = (r.sku || r.sku_shopify || '—').toUpperCase();
       if(!perArt[key]){
         perArt[key] = {
@@ -24002,7 +24090,7 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
           totOrd: 0, totRic: 0, totRes: 0
         };
       }
-      perArt[key].totOrd += qOrd;
+      perArt[key].totOrd += qOrd; // somma anche qty negative degli annullamenti
       perArt[key].totRic += qRic;
       perArt[key].totRes += qRes;
 
@@ -24030,7 +24118,9 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
         qRes: qRes,
         statoRit: statoRit,
         giorniAllaCons: giorniAllaCons,
-        statoOrd: o.stato
+        statoOrd: o.stato,
+        isAnnul: isAnnul,
+        ordineRiferimento: o.ordine_riferimento || ''
       });
     });
   });
@@ -24128,8 +24218,15 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
 
     righeOrd.forEach(function(r, i){
       var bg = i%2===0 ? '#fff' : '#f8f9fc';
+      // Se è un annullamento: stile rosso strisciato
+      if(r.isAnnul){
+        bg = 'repeating-linear-gradient(45deg, #fef2f2, #fef2f2 8px, #fee2e2 8px, #fee2e2 16px)';
+      }
       var statoLbl, statoColor, statoBg;
-      if(r.statoRit==='scaduto'){
+      if(r.isAnnul){
+        statoLbl = '↩ Annullamento';
+        statoColor = '#fff'; statoBg = '#A32D2D';
+      } else if(r.statoRit==='scaduto'){
         statoLbl = '⚠ Scaduto ('+Math.abs(r.giorniAllaCons)+' gg fa)';
         statoColor = '#fff'; statoBg = '#dc2626';
       } else if(r.statoRit==='imminente'){
@@ -24142,19 +24239,28 @@ function _renderOrdFornArticolo(openOrds,today,parseDataLocale){
         statoLbl = '—'; statoColor = '#888'; statoBg = 'transparent';
       }
       var ordIdEsc = String(r.ordId).replace(/'/g,"\\'");
-      h += '<tr style="background:'+bg+'">'+
-        '<td style="'+tdS+';font-weight:600">'+escHtml(r.numero)+'</td>'+
+      // Stile per le celle qty: se annul, mostro qty in rosso
+      var qOrdColor = r.isAnnul ? '#A32D2D' : '#1F3864';
+      var qOrdLabel = r.isAnnul ? r.qOrd.toLocaleString('it-IT') : r.qOrd.toLocaleString('it-IT');
+      // Aggiungi tooltip "ordine annullato" con riferimento
+      var titleAttr = r.isAnnul && r.ordineRiferimento ? ' title="Annullamento riferito all\'ordine '+r.ordineRiferimento.replace(/"/g,'&quot;')+'"' : '';
+      h += '<tr style="background:'+bg+'"'+titleAttr+'>'+
+        '<td style="'+tdS+';font-weight:600">'+(r.isAnnul?'<span style="color:#A32D2D">↩ </span>':'')+escHtml(r.numero)+'</td>'+
         '<td style="'+tdS+'">'+escHtml(r.fornitore)+'</td>'+
         '<td style="'+tdS+'">'+fmtD(r.dataOrd)+'</td>'+
         '<td style="'+tdS+'">'+fmtD(r.dataCons)+'</td>'+
-        '<td style="'+tdR+';font-weight:700;color:#1F3864">'+r.qOrd.toLocaleString('it-IT')+'</td>'+
+        '<td style="'+tdR+';font-weight:700;color:'+qOrdColor+'">'+qOrdLabel+'</td>'+
         '<td style="'+tdR+';color:#16a34a">'+r.qRic.toLocaleString('it-IT')+'</td>'+
-        '<td style="'+tdR+';font-weight:700;color:#dc2626">'+r.qRes.toLocaleString('it-IT')+'</td>'+
+        '<td style="'+tdR+';font-weight:700;color:'+(r.isAnnul?'#A32D2D':'#dc2626')+'">'+r.qRes.toLocaleString('it-IT')+'</td>'+
         '<td style="'+tdC+'"><span style="background:'+statoBg+';color:'+statoColor+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap">'+statoLbl+'</span></td>'+
         '<td style="'+tdC+';white-space:nowrap">'+
-          '<button onclick="_fabArtEditRiga(\''+ordIdEsc+'\','+r.rigaIdx+')" title="Modifica riga" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✏️</button>'+
-          '<button onclick="_fabArtDeleteRiga(\''+ordIdEsc+'\','+r.rigaIdx+')" title="Elimina riga" style="font-size:11px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✕</button>'+
-          '<button onclick="fabEditOrdine(\''+ordIdEsc+'\')" title="Modifica intero ordine" style="font-size:11px;background:#f3e8ff;border:1px solid #d8b4fe;color:#7e22ce;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600">⚙️</button>'+
+          (r.isAnnul ?
+            '<button onclick="_fabAnnulDelete(\''+ordIdEsc+'\')" title="Elimina ordine di annullamento (es. fornitore ha rifiutato)" style="font-size:11px;background:#fee2e2;border:1px solid #fca5a5;color:#A32D2D;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600">🗑 Elimina</button>'
+            :
+            '<button onclick="_fabArtEditRiga(\''+ordIdEsc+'\','+r.rigaIdx+')" title="Modifica riga" style="font-size:11px;background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✏️</button>'+
+            '<button onclick="_fabArtDeleteRiga(\''+ordIdEsc+'\','+r.rigaIdx+')" title="Elimina riga" style="font-size:11px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600;margin-right:2px">✕</button>'+
+            '<button onclick="fabEditOrdine(\''+ordIdEsc+'\')" title="Modifica intero ordine" style="font-size:11px;background:#f3e8ff;border:1px solid #d8b4fe;color:#7e22ce;border-radius:4px;padding:3px 7px;cursor:pointer;font-family:inherit;font-weight:600">⚙️</button>'
+          )+
         '</td>'+
       '</tr>';
     });
@@ -24290,6 +24396,25 @@ window._fabArtEditRiga = function(ordId, rigaIdx){
 // ═══════════════════════════════════════════════════════════════════
 // Elimina singola riga ordine (se l'ordine ha solo questa riga, elimina l'ordine)
 // ═══════════════════════════════════════════════════════════════════
+window._fabAnnulDelete = function(ordId){
+  var ord = fabOrdini.find(function(o){return String(o.id)===String(ordId);});
+  if(!ord){ showToast('Ordine di annullamento non trovato','error'); return; }
+  if(ord.tipo!=='annullamento'){ showToast('Questo non è un ordine di annullamento','error'); return; }
+  var totPz = (ord.righe||[]).reduce(function(s,r){return s+Math.abs(r.qty_ordinata||0);},0);
+  var conf='Eliminare questo ordine di annullamento?\n\n'+
+    '• Fornitore: '+ord.fornitore+'\n'+
+    '• Pezzi totali ripristinati: '+totPz+'\n'+
+    '• Riferimento: '+(ord.ordine_riferimento||'?')+'\n\n'+
+    'Questo ripristinerà le quantità originali nell\'ordine collegato.\n'+
+    'Usa questa funzione solo se il fornitore ha rifiutato l\'annullamento.\n\n'+
+    'Procedere?';
+  if(!confirm(conf)) return;
+  fabOrdini = fabOrdini.filter(function(o){return String(o.id)!==String(ordId);});
+  saveFabState();
+  renderFabTab('ordini');
+  showToast('✅ Ordine di annullamento eliminato');
+};
+
 window._fabArtDeleteRiga = function(ordId, rigaIdx){
   var ord = fabOrdini.find(function(o){return String(o.id)===String(ordId);});
   if(!ord){ showToast('Ordine non trovato','error'); return; }
