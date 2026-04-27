@@ -19168,7 +19168,7 @@ async function saveFabState(){
   }catch(e){}
   // Poi salva sul server
   try{
-    var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts,fabSettings:{scortaSicGiorni:_fabScortaSicGiorni,bucoTolleranzaGg:_fabBucoTolleranzaGg}});
+    var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts,fabSettings:{scortaSicGiorni:_fabScortaSicGiorni,bucoTolleranzaGg:_fabBucoTolleranzaGg,sogliaEccedenzaGg:_fabSogliaEccedenzaGg}});
     var res=await proxyFetch(PROXY+'/fab-data',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -19198,6 +19198,7 @@ async function loadFabState(){
       if(data.fabProducts&&Array.isArray(data.fabProducts)) fabProducts=data.fabProducts;
       if(data.fabSettings&&data.fabSettings.scortaSicGiorni) _fabScortaSicGiorni=data.fabSettings.scortaSicGiorni;
       if(data.fabSettings&&data.fabSettings.bucoTolleranzaGg!=null) _fabBucoTolleranzaGg=data.fabSettings.bucoTolleranzaGg;
+      if(data.fabSettings&&data.fabSettings.sogliaEccedenzaGg!=null) _fabSogliaEccedenzaGg=data.fabSettings.sogliaEccedenzaGg;
       console.log('[FAB] Caricato dal server: '+fabOrdini.length+' ordini');
     } else {
       // Server vuoto (es. dopo restart) — ripristina da localStorage e ri-salva sul server
@@ -19211,7 +19212,7 @@ async function loadFabState(){
         // Ri-salva automaticamente sul server
         setTimeout(async function(){
           try{
-            var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts,fabSettings:{scortaSicGiorni:_fabScortaSicGiorni,bucoTolleranzaGg:_fabBucoTolleranzaGg}});
+            var payload=JSON.stringify({fabOrdini:fabOrdini,fabProducts:fabProducts,fabSettings:{scortaSicGiorni:_fabScortaSicGiorni,bucoTolleranzaGg:_fabBucoTolleranzaGg,sogliaEccedenzaGg:_fabSogliaEccedenzaGg}});
             await proxyFetch(PROXY+'/fab-data',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
             console.log('[FAB] Dati locali ripristinati sul server');
             showToast('☁️ Dati ripristinati sul server da cache locale');
@@ -19794,6 +19795,7 @@ var _YES_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAABOCAIAAABJ3v/
 
 var _fabScortaSicGiorni=7;
 var _fabBucoTolleranzaGg=3; // giorni di tolleranza per buchi di scorta brevi (urgenza)
+var _fabSogliaEccedenzaGg=90; // giorni oltre cui un articolo è considerato in eccedenza
 // ══════════════════════════════════════════════════════
 // MATERIALI PRODUZIONE — Best Espresso
 // ══════════════════════════════════════════════════════
@@ -21570,7 +21572,36 @@ function renderFabPiano(body){
     }
 
     var runoutDay=avgDay>0?Math.floor(inv/avgDay):999;
-    return {p:p,avgDay:avgDay,inv:inv,ms:ms,consumoSett:consumoSett,scortaSic:scortaSic,settimane:settimane,ordiniDaEmettere:ordiniDaEmettere,runoutDay:runoutDay};
+
+    // ── CALCOLO ECCEDENZE ─────────────────────────────────────────
+    // Sommo tutti gli ordini in attesa per questo SKU (qty residue)
+    // entro un orizzonte molto lungo (1 anno) per coprire ordini lontani
+    var totaleInArrivo=0;
+    var righeInArrivo=[]; // [{ordine, riga, qtyResidua, dataConsegna(Date), giorniDaOggi}]
+    fabOrdini.forEach(function(ord){
+      if(ord.stato!=='attesa'&&ord.stato!=='parziale') return;
+      ord.righe.forEach(function(r){
+        if(r.sku_shopify!==p.sku_shopify) return;
+        var res=r.qty_ordinata-(r.qty_ricevuta||0);
+        if(res<=0) return;
+        var dcStr=r.data_cons_riga||ord.data_consegna_prevista;
+        if(!dcStr) return;
+        var dc=parseDataLocale(dcStr);
+        if(!dc) return;
+        var giorniDaOggi=Math.round((dc-today)/86400000);
+        totaleInArrivo+=res;
+        righeInArrivo.push({
+          ordine:ord, riga:r,
+          qtyResidua:res,
+          dataConsegna:dc,
+          giorniDaOggi:giorniDaOggi
+        });
+      });
+    });
+    var coperturaGiorni=avgDay>0?Math.floor((inv+totaleInArrivo)/avgDay):0;
+
+    return {p:p,avgDay:avgDay,inv:inv,ms:ms,consumoSett:consumoSett,scortaSic:scortaSic,settimane:settimane,ordiniDaEmettere:ordiniDaEmettere,runoutDay:runoutDay,
+      totaleInArrivo:totaleInArrivo, coperturaGiorni:coperturaGiorni, righeInArrivo:righeInArrivo};
   }).filter(Boolean);
 
   // ── ALERT ──────────────────────────────────────────────────────
@@ -21588,12 +21619,18 @@ function renderFabPiano(body){
     var lbl=d===0?'0 (rigido)':d+'gg';
     _btB+='<button onclick="_fabBucoTolleranzaGg='+d+';saveFabState();renderFabTab(\'fabbisogno\')" style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:'+(act?'#0891b2':'transparent')+';color:'+(act?'#fff':'#888')+(act?';box-shadow:0 1px 3px rgba(0,0,0,.15)':'')+'">' +lbl+'</button>';
   });
+  var _seB='';
+  [60,90,120,180].forEach(function(d){
+    var act=d===_fabSogliaEccedenzaGg;
+    _seB+='<button onclick="_fabSogliaEccedenzaGg='+d+';saveFabState();renderFabTab(\'fabbisogno\')" style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:'+(act?'#BA7517':'transparent')+';color:'+(act?'#fff':'#888')+(act?';box-shadow:0 1px 3px rgba(0,0,0,.15)':'')+'">' +d+'gg</button>';
+  });
   var html='<div style="margin-bottom:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'+
     '<div>'+
       '<h2 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#1a1a2e">🔮 Piano Fabbisogno</h2>'+
       '<div style="font-size:11px;color:#888;background:#f5f3ff;border-radius:6px;padding:8px 12px;display:inline-block">'+
         '📌 Lead time <strong>14gg</strong> &nbsp;·&nbsp; Scorta sicurezza <strong>'+SAFETY_DAYS+'gg di consumo</strong> &nbsp;·&nbsp; '+
         'Tolleranza buco <strong>'+_fabBucoTolleranzaGg+'gg</strong> &nbsp;·&nbsp; '+
+        'Soglia eccedenza <strong>'+_fabSogliaEccedenzaGg+'gg</strong> &nbsp;·&nbsp; '+
         'Riordino <strong>settimanale</strong> &nbsp;·&nbsp; Orizzonte <strong>60 giorni</strong>'+
       '</div>'+
     '</div>'+
@@ -21605,6 +21642,10 @@ function renderFabPiano(body){
       '<div style="display:flex;align-items:center;gap:6px">'+
         '<span style="font-size:11px;color:#555;font-weight:600" title="Quanti giorni di scorta negativa tollerare prima di segnalare URGENTE. Es: 3 = se entro 3 giorni un arrivo previsto copre il buco, urgenza non scatta. 0 = mai tollerare (modalità rigida).">⏱ Tolleranza buco:</span>'+
         '<div style="display:flex;background:#f0f2f5;border-radius:8px;padding:2px;gap:1px">'+_btB+'</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:6px">'+
+        '<span style="font-size:11px;color:#555;font-weight:600" title="Soglia oltre cui un articolo è considerato in eccedenza. Es: 90gg = se inventario+ordini in arrivo coprono più di 90 giorni di consumo, suggerisco di annullare ordini.">📦 Soglia eccedenza:</span>'+
+        '<div style="display:flex;background:#f0f2f5;border-radius:8px;padding:2px;gap:1px">'+_seB+'</div>'+
       '</div>'+
     '</div>'+
     '<button onclick="fabDebugArticolo()" style="flex-shrink:0;background:#f5f3ff;border:1.5px solid #c4b5fd;color:#6d28d9;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Debug articolo</button>'+
@@ -21648,6 +21689,88 @@ function renderFabPiano(body){
       '<div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:6px">⚠️ ATTENZIONE — Scorta sotto soglia entro 28 giorni ('+attenzione.length+')</div>'+
       attenzione.map(function(a){return '<div style="font-size:12px;color:#7c2d12;padding:1px 0">• <strong>'+a.p.sku+'</strong> — inv: '+a.inv+' pz · scorta sic.: '+a.scortaSic+' pz · finisce tra '+a.runoutDay+' gg</div>';}).join('')+
     '</div>';
+  }
+
+  // ── SEZIONE ECCEDENZE ──────────────────────────────────────────
+  // Per ogni articolo con copertura > soglia, calcolo quali ordini suggerire
+  // di annullare/ridurre. Strategia: ordino le righe per data consegna
+  // decrescente (più lontana prima), filtro fuori quelle entro 10gg
+  // (già "in volo"), poi sottraggo finché la copertura scende sotto soglia.
+  var FILTRO_IMMINENTI_GG=10;
+  var eccedenze=prodPlans.filter(function(a){
+    return a.coperturaGiorni>_fabSogliaEccedenzaGg && a.totaleInArrivo>0;
+  }).map(function(a){
+    // Candidati per annullamento: solo righe con consegna oltre FILTRO_IMMINENTI_GG
+    var candidati=a.righeInArrivo.filter(function(r){
+      return r.giorniDaOggi>FILTRO_IMMINENTI_GG;
+    });
+    // Ordina per data consegna decrescente (più lontana prima)
+    candidati.sort(function(x,y){return y.giorniDaOggi-x.giorniDaOggi;});
+    var multiplo=a.p.multiplo||1;
+    var suggerimenti=[]; // [{tipo:'riduci'|'elimina', ordine, riga, qtyOriginale, qtyNuova, deltaPz}]
+    var coperturaCorr=a.coperturaGiorni;
+    var sogliaTarget=_fabSogliaEccedenzaGg;
+    // Sottraggo finché la copertura scende sotto la soglia
+    for(var ci=0;ci<candidati.length && coperturaCorr>sogliaTarget;ci++){
+      var c=candidati[ci];
+      var pzExtra=Math.ceil((coperturaCorr-sogliaTarget)*a.avgDay);
+      // Quanti pz togliere da questa riga: il minimo tra l'extra e la qty residua
+      var daTogliere=Math.min(pzExtra,c.qtyResidua);
+      // Arrotondamento al multiplo del fornitore (in basso)
+      var daTogliereArr=multiplo>1?Math.floor(daTogliere/multiplo)*multiplo:daTogliere;
+      if(daTogliereArr<=0){
+        // Se l'arrotondamento cade a 0, prendiamo 1 multiplo intero
+        if(c.qtyResidua>=multiplo) daTogliereArr=multiplo;
+        else continue; // riga troppo piccola, skippa
+      }
+      var qtyNuova=c.qtyResidua-daTogliereArr;
+      var tipo=qtyNuova<=0?'elimina':'riduci';
+      suggerimenti.push({
+        tipo:tipo,
+        ordine:c.ordine, riga:c.riga,
+        qtyOriginale:c.qtyResidua,
+        qtyNuova:Math.max(0,qtyNuova),
+        deltaPz:Math.min(daTogliereArr,c.qtyResidua),
+        dataConsegna:c.dataConsegna,
+        giorniDaOggi:c.giorniDaOggi
+      });
+      coperturaCorr-=Math.min(daTogliereArr,c.qtyResidua)/a.avgDay;
+    }
+    return {plan:a, suggerimenti:suggerimenti, coperturaFinale:Math.floor(coperturaCorr)};
+  }).filter(function(e){return e.suggerimenti.length>0;});
+  // Ordina eccedenze per copertura decrescente (peggio prima)
+  eccedenze.sort(function(a,b){return b.plan.coperturaGiorni-a.plan.coperturaGiorni;});
+
+  if(eccedenze.length){
+    html+='<div style="background:#FAEEDA;border:1px solid #BA7517;border-radius:10px;padding:12px 16px;margin-bottom:10px">'+
+      '<div style="font-size:13px;font-weight:700;color:#854F0B;margin-bottom:8px">📦 ECCEDENZE — Scorta totale supera '+_fabSogliaEccedenzaGg+' giorni di consumo ('+eccedenze.length+')</div>'+
+      '<div style="font-size:11px;color:#854F0B;opacity:0.85;margin-bottom:10px">Considera di ridurre/annullare le righe degli ordini suggeriti per evitare immobilizzo capitale.</div>';
+    eccedenze.forEach(function(e,ei){
+      var a=e.plan;
+      var mesiCop=Math.round(a.coperturaGiorni/30*10)/10;
+      var deltaTot=e.suggerimenti.reduce(function(s,x){return s+x.deltaPz;},0);
+      var ordiniIds=e.suggerimenti.map(function(x){return x.ordine.id||x.ordine.numero||'?';});
+      var ordiniUnique=Array.from(new Set(ordiniIds));
+      // Salvo l'eccedenza in window per accedervi dal modal
+      window._fabEccedenze=window._fabEccedenze||{};
+      window._fabEccedenze['ec'+ei]=e;
+      html+='<div style="background:#fff;border:0.5px solid #e0e4ea;border-left:3px solid #BA7517;border-radius:8px;padding:10px 14px;margin-bottom:8px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:4px">'+a.p.sku+' <span style="font-size:11px;font-weight:500;color:#888">('+a.p.fornitore+')</span></div>'+
+            '<div style="font-size:11px;color:#666;line-height:1.5">'+
+              'inv: '+a.inv+' pz · in arrivo: '+a.totaleInArrivo+' pz · consumo: '+a.consumoSett+'/sett<br>'+
+              'copertura attuale: <strong style="color:#854F0B">'+a.coperturaGiorni+' giorni</strong> (~'+mesiCop+' mesi)'+
+            '</div>'+
+            '<div style="margin-top:8px;padding:7px 10px;background:#FAEEDA;border-radius:6px;font-size:11px;color:#633806;line-height:1.5">'+
+              '<strong>Suggerimento:</strong> riduci <strong>'+deltaTot+' pz</strong> su '+ordiniUnique.length+' ordin'+(ordiniUnique.length===1?'e':'i')+' &rarr; copertura scenderà a <strong>~'+e.coperturaFinale+' giorni</strong>'+
+            '</div>'+
+          '</div>'+
+          '<button onclick="fabApriEccedenzaModal(\'ec'+ei+'\')" style="flex-shrink:0;background:#fff;border:1.5px solid #BA7517;color:#854F0B;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;height:fit-content">📋 Vedi e gestisci</button>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div>';
   }
 
   // ── PIANO ORDINI PER FORNITORE — una card per settimana ────────
@@ -22350,6 +22473,162 @@ function _fabSalvaOrdineFromModal(modal, fornSel, urgente, mode, multiDate){
   alert('Errore: variabile fabOrdini non disponibile.');
   return false;
 }
+
+// ── MODAL ECCEDENZE ─────────────────────────────────────────────────
+// Mostra il dettaglio degli ordini suggeriti per riduzione/annullamento
+// per un articolo in eccedenza, con email amichevole pre-compilata
+// per il fornitore e 3 modalità di invio (Outlook/Gmail, Copia, SMTP IONOS).
+function fabApriEccedenzaModal(eccId){
+  var ec=(window._fabEccedenze||{})[eccId];
+  if(!ec){ showToast('⚠️ Eccedenza non trovata','error'); return; }
+  var a=ec.plan;
+  var sug=ec.suggerimenti;
+  var fornitore=a.p.fornitore||'Fornitore';
+  var emailDest=a.p.email||'';
+  var mesiCop=Math.round(a.coperturaGiorni/30*10)/10;
+
+  // Costruisci elenco righe per email
+  var righeTesto=sug.map(function(s){
+    var ordineId=s.ordine.id||s.ordine.numero||'';
+    var dataOrd=s.ordine.data_ordine||s.ordine.data||'';
+    var dataCons=s.dataConsegna instanceof Date?
+      String(s.dataConsegna.getDate()).padStart(2,'0')+'/'+String(s.dataConsegna.getMonth()+1).padStart(2,'0')+'/'+s.dataConsegna.getFullYear():
+      '?';
+    if(s.tipo==='elimina'){
+      return '- Ordine '+ordineId+(dataOrd?' del '+dataOrd:'')+' (consegna '+dataCons+'): annullare la riga "'+a.p.sku+'" ('+s.qtyOriginale+' pz)';
+    } else {
+      return '- Ordine '+ordineId+(dataOrd?' del '+dataOrd:'')+' (consegna '+dataCons+'): ridurre "'+a.p.sku+'" da '+s.qtyOriginale+' pz a '+s.qtyNuova+' pz (-'+s.deltaPz+' pz)';
+    }
+  }).join('\n');
+
+  var oggetto='Modifica ordini in essere — '+a.p.sku;
+  var corpo='Buongiorno,\n\n'+
+    'a seguito di una verifica delle giacenze, vi chiediamo gentilmente di apportare le seguenti modifiche agli ordini in essere relativi all\'articolo "'+a.p.sku+'":\n\n'+
+    righeTesto+'\n\n'+
+    'Restiamo in attesa di una vostra cortese conferma.\n\n'+
+    'Cordiali saluti,\n'+
+    'Team Yespresso';
+
+  // Crea modal
+  var existing=document.getElementById('fab-ecc-modal');
+  if(existing) existing.remove();
+  var modal=document.createElement('div');
+  modal.id='fab-ecc-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9300;display:flex;align-items:center;justify-content:center';
+
+  var righeHtml=sug.map(function(s){
+    var ordineId=s.ordine.id||s.ordine.numero||'?';
+    var dataCons=s.dataConsegna instanceof Date?
+      String(s.dataConsegna.getDate()).padStart(2,'0')+'/'+String(s.dataConsegna.getMonth()+1).padStart(2,'0')+'/'+s.dataConsegna.getFullYear():
+      '?';
+    var color=s.tipo==='elimina'?'#dc2626':'#BA7517';
+    var icon=s.tipo==='elimina'?'❌':'✂️';
+    var label=s.tipo==='elimina'?
+      'ANNULLA riga: '+s.qtyOriginale+' pz':
+      'RIDUCI: '+s.qtyOriginale+' pz → '+s.qtyNuova+' pz (-'+s.deltaPz+' pz)';
+    return '<div style="background:#fafbfc;border:1px solid #e0e4ea;border-left:3px solid '+color+';border-radius:6px;padding:8px 12px;margin-bottom:6px">'+
+      '<div style="font-size:12px;font-weight:700;color:'+color+'">'+icon+' Ordine '+ordineId+' &middot; consegna '+dataCons+' ('+s.giorniDaOggi+' gg)</div>'+
+      '<div style="font-size:11px;color:#555;margin-top:2px">'+label+'</div>'+
+    '</div>';
+  }).join('');
+
+  // Pre-codifico oggetto/corpo per uso in mailto e clipboard
+  var corpoEnc=encodeURIComponent(corpo);
+  var oggettoEnc=encodeURIComponent(oggetto);
+  var mailtoUrl='mailto:'+emailDest+'?subject='+oggettoEnc+'&body='+corpoEnc;
+
+  modal.innerHTML='<div style="background:#fff;border-radius:14px;width:780px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden">'+
+    '<div style="padding:14px 20px;background:linear-gradient(135deg,#854F0B,#BA7517);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
+      '<div>'+
+        '<div style="font-size:15px;font-weight:700;color:#fff">📦 Gestisci eccedenza — '+a.p.sku+'</div>'+
+        '<div style="font-size:11px;color:rgba(255,255,255,.85);margin-top:2px">'+fornitore+' · copertura '+a.coperturaGiorni+' gg (~'+mesiCop+' mesi) → target '+ec.coperturaFinale+' gg</div>'+
+      '</div>'+
+      '<button id="fab-ecc-close" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px;font-weight:700">✕</button>'+
+    '</div>'+
+    '<div style="flex:1;overflow-y:auto;padding:16px 20px">'+
+      '<div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📋 Modifiche suggerite</div>'+
+      righeHtml+
+      '<div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-top:16px;margin-bottom:8px">✉️ Email per il fornitore</div>'+
+      '<div style="background:#fafbfc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+          '<span style="font-size:11px;color:#888;font-weight:700;width:50px">A:</span>'+
+          '<input id="fab-ecc-email-to" value="'+(emailDest||'')+'" style="flex:1;padding:5px 8px;border:1px solid #e0e4ea;border-radius:4px;font-size:12px;font-family:inherit"/>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+          '<span style="font-size:11px;color:#888;font-weight:700;width:50px">Oggetto:</span>'+
+          '<input id="fab-ecc-email-subj" value="'+oggetto.replace(/"/g,'&quot;')+'" style="flex:1;padding:5px 8px;border:1px solid #e0e4ea;border-radius:4px;font-size:12px;font-family:inherit"/>'+
+        '</div>'+
+        '<textarea id="fab-ecc-email-body" style="width:100%;min-height:180px;padding:8px 10px;border:1px solid #e0e4ea;border-radius:4px;font-size:12px;font-family:inherit;resize:vertical;line-height:1.5">'+corpo.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</textarea>'+
+      '</div>'+
+    '</div>'+
+    '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0">'+
+      '<button id="fab-ecc-mailto" style="background:#fff;border:1.5px solid #1a73e8;color:#1a73e8;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📨 Apri in Outlook/Gmail</button>'+
+      '<button id="fab-ecc-copy" style="background:#fff;border:1.5px solid #6d28d9;color:#6d28d9;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copia testo</button>'+
+      '<button id="fab-ecc-smtp" style="background:#16a34a;border:1.5px solid #16a34a;color:#fff;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📤 Invia via SMTP</button>'+
+    '</div>'+
+  '</div>';
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
+  modal.querySelector('#fab-ecc-close').onclick=function(){modal.remove();};
+
+  // Apri in client di posta
+  modal.querySelector('#fab-ecc-mailto').onclick=function(){
+    var to=modal.querySelector('#fab-ecc-email-to').value;
+    var subj=modal.querySelector('#fab-ecc-email-subj').value;
+    var body=modal.querySelector('#fab-ecc-email-body').value;
+    var url='mailto:'+to+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+    window.location.href=url;
+  };
+  // Copia negli appunti
+  modal.querySelector('#fab-ecc-copy').onclick=async function(){
+    var btn=this;
+    var to=modal.querySelector('#fab-ecc-email-to').value;
+    var subj=modal.querySelector('#fab-ecc-email-subj').value;
+    var body=modal.querySelector('#fab-ecc-email-body').value;
+    var testo='A: '+to+'\nOggetto: '+subj+'\n\n'+body;
+    try{
+      await navigator.clipboard.writeText(testo);
+      var orig=btn.textContent;
+      btn.textContent='✅ Copiato';
+      btn.style.background='#dcfce7';
+      btn.style.borderColor='#16a34a';
+      btn.style.color='#16a34a';
+      setTimeout(function(){btn.textContent=orig;btn.style.background='#fff';btn.style.borderColor='#6d28d9';btn.style.color='#6d28d9';},2000);
+    }catch(e){
+      showToast('❌ Errore copia: '+e.message,'error');
+    }
+  };
+  // Invia via SMTP IONOS
+  modal.querySelector('#fab-ecc-smtp').onclick=async function(){
+    var btn=this;
+    var to=modal.querySelector('#fab-ecc-email-to').value;
+    var subj=modal.querySelector('#fab-ecc-email-subj').value;
+    var body=modal.querySelector('#fab-ecc-email-body').value;
+    if(!to){ showToast('⚠️ Email destinatario mancante','error'); return; }
+    if(!confirm('Invio email a '+to+'\n\nOggetto: '+subj+'\n\nProcedere?')) return;
+    var origText=btn.textContent;
+    btn.textContent='⏳ Invio...';
+    btn.disabled=true;
+    try{
+      var res=await proxyFetch(PROXY+'/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({to:to,subject:subj,text:body})
+      });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      btn.textContent='✅ Inviata';
+      btn.style.background='#16a34a';
+      showToast('✅ Email inviata a '+to,'success');
+      setTimeout(function(){modal.remove();},1500);
+    }catch(e){
+      btn.textContent=origText;
+      btn.disabled=false;
+      showToast('❌ Errore invio: '+e.message,'error');
+    }
+  };
+}
+
 
 function fabDebugArticolo(){
   var existing=document.getElementById('fab-debug-picker');
