@@ -1719,6 +1719,87 @@ function goPage(p){
   document.getElementById("ticket-rows").scrollTop=0;
 }
 
+// ── HELPER GLOBALE PER TAGLIO CRONOLOGIA QUOTATA ─────────────────────────
+// Restituisce {cutIdx, isOurs, plainText} oppure {cutIdx:-1} se nessun taglio applicabile
+// Usato sia dal rendering principale (dentro selectTicket) sia dal re-rendering
+// "fullTicket" che parte dopo il fetch /v1/tickets/{id}.
+window._yqTrimQuote = function(_evTextRaw, isClient){
+  var _quoteCutIdx = -1;
+  var _quoteIsOurs = false;
+  var _txtCheck = _evTextRaw || '';
+
+  // 1) Estrazione plain text se HTML
+  if(/<[a-z!\/][^>]*>/i.test(_txtCheck)){
+    try {
+      var _tmpDiv = document.createElement('div');
+      _tmpDiv.innerHTML = _txtCheck;
+      _txtCheck = _tmpDiv.innerText || _tmpDiv.textContent || _txtCheck;
+    } catch(e){
+      _txtCheck = _txtCheck.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<\/div>/gi,'\n').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+    }
+  }
+  // 2) Normalizzazione whitespace aggressiva
+  _txtCheck = _txtCheck
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\u200B/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n');
+
+  // ── Marker NOSTRI ──
+  var _ourTextMarkers = ['yespresso ha scritto:','yespresso.it ha scritto:','noreply@yespresso','Stiamo preparando il tuo ordine','Grazie per il tuo acquisto','Visualizza il tuo ordine','Riepilogo ordine','Visita il nostro negozio','Carica per tracciare i tuoi colli','ORDINE #','PREVIOUS MESSAGES'];
+  var _ourIdx = -1;
+  var _txtLower = _txtCheck.toLowerCase();
+  for(var _omi=0; _omi<_ourTextMarkers.length; _omi++){
+    var _omIdx = _txtLower.indexOf(_ourTextMarkers[_omi].toLowerCase());
+    if(_omIdx >= 0 && (_ourIdx === -1 || _omIdx < _ourIdx)) _ourIdx = _omIdx;
+  }
+  var _ourGmailShort = _txtCheck.match(/Il\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}\s*(CET|CEST)?\s*Yespresso/i);
+  if(_ourGmailShort){var _ogsIdx=_txtCheck.indexOf(_ourGmailShort[0]); if(_ogsIdx>=0&&(_ourIdx===-1||_ogsIdx<_ourIdx)) _ourIdx=_ogsIdx;}
+  var _ourGmailLong = _txtCheck.match(/Il\s+giorno\s+\S{2,}\s+\d{1,2}\s+\S{2,}\s+\d{4}\s+alle\s+ore\s+\d{1,2}[:.]\d{2}\s*[\s\S]{0,200}?(yespresso|assistenza@yespresso|noreply@yespresso)[\s\S]{0,80}?ha\s+scritto\s*:/i);
+  if(_ourGmailLong){var _oglIdx=_txtCheck.indexOf(_ourGmailLong[0]); if(_oglIdx>=0&&(_ourIdx===-1||_oglIdx<_ourIdx)) _ourIdx=_oglIdx;}
+  var _ourTicketSig = _txtCheck.match(/Ticket\s+ID\s*:\s*[A-Z0-9]{3,}/i);
+  if(_ourTicketSig){var _otsIdx=_txtCheck.indexOf(_ourTicketSig[0]); if(_otsIdx>=0&&(_ourIdx===-1||_otsIdx<_ourIdx)) _ourIdx=_otsIdx;}
+  var _ourAssignedSig = _txtCheck.match(/Assigned\s+agent\s*:/i);
+  if(_ourAssignedSig){var _oasIdx=_txtCheck.indexOf(_ourAssignedSig[0]); if(_oasIdx>=0&&(_ourIdx===-1||_oasIdx<_ourIdx)) _ourIdx=_oasIdx;}
+
+  // ── Marker ESTERNI (solo per messaggi cliente) ──
+  var _extIdx = -1;
+  if(isClient){
+    var _extGenericIt = _txtCheck.match(/Il\s+giorno\s+[\s\S]{5,250}?ha\s+scritto\s*:/i);
+    if(_extGenericIt){var _egiIdx=_txtCheck.indexOf(_extGenericIt[0]); if(_egiIdx>=0&&!/yespresso/i.test(_extGenericIt[0])){if(_extIdx===-1||_egiIdx<_extIdx) _extIdx=_egiIdx;}}
+    var _extGenericEn = _txtCheck.match(/On\s+[\s\S]{5,250}?\bwrote\s*:/i);
+    if(_extGenericEn){var _egeIdx=_txtCheck.indexOf(_extGenericEn[0]); if(_egeIdx>=0&&!/yespresso/i.test(_extGenericEn[0])){if(_extIdx===-1||_egeIdx<_extIdx) _extIdx=_egeIdx;}}
+    var _extOutlookSep = _txtCheck.match(/-{2,}\s*(Messaggio\s+originale|Original\s+Message|Forwarded\s+message)\s*-{2,}/i);
+    if(_extOutlookSep){var _eosIdx=_txtCheck.indexOf(_extOutlookSep[0]); if(_eosIdx>=0&&(_extIdx===-1||_eosIdx<_extIdx)) _extIdx=_eosIdx;}
+    var _extOutlookHdr = _txtCheck.match(/(?:^|\n)\s*(Da|From)\s*:[^\n]{3,200}\n\s*(Inviato|Sent|Data|Date)\s*:/i);
+    if(_extOutlookHdr){var _eohIdx=_txtCheck.indexOf(_extOutlookHdr[0]); if(_eohIdx>=0&&(_extIdx===-1||_eohIdx<_extIdx)) _extIdx=_eohIdx;}
+    var _extCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
+    if(_extCitedLines){var _eclIdx=_txtCheck.indexOf(_extCitedLines[0]); if(_eclIdx>=0&&_txtCheck.charAt(_eclIdx)==='\n') _eclIdx++; if(_eclIdx>=0&&(_extIdx===-1||_eclIdx<_extIdx)) _extIdx=_eclIdx;}
+  } else {
+    // Per messaggi agente: 3+ righe con ">" sono SEMPRE cronologia "nostra"
+    var _agentCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
+    if(_agentCitedLines){var _aclIdx=_txtCheck.indexOf(_agentCitedLines[0]); if(_aclIdx>=0&&_txtCheck.charAt(_aclIdx)==='\n') _aclIdx++; if(_aclIdx>=0&&(_ourIdx===-1||_aclIdx<_ourIdx)) _ourIdx=_aclIdx;}
+  }
+
+  if(_ourIdx>=0 && (_extIdx===-1 || _ourIdx<=_extIdx)){_quoteCutIdx=_ourIdx; _quoteIsOurs=true;}
+  else if(_extIdx>=0){_quoteCutIdx=_extIdx; _quoteIsOurs=false;}
+
+  if(_quoteCutIdx>=0){
+    var _newPart = _txtCheck.substring(0, _quoteCutIdx).trim();
+    var _wordCount = _newPart.split(/\s+/).filter(function(w){return w.length>0;}).length;
+    if(_quoteCutIdx<=15 || _newPart.length<10 || _wordCount<2){
+      _quoteCutIdx = -1; _quoteIsOurs = false;
+    }
+  }
+
+  if(window._yqDebug){
+    console.log('[YQ-DEBUG]', isClient?'CLI':'AGT', 'len='+_txtCheck.length, 'ourIdx='+_ourIdx, 'extIdx='+_extIdx, 'cutIdx='+_quoteCutIdx, 'isOurs='+_quoteIsOurs, 'preview='+JSON.stringify(_txtCheck.substring(0,80)));
+  }
+
+  return {cutIdx: _quoteCutIdx, isOurs: _quoteIsOurs, plainText: _txtCheck};
+};
+
 async function selectTicket(tid){
   window._lastShopifyCustomerId=null;
   window._imapAttachmentsHtml=""; // Reset allegati IMAP ad ogni cambio ticket
@@ -1901,6 +1982,7 @@ async function selectTicket(tid){
         _tkEvs.forEach(function(ev){
           const evMsg=ev.message||{};
           const evText=evMsg.richTextHtml||evMsg.html||evMsg.text||'';
+          const _evTextRaw=evMsg.text||evMsg.richTextHtml||evMsg.html||'';
           const _evTs=ev.date||ev.createdAt||ev.created_at||'';
           const evDate=(function(){
             if(!_evTs)return'';
@@ -1925,13 +2007,36 @@ async function selectTicket(tid){
           const avatarClass=isPrivate?'msg-avatar msg-avatar-private':isAgent?'msg-avatar msg-avatar-agent':'msg-avatar msg-avatar-client';
           const avatarIcon=isPrivate?'🔒':isAgent?'👤':'🙋';
           const authorName=isPrivate?'Nota Privata':isAgent?'Agente':isClient?(ev.author&&ev.author.name)||'Cliente':'Sistema';
+
+          // ── TRIM CRONOLOGIA QUOTATA (stessa logica del rendering principale) ──
+          var _qResult = window._yqTrimQuote ? window._yqTrimQuote(_evTextRaw, isClient) : null;
+          var _bodyHtml;
+          if(_qResult && _qResult.cutIdx > 15){
+            var _newText = _qResult.plainText.substring(0, _qResult.cutIdx).replace(/[\s\n\r]+$/g,'');
+            var _quotedText = _qResult.plainText.substring(_qResult.cutIdx);
+            if(_qResult.isOurs){
+              _bodyHtml = renderMsgBlock(_newText, []);
+            } else {
+              var _qExtBoxId2 = 'qext2_'+Math.random().toString(36).substr(2,7);
+              _bodyHtml = renderMsgBlock(_newText, []) +
+                '<div style="padding:4px 16px 8px">'+
+                  '<button onclick="(function(b){var d=document.getElementById(\''+_qExtBoxId2+'\');if(d){d.style.display=d.style.display===\'none\'?\'block\':\'none\';b.textContent=d.style.display===\'none\'?\'▸ Mostra cronologia citata\':\'▾ Nascondi cronologia citata\';}})(this)" style="background:none;border:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline;padding:4px 0">▸ Mostra cronologia citata</button>'+
+                  '<div id="'+_qExtBoxId2+'" style="display:none;margin-top:8px;padding:10px;background:#f7f9fc;border-left:2px solid #ddd;border-radius:0 6px 6px 0;font-size:12px;color:#666;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word">'+
+                    _quotedText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+
+                  '</div>'+
+                '</div>';
+            }
+          } else {
+            _bodyHtml = renderMsgBlock(evText,[]);
+          }
+
           _rHtml+='<div class="'+blockClass+'">'+
             '<div class="msg-block-header">'+
             '<div class="'+avatarClass+'">'+avatarIcon+'</div>'+
             '<span class="msg-author '+(isPrivate?'msg-author-private':isAgent?'msg-author-agent':'msg-author-client')+'">'+authorName+'</span>'+
             '<span class="msg-date">'+evDate+'</span>'+
             '</div>'+
-            renderMsgBlock(evText,[])+
+            _bodyHtml+
             '</div>';
         });
         if(_rHtml) _detailMsgs.querySelector('div').innerHTML=_rHtml;
@@ -2279,153 +2384,15 @@ async function selectTicket(tid){
                                 && _tkSubj.indexOf('annullamento')>=0;
 
         // ── TRIM CRONOLOGIA QUOTATA NEI MESSAGGI (v4) ──────────────────────
-        // Quando un cliente risponde a una nostra mail (HelpDesk/transazionale),
-        // o quando un nostro messaggio agente arriva via API HelpDesk con il
-        // footer template + cronologia, il client/server include tutta la mail
-        // originale come quote. Tagliamo questa parte per migliorare la
-        // leggibilita' del thread.
+        // Usa la funzione helper globale per mantenere la logica in un solo posto.
         var _quoteCutIdx = -1;
         var _quoteIsOurs = false;
         var _quotePlainText = '';
-        if(!_isChatbotTranscript && !_isAmazonCancelEmail){
-          var _txtCheck = _evTextRaw;
-          // 1) Estrazione plain text se HTML
-          if(/<[a-z!\/][^>]*>/i.test(_txtCheck)){
-            try {
-              var _tmpDiv = document.createElement('div');
-              _tmpDiv.innerHTML = _txtCheck;
-              _txtCheck = _tmpDiv.innerText || _tmpDiv.textContent || _txtCheck;
-            } catch(e){
-              _txtCheck = _txtCheck.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<\/div>/gi,'\n').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
-            }
-          }
-          // 2) Normalizzazione whitespace AGGRESSIVA: \r\n -> \n, NBSP -> spazio,
-          //    spazi multipli -> singolo, tab -> spazio. Questo permette ai pattern
-          //    regex di matchare anche con whitespace anomali.
-          _txtCheck = _txtCheck
-            .replace(/\r\n?/g, '\n')         // CRLF/CR -> LF
-            .replace(/\u00A0/g, ' ')         // NBSP -> spazio
-            .replace(/\u200B/g, '')          // zero-width space
-            .replace(/[ \t]+/g, ' ')         // spazi/tab multipli -> singolo
-            .replace(/ *\n */g, '\n');       // pulisci spazi attorno ai newline
-
-          // ── Marker "NOSTRI" ──
-          var _ourTextMarkers = [
-            'yespresso ha scritto:',
-            'yespresso.it ha scritto:',
-            'noreply@yespresso',
-            'Stiamo preparando il tuo ordine',
-            'Grazie per il tuo acquisto',
-            'Visualizza il tuo ordine',
-            'Riepilogo ordine',
-            'Visita il nostro negozio',
-            'Carica per tracciare i tuoi colli',
-            'ORDINE #',
-            'PREVIOUS MESSAGES'
-          ];
-          var _ourIdx = -1;
-          var _txtLower = _txtCheck.toLowerCase();
-          for(var _omi=0; _omi<_ourTextMarkers.length; _omi++){
-            var _omIdx = _txtLower.indexOf(_ourTextMarkers[_omi].toLowerCase());
-            if(_omIdx >= 0 && (_ourIdx === -1 || _omIdx < _ourIdx)) _ourIdx = _omIdx;
-          }
-          // Pattern Gmail breve: "Il GG/MM/AAAA HH:MM CET/CEST Yespresso ha scritto:"
-          // (dopo normalizzazione whitespace, lo spazio singolo e' garantito)
-          var _ourGmailShort = _txtCheck.match(/Il\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}\s*(CET|CEST)?\s*Yespresso/i);
-          if(_ourGmailShort){
-            var _ogsIdx = _txtCheck.indexOf(_ourGmailShort[0]);
-            if(_ogsIdx >= 0 && (_ourIdx === -1 || _ogsIdx < _ourIdx)) _ourIdx = _ogsIdx;
-          }
-          // Pattern Gmail esteso "Il giorno [day] DD mese YYYY alle ore HH:MM Yespresso ... ha scritto:"
-          var _ourGmailLong = _txtCheck.match(/Il\s+giorno\s+\S{2,}\s+\d{1,2}\s+\S{2,}\s+\d{4}\s+alle\s+ore\s+\d{1,2}[:.]\d{2}\s*[\s\S]{0,200}?(yespresso|assistenza@yespresso|noreply@yespresso)[\s\S]{0,80}?ha\s+scritto\s*:/i);
-          if(_ourGmailLong){
-            var _oglIdx = _txtCheck.indexOf(_ourGmailLong[0]);
-            if(_oglIdx >= 0 && (_ourIdx === -1 || _oglIdx < _ourIdx)) _ourIdx = _oglIdx;
-          }
-          // Pattern footer firma HelpDesk "Ticket ID: XXXX" (alfanumerico)
-          var _ourTicketSig = _txtCheck.match(/Ticket\s+ID\s*:\s*[A-Z0-9]{3,}/i);
-          if(_ourTicketSig){
-            var _otsIdx = _txtCheck.indexOf(_ourTicketSig[0]);
-            if(_otsIdx >= 0 && (_ourIdx === -1 || _otsIdx < _ourIdx)) _ourIdx = _otsIdx;
-          }
-          // Pattern footer firma HelpDesk "Assigned agent:"
-          var _ourAssignedSig = _txtCheck.match(/Assigned\s+agent\s*:/i);
-          if(_ourAssignedSig){
-            var _oasIdx = _txtCheck.indexOf(_ourAssignedSig[0]);
-            if(_oasIdx >= 0 && (_ourIdx === -1 || _oasIdx < _ourIdx)) _ourIdx = _oasIdx;
-          }
-
-          // ── Marker "ESTERNI" (solo per messaggi cliente) ──
-          var _extIdx = -1;
-          if(isClient){
-            var _extGenericIt = _txtCheck.match(/Il\s+giorno\s+[\s\S]{5,250}?ha\s+scritto\s*:/i);
-            if(_extGenericIt){
-              var _egiIdx = _txtCheck.indexOf(_extGenericIt[0]);
-              if(_egiIdx >= 0 && !/yespresso/i.test(_extGenericIt[0])){
-                if(_extIdx === -1 || _egiIdx < _extIdx) _extIdx = _egiIdx;
-              }
-            }
-            var _extGenericEn = _txtCheck.match(/On\s+[\s\S]{5,250}?\bwrote\s*:/i);
-            if(_extGenericEn){
-              var _egeIdx = _txtCheck.indexOf(_extGenericEn[0]);
-              if(_egeIdx >= 0 && !/yespresso/i.test(_extGenericEn[0])){
-                if(_extIdx === -1 || _egeIdx < _extIdx) _extIdx = _egeIdx;
-              }
-            }
-            var _extOutlookSep = _txtCheck.match(/-{2,}\s*(Messaggio\s+originale|Original\s+Message|Forwarded\s+message)\s*-{2,}/i);
-            if(_extOutlookSep){
-              var _eosIdx = _txtCheck.indexOf(_extOutlookSep[0]);
-              if(_eosIdx >= 0 && (_extIdx === -1 || _eosIdx < _extIdx)) _extIdx = _eosIdx;
-            }
-            var _extOutlookHdr = _txtCheck.match(/(?:^|\n)\s*(Da|From)\s*:[^\n]{3,200}\n\s*(Inviato|Sent|Data|Date)\s*:/i);
-            if(_extOutlookHdr){
-              var _eohIdx = _txtCheck.indexOf(_extOutlookHdr[0]);
-              if(_eohIdx >= 0 && (_extIdx === -1 || _eohIdx < _extIdx)) _extIdx = _eohIdx;
-            }
-            var _extCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
-            if(_extCitedLines){
-              var _eclIdx = _txtCheck.indexOf(_extCitedLines[0]);
-              if(_eclIdx >= 0 && _txtCheck.charAt(_eclIdx) === '\n') _eclIdx++;
-              if(_eclIdx >= 0 && (_extIdx === -1 || _eclIdx < _extIdx)) _extIdx = _eclIdx;
-            }
-          } else {
-            // Per messaggi agente: 3+ righe con ">" sono SEMPRE cronologia "nostra"
-            var _agentCitedLines = _txtCheck.match(/(?:^|\n)>\s?[^\n]*(?:\n>\s?[^\n]*){2,}/);
-            if(_agentCitedLines){
-              var _aclIdx = _txtCheck.indexOf(_agentCitedLines[0]);
-              if(_aclIdx >= 0 && _txtCheck.charAt(_aclIdx) === '\n') _aclIdx++;
-              if(_aclIdx >= 0 && (_ourIdx === -1 || _aclIdx < _ourIdx)) _ourIdx = _aclIdx;
-            }
-          }
-
-          // ── Decisione ──
-          if(_ourIdx >= 0 && (_extIdx === -1 || _ourIdx <= _extIdx)){
-            _quoteCutIdx = _ourIdx;
-            _quoteIsOurs = true;
-          } else if(_extIdx >= 0){
-            _quoteCutIdx = _extIdx;
-            _quoteIsOurs = false;
-          }
-
-          // Sicurezza
-          if(_quoteCutIdx >= 0){
-            var _newPart = _txtCheck.substring(0, _quoteCutIdx).trim();
-            var _wordCount = _newPart.split(/\s+/).filter(function(w){return w.length>0;}).length;
-            if(_quoteCutIdx <= 15 || _newPart.length < 10 || _wordCount < 2){
-              _quoteCutIdx = -1;
-              _quoteIsOurs = false;
-            }
-          }
-
-          if(_quoteCutIdx >= 0){
-            _quotePlainText = _txtCheck;
-          }
-
-          // DEBUG: log diagnostico per capire perche' il taglio non scatta
-          // (rimuovere dopo verifica in produzione)
-          if(window._yqDebug){
-            console.log('[YQ-DEBUG]', isClient?'CLI':'AGT', 'len='+_txtCheck.length, 'ourIdx='+_ourIdx, 'extIdx='+_extIdx, 'cutIdx='+_quoteCutIdx, 'isOurs='+_quoteIsOurs, 'preview='+JSON.stringify(_txtCheck.substring(0,80)));
-          }
+        if(!_isChatbotTranscript && !_isAmazonCancelEmail && window._yqTrimQuote){
+          var _qRes = window._yqTrimQuote(_evTextRaw, isClient);
+          _quoteCutIdx = _qRes.cutIdx;
+          _quoteIsOurs = _qRes.isOurs;
+          _quotePlainText = _qRes.plainText;
         }
 
         if(_isChatbotTranscript || _isCustomVarsBlock){
