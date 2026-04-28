@@ -8490,6 +8490,8 @@ function openFilippoPanel(){
   },{
     id:'ordini_ritardo',label:'⏰ Ordini in Ritardo',periodo:'',custom:true,groups:[]
   },{
+    id:'ordini_anticipo',label:'⚡ Ordini in Anticipo',periodo:'',custom:true,groups:[]
+  },{
     id:'attivita',label:'✅ Attività da Fare',periodo:'',custom:true,groups:[]
   },{
     id:'sandbox_ai',label:'🧪 Test AI Automatica',periodo:'',custom:true,groups:[]
@@ -8536,6 +8538,7 @@ function openFilippoPanel(){
         else if(sec.id==='ordini_da_preparare') setTimeout(function(){renderOrdiniDaPreparare(panel);},0);
         else if(sec.id==='ordini_preparati') setTimeout(function(){renderOrdiniPreparati(panel);},0);
         else if(sec.id==='ordini_ritardo') setTimeout(function(){renderOrdiniRitardo(null,panel,null);},0);
+        else if(sec.id==='ordini_anticipo') setTimeout(function(){renderOrdiniAnticipo(null,panel,null);},0);
         else if(sec.id==='attivita') setTimeout(function(){renderAttivita(null,panel,null);},0);
         else if(sec.id==='sandbox_ai') setTimeout(function(){renderSandboxAI(panel);},0);
         return;
@@ -13758,6 +13761,351 @@ window._ritardiToggleAll = function(tipo, checkAll){
     if(checkAll) set.add(cb.dataset[attr]);
   });
   window._ritardiRender();
+};
+
+// ════════════════════════════════════════════════════════════════
+// PAGINA "ORDINI IN ANTICIPO" — speculare a renderOrdiniRitardo
+// Mostra ordini consegnati PRIMA della data prevista (qty_ricevuta>0
+// con data_ricezione_effettiva < data_cons_riga). Soglia: anche solo
+// 1 giorno di anticipo. Niente penali, ma mostra il valore totale per
+// permettere lo storno dal pagamento delle fatture al fornitore.
+// Esporta in Excel + PDF, raggruppato per fornitore.
+// ════════════════════════════════════════════════════════════════
+function renderOrdiniAnticipo(ignored, panel, ignored2) {
+  var ca = panel.querySelector('#filippo-content');
+  if (!ca) return;
+  var ordini = (typeof fabOrdini !== 'undefined') ? fabOrdini : [];
+  if (!ordini.length) {
+    ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:20px">⚡ Ordini in Anticipo</div>' +
+      '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#aaa;max-width:800px">' +
+      '<div style="font-size:32px;margin-bottom:10px">📋</div>' +
+      '<div style="font-size:14px">Nessun ordine trovato nel fabbisogno.<br>Apri prima la pagina Fabbisogno per caricare i dati.</div>' +
+      '</div>';
+    return;
+  }
+
+  var fmtD = function(s){if(!s)return '—';var p=s.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;};
+  var mesiLabel = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+  var euro = function(n){if(n==null)return '—';return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(n);};
+
+  var fabProds = (typeof fabProducts !== 'undefined' && Array.isArray(fabProducts)) ? fabProducts : [];
+  var skuToShopify = {};
+  fabProds.forEach(function(p){if(p && p.sku && p.sku_shopify) skuToShopify[p.sku] = p.sku_shopify;});
+
+  // Raccolta righe in anticipo (raggruppate per mese di consegna prevista)
+  var anticipi = {};
+  ordini.forEach(function(ord){
+    if(ord.stato==='annullato') return;
+    if(ord.tipo==='annullamento') return; // escludi ordini annullamento
+    (ord.righe||[]).forEach(function(r){
+      var qtyRic = r.qty_ricevuta || 0;
+      if(!qtyRic) return;
+      var dataRic = r.data_ricezione_effettiva;
+      if(!dataRic) return;
+      var dataCons = (r.data_cons_riga || ord.data_consegna_prevista || '').substring(0,10);
+      if(!dataCons) return;
+      // ⚡ ANTICIPO: data ricezione PRIMA della data prevista (>= 1 giorno)
+      if(dataRic >= dataCons) return;
+      var meseKey = dataCons.substring(0,7);
+      if(!anticipi[meseKey]) anticipi[meseKey] = [];
+      var qtaOrdinata = r.qty_ordinata || r.qty || 0;
+      var qtaInAnticipo = Math.min(qtyRic, qtaOrdinata);
+      var skuDisp = r.sku || r.sku_shopify || '—';
+      var skuShop = skuToShopify[skuDisp] || r.sku_shopify || skuDisp;
+      anticipi[meseKey].push({
+        numero: ord.numero_ordine || ('ORD-' + (ord.id || '')),
+        dataOrd: ord.data_ordine || '—',
+        sku: skuDisp,
+        skuShopify: skuShop,
+        prodotto: r.nome_prodotto || r.nome || r.sku || '—',
+        fornitore: ord.fornitore || '—',
+        qta: qtaInAnticipo,
+        dataCons: dataCons,
+        dataRic: dataRic,
+        giorni: Math.round((new Date(dataCons) - new Date(dataRic)) / 86400000),
+        costo: null
+      });
+    });
+  });
+
+  var mesiOrdinati = Object.keys(anticipi).sort().reverse();
+  var totAnticipi = mesiOrdinati.reduce(function(s,k){return s+anticipi[k].length;},0);
+
+  // Lista fornitori per filtro
+  var allFornitori = new Set();
+  mesiOrdinati.forEach(function(m){anticipi[m].forEach(function(r){allFornitori.add(r.fornitore);});});
+  var fornArr = Array.from(allFornitori).sort();
+
+  // Filtri persistenti in sessione
+  if(!window._anticipiFiltri){
+    window._anticipiFiltri = {
+      mesi: new Set(mesiOrdinati),
+      fornitori: new Set(fornArr)
+    };
+  } else {
+    // Aggiungi nuovi mesi/fornitori scoperti
+    mesiOrdinati.forEach(function(m){if(!window._anticipiFiltri.mesi.has(m)) window._anticipiFiltri.mesi.add(m);});
+    fornArr.forEach(function(f){if(!window._anticipiFiltri.fornitori.has(f)) window._anticipiFiltri.fornitori.add(f);});
+  }
+  var filtri = window._anticipiFiltri;
+
+  // Salvo strutture globali per re-render e export
+  window._anticipiData = anticipi;
+  window._anticipiMesi = mesiOrdinati;
+  window._mesiLabel = mesiLabel;
+
+  // Costruzione HTML
+  var html = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:6px">⚡ Ordini in Anticipo</div>'+
+    '<div style="font-size:12px;color:#888;margin-bottom:18px">Ordini consegnati prima della data prevista (≥1 giorno). Il valore totale può essere stornato dal pagamento del mese di consegna originale.</div>';
+
+  if(!totAnticipi){
+    html += '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#aaa;max-width:800px">'+
+      '<div style="font-size:32px;margin-bottom:10px">✅</div>'+
+      '<div style="font-size:14px">Nessun ordine in anticipo registrato.</div>'+
+      '</div>';
+    ca.innerHTML = html;
+    return;
+  }
+
+  // Filtro UI
+  html += '<div style="background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1px solid #e8eaf0">'+
+    '<div style="display:flex;gap:18px;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:240px"><div style="font-size:11px;font-weight:700;color:#888;margin-bottom:6px;text-transform:uppercase">Mesi consegna originale</div>'+
+        '<div id="anticipi-mesi-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
+  mesiOrdinati.forEach(function(m){
+    var parts = m.split('-');
+    var lbl = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
+    var on = filtri.mesi.has(m);
+    html += '<span data-anticipi-mese="'+m+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+lbl+' ('+anticipi[m].length+')</span>';
+  });
+  html += '</div></div>'+
+    '<div style="flex:1;min-width:240px"><div style="font-size:11px;font-weight:700;color:#888;margin-bottom:6px;text-transform:uppercase">Fornitori</div>'+
+    '<div id="anticipi-forn-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
+  fornArr.forEach(function(f){
+    var on = filtri.fornitori.has(f);
+    var nQta = mesiOrdinati.reduce(function(s,m){return s+anticipi[m].filter(function(r){return r.fornitore===f;}).length;},0);
+    html += '<span data-anticipi-forn="'+f.replace(/"/g,'&quot;')+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+f+' ('+nQta+')</span>';
+  });
+  html += '</div></div>'+
+    '</div>'+
+    '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+      '<button id="anticipi-carica-costi" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">💰 Carica costi da Shopify</button>'+
+      '<button id="anticipi-export-xlsx" style="background:#fff;border:1.5px solid #16a34a;color:#16a34a;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">📊 Esporta Excel</button>'+
+      '<button id="anticipi-export-pdf" style="background:#fff;border:1.5px solid #6d28d9;color:#6d28d9;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">📄 Esporta PDF</button>'+
+      '<span id="anticipi-status" style="font-size:11px;color:#888;margin-left:8px"></span>'+
+    '</div>'+
+  '</div>';
+
+  // Tabella raggruppata per mese
+  var thS = 'padding:8px 10px;text-align:left;font-size:10px;color:#166534;text-transform:uppercase;font-weight:700;background:#f0fdf4;border-bottom:2px solid #bbf7d0';
+  var thR = thS + ';text-align:right';
+  var thC = thS + ';text-align:center';
+  var tdS = 'padding:7px 10px;font-size:12px;border-bottom:1px solid #f0f2f5';
+  var tdR = tdS + ';text-align:right';
+  var tdC = tdS + ';text-align:center';
+
+  var totGenerale = 0; // valore totale di tutte le righe filtrate
+
+  mesiOrdinati.forEach(function(m){
+    if(!filtri.mesi.has(m)) return;
+    var righeMese = anticipi[m].filter(function(r){return filtri.fornitori.has(r.fornitore);});
+    if(!righeMese.length) return;
+    var parts = m.split('-');
+    var lbl = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
+    var totMese = righeMese.reduce(function(s,r){return s+(r.costo==null?0:r.costo*r.qta);},0);
+    totGenerale += totMese;
+
+    html += '<div style="background:#fff;border-radius:10px;margin-bottom:14px;overflow:hidden;border:1px solid #e8eaf0">'+
+      '<div style="background:linear-gradient(135deg,#166534,#16a34a);padding:10px 16px;color:#fff;display:flex;justify-content:space-between;align-items:center">'+
+        '<div style="font-weight:700;font-size:14px">📅 Consegna originale: '+lbl+' &nbsp;·&nbsp; '+righeMese.length+' righe in anticipo</div>'+
+        '<div style="font-size:12px;font-weight:700">Totale: '+euro(totMese)+'</div>'+
+      '</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-family:inherit">'+
+        '<thead><tr>'+
+          '<th style="'+thS+'">Ordine</th>'+
+          '<th style="'+thS+'">Data ordine</th>'+
+          '<th style="'+thS+'">Fornitore</th>'+
+          '<th style="'+thS+'">SKU / Prodotto</th>'+
+          '<th style="'+thR+'">Qtà</th>'+
+          '<th style="'+thC+'">Cons. richiesta</th>'+
+          '<th style="'+thC+'">Cons. effettiva</th>'+
+          '<th style="'+thR+'">Anticipo (gg)</th>'+
+          '<th style="'+thR+'">Costo unit.</th>'+
+          '<th style="'+thR+'">Valore totale</th>'+
+        '</tr></thead><tbody>';
+    righeMese.forEach(function(r,i){
+      var bg = i%2===0 ? '#fff' : '#f8faff';
+      var valore = r.costo==null ? null : r.costo * r.qta;
+      html += '<tr style="background:'+bg+'">'+
+        '<td style="'+tdS+';font-weight:600">'+r.numero+'</td>'+
+        '<td style="'+tdS+'">'+fmtD(r.dataOrd)+'</td>'+
+        '<td style="'+tdS+'">'+r.fornitore+'</td>'+
+        '<td style="'+tdS+'"><div style="font-weight:600">'+r.sku+'</div><div style="font-size:11px;color:#888">'+r.prodotto+'</div></td>'+
+        '<td style="'+tdR+';font-weight:700">'+r.qta+'</td>'+
+        '<td style="'+tdC+';color:#888">'+fmtD(r.dataCons)+'</td>'+
+        '<td style="'+tdC+';color:#16a34a;font-weight:600">'+fmtD(r.dataRic)+'</td>'+
+        '<td style="'+tdR+';color:#16a34a;font-weight:700">−'+r.giorni+' gg</td>'+
+        '<td style="'+tdR+'">'+(r.costo==null?'<span style="color:#aaa">?</span>':euro(r.costo))+'</td>'+
+        '<td style="'+tdR+';font-weight:700;color:#166534">'+(valore==null?'<span style="color:#aaa">?</span>':euro(valore))+'</td>'+
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+  });
+
+  // Riepilogo totale generale
+  html += '<div style="background:#166534;color:#fff;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">'+
+    '<div style="font-size:14px;font-weight:700">💼 TOTALE VALORE ORDINI IN ANTICIPO (da stornare dal pagamento)</div>'+
+    '<div style="font-size:18px;font-weight:700">'+euro(totGenerale)+'</div>'+
+  '</div>';
+
+  ca.innerHTML = html;
+
+  // Wire-up event handler chip e bottoni
+  ca.querySelectorAll('[data-anticipi-mese]').forEach(function(el){
+    el.addEventListener('click', function(){
+      var m = el.getAttribute('data-anticipi-mese');
+      if(filtri.mesi.has(m)) filtri.mesi.delete(m); else filtri.mesi.add(m);
+      renderOrdiniAnticipo(null, panel, null);
+    });
+  });
+  ca.querySelectorAll('[data-anticipi-forn]').forEach(function(el){
+    el.addEventListener('click', function(){
+      var f = el.getAttribute('data-anticipi-forn');
+      if(filtri.fornitori.has(f)) filtri.fornitori.delete(f); else filtri.fornitori.add(f);
+      renderOrdiniAnticipo(null, panel, null);
+    });
+  });
+  var btnCosti = ca.querySelector('#anticipi-carica-costi');
+  if(btnCosti) btnCosti.addEventListener('click', async function(){
+    btnCosti.disabled = true;
+    btnCosti.textContent = '⏳ Caricamento...';
+    await window._anticipiCaricaCosti();
+    btnCosti.disabled = false;
+    btnCosti.textContent = '💰 Ricarica costi';
+    renderOrdiniAnticipo(null, panel, null);
+  });
+  var btnXlsx = ca.querySelector('#anticipi-export-xlsx');
+  if(btnXlsx) btnXlsx.addEventListener('click', function(){window._anticipiExportXlsx();});
+  var btnPdf = ca.querySelector('#anticipi-export-pdf');
+  if(btnPdf) btnPdf.addEventListener('click', function(){window._anticipiExportPdf();});
+}
+
+window._anticipiCaricaCosti = async function(){
+  // Riusa la stessa cache della pagina ritardi (i costi sono per SKU Shopify)
+  var statusEl = document.getElementById('anticipi-status');
+  var skuShopSet = new Set();
+  (window._anticipiMesi||[]).forEach(function(m){
+    (window._anticipiData[m]||[]).forEach(function(r){if(r.skuShopify) skuShopSet.add(r.skuShopify);});
+  });
+  var skusNeeded = Array.from(skuShopSet).filter(function(s){return window._ritardiCostiCache[s]===undefined;});
+  if(!skusNeeded.length){
+    // Applica subito i costi già in cache
+    (window._anticipiMesi||[]).forEach(function(m){
+      (window._anticipiData[m]||[]).forEach(function(r){
+        if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
+          r.costo = window._ritardiCostiCache[r.skuShopify];
+        }
+      });
+    });
+    if(statusEl) statusEl.textContent = '✅ Costi caricati dalla cache';
+    return;
+  }
+  // Riusa il caricamento esistente (popola _ritardiCostiCache)
+  if(typeof window._ritardiCaricaCosti==='function'){
+    await window._ritardiCaricaCosti();
+  }
+  // Applica
+  (window._anticipiMesi||[]).forEach(function(m){
+    (window._anticipiData[m]||[]).forEach(function(r){
+      if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
+        r.costo = window._ritardiCostiCache[r.skuShopify];
+      }
+    });
+  });
+  if(statusEl) statusEl.textContent = '✅ Costi aggiornati';
+};
+
+window._anticipiExportXlsx = function(){
+  if(typeof XLSX==='undefined'){
+    alert('Libreria XLSX non caricata. Riprova fra qualche secondo o ricarica la pagina.');
+    return;
+  }
+  var filtri = window._anticipiFiltri;
+  var rows = [['Mese consegna originale','Ordine','Data ordine','Fornitore','SKU','Prodotto','Qtà','Data cons. richiesta','Data cons. effettiva','Anticipo (gg)','Costo unit. (€)','Valore totale (€)']];
+  var totGen = 0;
+  (window._anticipiMesi||[]).forEach(function(m){
+    if(!filtri.mesi.has(m)) return;
+    var parts = m.split('-');
+    var lbl = window._mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
+    (window._anticipiData[m]||[]).forEach(function(r){
+      if(!filtri.fornitori.has(r.fornitore)) return;
+      var valore = r.costo==null ? null : r.costo*r.qta;
+      if(valore!=null) totGen += valore;
+      rows.push([lbl, r.numero, r.dataOrd, r.fornitore, r.sku, r.prodotto, r.qta, r.dataCons, r.dataRic, r.giorni, r.costo, valore]);
+    });
+  });
+  rows.push(['','','','','','','','','','TOTALE','',totGen]);
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:18},{wch:14},{wch:11},{wch:18},{wch:14},{wch:30},{wch:6},{wch:12},{wch:12},{wch:10},{wch:11},{wch:13}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ordini in Anticipo');
+  XLSX.writeFile(wb, 'ordini_anticipo_'+new Date().toISOString().slice(0,10)+'.xlsx');
+};
+
+window._anticipiExportPdf = function(){
+  var filtri = window._anticipiFiltri;
+  var euro = function(n){if(n==null)return '—';return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(n);};
+  var fmtD = function(s){if(!s)return '—';var p=s.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;};
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ordini in Anticipo</title>'+
+    '<style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1a1a2e;font-size:11px}'+
+    'table{width:100%;border-collapse:collapse;margin-bottom:14px}'+
+    'thead tr{background:#dcfce7}'+
+    'th{padding:6px 8px;text-align:left;font-size:9px;color:#166534;text-transform:uppercase;font-weight:700;border-bottom:2px solid #86efac}'+
+    'td{padding:5px 8px;font-size:11px;border-bottom:1px solid #f0f2f5}'+
+    '.r{text-align:right} .c{text-align:center}'+
+    '.hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #16a34a}'+
+    '.title{font-size:18px;font-weight:700;color:#166534}'+
+    '.tot{margin-top:14px;padding:10px 14px;background:#166534;color:#fff;border-radius:6px;font-weight:700;text-align:right;font-size:13px}'+
+    '.mese{background:#dcfce7;padding:8px 12px;font-weight:700;color:#166534;font-size:12px;margin-top:14px}'+
+    '@media print{button{display:none!important}}</style></head><body>'+
+    '<div class="hdr"><div><div class="title">⚡ ORDINI IN ANTICIPO</div><div style="font-size:11px;color:#666;margin-top:3px">Yespresso · Generato il '+new Date().toLocaleString('it-IT')+'</div></div>'+
+    '<button onclick="window.print()" style="padding:8px 18px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700">🖨 Stampa / Salva PDF</button></div>';
+  var totGen = 0;
+  (window._anticipiMesi||[]).forEach(function(m){
+    if(!filtri.mesi.has(m)) return;
+    var righeMese = (window._anticipiData[m]||[]).filter(function(r){return filtri.fornitori.has(r.fornitore);});
+    if(!righeMese.length) return;
+    var parts = m.split('-');
+    var lbl = window._mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
+    var totMese = righeMese.reduce(function(s,r){return s+(r.costo==null?0:r.costo*r.qta);},0);
+    totGen += totMese;
+    html += '<div class="mese">📅 Consegna originale: '+lbl+' &nbsp;·&nbsp; '+righeMese.length+' righe &nbsp;·&nbsp; Totale '+euro(totMese)+'</div>';
+    html += '<table><thead><tr>'+
+      '<th>Ordine</th><th>Fornitore</th><th>SKU</th><th class="r">Qtà</th>'+
+      '<th class="c">Cons. richiesta</th><th class="c">Cons. effettiva</th>'+
+      '<th class="r">Anticipo</th><th class="r">Costo</th><th class="r">Valore</th>'+
+      '</tr></thead><tbody>';
+    righeMese.forEach(function(r){
+      var valore = r.costo==null ? null : r.costo*r.qta;
+      html += '<tr>'+
+        '<td>'+r.numero+'</td>'+
+        '<td>'+r.fornitore+'</td>'+
+        '<td>'+r.sku+'</td>'+
+        '<td class="r">'+r.qta+'</td>'+
+        '<td class="c">'+fmtD(r.dataCons)+'</td>'+
+        '<td class="c">'+fmtD(r.dataRic)+'</td>'+
+        '<td class="r" style="color:#16a34a;font-weight:700">−'+r.giorni+' gg</td>'+
+        '<td class="r">'+(r.costo==null?'?':euro(r.costo))+'</td>'+
+        '<td class="r" style="font-weight:700">'+(valore==null?'?':euro(valore))+'</td>'+
+      '</tr>';
+    });
+    html += '</tbody></table>';
+  });
+  html += '<div class="tot">💼 TOTALE VALORE ORDINI IN ANTICIPO: '+euro(totGen)+'<br><span style="font-size:10px;font-weight:400">Importo da stornare dal pagamento delle fatture al fornitore</span></div>';
+  html += '</body></html>';
+  var w = window.open('','_blank','width=900,height=720');
+  if(w){w.document.write(html);w.document.close();}
+  else alert('Abilita i pop-up per scaricare il PDF.');
 };
 
 // Cache costi per sessione (SKU Shopify -> costo confezione)
