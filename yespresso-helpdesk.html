@@ -13867,24 +13867,34 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
     return;
   }
 
-  // Filtro UI
+  // Filtro UI con bottoni "Tutti / Nessuno" come pagina Ritardi
   html += '<div style="background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1px solid #e8eaf0">'+
     '<div style="display:flex;gap:18px;flex-wrap:wrap">'+
-      '<div style="flex:1;min-width:240px"><div style="font-size:11px;font-weight:700;color:#888;margin-bottom:6px;text-transform:uppercase">Mesi consegna originale</div>'+
+      '<div style="flex:1;min-width:240px">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+          '<span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase">Mesi consegna originale</span>'+
+          '<button data-anticipi-mesi-all="1" style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Tutti</button>'+
+          '<button data-anticipi-mesi-none="1" style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Nessuno</button>'+
+        '</div>'+
         '<div id="anticipi-mesi-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
   mesiOrdinati.forEach(function(m){
     var parts = m.split('-');
     var lbl = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
     var on = filtri.mesi.has(m);
-    html += '<span data-anticipi-mese="'+m+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+lbl+' ('+anticipi[m].length+')</span>';
+    html += '<span data-anticipi-mese="'+m+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+(on?'☑ ':'☐ ')+lbl+' ('+anticipi[m].length+')</span>';
   });
   html += '</div></div>'+
-    '<div style="flex:1;min-width:240px"><div style="font-size:11px;font-weight:700;color:#888;margin-bottom:6px;text-transform:uppercase">Fornitori</div>'+
-    '<div id="anticipi-forn-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
+    '<div style="flex:1;min-width:240px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+        '<span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase">Fornitori</span>'+
+        '<button data-anticipi-forn-all="1" style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Tutti</button>'+
+        '<button data-anticipi-forn-none="1" style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Nessuno</button>'+
+      '</div>'+
+      '<div id="anticipi-forn-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
   fornArr.forEach(function(f){
     var on = filtri.fornitori.has(f);
     var nQta = mesiOrdinati.reduce(function(s,m){return s+anticipi[m].filter(function(r){return r.fornitore===f;}).length;},0);
-    html += '<span data-anticipi-forn="'+f.replace(/"/g,'&quot;')+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+f+' ('+nQta+')</span>';
+    html += '<span data-anticipi-forn="'+f.replace(/"/g,'&quot;')+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+(on?'☑ ':'☐ ')+f+' ('+nQta+')</span>';
   });
   html += '</div></div>'+
     '</div>'+
@@ -13975,6 +13985,28 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
       renderOrdiniAnticipo(null, panel, null);
     });
   });
+  // Bottoni Tutti / Nessuno per Mesi
+  var btnMesiAll = ca.querySelector('[data-anticipi-mesi-all]');
+  if(btnMesiAll) btnMesiAll.addEventListener('click', function(){
+    mesiOrdinati.forEach(function(m){filtri.mesi.add(m);});
+    renderOrdiniAnticipo(null, panel, null);
+  });
+  var btnMesiNone = ca.querySelector('[data-anticipi-mesi-none]');
+  if(btnMesiNone) btnMesiNone.addEventListener('click', function(){
+    filtri.mesi.clear();
+    renderOrdiniAnticipo(null, panel, null);
+  });
+  // Bottoni Tutti / Nessuno per Fornitori
+  var btnFornAll = ca.querySelector('[data-anticipi-forn-all]');
+  if(btnFornAll) btnFornAll.addEventListener('click', function(){
+    fornArr.forEach(function(f){filtri.fornitori.add(f);});
+    renderOrdiniAnticipo(null, panel, null);
+  });
+  var btnFornNone = ca.querySelector('[data-anticipi-forn-none]');
+  if(btnFornNone) btnFornNone.addEventListener('click', function(){
+    filtri.fornitori.clear();
+    renderOrdiniAnticipo(null, panel, null);
+  });
   var btnCosti = ca.querySelector('#anticipi-carica-costi');
   if(btnCosti) btnCosti.addEventListener('click', async function(){
     btnCosti.disabled = true;
@@ -13991,15 +14023,93 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
 }
 
 window._anticipiCaricaCosti = async function(){
-  // Riusa la stessa cache della pagina ritardi (i costi sono per SKU Shopify)
+  // Standalone — non dipende dalla pagina ritardi. Usa solo _ritardiCostiCache
+  // come storage condiviso (così i costi sono comuni alle 2 pagine).
   var statusEl = document.getElementById('anticipi-status');
-  var skuShopSet = new Set();
-  (window._anticipiMesi||[]).forEach(function(m){
-    (window._anticipiData[m]||[]).forEach(function(r){if(r.skuShopify) skuShopSet.add(r.skuShopify);});
-  });
-  var skusNeeded = Array.from(skuShopSet).filter(function(s){return window._ritardiCostiCache[s]===undefined;});
-  if(!skusNeeded.length){
-    // Applica subito i costi già in cache
+  try {
+    // 1) Raccoglie SKU Shopify dalle righe in anticipo
+    var skuShopSet = new Set();
+    (window._anticipiMesi||[]).forEach(function(m){
+      (window._anticipiData[m]||[]).forEach(function(r){
+        if(r.skuShopify && r.skuShopify !== '—') skuShopSet.add(r.skuShopify);
+      });
+    });
+    if(!skuShopSet.size){
+      if(statusEl) statusEl.textContent = '⚠️ Nessuno SKU da caricare';
+      return;
+    }
+    // 2) Filtra SKU non ancora in cache
+    window._ritardiCostiCache = window._ritardiCostiCache || {};
+    var skusNeeded = Array.from(skuShopSet).filter(function(s){return window._ritardiCostiCache[s]===undefined;});
+    if(!skusNeeded.length){
+      // Tutti già in cache → applica e basta
+      (window._anticipiMesi||[]).forEach(function(m){
+        (window._anticipiData[m]||[]).forEach(function(r){
+          if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
+            r.costo = window._ritardiCostiCache[r.skuShopify];
+          }
+        });
+      });
+      if(statusEl) statusEl.textContent = '✅ Costi già caricati dalla cache';
+      return;
+    }
+
+    if(statusEl) statusEl.textContent = '⏳ Caricamento varianti Shopify...';
+
+    // 3) Scan products.json per mappare sku → inventory_item_id
+    var invIds = {};
+    var skuLowerNeeded = new Set(skusNeeded.map(function(s){return s.toLowerCase();}));
+    var pageInfo = '';
+    var maxPages = 50;
+    for(var p=0; p<maxPages && skuLowerNeeded.size>0; p++){
+      var url = 'products.json?limit=250&fields=id,variants' + (pageInfo?'&page_info='+pageInfo:'');
+      var data;
+      try{
+        data = await shopifyGet(url);
+      }catch(e){ console.warn('[Anticipi] shopifyGet fallita:',e); break; }
+      if(!data || !data.products) break;
+      data.products.forEach(function(prod){
+        (prod.variants||[]).forEach(function(v){
+          var sku = (v.sku||'').trim();
+          if(!sku) return;
+          if(skuLowerNeeded.has(sku.toLowerCase())){
+            invIds[sku.toLowerCase()] = v.inventory_item_id;
+            skuLowerNeeded.delete(sku.toLowerCase());
+          }
+        });
+      });
+      if(data.products.length < 250) break;
+    }
+
+    // 4) Per ogni inventory_item_id, prendi il cost
+    var invIdsArr = Object.values(invIds).filter(Boolean);
+    if(statusEl) statusEl.textContent = '⏳ Caricamento costi ('+invIdsArr.length+' prodotti)...';
+    var chunks = [];
+    for(var i=0; i<invIdsArr.length; i+=50) chunks.push(invIdsArr.slice(i,i+50));
+    var invToCost = {};
+    for(var c=0; c<chunks.length; c++){
+      if(statusEl) statusEl.textContent = '⏳ Costi batch '+(c+1)+'/'+chunks.length+'...';
+      try{
+        var resp = await shopifyGet('inventory_items.json?ids='+chunks[c].join(','));
+        if(resp && resp.inventory_items){
+          resp.inventory_items.forEach(function(it){
+            invToCost[it.id] = parseFloat(it.cost) || 0;
+          });
+        }
+      }catch(e){ console.warn('[Anticipi] batch costi fallito:',e); }
+    }
+
+    // 5) Popola cache condivisa
+    skusNeeded.forEach(function(sku){
+      var invId = invIds[sku.toLowerCase()];
+      if(invId && invToCost[invId]!=null){
+        window._ritardiCostiCache[sku] = invToCost[invId];
+      } else {
+        window._ritardiCostiCache[sku] = null; // non trovato
+      }
+    });
+
+    // 6) Applica i costi alle righe in anticipo
     (window._anticipiMesi||[]).forEach(function(m){
       (window._anticipiData[m]||[]).forEach(function(r){
         if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
@@ -14007,22 +14117,13 @@ window._anticipiCaricaCosti = async function(){
         }
       });
     });
-    if(statusEl) statusEl.textContent = '✅ Costi caricati dalla cache';
-    return;
+    var trovati = skusNeeded.filter(function(s){return window._ritardiCostiCache[s]!=null;}).length;
+    if(statusEl) statusEl.textContent = '✅ Caricati '+trovati+'/'+skusNeeded.length+' costi';
+    setTimeout(function(){if(statusEl)statusEl.textContent='';},5000);
+  } catch(e){
+    console.error('[Anticipi] caricaCosti errore:',e);
+    if(statusEl){ statusEl.textContent = '❌ Errore: '+e.message; statusEl.style.color='#dc2626'; }
   }
-  // Riusa il caricamento esistente (popola _ritardiCostiCache)
-  if(typeof window._ritardiCaricaCosti==='function'){
-    await window._ritardiCaricaCosti();
-  }
-  // Applica
-  (window._anticipiMesi||[]).forEach(function(m){
-    (window._anticipiData[m]||[]).forEach(function(r){
-      if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
-        r.costo = window._ritardiCostiCache[r.skuShopify];
-      }
-    });
-  });
-  if(statusEl) statusEl.textContent = '✅ Costi aggiornati';
 };
 
 window._anticipiExportXlsx = function(){
