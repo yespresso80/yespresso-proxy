@@ -14026,26 +14026,51 @@ window._anticipiClickCarica = async function(btn){
 // Funzioni globali per i toggle dei chip filtri (uso onclick inline per
 // massima robustezza tra re-render successivi della pagina)
 function _anticipiGetPanel(){
-  // Recupero sempre il pannello dal DOM corrente, non da una referenza stale
+  // Recupero sempre il pannello dal DOM corrente, non da una referenza stale.
+  // Il pannello Filippo è identificato dall'ID 'filippo-panel' e contiene
+  // sempre un div #filippo-content dove renderOrdiniAnticipo scrive l'HTML.
   var p = document.getElementById('filippo-panel');
-  if(p && p.querySelector('#filippo-content')) return p;
+  if(p && p.querySelector && p.querySelector('#filippo-content')) return p;
+  // Fallback: se non c'è il pannello completo ma c'è il content, ricostruisco
+  // un wrapper minimale che renderOrdiniAnticipo può usare
+  var content = document.getElementById('filippo-content');
+  if(content){
+    return {
+      querySelector: function(sel){
+        if(sel==='#filippo-content') return content;
+        return content.querySelector(sel);
+      }
+    };
+  }
   return null;
 }
 window._anticipiToggleChip = function(tipo, valore){
-  if(!window._anticipiFiltri) return;
+  console.log('[Anticipi] toggleChip tipo='+tipo+' valore='+valore);
+  if(!window._anticipiFiltri){ console.warn('[Anticipi] filtri non inizializzati'); return; }
   var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
   if(set.has(valore)) set.delete(valore); else set.add(valore);
   var panel = _anticipiGetPanel();
-  if(panel) renderOrdiniAnticipo(null, panel, null);
+  if(panel){
+    renderOrdiniAnticipo(null, panel, null);
+  } else {
+    console.warn('[Anticipi] pannello non trovato per re-render');
+  }
 };
 window._anticipiToggleAll = function(tipo, on){
-  if(!window._anticipiFiltri) return;
+  console.log('[Anticipi] toggleAll tipo='+tipo+' on='+on);
+  if(!window._anticipiFiltri){ console.warn('[Anticipi] filtri non inizializzati'); return; }
   var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
   var lista = tipo==='mesi' ? (window._anticipiAllMesi||[]) : (window._anticipiAllFornitori||[]);
+  console.log('[Anticipi] lista da applicare:', lista, 'on:', on);
   set.clear();
   if(on) lista.forEach(function(v){set.add(v);});
+  console.log('[Anticipi] filtri dopo:', window._anticipiFiltri);
   var panel = _anticipiGetPanel();
-  if(panel) renderOrdiniAnticipo(null, panel, null);
+  if(panel){
+    renderOrdiniAnticipo(null, panel, null);
+  } else {
+    console.warn('[Anticipi] pannello non trovato per re-render');
+  }
 };
 
 window._anticipiCaricaCosti = async function(){
