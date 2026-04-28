@@ -19090,12 +19090,28 @@ document.addEventListener('click',function(e){
 });
 
 // Handler messaggi da iframe Fabio
-window.addEventListener('message', function(e){
+window.addEventListener('message', async function(e){
   if(!e.data) return;
   if(e.data.type==='FABIO_REQUEST'){
     var lk='ordini_fabio_listino_v2';
     var saved=[];
-    try{saved=JSON.parse(localStorage.getItem(lk)||'[]');}catch(ex){}
+    // FIX MULTI-DISPOSITIVO: prima prova a leggere dal server (per avere
+    // dati condivisi tra tutti i dispositivi), poi fallback localStorage
+    try{
+      var lr=await proxyFetch(PROXY+'/filippo-data?key='+lk);
+      if(lr.ok){
+        var ld=await lr.json();
+        if(ld && Array.isArray(ld.value)){
+          saved=ld.value;
+          // Aggiorna anche la cache locale
+          try{ localStorage.setItem(lk,JSON.stringify(saved)); }catch(ex){}
+        }
+      }
+    }catch(ex){ console.warn('[Fabio listino] server load failed, fallback to localStorage', ex); }
+    // Fallback: se il server non ha restituito dati, usa localStorage
+    if(!saved.length){
+      try{saved=JSON.parse(localStorage.getItem(lk)||'[]');}catch(ex){}
+    }
     var iframe=document.getElementById('fabio-iframe');
     if(iframe && iframe.contentWindow){
       iframe.contentWindow.postMessage({
@@ -19107,19 +19123,29 @@ window.addEventListener('message', function(e){
   }
   if(e.data.type==='MOLNAR_SAVE'){
     localStorage.setItem('ordini_molnar_listino_v1',JSON.stringify(e.data.listino||[]));
-    // Salva su cloud
-    proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({key:'ordini_molnar_listino_v1',value:e.data.listino||[]})
-    }).catch(function(){});
-    showToast('Listino Molnar salvato!');
+    // Salva su cloud — verifico che il salvataggio vada a buon fine
+    try {
+      var rM=await proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({key:'ordini_molnar_listino_v1',value:e.data.listino||[]})
+      });
+      if(rM.ok) showToast('✅ Listino Molnar salvato sul server (visibile da tutti i dispositivi)');
+      else showToast('⚠️ Listino salvato solo localmente (errore server)','error');
+    } catch(ex){
+      showToast('⚠️ Listino salvato solo localmente (server irraggiungibile)','error');
+    }
   }
   if(e.data.type==='FABIO_SAVE'){
     localStorage.setItem('ordini_fabio_listino_v2',JSON.stringify(e.data.listino||[]));
-    // Salva su cloud
-    proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({key:'ordini_fabio_listino_v2',value:e.data.listino||[]})
-    }).catch(function(){});
-    showToast('Listino salvato!');
+    // Salva su cloud — verifico che il salvataggio vada a buon fine
+    try {
+      var rF=await proxyFetch(PROXY+'/filippo-data',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({key:'ordini_fabio_listino_v2',value:e.data.listino||[]})
+      });
+      if(rF.ok) showToast('✅ Listino Fabio salvato sul server (visibile da tutti i dispositivi)');
+      else showToast('⚠️ Listino salvato solo localmente (errore server)','error');
+    } catch(ex){
+      showToast('⚠️ Listino salvato solo localmente (server irraggiungibile)','error');
+    }
   }
 });
 
