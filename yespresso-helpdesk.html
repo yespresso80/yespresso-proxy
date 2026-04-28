@@ -26188,6 +26188,23 @@ function openRicezioneMerce(){
   var fabPage=document.getElementById('fab-fullpage');
   if(fabPage) fabPage.style.display='none';
 
+  // Snapshot disponibilità Shopify (baseline) per check anti-duplicato in salvataggio.
+  // Salviamo lo stato CORRENTE dell'inventario al momento di apertura, così
+  // quando l'utente clicca "Salva ricezione" possiamo confrontare e rilevare
+  // se nel frattempo la disponibilità è già aumentata (segno di doppio click).
+  window._ricezioneShopifyBaseline = {};
+  if(typeof fabInventoryCache==='object' && fabInventoryCache){
+    Object.keys(fabInventoryCache).forEach(function(k){
+      window._ricezioneShopifyBaseline[k] = fabInventoryCache[k];
+    });
+    console.log('[Ricezione] baseline Shopify catturata: '+Object.keys(window._ricezioneShopifyBaseline).length+' SKU');
+  }
+  // Reset lock anti-doppio-click se è in stato inconsistente
+  if(window._ricezioneLock && window._ricezioneLock.inCorso){
+    console.warn('[Ricezione] reset lock pendente');
+    window._ricezioneLock.inCorso = false;
+  }
+
   var page=document.getElementById('ricezione-fullpage');
   if(page){page.style.display='flex';renderRicezioneTable();return;}
 
@@ -26286,115 +26303,268 @@ function renderRicezioneTable(){
   body.innerHTML=html;
 }
 
+// Lock globale anti-doppio-click per ricezione merce.
+// Tiene traccia dell'ultimo salvataggio (chiave: hash righe+timestamp) per
+// rilevare doppi click e click ripetuti dello stesso form entro 60 secondi.
+window._ricezioneLock = window._ricezioneLock || {
+  inCorso: false,        // true mentre il salvataggio è in esecuzione
+  ultimoHash: null,      // hash dell'ultimo set di righe salvato
+  ultimoTs: 0            // timestamp ultimo salvataggio
+};
+
 window.ricezioneSalva=async function(){
   var rows=document.querySelectorAll('#ricezione-body tr[data-sku]');
   if(!rows.length) return;
 
-  var openOrds=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
-  var errors=[];
-  var processed=0;
+  // PROTEZIONE 1: anti-doppio-click istantaneo
+  if(window._ricezioneLock.inCorso){
+    showToast('⏳ Salvataggio già in corso, attendi...');
+    return;
+  }
 
-  for(var ri=0;ri<rows.length;ri++){
-    var row=rows[ri];
-    var sku=row.dataset.sku;
-    var ms=parseInt(row.dataset.ms)||1;
-    var p=fabProducts.find(function(x){return x.sku_shopify===sku;});
-    if(!p) continue;
-
-    var inp=row.querySelector('input[type=number]');
-    var chk=row.querySelector('input[type=checkbox]');
-    var qtyRicevuta=parseInt((inp&&inp.value)||0)||0;
-    var aggiornaShopify=chk&&chk.checked;
-    if(qtyRicevuta<=0) continue;
-
-    processed++;
-
-    // Scala dagli ordini aperti dal più vicino al più lontano
-    // IMPORTANTE: ordina per data consegna della RIGA (non dell'ordine intero),
-    // perché negli ordini multi-date ogni riga può avere una data diversa.
-    var righeAperte=[];
-    openOrds.forEach(function(ord){
-      ord.righe.forEach(function(r){
-        if(r.sku_shopify!==sku) return;
-        var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
-        if(residuo<=0) return;
-        var dataRiga=r.data_cons_riga||ord.data_consegna_prevista||'9999-99-99';
-        righeAperte.push({ord:ord,riga:r,residuo:residuo,data:dataRiga});
-      });
-    });
-    righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
-
-    var rimanente=qtyRicevuta;
-    var todayRec=new Date().toISOString().split('T')[0];
-    righeAperte.forEach(function(entry){
-      if(rimanente<=0) return;
-      var scala=Math.min(rimanente,entry.residuo);
-      entry.riga.qty_ricevuta=(entry.riga.qty_ricevuta||0)+scala;
-      if(!entry.riga.data_ricezione_effettiva) entry.riga.data_ricezione_effettiva=todayRec;
-      if(ms>1) entry.riga.qty_ricevuta_master=Math.ceil(entry.riga.qty_ricevuta/ms);
-      rimanente-=scala;
-      // Controlla se ordine completato
-      var allDone=entry.ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty_ordinata;});
-      if(allDone) entry.ord.stato='ricevuto';
-      else if((entry.riga.qty_ricevuta||0)>0) entry.ord.stato='parziale';
-    });
-
-    // Aggiorna inventario Shopify se checkbox attiva
-    if(aggiornaShopify){
-      try{
-        // Cerca la variante scorrendo i prodotti per SKU
-        // (variants.json?sku= non è supportato da Shopify)
-        var invItemId=null;
-        var nextProd='products.json?limit=250&fields=id,variants';
-        var safety=0;
-        while(nextProd&&safety<20&&!invItemId){
-          safety++;
-          var pd=await shopifyGet(nextProd);
-          if(pd&&pd.products){
-            for(var pi=0;pi<pd.products.length;pi++){
-              var variants=pd.products[pi].variants||[];
-              for(var vi=0;vi<variants.length;vi++){
-                if((variants[vi].sku||'').trim().toLowerCase()===sku.toLowerCase()){
-                  invItemId=variants[vi].inventory_item_id;
-                  break;
-                }
-              }
-              if(invItemId) break;
-            }
-            nextProd=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
-          } else { nextProd=null; }
-        }
-        if(invItemId){
-          var locD=await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
-          if(locD&&locD.inventory_levels&&locD.inventory_levels[0]){
-            var locId=locD.inventory_levels[0].location_id;
-            // Endpoint corretto: inventory_levels/adjust.json (inventory_adjustments.json è deprecato)
-            var adjRes=await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
-              method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({location_id:locId,inventory_item_id:invItemId,available_adjustment:qtyRicevuta})
-            });
-            var adjData=await adjRes.json();
-            if(adjRes.ok){
-              if(fabInventoryCache) fabInventoryCache[sku]=(fabInventoryCache[sku]||0)+qtyRicevuta;
-            } else {
-              errors.push(p.sku+': errore Shopify '+adjRes.status+' '+JSON.stringify(adjData).substring(0,100));
-            }
-          } else { errors.push(p.sku+': nessun inventory_level trovato'); }
-        } else { errors.push(p.sku+': variante non trovata su Shopify (SKU: '+sku+')'); }
-      }catch(e2){errors.push(p.sku+': '+e2.message);}
+  // PROTEZIONE 2: idempotency check
+  // Calcola un "hash" semplice delle righe (sku+qty) per riconoscere
+  // un salvataggio identico già fatto negli ultimi 60 secondi.
+  var hashRows = [];
+  for(var hi=0;hi<rows.length;hi++){
+    var hSku = rows[hi].dataset.sku;
+    var hInp = rows[hi].querySelector('input[type=number]');
+    var hQty = parseInt((hInp&&hInp.value)||0)||0;
+    if(hQty>0) hashRows.push(hSku+':'+hQty);
+  }
+  hashRows.sort();
+  var hashKey = hashRows.join('|');
+  var nowMs = Date.now();
+  if(hashKey === window._ricezioneLock.ultimoHash && (nowMs - window._ricezioneLock.ultimoTs) < 60000){
+    var sec = Math.round((nowMs - window._ricezioneLock.ultimoTs)/1000);
+    if(!confirm('⚠️ ATTENZIONE: hai già salvato esattamente questa stessa ricezione '+sec+' secondi fa.\n\nPotresti registrare un doppione.\n\nSei sicuro di voler salvare di nuovo?')){
+      return;
     }
   }
 
-  saveFabState();
-  var msg='✅ Ricezione salvata: '+processed+' prodotti aggiornati';
-  if(errors.length) msg+=' | ⚠️ Errori Shopify: '+errors.join(', ');
-  showToast(msg);
+  // Disabilita il bottone Salva (visualmente)
+  var btnSalva = document.querySelector('#ricezione-fullpage button[onclick*="ricezioneSalva"]');
+  if(btnSalva){
+    btnSalva.disabled = true;
+    btnSalva._origText = btnSalva.textContent;
+    btnSalva.textContent = '⏳ Salvataggio in corso...';
+    btnSalva.style.opacity = '0.6';
+    btnSalva.style.cursor = 'wait';
+  }
+  window._ricezioneLock.inCorso = true;
 
-  // Chiudi e torna agli ordini
-  document.getElementById('ricezione-fullpage').style.display='none';
-  var f=document.getElementById('fab-fullpage');
-  if(f){f.style.display='flex';renderFabTab('ordini');}
+  try {
+    var openOrds=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
+    var errors=[];
+    var processed=0;
+    var skuChecked=[]; // per logging diagnostico
+
+    for(var ri=0;ri<rows.length;ri++){
+      var row=rows[ri];
+      var sku=row.dataset.sku;
+      var ms=parseInt(row.dataset.ms)||1;
+      var p=fabProducts.find(function(x){return x.sku_shopify===sku;});
+      if(!p) continue;
+
+      var inp=row.querySelector('input[type=number]');
+      var chk=row.querySelector('input[type=checkbox]');
+      var qtyRicevuta=parseInt((inp&&inp.value)||0)||0;
+      var aggiornaShopify=chk&&chk.checked;
+      if(qtyRicevuta<=0) continue;
+
+      processed++;
+
+      // PROTEZIONE 3: verifica pre-Shopify se la disponibilità sembra già aggiornata
+      // (avviso se il salvataggio rischia di duplicare l'aggiornamento Shopify).
+      // Lo facciamo SOLO se il flag aggiornaShopify è attivo.
+      var skipShopify = false;
+      if(aggiornaShopify){
+        try {
+          var preCheck = await _ricezioneCheckShopifyDuplicato(sku, qtyRicevuta, p.sku);
+          skuChecked.push({sku: p.sku, dispShopifyPre: preCheck.disponibilita});
+          if(preCheck.sospetto){
+            var ok = confirm('⚠️ POSSIBILE DUPLICATO SHOPIFY\n\n'+
+              'Articolo: '+p.sku+'\n'+
+              'Disponibilità Shopify attuale: '+preCheck.disponibilita+' pz\n'+
+              'Stai per aggiungere: '+qtyRicevuta+' pz\n\n'+
+              preCheck.motivo+'\n\n'+
+              'Vuoi procedere comunque con l\'aggiornamento Shopify?\n'+
+              '(Annulla = registra in fabOrdini ma NON aggiorna Shopify per evitare doppione)');
+            if(!ok){
+              skipShopify = true;
+              errors.push(p.sku+': aggiornamento Shopify saltato per evitare duplicato (registrato solo in fabOrdini)');
+            }
+          }
+        } catch(eCheck){
+          console.warn('[Ricezione] check pre-Shopify fallito per '+sku+':', eCheck);
+          // Se il check fallisce, procediamo normalmente (non blocchiamo)
+        }
+      }
+
+      // Scala dagli ordini aperti dal più vicino al più lontano
+      // IMPORTANTE: ordina per data consegna della RIGA (non dell'ordine intero),
+      // perché negli ordini multi-date ogni riga può avere una data diversa.
+      var righeAperte=[];
+      openOrds.forEach(function(ord){
+        ord.righe.forEach(function(r){
+          if(r.sku_shopify!==sku) return;
+          var residuo=r.qty_ordinata-(r.qty_ricevuta||0);
+          if(residuo<=0) return;
+          var dataRiga=r.data_cons_riga||ord.data_consegna_prevista||'9999-99-99';
+          righeAperte.push({ord:ord,riga:r,residuo:residuo,data:dataRiga});
+        });
+      });
+      righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
+
+      var rimanente=qtyRicevuta;
+      var todayRec=new Date().toISOString().split('T')[0];
+      righeAperte.forEach(function(entry){
+        if(rimanente<=0) return;
+        var scala=Math.min(rimanente,entry.residuo);
+        entry.riga.qty_ricevuta=(entry.riga.qty_ricevuta||0)+scala;
+        if(!entry.riga.data_ricezione_effettiva) entry.riga.data_ricezione_effettiva=todayRec;
+        if(ms>1) entry.riga.qty_ricevuta_master=Math.ceil(entry.riga.qty_ricevuta/ms);
+        rimanente-=scala;
+        // Controlla se ordine completato
+        var allDone=entry.ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty_ordinata;});
+        if(allDone) entry.ord.stato='ricevuto';
+        else if((entry.riga.qty_ricevuta||0)>0) entry.ord.stato='parziale';
+      });
+
+      // Aggiorna inventario Shopify se checkbox attiva E se non saltato dal check duplicato
+      if(aggiornaShopify && !skipShopify){
+        try{
+          // Cerca la variante scorrendo i prodotti per SKU
+          // (variants.json?sku= non è supportato da Shopify)
+          var invItemId=null;
+          var nextProd='products.json?limit=250&fields=id,variants';
+          var safety=0;
+          while(nextProd&&safety<20&&!invItemId){
+            safety++;
+            var pd=await shopifyGet(nextProd);
+            if(pd&&pd.products){
+              for(var pi=0;pi<pd.products.length;pi++){
+                var variants=pd.products[pi].variants||[];
+                for(var vi=0;vi<variants.length;vi++){
+                  if((variants[vi].sku||'').trim().toLowerCase()===sku.toLowerCase()){
+                    invItemId=variants[vi].inventory_item_id;
+                    break;
+                  }
+                }
+                if(invItemId) break;
+              }
+              nextProd=pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
+            } else { nextProd=null; }
+          }
+          if(invItemId){
+            var locD=await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
+            if(locD&&locD.inventory_levels&&locD.inventory_levels[0]){
+              var locId=locD.inventory_levels[0].location_id;
+              // Endpoint corretto: inventory_levels/adjust.json (inventory_adjustments.json è deprecato)
+              var adjRes=await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
+                method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({location_id:locId,inventory_item_id:invItemId,available_adjustment:qtyRicevuta})
+              });
+              var adjData=await adjRes.json();
+              if(adjRes.ok){
+                if(fabInventoryCache) fabInventoryCache[sku]=(fabInventoryCache[sku]||0)+qtyRicevuta;
+              } else {
+                errors.push(p.sku+': errore Shopify '+adjRes.status+' '+JSON.stringify(adjData).substring(0,100));
+              }
+            } else { errors.push(p.sku+': nessun inventory_level trovato'); }
+          } else { errors.push(p.sku+': variante non trovata su Shopify (SKU: '+sku+')'); }
+        }catch(e2){errors.push(p.sku+': '+e2.message);}
+      }
+    }
+
+    saveFabState();
+
+    // Aggiorna lock con hash e timestamp del salvataggio appena completato
+    window._ricezioneLock.ultimoHash = hashKey;
+    window._ricezioneLock.ultimoTs = Date.now();
+
+    var msg='✅ Ricezione salvata: '+processed+' prodotti aggiornati';
+    if(errors.length) msg+=' | ⚠️ '+errors.length+' avvisi';
+    showToast(msg);
+    if(errors.length){
+      console.log('[Ricezione] Avvisi/errori:');
+      errors.forEach(function(e){ console.log('  • '+e); });
+    }
+    if(skuChecked.length){
+      console.log('[Ricezione] Pre-check Shopify:', skuChecked);
+    }
+
+    // Chiudi e torna agli ordini
+    document.getElementById('ricezione-fullpage').style.display='none';
+    var f=document.getElementById('fab-fullpage');
+    if(f){f.style.display='flex';renderFabTab('ordini');}
+  } finally {
+    // RIPRISTINO LOCK in ogni caso (anche se c'è eccezione)
+    window._ricezioneLock.inCorso = false;
+    if(btnSalva){
+      btnSalva.disabled = false;
+      btnSalva.textContent = btnSalva._origText || '✅ Salva ricezione';
+      btnSalva.style.opacity = '1';
+      btnSalva.style.cursor = 'pointer';
+    }
+  }
 };
+
+// Verifica Shopify pre-salvataggio per rilevare possibili duplicati.
+// Confronta la disponibilità attuale con la baseline cached al momento
+// dell'apertura della pagina ricezione. Se la differenza è sospetta
+// (>= della qty che stiamo per aggiungere), avvisa l'utente.
+async function _ricezioneCheckShopifyDuplicato(sku, qtyDaAggiungere, skuName){
+  var result = {sospetto: false, disponibilita: null, motivo: ''};
+  try {
+    // Cerca inventory_item_id
+    var invItemId=null;
+    var nextProd='products.json?limit=250&fields=id,variants';
+    var safety=0;
+    while(nextProd&&safety<10&&!invItemId){
+      safety++;
+      var pd = await shopifyGet(nextProd);
+      if(!pd || !pd.products) break;
+      for(var pi=0;pi<pd.products.length;pi++){
+        var vrs = pd.products[pi].variants||[];
+        for(var vi=0;vi<vrs.length;vi++){
+          if((vrs[vi].sku||'').trim().toLowerCase() === sku.toLowerCase()){
+            invItemId = vrs[vi].inventory_item_id;
+            break;
+          }
+        }
+        if(invItemId) break;
+      }
+      nextProd = pd._nextPageInfo?'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo:null;
+    }
+    if(!invItemId) return result; // SKU non trovato → non possiamo verificare
+    // Disponibilità attuale
+    var lvlD = await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
+    if(!lvlD || !lvlD.inventory_levels) return result;
+    var dispNow = 0;
+    lvlD.inventory_levels.forEach(function(l){ dispNow += (l.available||0); });
+    result.disponibilita = dispNow;
+
+    // Confronta con baseline (se presente)
+    var baseline = window._ricezioneShopifyBaseline && window._ricezioneShopifyBaseline[sku];
+    if(baseline != null){
+      var delta = dispNow - baseline;
+      if(delta >= qtyDaAggiungere){
+        result.sospetto = true;
+        result.motivo = 'La disponibilità Shopify è aumentata di '+delta+' pz dall\'apertura di questa pagina, '+
+                        'già più di quanto stai per aggiungere ('+qtyDaAggiungere+' pz). '+
+                        'Probabilmente la ricezione è stata già salvata.';
+      } else if(delta > 0){
+        result.motivo = 'Note: disponibilità aumentata di '+delta+' pz dall\'apertura della pagina.';
+      }
+    } else {
+      result.motivo = 'Nessuna baseline disponibile per confronto.';
+    }
+  } catch(e){
+    console.warn('[Ricezione check] errore:', e);
+  }
+  return result;
+}
 
 // Mantieni la vecchia fabRiceviOrdine per retrocompat (non più usata)
 function fabRiceviOrdine(id){ openRicezioneMerce(); }
