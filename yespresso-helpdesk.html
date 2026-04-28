@@ -2286,7 +2286,11 @@ async function selectTicket(tid){
         var _isYespressoQuote = false;
         var _clientReplyText = '';
         if(isClient && !_isChatbotTranscript && !_isAmazonCancelEmail){
-          // Marker che indicano la presenza di una mail Yespresso quotata
+          // Marker che indicano la presenza di una mail Yespresso quotata.
+          // ATTENZIONE: questi marker devono essere SPECIFICI delle nostre mail
+          // automatiche e non comparire in messaggi normali del cliente.
+          // Es: "ORDINE #" è troppo generico — un cliente potrebbe scrivere
+          // "ho un problema con l'ordine #12345" e tagliare il suo testo.
           var _markersQuote = [
             'yespresso ha scritto:',
             'yespresso.it ha scritto:',
@@ -2294,10 +2298,15 @@ async function selectTicket(tid){
             'Stiamo preparando il tuo ordine',
             'Grazie per il tuo acquisto',
             'Visualizza il tuo ordine',
-            'Riepilogo ordine',
+            'Riepilogo del tuo ordine',
             'Visita il nostro negozio',
             'Carica per tracciare i tuoi colli',
-            'ORDINE #'
+            'Il tuo ordine è stato spedito',
+            'Il tuo ordine è in arrivo',
+            'Il tuo ordine è stato consegnato',
+            'Yespresso s.r.l.',
+            'team Yespresso',
+            'cordiali saluti,\nyespresso'
           ];
           var _foundIdx = -1;
           var _txtCheck = _evTextRaw;
@@ -2453,6 +2462,7 @@ async function selectTicket(tid){
   document.getElementById("detail-main").innerHTML=
     '<div class="detail-messages"><div style="display:flex;flex-direction:column;gap:0;padding:12px 0">'+messagesHtml+'</div></div>'+
     '<div class="detail-reply-fixed"><div class="ai-reply-box">'+
+      '<div id="multi-order-banner" style="display:none"></div>'+
       '<div class="ai-box-header" style="display:flex;align-items:center;justify-content:space-between"><span id="ai-label">&#10024; Generazione risposta AI...</span><button onclick="regenerateAIReply()" id="ai-regen-btn" style="background:#fff;border:1.5px solid #e0e4ea;color:#1a73e8;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:none">🔄 Rigenera</button></div>'+
       '<div class="generating" id="gen-box"><div class="spinner"></div> Cerco ordine su Shopify...</div>'+
       '<div id="action-area" style="display:none">'+
@@ -5041,58 +5051,112 @@ async function fetchShopifyOrder(message,email,requesterName){
   try{
     console.log("🔍 Shopify search | msg:",message.substring(0,120),"| email:",email,"| name:",requesterName);
 
+    // Se l'utente ha cliccato "Seleziona" sul banner multi-ordine, rispetta la sua scelta:
+    // restituisci direttamente quell'ordine senza ricerca, mantenendo _allShopifyOrders intatto.
+    if(window._forceShopifyOrderId && window._allShopifyOrders){
+      var forced = window._allShopifyOrders.find(function(o){return String(o.id)===String(window._forceShopifyOrderId);});
+      if(forced){
+        console.log("🎯 Ordine forzato dall'utente:", forced.name||forced.id);
+        // Reset flag dopo l'uso (one-shot)
+        window._forceShopifyOrderId = null;
+        if(forced.customer) window._lastShopifyCustomerId = forced.customer.id;
+        window._lastShopifyOrder = forced;
+        return forced;
+      }
+      window._forceShopifyOrderId = null;
+    }
+
+    // Reset cache multi-ordine per la nuova ricerca
+    window._allShopifyOrders = [];
+
     // 0. Avvia ricerca email IN PARALLELO subito (fast path per clienti sito/Amazon)
     const _skipEmails=["bounce-","@marketplace.amazon","@orders.temu","tiktok","vasnoreply","brt.it","sellercentral","atoz-guarantee","no-reply"];
     const _emailFast=email&&!_skipEmails.some(s=>email.includes(s))?email:null;
     const _emailPromise=_emailFast?shopifyGet("orders.json?email="+encodeURIComponent(_emailFast)+"&status=any&limit=250").catch(()=>null):null;
 
     // 1. Amazon order number (formato 123-1234567-1234567)
-    const amazonMatch=message.match(/(\d{3}-\d{7}-\d{7})/);
-    if(amazonMatch){
-      const amzId=amazonMatch[1];
-      console.log("→ Cercando Amazon Order Id:",amzId);
-      // 1a. Full-text search (rapida)
-      const dFt=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(amzId));
-      const ftOrders=(dFt&&dFt.orders)||[];
-      const ftFound=findInNoteAttributes(ftOrders,["Amazon Order Id"],amzId);
-      if(ftFound){console.log("✅ Trovato via full-text Amazon");if(ftFound&&ftFound.customer)window._lastShopifyCustomerId=ftFound.customer.id;window._lastShopifyOrder=ftFound;return ftFound;}
-      // 1b. Full-text senza trattini
-      const dFt2=await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(amzId.replace(/-/g,'')));
-      const ftFound2=findInNoteAttributes((dFt2&&dFt2.orders)||[],['Amazon Order Id'],amzId);
-      if(ftFound2){console.log('✅ Trovato via full-text Amazon v2');return ftFound2;}
-      // 1c. Scan Amazon PARALLELO per finestre temporali (max 3 pagine/finestra)
-      // Scan Amazon in PARALLELO su tutte le finestre temporali
-      console.log('→ Scan Amazon parallelo per finestre (parallel)');
+    // Estraggo TUTTI i numeri Amazon citati nel testo (oggetto + corpo + thread completo).
+    // Poi li cerco tutti su Shopify e li salvo in window._allShopifyOrders per
+    // permettere all'agente di scegliere se ce ne sono molteplici.
+    const amzMatchesAll=[...new Set((message.match(/\d{3}-\d{7}-\d{7}/g)||[]))];
+    if(amzMatchesAll.length){
+      console.log("→ Numeri Amazon trovati nel testo:", amzMatchesAll);
       const amzFlds='id,name,order_number,note_attributes,fulfillment_status,financial_status,cancelled_at,cancel_reason,payment_gateway,email,created_at,line_items,total_price,customer,fulfillments,shipping_address';
+      // Calcolo finestre temporali DINAMICHE (a partire da oggi, sempre aggiornate)
+      const _now=new Date();
+      const _ago=function(days){var d=new Date(_now);d.setDate(d.getDate()-days);return d.toISOString();};
       const amzWins=[
-        ['2026-02-16T12:46:17.863Z','2026-03-18T12:46:17.863Z'],
-        ['2025-11-18T12:46:17.863Z','2026-02-16T12:46:17.863Z'],
-        ['2025-03-18T12:46:17.863Z','2025-11-18T12:46:17.863Z'],
-        ['2024-03-18T12:46:17.863Z','2025-03-18T12:46:17.863Z'],
-        ['2022-03-19T12:46:17.863Z','2024-03-18T12:46:17.863Z'],
+        [_ago(45),_now.toISOString()],     // ultimi 45 gg
+        [_ago(150),_ago(45)],              // 45-150 gg fa
+        [_ago(365),_ago(150)],             // 150-365 gg fa
+        [_ago(730),_ago(365)],             // 1-2 anni fa
+        [_ago(1460),_ago(730)],            // 2-4 anni fa
       ];
-      const amzScanWin = async ([wMin,wMax]) => {
-        const q='orders.json?status=any&limit=250&source_name=amazon&fields='+amzFlds+'&created_at_min='+wMin+'&created_at_max='+wMax+'&order=created_at+desc';
-        const r1=await shopifyGet(q);
-        const o1=(r1&&r1.orders)||[];
-        const hit1=findInNoteAttributes(o1,['Amazon Order Id'],amzId);
-        if(hit1) return hit1;
-        if(!o1.length||!r1._nextPageInfo) return null;
-        const r2=await shopifyGet('orders.json?status=any&limit=250&page_info='+r1._nextPageInfo);
-        const hit2=findInNoteAttributes((r2&&r2.orders)||[],['Amazon Order Id'],amzId);
-        if(hit2) return hit2;
-        if(r2&&r2._nextPageInfo){
-          const r3=await shopifyGet('orders.json?status=any&limit=250&page_info='+r2._nextPageInfo);
-          const hit3=findInNoteAttributes((r3&&r3.orders)||[],['Amazon Order Id'],amzId);
-          if(hit3) return hit3;
-        }
+
+      // Funzione di ricerca per un singolo Amazon Order Id
+      async function _searchAmazon(amzId){
+        // 1a. Full-text search (rapida)
+        const dFt=await shopifyGet("orders.json?status=any&limit=10&query="+encodeURIComponent(amzId));
+        const ftOrders=(dFt&&dFt.orders)||[];
+        const ftFound=findInNoteAttributes(ftOrders,["Amazon Order Id"],amzId);
+        if(ftFound){console.log("✅ Trovato via full-text Amazon "+amzId); return ftFound;}
+        // 1b. Full-text senza trattini
+        const dFt2=await shopifyGet('orders.json?status=any&limit=10&query='+encodeURIComponent(amzId.replace(/-/g,'')));
+        const ftFound2=findInNoteAttributes((dFt2&&dFt2.orders)||[],['Amazon Order Id'],amzId);
+        if(ftFound2){console.log('✅ Trovato via full-text Amazon v2 '+amzId); return ftFound2;}
+        // 1c. Scan finestre temporali in parallelo
+        const amzScanWin = async ([wMin,wMax]) => {
+          const q='orders.json?status=any&limit=250&source_name=amazon&fields='+amzFlds+'&created_at_min='+wMin+'&created_at_max='+wMax+'&order=created_at+desc';
+          const r1=await shopifyGet(q);
+          const o1=(r1&&r1.orders)||[];
+          const hit1=findInNoteAttributes(o1,['Amazon Order Id'],amzId);
+          if(hit1) return hit1;
+          if(!o1.length||!r1._nextPageInfo) return null;
+          const r2=await shopifyGet('orders.json?status=any&limit=250&page_info='+r1._nextPageInfo);
+          const hit2=findInNoteAttributes((r2&&r2.orders)||[],['Amazon Order Id'],amzId);
+          if(hit2) return hit2;
+          if(r2&&r2._nextPageInfo){
+            const r3=await shopifyGet('orders.json?status=any&limit=250&page_info='+r2._nextPageInfo);
+            const hit3=findInNoteAttributes((r3&&r3.orders)||[],['Amazon Order Id'],amzId);
+            if(hit3) return hit3;
+          }
+          return null;
+        };
+        const amzResults = await Promise.all(amzWins.map(amzScanWin));
+        const amzHit = amzResults.find(r=>r!=null);
+        if(amzHit){console.log('✅ Trovato Amazon scan finestre '+amzId); return amzHit;}
+        console.log('❌ Amazon Order Id non trovato: '+amzId);
         return null;
-      };
-      // Lancia tutte le finestre in parallelo, prendi il primo risultato non null
-      const amzResults = await Promise.all(amzWins.map(amzScanWin));
-      const amzHit = amzResults.find(r=>r!=null);
-      if(amzHit){console.log('✅ Trovato Amazon window parallelo');window._lastShopifyOrder=amzHit;return amzHit;}
-      console.log('❌ Amazon Order Id non trovato');
+      }
+
+      // Lancia ricerca per TUTTI i numeri Amazon citati (in parallelo)
+      const _allFound=await Promise.all(amzMatchesAll.map(async function(id){
+        const o=await _searchAmazon(id);
+        return o?{amzId:id, order:o}:null;
+      }));
+      const _validFound=_allFound.filter(Boolean);
+
+      // Salvo TUTTI gli ordini Amazon trovati in window._allShopifyOrders
+      // per supportare la UI multi-ordine (banner di scelta).
+      window._allShopifyOrders=_validFound.map(function(x){return x.order;});
+
+      if(_validFound.length){
+        // Strategia di selezione del primary:
+        // 1. Se l'oggetto del ticket contiene uno dei numeri trovati → quello è il primary
+        //    (per coerenza con la sidebar e i bottoni contestuali).
+        // 2. Altrimenti il primo trovato.
+        var _ticketSubject="";
+        try{ _ticketSubject=(selectedTicket&&selectedTicket.subject)||""; }catch(e){}
+        var _primary=null;
+        if(_ticketSubject){
+          var _inSubj=_validFound.find(function(x){return _ticketSubject.indexOf(x.amzId)>=0;});
+          if(_inSubj) _primary=_inSubj.order;
+        }
+        if(!_primary) _primary=_validFound[0].order;
+        if(_primary&&_primary.customer) window._lastShopifyCustomerId=_primary.customer.id;
+        window._lastShopifyOrder=_primary;
+        return _primary;
+      }
     }
 
     // 2. Temu order number (formato PO-098-XXXXX)
@@ -5901,6 +5965,75 @@ window.regenerateAIReply = function(){
   setTimeout(function(){ selectTicket(tid); }, 100);
 };
 
+// ── BANNER MULTI-ORDINE ─────────────────────────────────────────
+// Quando una mail cliente cita più numeri ordine Amazon (es. uno
+// nell'oggetto del ticket e un altro nel corpo del messaggio),
+// mostriamo un banner che permette all'agente di scegliere quale
+// ordine considerare "principale" (sidebar + risposta AI).
+window.renderMultiOrderBanner = function(){
+  var banner = document.getElementById('multi-order-banner');
+  if(!banner) return;
+  var orders = window._allShopifyOrders || [];
+  var distinctIds = [];
+  orders.forEach(function(o){ if(o && distinctIds.indexOf(o.id)<0) distinctIds.push(o.id); });
+  if(distinctIds.length < 2){ banner.style.display='none'; banner.innerHTML=''; return; }
+  var current = window._lastShopifyOrder;
+  var currentId = current ? current.id : null;
+  var subject = '';
+  try{ subject = (selectedTicket&&selectedTicket.subject)||''; }catch(e){}
+  function getAmzId(o){
+    if(!o||!o.note_attributes) return '';
+    var attr = o.note_attributes.find(function(a){return a.name==='Amazon Order Id';});
+    return attr ? attr.value : '';
+  }
+  function escHtmlMO(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  var rows = orders.map(function(o){
+    var amzId = getAmzId(o);
+    var shopName = o.name || ('#'+(o.order_number||o.id));
+    var isCurrent = o.id === currentId;
+    var inSubject = subject && amzId && subject.indexOf(amzId)>=0;
+    var dataOrd = o.created_at ? new Date(o.created_at).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
+    var totale = o.total_price ? ('€'+o.total_price) : '';
+    var stato = o.fulfillment_status || (o.cancelled_at?'cancelled':'open');
+    var statoIcon = stato==='fulfilled'?'✅':(stato==='cancelled'?'❌':(stato==='partial'?'📦':'🟡'));
+    var sourceLabel = inSubject ? ' <span style="font-size:10px;color:#888">(in oggetto)</span>' : ' <span style="font-size:10px;color:#888">(nel messaggio)</span>';
+    var bg = isCurrent ? '#e8f5e9' : '#fff';
+    var bdr = isCurrent ? '2px solid #16a34a' : '1px solid #e0e4ea';
+    var lbl = isCurrent
+      ? '<span style="background:#16a34a;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px">SELEZIONATO</span>'
+      : '<button onclick="selectMultiOrderOption(\''+escHtmlMO(o.id)+'\')" style="background:#fff;border:1px solid #1a73e8;color:#1a73e8;border-radius:4px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;margin-left:auto">Seleziona</button>';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+bg+';border:'+bdr+';border-radius:6px;margin-top:4px">'+
+      '<span style="font-size:13px">'+statoIcon+'</span>'+
+      '<div style="flex:1;min-width:0;font-size:11px;line-height:1.4">'+
+        '<div style="font-weight:600;color:#1a1a2e">'+escHtmlMO(amzId||'?')+sourceLabel+'</div>'+
+        '<div style="color:#666">Shopify '+escHtmlMO(shopName)+(dataOrd?' &middot; '+dataOrd:'')+(totale?' &middot; '+totale:'')+'</div>'+
+      '</div>'+
+      lbl+
+    '</div>';
+  }).join('');
+  banner.style.display='block';
+  banner.innerHTML='<div style="background:#fff8e6;border:1px solid #f59e0b;border-radius:8px;padding:8px 10px;margin:6px 12px 0">'+
+    '<div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:4px">&#9888;&#65039; Discrepanza ordini rilevata &mdash; '+distinctIds.length+' ordini citati nel ticket</div>'+
+    '<div style="font-size:10px;color:#92400e;opacity:0.85;margin-bottom:2px">Quale ordine stai gestendo? Cliccando "Seleziona" la sidebar e la risposta AI si aggiornano.</div>'+
+    rows+
+  '</div>';
+};
+
+window.selectMultiOrderOption = function(orderId){
+  var orders = window._allShopifyOrders || [];
+  var sel = orders.find(function(o){return String(o.id)===String(orderId);});
+  if(!sel){ if(typeof showToast==='function') showToast('❌ Ordine non trovato','error'); return; }
+  window._lastShopifyOrder = sel;
+  if(sel.customer) window._lastShopifyCustomerId = sel.customer.id;
+  window.renderMultiOrderBanner();
+  if(typeof showToast==='function') showToast('🔄 Aggiorno ordine selezionato...');
+  setTimeout(function(){
+    var tid = selectedTicket && (selectedTicket.ID || selectedTicket.id);
+    window._forceShopifyOrderId = sel.id;
+    if(tid) selectTicket(tid);
+  }, 200);
+};
+
 window.reopenTicket = async function(tid){
   if(!tid){ if(typeof showToast==='function') showToast('❌ ID ticket mancante','error'); return; }
   if(!confirm('Vuoi riaprire questo ticket? Lo stato passerà a "Open".')) return;
@@ -6238,6 +6371,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   const requesterName=(t.requester&&t.requester.name)||"";
   console.log("🔍 searchText preview:", searchText.substring(0,200));
   const order=await fetchShopifyOrder(searchText,email||"",requesterName);
+  // Render banner multi-ordine (se più di 1 ordine Amazon trovato)
+  try{ if(typeof renderMultiOrderBanner==='function') renderMultiOrderBanner(); }catch(e){}
   // Check fermopoint — preserva dati già trovati se ordine è lo stesso
   if(order){
     const _prevOrder=window._lastShopifyOrder;
