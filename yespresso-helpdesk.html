@@ -13812,6 +13812,15 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
       var qtaInAnticipo = Math.min(qtyRic, qtaOrdinata);
       var skuDisp = r.sku || r.sku_shopify || '—';
       var skuShop = skuToShopify[skuDisp] || r.sku_shopify || skuDisp;
+      // Applica costi e IVA dalle cache (popolate da _anticipiCaricaCosti).
+      // Per IVA: sempre disponibile dalla mappa autorevole _anticipiIvaMap
+      // anche senza aver caricato Shopify.
+      var costoCache = (window._ritardiCostiCache||{})[skuShop];
+      var ivaCache = (window._anticipiIvaCache||{})[skuShop];
+      // Fallback IVA: usa direttamente la mappa autorevole anche se cache vuota
+      if(ivaCache==null && typeof _anticipiDeduceIva==='function'){
+        ivaCache = _anticipiDeduceIva('', skuShop);
+      }
       anticipi[meseKey].push({
         numero: ord.numero_ordine || ('ORD-' + (ord.id || '')),
         dataOrd: ord.data_ordine || '—',
@@ -13823,7 +13832,8 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
         dataCons: dataCons,
         dataRic: dataRic,
         giorni: Math.round((new Date(dataCons) - new Date(dataRic)) / 86400000),
-        costo: null
+        costo: costoCache!=null ? costoCache : null,
+        iva: ivaCache!=null ? ivaCache : null
       });
     });
   });
@@ -14009,16 +14019,24 @@ window._anticipiClickCarica = async function(btn){
     console.error('[Anticipi] errore carica costi:', e);
   }
   if(btn){ btn.disabled = false; btn.textContent = '💰 Ricarica costi'; }
-  if(window._anticipiPanel) renderOrdiniAnticipo(null, window._anticipiPanel, null);
+  var panel = _anticipiGetPanel();
+  if(panel) renderOrdiniAnticipo(null, panel, null);
 };
 
 // Funzioni globali per i toggle dei chip filtri (uso onclick inline per
 // massima robustezza tra re-render successivi della pagina)
+function _anticipiGetPanel(){
+  // Recupero sempre il pannello dal DOM corrente, non da una referenza stale
+  var p = document.getElementById('filippo-panel');
+  if(p && p.querySelector('#filippo-content')) return p;
+  return null;
+}
 window._anticipiToggleChip = function(tipo, valore){
   if(!window._anticipiFiltri) return;
   var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
   if(set.has(valore)) set.delete(valore); else set.add(valore);
-  if(window._anticipiPanel) renderOrdiniAnticipo(null, window._anticipiPanel, null);
+  var panel = _anticipiGetPanel();
+  if(panel) renderOrdiniAnticipo(null, panel, null);
 };
 window._anticipiToggleAll = function(tipo, on){
   if(!window._anticipiFiltri) return;
@@ -14026,7 +14044,8 @@ window._anticipiToggleAll = function(tipo, on){
   var lista = tipo==='mesi' ? (window._anticipiAllMesi||[]) : (window._anticipiAllFornitori||[]);
   set.clear();
   if(on) lista.forEach(function(v){set.add(v);});
-  if(window._anticipiPanel) renderOrdiniAnticipo(null, window._anticipiPanel, null);
+  var panel = _anticipiGetPanel();
+  if(panel) renderOrdiniAnticipo(null, panel, null);
 };
 
 window._anticipiCaricaCosti = async function(){
@@ -14036,6 +14055,10 @@ window._anticipiCaricaCosti = async function(){
   // o da fallback su SKU (CAF→22%, SOL→10%).
   window._anticipiIvaCache = window._anticipiIvaCache || {};
   var statusEl = document.getElementById('anticipi-status');
+  var setStatus = function(msg){
+    console.log('[Anticipi]', msg);
+    if(statusEl) statusEl.textContent = msg;
+  };
   try {
     // 1) Raccoglie SKU Shopify dalle righe in anticipo
     var skuShopSet = new Set();
@@ -14045,56 +14068,88 @@ window._anticipiCaricaCosti = async function(){
       });
     });
     if(!skuShopSet.size){
-      if(statusEl) statusEl.textContent = '⚠️ Nessuno SKU da caricare';
+      setStatus('⚠️ Nessuno SKU da caricare');
       return;
     }
-    // 2) Filtra SKU non ancora in cache
-    window._ritardiCostiCache = window._ritardiCostiCache || {};
-    var skusNeeded = Array.from(skuShopSet).filter(function(s){
-      return window._ritardiCostiCache[s]===undefined || window._anticipiIvaCache[s]===undefined;
+    var allSkus = Array.from(skuShopSet);
+    setStatus('⏳ Inizio caricamento per '+allSkus.length+' SKU...');
+
+    // 2) IVA: applico SUBITO da mappa autorevole (non dipende da Shopify)
+    allSkus.forEach(function(sku){
+      var iva = _anticipiDeduceIva('', sku);
+      window._anticipiIvaCache[sku] = iva;
     });
+    console.log('[Anticipi] IVA applicata da mappa autorevole su '+allSkus.length+' SKU');
+
+    // 3) Costi: filtra SKU non ancora in cache costi
+    window._ritardiCostiCache = window._ritardiCostiCache || {};
+    var skusNeeded = allSkus.filter(function(s){return window._ritardiCostiCache[s]===undefined;});
     if(!skusNeeded.length){
-      _anticipiApplicaCostiEIva();
-      if(statusEl) statusEl.textContent = '✅ Costi e IVA già in cache';
+      setStatus('✅ Costi e IVA già in cache');
       return;
     }
 
-    if(statusEl) statusEl.textContent = '⏳ Caricamento varianti Shopify...';
+    setStatus('⏳ Caricamento varianti Shopify ('+skusNeeded.length+' SKU)...');
 
-    // 3) Scan products.json per mappare sku → {inventory_item_id, product_type}
-    var skuInfo = {}; // sku.toLowerCase() → {invId, productType}
+    // 4) Scan products.json per mappare sku → inventory_item_id
+    var invIds = {};
     var skuLowerNeeded = new Set(skusNeeded.map(function(s){return s.toLowerCase();}));
     var pageInfo = '';
     var maxPages = 50;
+    var pagesFetched = 0;
     for(var p=0; p<maxPages && skuLowerNeeded.size>0; p++){
-      var url = 'products.json?limit=250&fields=id,product_type,variants' + (pageInfo?'&page_info='+pageInfo:'');
-      var data;
+      var url = 'products.json?limit=250&fields=id,product_type,variants' + (pageInfo?'&page_info='+encodeURIComponent(pageInfo):'');
+      console.log('[Anticipi] fetch pagina '+(p+1)+': '+url);
+      var data = null;
       try{
         data = await shopifyGet(url);
-      }catch(e){ console.warn('[Anticipi] shopifyGet fallita:',e); break; }
-      if(!data || !data.products) break;
+      }catch(e){
+        console.error('[Anticipi] shopifyGet errore pagina '+(p+1)+':', e);
+        break;
+      }
+      if(!data){
+        console.warn('[Anticipi] shopifyGet ha ritornato null/undefined a pagina '+(p+1));
+        break;
+      }
+      if(!data.products || !data.products.length){
+        console.warn('[Anticipi] data.products vuoto a pagina '+(p+1));
+        break;
+      }
+      pagesFetched++;
       data.products.forEach(function(prod){
-        var pt = String(prod.product_type||'').toUpperCase();
         (prod.variants||[]).forEach(function(v){
           var sku = (v.sku||'').trim();
           if(!sku) return;
           if(skuLowerNeeded.has(sku.toLowerCase())){
-            skuInfo[sku.toLowerCase()] = {invId: v.inventory_item_id, productType: pt};
+            invIds[sku.toLowerCase()] = v.inventory_item_id;
             skuLowerNeeded.delete(sku.toLowerCase());
           }
         });
       });
+      console.log('[Anticipi] pagina '+(p+1)+': '+data.products.length+' prodotti, '+skuLowerNeeded.size+' SKU ancora da trovare');
       if(data.products.length < 250) break;
+      if(!data._nextPageInfo){
+        console.log('[Anticipi] niente _nextPageInfo, esco dal loop');
+        break;
+      }
+      pageInfo = data._nextPageInfo;
+    }
+    console.log('[Anticipi] mapping SKU→inventory_item_id completato: '+Object.keys(invIds).length+' SKU mappati, '+skuLowerNeeded.size+' non trovati');
+
+    if(!Object.keys(invIds).length){
+      setStatus('⚠️ Nessun SKU trovato in Shopify (verifica connessione). IVA applicata correttamente da mappa locale.');
+      _anticipiApplicaCostiEIva();
+      return;
     }
 
-    // 4) Per ogni inventory_item_id, prendi il cost
-    var invIdsArr = Object.values(skuInfo).map(function(o){return o.invId;}).filter(Boolean);
-    if(statusEl) statusEl.textContent = '⏳ Caricamento costi ('+invIdsArr.length+' prodotti)...';
+    // 5) Per ogni inventory_item_id, prendi il cost
+    var invIdsArr = Object.values(invIds).filter(Boolean);
+    setStatus('⏳ Caricamento costi ('+invIdsArr.length+' prodotti)...');
     var chunks = [];
     for(var i=0; i<invIdsArr.length; i+=50) chunks.push(invIdsArr.slice(i,i+50));
     var invToCost = {};
     for(var c=0; c<chunks.length; c++){
-      if(statusEl) statusEl.textContent = '⏳ Costi batch '+(c+1)+'/'+chunks.length+'...';
+      setStatus('⏳ Costi batch '+(c+1)+'/'+chunks.length+'...');
       try{
         var resp = await shopifyGet('inventory_items.json?ids='+chunks[c].join(','));
         if(resp && resp.inventory_items){
@@ -14105,26 +14160,23 @@ window._anticipiCaricaCosti = async function(){
       }catch(e){ console.warn('[Anticipi] batch costi fallito:',e); }
     }
 
-    // 5) Popola cache costi e IVA
+    // 6) Popola cache costi
     skusNeeded.forEach(function(sku){
-      var info = skuInfo[sku.toLowerCase()];
-      if(info && invToCost[info.invId]!=null){
-        window._ritardiCostiCache[sku] = invToCost[info.invId];
-      } else if(window._ritardiCostiCache[sku]===undefined){
-        window._ritardiCostiCache[sku] = null;
+      var invId = invIds[sku.toLowerCase()];
+      if(invId && invToCost[invId]!=null){
+        window._ritardiCostiCache[sku] = invToCost[invId];
+      } else {
+        window._ritardiCostiCache[sku] = null; // non trovato
       }
-      // IVA: dal product_type Shopify, fallback sul nome SKU
-      var iva = _anticipiDeduceIva(info ? info.productType : '', sku);
-      window._anticipiIvaCache[sku] = iva;
     });
 
-    // 6) Applica costi e IVA alle righe
+    // 7) Applica costi e IVA alle righe
     _anticipiApplicaCostiEIva();
     var trovati = skusNeeded.filter(function(s){return window._ritardiCostiCache[s]!=null;}).length;
-    if(statusEl) statusEl.textContent = '✅ Caricati '+trovati+'/'+skusNeeded.length+' costi (con IVA)';
+    setStatus('✅ Caricati '+trovati+'/'+skusNeeded.length+' costi (IVA da mappa locale)');
     setTimeout(function(){if(statusEl)statusEl.textContent='';},5000);
   } catch(e){
-    console.error('[Anticipi] caricaCosti errore:',e);
+    console.error('[Anticipi] caricaCosti errore generale:',e);
     if(statusEl){ statusEl.textContent = '❌ Errore: '+e.message; statusEl.style.color='#dc2626'; }
   }
 };
