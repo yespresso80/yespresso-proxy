@@ -903,7 +903,39 @@ function srcLabel(email){
   return"";
 }
 
-function showToast(msg,type){const t=document.getElementById("toast");t.textContent=msg;t.style.background=type==="error"?"#c04040":"#2a7a50";t.style.display="block";setTimeout(()=>t.style.display="none",3500)}
+function showToast(msg,type){
+  // Versione robusta: z-index altissimo + stili forzati + accessibility
+  // Crea un toast nuovo ad ogni chiamata (più affidabile del riusare elemento statico)
+  var existingDyn = document.getElementById('toast-dynamic');
+  if(existingDyn) existingDyn.remove();
+  var t = document.createElement('div');
+  t.id = 'toast-dynamic';
+  var bg = type==='error' ? '#c04040' : '#2a7a50';
+  t.style.cssText = 'position:fixed;top:24px;right:24px;z-index:2147483647;'+
+    'background:'+bg+';color:#fff;padding:14px 22px;border-radius:10px;'+
+    'font-size:14px;font-weight:700;box-shadow:0 6px 24px rgba(0,0,0,.25);'+
+    'font-family:inherit;max-width:560px;line-height:1.4;'+
+    'animation:toastSlideIn .25s ease-out;pointer-events:auto';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  // Aggiungi keyframes una sola volta
+  if(!document.getElementById('toast-keyframes')){
+    var style = document.createElement('style');
+    style.id = 'toast-keyframes';
+    style.textContent = '@keyframes toastSlideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}';
+    document.head.appendChild(style);
+  }
+  setTimeout(function(){
+    if(t && t.parentNode){
+      t.style.transition = 'opacity .3s';
+      t.style.opacity = '0';
+      setTimeout(function(){if(t && t.parentNode) t.remove();}, 300);
+    }
+  }, 3500);
+  // Mantieni anche toast statico per retrocompatibilità (nascosto)
+  var tStatic = document.getElementById('toast');
+  if(tStatic){tStatic.textContent = msg; tStatic.style.background = bg;}
+}
 
 
 function switchDsTab(tab, el){
@@ -24436,8 +24468,9 @@ function renderOrdiniInviati(){
         '</td>'+
         '<td style="padding:8px 12px;color:#555">'+nProd+' art.</td>'+
         '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1a1a2e">'+totPz.toLocaleString('it-IT')+'</td>'+
-        '<td style="padding:8px 12px;text-align:center;display:flex;gap:6px;justify-content:center">'+
+        '<td style="padding:8px 12px;text-align:center;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">'+
           '<button onclick="apriDettaglioOrdine(\''+ord.id+'\')" style="background:#e8f0fe;border:1px solid #c5d8fa;color:#1a73e8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">👁 Apri</button>'+
+          ((ord.stato==='attesa'||ord.stato==='parziale')?'<button onclick="modificaOrdineApri(\''+ord.id+'\')" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Modifica qty e date di consegna">✏️ Modifica</button>':'')+
           '<button onclick="copiaEmailOrdine(\''+ord.id+'\')" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📧 Copia</button>'+
           '<button onclick="inviaEmailOrdine(\''+ord.id+'\')" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Invia</button>'+
           '<button onclick="scaricaPDFOrdine(\''+ord.id+'\')" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⬇ PDF</button>'+
@@ -24448,6 +24481,277 @@ function renderOrdiniInviati(){
   });
   body.innerHTML=html;
 }
+
+// ══════════════════════════════════════════════════════════════════
+// MODIFICA ORDINE INVIATO (qty_ordinata + date_cons_riga delle righe)
+// Disponibile solo per ordini in stato 'attesa' o 'parziale'.
+// Dopo conferma, possibilità di inviare al fornitore email con riepilogo
+// modifiche apportate (non re-invio dell'ordine intero).
+// ══════════════════════════════════════════════════════════════════
+window.modificaOrdineApri = function(idOrdine){
+  var ord = (fabOrdini||[]).find(function(o){return o.id===idOrdine;});
+  if(!ord){ showToast('❌ Ordine non trovato'); return; }
+  if(ord.stato!=='attesa' && ord.stato!=='parziale'){
+    showToast('❌ Solo ordini in attesa o parziali sono modificabili');
+    return;
+  }
+
+  // Cancella eventuali stato modifiche pending precedenti
+  window._modOrd = {
+    idOrdine: idOrdine,
+    snapshot: JSON.parse(JSON.stringify(ord.righe||[]))
+  };
+
+  var existing = document.getElementById('mod-ord-modal');
+  if(existing) existing.remove();
+
+  var nProd = ord.righe.filter(function(r){return r.qty_ordinata>0;}).length;
+  var totPz = ord.righe.reduce(function(s,r){return s+(r.qty_ordinata||0);},0);
+
+  var righeHtml = (ord.righe||[]).map(function(r, idx){
+    var qtyRic = r.qty_ricevuta||0;
+    var qtyMin = qtyRic; // non si può scendere sotto la qty già ricevuta
+    var nota = qtyRic>0 ? ' <span style="font-size:10px;color:#dc2626;font-weight:600">(min '+qtyRic+' = già ricevuti)</span>' : '';
+    var dataCons = r.data_cons_riga || ord.data_consegna_prevista || '';
+    return '<tr style="border-bottom:1px solid #f0f2f5">'+
+      '<td style="padding:9px 10px;font-weight:600;color:#1a1a2e;font-size:13px">'+
+        _escHtml(r.sku||r.sku_shopify||'?')+
+        '<div style="font-size:10px;color:#888;margin-top:1px">'+_escHtml(r.sku_shopify||'')+'</div>'+
+      '</td>'+
+      '<td style="padding:9px 8px;text-align:right;color:#16a34a;font-weight:600;font-size:12px">'+qtyRic+' pz</td>'+
+      '<td style="padding:9px 8px">'+
+        '<input type="number" min="'+qtyMin+'" value="'+(r.qty_ordinata||0)+'" data-mod-riga="'+idx+'" data-mod-tipo="qty" style="width:90px;padding:6px 9px;border:1.5px solid #fde68a;border-radius:6px;font-size:13px;font-weight:600;text-align:right;color:#92400e;font-family:inherit;outline:none">'+
+        nota+
+      '</td>'+
+      '<td style="padding:9px 8px">'+
+        '<input type="date" value="'+_escHtml(dataCons)+'" data-mod-riga="'+idx+'" data-mod-tipo="data" style="padding:6px 9px;border:1.5px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;font-family:inherit;outline:none">'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  var modal = document.createElement('div');
+  modal.id = 'mod-ord-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9750;display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit';
+  modal.onclick = function(e){ if(e.target===modal) modificaOrdineChiudi(); };
+
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:12px;max-width:780px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.2);overflow:hidden">'+
+      '<div style="background:#fef3c7;padding:16px 22px;border-bottom:1px solid #fde68a;flex-shrink:0">'+
+        '<div style="font-size:16px;font-weight:700;color:#713f12">✏️ Modifica ordine</div>'+
+        '<div style="font-size:12px;color:#854f0b;margin-top:3px">'+_escHtml(ord.fornitore||'?')+' · Ordine '+_escHtml(ord.numero_ordine||ord.id)+' · '+nProd+' articoli · '+totPz+' pz totali</div>'+
+      '</div>'+
+      '<div style="padding:14px 22px;overflow-y:auto;flex:1">'+
+        '<div style="font-size:11px;font-weight:700;color:#5f5e5a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Righe ordine</div>'+
+        '<div style="font-size:11px;color:#888;margin-bottom:10px;padding:8px 11px;background:#f0f9ff;border-left:3px solid #0ea5e9;border-radius:4px">Puoi modificare qty ordinata e data consegna di ogni riga. Non puoi scendere sotto la qty già ricevuta.</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:13px">'+
+          '<thead><tr style="background:#f8f9fc;font-size:10px;font-weight:700;color:#888;text-transform:uppercase">'+
+            '<th style="text-align:left;padding:8px 10px">Articolo</th>'+
+            '<th style="text-align:right;padding:8px 8px">Già ric.</th>'+
+            '<th style="text-align:left;padding:8px 8px">Qty ordinata</th>'+
+            '<th style="text-align:left;padding:8px 8px">Data consegna</th>'+
+          '</tr></thead><tbody>'+
+          righeHtml+
+        '</tbody></table>'+
+      '</div>'+
+      '<div id="mod-ord-footer" style="padding:14px 22px;background:#f8f9fc;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0">'+
+        '<button onclick="modificaOrdineChiudi()" style="background:#fff;border:1.5px solid #d4d4d8;color:#444;border-radius:7px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Annulla</button>'+
+        '<button id="mod-ord-btn-conferma" onclick="modificaOrdineConferma()" style="background:#dc2626;border:none;color:#fff;border-radius:7px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Conferma modifiche</button>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(modal);
+};
+
+window.modificaOrdineChiudi = function(){
+  var m = document.getElementById('mod-ord-modal');
+  if(m) m.remove();
+  delete window._modOrd;
+};
+
+window.modificaOrdineConferma = async function(){
+  if(!window._modOrd){ showToast('Stato modifica perso'); return; }
+  var idOrdine = window._modOrd.idOrdine;
+  var snapshot = window._modOrd.snapshot;
+  var ord = (fabOrdini||[]).find(function(o){return o.id===idOrdine;});
+  if(!ord){ showToast('❌ Ordine non trovato'); return; }
+
+  // Raccogli i nuovi valori dagli input
+  var changes = [];
+  var inputs = document.querySelectorAll('#mod-ord-modal input[data-mod-riga]');
+  var nuoveQty = {};
+  var nuoveDate = {};
+  inputs.forEach(function(inp){
+    var idx = parseInt(inp.dataset.modRiga);
+    var tipo = inp.dataset.modTipo;
+    if(tipo==='qty') nuoveQty[idx] = parseInt(inp.value)||0;
+    if(tipo==='data') nuoveDate[idx] = inp.value;
+  });
+
+  // Confronta con snapshot e prepara la lista delle modifiche
+  for(var i=0;i<snapshot.length;i++){
+    var orig = snapshot[i];
+    var qOld = orig.qty_ordinata||0;
+    var dOld = orig.data_cons_riga||ord.data_consegna_prevista||'';
+    var qNew = nuoveQty[i]!=null ? nuoveQty[i] : qOld;
+    var dNew = nuoveDate[i]!=null ? nuoveDate[i] : dOld;
+    var qRic = orig.qty_ricevuta||0;
+    if(qNew < qRic){
+      showToast('❌ '+(orig.sku||orig.sku_shopify)+': qty '+qNew+' < ricevuti '+qRic+'. Annullato.');
+      return;
+    }
+    var changeQty = qOld!==qNew;
+    var changeData = dOld!==dNew;
+    if(changeQty || changeData){
+      changes.push({
+        idx:i,
+        sku: orig.sku||orig.sku_shopify,
+        sku_shopify: orig.sku_shopify,
+        qty_old: qOld, qty_new: qNew,
+        data_old: dOld, data_new: dNew,
+        changeQty: changeQty, changeData: changeData,
+        qty_ricevuta: qRic
+      });
+    }
+  }
+
+  if(!changes.length){ showToast('Nessuna modifica da applicare'); return; }
+
+  // Costruisci messaggio di conferma dettagliato
+  var msgConf = 'STAI PER MODIFICARE QUESTO ORDINE\n\n'+
+    'Ordine: '+(ord.numero_ordine||ord.id)+'\n'+
+    'Fornitore: '+ord.fornitore+'\n\n'+
+    changes.length+' righe modificate:\n\n';
+  changes.forEach(function(c){
+    msgConf += '• '+c.sku+'\n';
+    if(c.changeQty) msgConf += '   qty: '+c.qty_old+' → '+c.qty_new+' pz\n';
+    if(c.changeData) msgConf += '   data: '+(c.data_old||'?')+' → '+(c.data_new||'?')+'\n';
+  });
+  msgConf += '\nConfermare?';
+  if(!confirm(msgConf)) return;
+
+  var btn = document.getElementById('mod-ord-btn-conferma');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Salvataggio...'; btn.style.opacity='0.6'; }
+
+  // Applica modifiche
+  changes.forEach(function(c){
+    var r = ord.righe[c.idx];
+    if(!r) return;
+    if(c.changeQty){
+      r.qty_ordinata = c.qty_new;
+      // Ricalcola qty_ordinata_master se applicabile
+      var p = (fabProducts||[]).find(function(x){return x.sku_shopify===r.sku_shopify;});
+      if(p && typeof getMasterSize==='function'){
+        var ms = getMasterSize(p)||1;
+        if(ms>1) r.qty_master = Math.ceil(c.qty_new/ms);
+      }
+    }
+    if(c.changeData) r.data_cons_riga = c.data_new;
+  });
+
+  // Ricalcola stato ordine (un ordine appena ridotto a qty=qty_ricevuta diventa "ricevuto")
+  var allDone = ord.righe.every(function(x){return (x.qty_ricevuta||0)>=x.qty_ordinata;});
+  var someRic = ord.righe.some(function(x){return (x.qty_ricevuta||0)>0;});
+  if(allDone && someRic) ord.stato='ricevuto';
+  else if(someRic) ord.stato='parziale';
+  else ord.stato='attesa';
+
+  // Tracciamento modifiche
+  ord.note_modifiche = ord.note_modifiche || [];
+  ord.note_modifiche.push({
+    ts: new Date().toISOString(),
+    changes: changes.map(function(c){
+      return {
+        sku: c.sku,
+        qty_old: c.qty_old, qty_new: c.qty_new,
+        data_old: c.data_old, data_new: c.data_new
+      };
+    })
+  });
+
+  // Salva sul server
+  if(typeof saveFabState==='function') saveFabState();
+
+  // Mostra prompt per email al fornitore
+  var footer = document.getElementById('mod-ord-footer');
+  if(footer){
+    var righeMail = changes.map(function(c){
+      var line = '• '+c.sku;
+      if(c.changeQty) line += ' — qty '+c.qty_old+' → '+c.qty_new;
+      if(c.changeData){
+        var dOld = c.data_old && c.data_old.length===10 ? c.data_old.split('-').reverse().join('/') : c.data_old;
+        var dNew = c.data_new && c.data_new.length===10 ? c.data_new.split('-').reverse().join('/') : c.data_new;
+        line += ' — data '+(dOld||'?')+' → '+(dNew||'?');
+      }
+      return line;
+    }).join('\n');
+    footer.innerHTML =
+      '<div style="flex:1;background:#f0fdf4;border-left:3px solid #16a34a;padding:10px 14px;border-radius:6px">'+
+        '<div style="font-size:13px;color:#166534;font-weight:600">✅ Modifiche salvate. Vuoi inviare email al fornitore con il riepilogo?</div>'+
+      '</div>'+
+      '<button onclick="modificaOrdineChiudi();if(typeof renderOrdiniInviati===\'function\')renderOrdiniInviati();" style="background:#fff;border:1.5px solid #d4d4d8;color:#444;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Salta email</button>'+
+      '<button onclick="modificaOrdineInviaEmail(\''+idOrdine+'\')" style="background:#1d4ed8;border:none;color:#fff;border-radius:7px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Invia email modifiche</button>';
+    // Salva il preview email per la successiva chiamata
+    window._modOrd_emailPreview = righeMail;
+    window._modOrd_emailChanges = changes;
+  }
+};
+
+window.modificaOrdineInviaEmail = async function(idOrdine){
+  var ord = (fabOrdini||[]).find(function(o){return o.id===idOrdine;});
+  if(!ord){ showToast('Ordine non trovato'); return; }
+  var preview = window._modOrd_emailPreview || '(nessun riepilogo)';
+
+  // Determina destinatario fornitore
+  var destEmail = '';
+  // Cerca email mappata per fornitore (fornitorEmailOverride o fornitoriDb)
+  if(typeof fornitoriDb==='object' && fornitoriDb && fornitoriDb[ord.fornitore]){
+    destEmail = fornitoriDb[ord.fornitore].email||'';
+  } else if(ord.email_inviata_to){
+    destEmail = ord.email_inviata_to;
+  }
+
+  var defaultEmail = destEmail;
+  var emailFinale = prompt(
+    'Invia email modifiche a:\n(modifica indirizzo se necessario)',
+    defaultEmail
+  );
+  if(emailFinale==null) return;
+  emailFinale = emailFinale.trim();
+  if(!emailFinale){ showToast('Indirizzo email vuoto'); return; }
+
+  var subject = 'Modifica ordine '+(ord.numero_ordine||ord.id)+' — '+ord.fornitore;
+  var body = 'Buongiorno,\n\n'+
+    'comunichiamo le seguenti modifiche al nostro ordine '+(ord.numero_ordine||ord.id)+':\n\n'+
+    preview+'\n\n'+
+    'Vi preghiamo di confermare la presa in carico delle modifiche.\n\n'+
+    'Cordiali saluti,\n'+
+    'Yespresso';
+
+  // Usa endpoint /send-email come per gli altri invii
+  try {
+    var resp = await fetch(PROXY+'/send-email', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({to: emailFinale, subject: subject, text: body})
+    });
+    var d = await resp.json().catch(function(){return null;});
+    if(resp.ok){
+      // Logga in note_modifiche l'invio email
+      var nm = (ord.note_modifiche||[]);
+      if(nm.length){
+        nm[nm.length-1].email_to = emailFinale;
+        nm[nm.length-1].email_sent_at = new Date().toISOString();
+      }
+      if(typeof saveFabState==='function') saveFabState();
+      showToast('✅ Email modifiche inviata a '+emailFinale);
+    } else {
+      showToast('❌ Errore invio email: '+(d&&d.error?d.error:resp.status));
+    }
+  } catch(e){
+    showToast('❌ Errore invio: '+e.message);
+  }
+  modificaOrdineChiudi();
+  if(typeof renderOrdiniInviati==='function') renderOrdiniInviati();
+};
 
 // ══════════════════════════════════════════════════════════════════
 // STORICO RICEZIONI — pagina intera con freccia torna indietro
@@ -24510,15 +24814,17 @@ function renderStoricoRicezioni(){
   // Raccogli tutte le ricezioni: ogni riga con qty_ricevuta > 0
   var ricezioni=[];
   (fabOrdini||[]).forEach(function(ord){
-    (ord.righe||[]).forEach(function(r){
+    (ord.righe||[]).forEach(function(r, rigaIdx){
       var qRic=r.qty_ricevuta||0;
       if(qRic<=0) return;
       ricezioni.push({
         ord:ord,
         riga:r,
+        rigaIdx:rigaIdx,
         dataRic:r.data_ricezione_effettiva||ord.data_ordine||'',
         fornitore:ord.fornitore||'?',
         sku:r.sku||r.sku_shopify||r.nome_prodotto||'?',
+        sku_shopify:r.sku_shopify||'',
         qtyRic:qRic,
         qtyOrd:r.qty_ordinata||0,
         dataOrd:ord.data_ordine||'',
@@ -24655,9 +24961,11 @@ function renderStoricoRicezioni(){
         '<th style="text-align:right;padding:8px 12px">Qtà ordinata</th>'+
         '<th style="text-align:center;padding:8px 12px">Data ordine</th>'+
         '<th style="text-align:center;padding:8px 12px">Cons. prevista</th>'+
+        '<th style="text-align:center;padding:8px 12px">Azioni</th>'+
       '</tr></thead><tbody>';
     items.forEach(function(x){
       var isCompleto=x.qtyRic>=x.qtyOrd;
+      var btnModif='<button onclick="rettificaRicezioneApri(\''+x.idOrdine+'\','+x.rigaIdx+')" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:5px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Modifica/rettifica questa ricezione">✏️ Modifica</button>';
       html+='<tr style="border-top:1px solid #f0f2f5">'+
         (colData?'<td style="padding:10px 12px;text-align:center;color:#555;font-size:12px;font-weight:600">'+(x.dataRic?_fmtDataOrd(x.dataRic):'—')+'</td>':'')+
         (colProdotto?'<td style="padding:10px 12px;font-weight:600;color:#1a1a2e">'+x.sku+'</td>':'')+
@@ -24666,6 +24974,7 @@ function renderStoricoRicezioni(){
         '<td style="padding:10px 12px;text-align:right;color:#888">'+x.qtyOrd.toLocaleString('it-IT')+' pz '+(isCompleto?'<span title="Completo" style="color:#16a34a">✓</span>':'<span title="Parziale" style="color:#f59e0b">◐</span>')+'</td>'+
         '<td style="padding:10px 12px;text-align:center;color:#888;font-size:12px">'+(x.dataOrd?_fmtDataOrd(x.dataOrd):'—')+'</td>'+
         '<td style="padding:10px 12px;text-align:center;color:#888;font-size:12px">'+(x.dataCons?_fmtDataOrd(x.dataCons):'—')+'</td>'+
+        '<td style="padding:10px 12px;text-align:center">'+btnModif+'</td>'+
       '</tr>';
     });
     html+='</tbody></table></div></div>';
@@ -24673,6 +24982,215 @@ function renderStoricoRicezioni(){
 
   body.innerHTML=html;
 }
+
+// Apre il modal di rettifica per una specifica riga ricezione.
+// Permette di correggere la qty_ricevuta (es. da 200 a 100 = storno -100 pz).
+// Se l'utente conferma, il sistema sottrae la differenza dalla riga e
+// (opzionalmente) anche da Shopify.
+window.rettificaRicezioneApri = function(idOrdine, rigaIdx){
+  var ord = (fabOrdini||[]).find(function(o){return o.id===idOrdine;});
+  if(!ord || !ord.righe || !ord.righe[rigaIdx]){
+    showToast('❌ Ricezione non trovata');
+    return;
+  }
+  var r = ord.righe[rigaIdx];
+  var qtyAttuale = r.qty_ricevuta||0;
+  var sku = r.sku || r.sku_shopify || '?';
+  var skuShop = r.sku_shopify || '';
+  var dataRic = r.data_ricezione_effettiva || '';
+
+  var existing = document.getElementById('rettifica-modal');
+  if(existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'rettifica-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9750;display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit';
+  modal.onclick = function(e){ if(e.target===modal) rettificaRicezioneChiudi(); };
+
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:12px;max-width:540px;width:100%;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.2);overflow:hidden">'+
+      '<div style="background:#fef3c7;padding:16px 22px;border-bottom:1px solid #fde68a">'+
+        '<div style="font-size:16px;font-weight:700;color:#713f12">✏️ Rettifica ricezione</div>'+
+        '<div style="font-size:12px;color:#854f0b;margin-top:3px">Correggi la quantità ricevuta. La differenza viene stornata anche su Shopify se richiesto.</div>'+
+      '</div>'+
+      '<div style="padding:18px 22px">'+
+        '<div style="margin-bottom:14px;padding:11px 14px;background:#f8f9fc;border-radius:8px">'+
+          '<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Articolo</div>'+
+          '<div style="font-size:14px;font-weight:700;color:#1a1a2e">'+_escHtml(sku)+'</div>'+
+          '<div style="font-size:11px;color:#888;margin-top:2px">SKU: '+_escHtml(skuShop)+(skuShop?' · ':'')+'Ordine: '+_escHtml(ord.numero_ordine||ord.id)+(dataRic?' · Ric. '+_fmtDataOrd(dataRic):'')+'</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">'+
+          '<div style="flex:1">'+
+            '<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:6px">Qtà attuale</div>'+
+            '<div style="font-size:22px;font-weight:700;color:#16a34a">'+qtyAttuale+' pz</div>'+
+          '</div>'+
+          '<div style="font-size:24px;color:#aaa">→</div>'+
+          '<div style="flex:1">'+
+            '<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:6px">Qtà corretta</div>'+
+            '<input id="rett-qty-corretta" type="number" min="0" value="'+qtyAttuale+'" style="width:100%;padding:9px 12px;border:1.5px solid #fde68a;border-radius:7px;font-size:18px;font-weight:700;text-align:right;color:#92400e;font-family:inherit;outline:none;box-sizing:border-box" oninput="rettificaAggiornaPreview()">'+
+          '</div>'+
+        '</div>'+
+        '<div id="rett-preview" style="margin-bottom:14px;padding:11px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #16a34a">'+
+          '<div style="font-size:13px;color:#166534;font-weight:600">Variazione: 0 pz · nessuna modifica</div>'+
+        '</div>'+
+        '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#1a1a2e;cursor:pointer;padding:9px 12px;background:#eff6ff;border-radius:7px;border:1px solid #bfdbfe">'+
+          '<input id="rett-aggiorna-shopify" type="checkbox" checked style="width:16px;height:16px;cursor:pointer;accent-color:#1a73e8">'+
+          '<span><strong>Aggiorna anche Shopify</strong> con la differenza (può essere negativa)</span>'+
+        '</label>'+
+      '</div>'+
+      '<div style="padding:14px 22px;background:#f8f9fc;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end;gap:10px">'+
+        '<button onclick="rettificaRicezioneChiudi()" style="background:#fff;border:1.5px solid #d4d4d8;color:#444;border-radius:7px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Annulla</button>'+
+        '<button id="rett-btn-conferma" onclick="rettificaRicezioneSalva(\''+idOrdine+'\','+rigaIdx+')" style="background:#dc2626;border:none;color:#fff;border-radius:7px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Conferma rettifica</button>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(modal);
+  // Memorizza i dati per la preview
+  window._rettData = {qtyAttuale: qtyAttuale, sku: sku, skuShop: skuShop};
+  setTimeout(function(){
+    var inp = document.getElementById('rett-qty-corretta');
+    if(inp){ inp.focus(); inp.select(); }
+    rettificaAggiornaPreview();
+  }, 50);
+};
+
+window.rettificaAggiornaPreview = function(){
+  var d = window._rettData || {qtyAttuale:0};
+  var inp = document.getElementById('rett-qty-corretta');
+  var nuovaQty = parseInt((inp&&inp.value)||0)||0;
+  var diff = nuovaQty - d.qtyAttuale;
+  var box = document.getElementById('rett-preview');
+  if(!box) return;
+  if(diff===0){
+    box.style.background='#f8f9fc';
+    box.style.borderLeftColor='#888';
+    box.innerHTML='<div style="font-size:13px;color:#444;font-weight:600">Nessuna variazione: la qty resta '+d.qtyAttuale+' pz</div>';
+  } else if(diff<0){
+    box.style.background='#fef2f2';
+    box.style.borderLeftColor='#dc2626';
+    box.innerHTML='<div style="font-size:13px;color:#991b1b;font-weight:600">↓ Storno di '+Math.abs(diff)+' pz · qty passa da '+d.qtyAttuale+' a '+nuovaQty+' pz</div>'+
+      '<div style="font-size:11px;color:#7f1d1d;margin-top:3px">L\'ordine verrà riportato in stato "parziale" se non era già completo.</div>';
+  } else {
+    box.style.background='#f0fdf4';
+    box.style.borderLeftColor='#16a34a';
+    box.innerHTML='<div style="font-size:13px;color:#166534;font-weight:600">↑ Aggiunta di '+diff+' pz · qty passa da '+d.qtyAttuale+' a '+nuovaQty+' pz</div>';
+  }
+};
+
+window.rettificaRicezioneChiudi = function(){
+  var m = document.getElementById('rettifica-modal');
+  if(m) m.remove();
+  delete window._rettData;
+};
+
+window.rettificaRicezioneSalva = async function(idOrdine, rigaIdx){
+  var ord = (fabOrdini||[]).find(function(o){return o.id===idOrdine;});
+  if(!ord || !ord.righe || !ord.righe[rigaIdx]){
+    showToast('❌ Ricezione non trovata');
+    return;
+  }
+  var r = ord.righe[rigaIdx];
+  var qtyAttuale = r.qty_ricevuta||0;
+  var inp = document.getElementById('rett-qty-corretta');
+  var nuovaQty = parseInt((inp&&inp.value)||0)||0;
+  if(nuovaQty<0){ showToast('❌ La qty corretta non può essere negativa'); return; }
+  var diff = nuovaQty - qtyAttuale;
+  if(diff===0){ showToast('Nessuna variazione da applicare'); return; }
+  var aggiornaShop = !!(document.getElementById('rett-aggiorna-shopify')||{}).checked;
+
+  // Doppia conferma per evitare errori
+  var msgConf = 'STAI PER RETTIFICARE QUESTA RICEZIONE\n\n'+
+    'Articolo: '+(r.sku||r.sku_shopify)+'\n'+
+    'Ordine: '+(ord.numero_ordine||ord.id)+'\n\n'+
+    'Qty attuale: '+qtyAttuale+' pz\n'+
+    'Qty corretta: '+nuovaQty+' pz\n'+
+    'Variazione: '+(diff>0?'+':'')+diff+' pz\n\n'+
+    (aggiornaShop ? '✓ Shopify verrà aggiornato di '+(diff>0?'+':'')+diff+' pz\n\n' : '✗ Shopify NON verrà aggiornato\n\n')+
+    'Confermare?';
+  if(!confirm(msgConf)) return;
+
+  var btn = document.getElementById('rett-btn-conferma');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Rettifica...'; btn.style.opacity='0.6'; }
+
+  // 1) Applica il cambio in fabOrdini
+  var ms = 1;
+  var p = (fabProducts||[]).find(function(x){return x.sku_shopify===r.sku_shopify;});
+  if(p && typeof getMasterSize==='function') ms = getMasterSize(p) || 1;
+  r.qty_ricevuta = nuovaQty;
+  if(ms>1) r.qty_ricevuta_master = Math.ceil(nuovaQty/ms);
+  if(nuovaQty===0) delete r.data_ricezione_effettiva;
+  // Aggiorna stato ordine
+  var allDone = ord.righe.every(function(x){return (x.qty_ricevuta||0)>=x.qty_ordinata;});
+  var someRic = ord.righe.some(function(x){return (x.qty_ricevuta||0)>0;});
+  if(allDone) ord.stato='ricevuto';
+  else if(someRic) ord.stato='parziale';
+  else ord.stato='attesa';
+  // Traccia in nota
+  ord.note_rettifiche = ord.note_rettifiche || [];
+  ord.note_rettifiche.push({
+    sku: r.sku||r.sku_shopify,
+    riga: rigaIdx,
+    qty_prima: qtyAttuale,
+    qty_dopo: nuovaQty,
+    diff: diff,
+    shopify_aggiornato: aggiornaShop,
+    ts: new Date().toISOString()
+  });
+
+  // 2) Aggiorna Shopify se richiesto (con la differenza, può essere negativa)
+  var shopifyMsg = '';
+  if(aggiornaShop && r.sku_shopify){
+    try {
+      var invItemId = null;
+      var nextProd = 'products.json?limit=250&fields=id,variants';
+      var safety = 0;
+      while(nextProd && safety<20 && !invItemId){
+        safety++;
+        var pd = await shopifyGet(nextProd);
+        if(pd && pd.products){
+          for(var pi=0;pi<pd.products.length;pi++){
+            var vrs = pd.products[pi].variants||[];
+            for(var vi=0;vi<vrs.length;vi++){
+              if((vrs[vi].sku||'').trim().toLowerCase() === r.sku_shopify.toLowerCase()){
+                invItemId = vrs[vi].inventory_item_id;
+                break;
+              }
+            }
+            if(invItemId) break;
+          }
+          nextProd = pd._nextPageInfo ? 'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo : null;
+        } else { nextProd = null; }
+      }
+      if(invItemId){
+        var lvlD = await shopifyGet('inventory_levels.json?inventory_item_ids='+invItemId);
+        if(lvlD && lvlD.inventory_levels && lvlD.inventory_levels[0]){
+          var locId = lvlD.inventory_levels[0].location_id;
+          var adjRes = await proxyFetch(PROXY+'/shopify/inventory_levels/adjust.json',{
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({location_id:locId, inventory_item_id:invItemId, available_adjustment:diff})
+          });
+          if(adjRes.ok){
+            if(fabInventoryCache) fabInventoryCache[r.sku_shopify] = (fabInventoryCache[r.sku_shopify]||0)+diff;
+            shopifyMsg = ' · Shopify: '+(diff>0?'+':'')+diff+' pz';
+          } else {
+            shopifyMsg = ' · ⚠️ errore Shopify '+adjRes.status;
+          }
+        } else { shopifyMsg = ' · ⚠️ inventory_level non trovato'; }
+      } else { shopifyMsg = ' · ⚠️ SKU non trovato su Shopify'; }
+    } catch(e){
+      shopifyMsg = ' · ⚠️ errore Shopify: '+e.message;
+    }
+  }
+
+  // 3) Salva sul server
+  if(typeof saveFabState==='function') saveFabState();
+
+  rettificaRicezioneChiudi();
+  showToast('✅ Rettifica applicata: '+(diff>0?'+':'')+diff+' pz su '+(r.sku||r.sku_shopify)+shopifyMsg);
+
+  // 4) Refresh storico
+  if(typeof renderStoricoRicezioni==='function') renderStoricoRicezioni();
+};
 
 function apriDettaglioOrdine(id){
   var ord=fabOrdini.find(function(o){return String(o.id)===String(id);});
@@ -26219,7 +26737,7 @@ function openRicezioneMerce(){
     '<button onclick="chiudiRicezioneEtornaOrdini()" style="background:#f0f2f5;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:700;color:#555;font-family:inherit">← Torna agli ordini</button>'+
     '<span style="font-size:18px;font-weight:700;color:#16a34a">📦 Ricevi Merce da Fornitore</span>'+
     '<span style="font-size:12px;color:#aaa;margin-left:4px">Inserisci le quantità ricevute — il sistema scala dagli ordini aperti più vicini</span>'+
-    '<button onclick="ricezioneSalva()" style="margin-left:auto;background:#16a34a;border:none;border-radius:8px;padding:9px 20px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Salva ricezione</button>';
+    '<button onclick="ricezioneMostraPreconferma()" style="margin-left:auto;background:#16a34a;border:none;border-radius:8px;padding:9px 20px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Salva ricezione</button>';
   page.appendChild(hdr);
 
   var body=document.createElement('div');
@@ -26303,6 +26821,219 @@ function renderRicezioneTable(){
   body.innerHTML=html;
 }
 
+// Helper: escape sicuro HTML (riusa _escHtml se esiste, altrimenti definisce versione minimale)
+if(typeof _escHtml !== 'function'){
+  window._escHtml = function(s){
+    if(s==null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  };
+}
+
+// Mostra una schermata di preconferma con il riepilogo di tutto quello che
+// si sta per salvare. Per ogni SKU con qty > 0 mostra: nome articolo, qty,
+// ordine target dove verrà scalato (riproduzione della logica di ricezioneSalva)
+// e checkbox Shopify modificabile. Solo dopo il click "Conferma e salva" viene
+// chiamata la funzione ricezioneSalva() reale.
+window.ricezioneMostraPreconferma = function(){
+  var rows = document.querySelectorAll('#ricezione-body tr[data-sku]');
+  if(!rows.length){ showToast('Nessuna riga da salvare'); return; }
+
+  // Raccogli tutte le righe con qty > 0 e calcola dove scaleranno
+  var openOrds = fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
+  var preview = [];
+  var totPezzi = 0;
+  for(var ri=0;ri<rows.length;ri++){
+    var row = rows[ri];
+    var sku = row.dataset.sku;
+    var ms = parseInt(row.dataset.ms)||1;
+    var p = fabProducts.find(function(x){return x.sku_shopify===sku;});
+    if(!p) continue;
+    var inp = row.querySelector('input[type=number]');
+    var chk = row.querySelector('input[type=checkbox]');
+    var qtyRicevuta = parseInt((inp&&inp.value)||0)||0;
+    if(qtyRicevuta<=0) continue;
+    var aggiornaShopify = chk&&chk.checked;
+
+    // Trova le righe aperte ordinate per data consegna (replica logica di ricezioneSalva)
+    var righeAperte = [];
+    openOrds.forEach(function(ord){
+      ord.righe.forEach(function(r){
+        if(r.sku_shopify!==sku) return;
+        var residuo = r.qty_ordinata-(r.qty_ricevuta||0);
+        if(residuo<=0) return;
+        var dataRiga = r.data_cons_riga||ord.data_consegna_prevista||'9999-99-99';
+        righeAperte.push({ord:ord,riga:r,residuo:residuo,data:dataRiga});
+      });
+    });
+    righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
+
+    // Simula scaling per costruire il dettaglio "andrà su questi ordini"
+    var rim = qtyRicevuta;
+    var dettaglio = [];
+    righeAperte.forEach(function(entry){
+      if(rim<=0) return;
+      var scala = Math.min(rim, entry.residuo);
+      dettaglio.push({
+        ordine: entry.ord.numero_ordine||entry.ord.id,
+        cons: entry.data,
+        qty: scala
+      });
+      rim -= scala;
+    });
+
+    preview.push({
+      sku: p.sku,
+      sku_shopify: sku,
+      qty: qtyRicevuta,
+      aggiornaShopify: aggiornaShopify,
+      ms: ms,
+      dettaglio: dettaglio,
+      rimanente: rim
+    });
+    totPezzi += qtyRicevuta;
+  }
+
+  if(!preview.length){ showToast('Nessuna riga con qty > 0'); return; }
+
+  // Costruisci HTML del modal
+  var righeHtml = preview.map(function(item, i){
+    var dett = item.dettaglio.map(function(d){
+      var dataOK = d.cons && d.cons.length===10 ? d.cons.split('-').reverse().join('/') : d.cons;
+      return '<div style="font-size:11px;color:#888">↳ '+d.qty+' pz su <strong style="color:#444">'+_escHtml(d.ordine)+'</strong> (cons '+_escHtml(dataOK)+')</div>';
+    }).join('');
+    if(item.rimanente>0){
+      dett += '<div style="font-size:11px;color:#dc2626;font-weight:600">⚠️ '+item.rimanente+' pz NON troveranno ordine aperto disponibile</div>';
+    }
+    var bgRow = i%2===0?'#f8f9fc':'#ffffff';
+    return '<div style="display:flex;align-items:flex-start;padding:12px 14px;background:'+bgRow+';border-radius:8px;margin-bottom:6px;gap:12px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-bottom:2px">'+_escHtml(item.sku)+'</div>'+
+        '<div style="font-size:11px;color:#666;margin-bottom:4px">SKU: '+_escHtml(item.sku_shopify)+(item.ms>1?' · master da '+item.ms+' pz':'')+'</div>'+
+        dett+
+      '</div>'+
+      '<div style="font-size:18px;font-weight:700;color:#166534;min-width:75px;text-align:right">'+item.qty+' pz</div>'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:'+(item.aggiornaShopify?'#185fa5':'#888')+';cursor:pointer;white-space:nowrap;padding-top:4px">'+
+        '<input type="checkbox" '+(item.aggiornaShopify?'checked':'')+' data-precon-sku="'+_escHtml(item.sku_shopify)+'" style="width:14px;height:14px;cursor:pointer;accent-color:#185fa5">'+
+        '<span>Shopify</span>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+
+  // Conta articoli che aggiorneranno Shopify
+  var conShopify = preview.filter(function(x){return x.aggiornaShopify;}).length;
+
+  // Se ci sono più di 5 articoli, attiva scroll interno con altezza massima
+  // (header giallo + footer con bottoni restano sempre visibili).
+  var scrollStyle = preview.length > 5
+    ? 'max-height:340px;overflow-y:auto;padding-right:6px;margin-right:-6px'
+    : '';
+  var hintScroll = preview.length > 5
+    ? '<div style="font-size:11px;color:#888;margin-bottom:6px;font-style:italic">Scorri la lista per vedere tutti gli articoli ('+preview.length+')</div>'
+    : '';
+
+  var modalHtml =
+    '<div id="precon-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9700;display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit" onclick="if(event.target===this)ricezioneChiudiPreconferma()">'+
+      '<div style="background:#fff;border-radius:12px;max-width:680px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.2);overflow:hidden">'+
+        '<div style="background:#fef9c3;padding:16px 22px;border-bottom:1px solid #fde68a;flex-shrink:0">'+
+          '<div style="font-size:17px;font-weight:700;color:#713f12">⚠️ Conferma ricezione merce</div>'+
+          '<div style="font-size:12px;color:#854f0b;margin-top:3px">Verifica i dati prima di salvare. Il salvataggio aggiornerà fabOrdini e Shopify.</div>'+
+        '</div>'+
+        '<div style="padding:18px 22px;overflow-y:auto;flex:1">'+
+          '<div style="font-size:11px;font-weight:700;color:#5f5e5a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Articoli da registrare ('+preview.length+')</div>'+
+          hintScroll+
+          '<div style="'+scrollStyle+'">'+righeHtml+'</div>'+
+          '<div style="margin-top:14px;padding:11px 14px;background:#ecfdf5;border-radius:8px;border-left:3px solid #16a34a">'+
+            '<div style="font-size:13px;color:#166534;font-weight:600">Totale: '+totPezzi+' pz su '+preview.length+' articoli · Aggiorneranno Shopify: '+conShopify+' articoli</div>'+
+          '</div>'+
+        '</div>'+
+        '<div id="precon-modal-footer" style="padding:14px 22px;background:#f8f9fc;border-top:1px solid #e8eaf0;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0">'+
+          '<button onclick="ricezioneChiudiPreconferma()" style="background:#fff;border:1.5px solid #d4d4d8;color:#444;border-radius:7px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">← Torna indietro</button>'+
+          '<button id="precon-btn-conferma" onclick="ricezioneConfermaSalva()" style="background:#16a34a;border:none;color:#fff;border-radius:7px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ Conferma e salva</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  // Aggiungi al DOM
+  var existing = document.getElementById('precon-modal-overlay');
+  if(existing) existing.remove();
+  var div = document.createElement('div');
+  div.innerHTML = modalHtml;
+  document.body.appendChild(div.firstChild);
+
+  // Salvo i flag Shopify aggiornabili: se l'utente cambia un checkbox nella
+  // preconferma, devo sincronizzare il checkbox della pagina principale
+  // così ricezioneSalva legge i nuovi valori.
+  document.querySelectorAll('#precon-modal-overlay input[data-precon-sku]').forEach(function(box){
+    box.addEventListener('change', function(){
+      var skuTarget = this.dataset.preconSku;
+      var rowOrig = document.querySelector('#ricezione-body tr[data-sku="'+skuTarget+'"]');
+      if(rowOrig){
+        var chkOrig = rowOrig.querySelector('input[type=checkbox]');
+        if(chkOrig) chkOrig.checked = this.checked;
+      }
+    });
+  });
+};
+
+window.ricezioneChiudiPreconferma = function(){
+  var ov = document.getElementById('precon-modal-overlay');
+  if(ov) ov.remove();
+};
+
+// Funzione chiamata dal bottone "Conferma e salva" della preconferma.
+// Esegue il salvataggio reale (chiama ricezioneSalva) e poi mostra l'esito
+// dentro il modal stesso (server + Shopify).
+window.ricezioneConfermaSalva = async function(){
+  var btn = document.getElementById('precon-btn-conferma');
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = '⏳ Salvataggio...';
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'wait';
+  }
+  // Memorizzo lo stato pre-salvataggio per l'esito
+  var preProcessed = 0;
+  var rows = document.querySelectorAll('#ricezione-body tr[data-sku]');
+  rows.forEach(function(r){
+    var inp = r.querySelector('input[type=number]');
+    var q = parseInt((inp&&inp.value)||0)||0;
+    if(q>0) preProcessed++;
+  });
+
+  // Prepara intercettazione del toast finale per catturare l'esito
+  var origToast = window.showToast;
+  var capturedMsg = null;
+  window.showToast = function(msg, type){
+    capturedMsg = msg;
+    if(typeof origToast==='function') return origToast.apply(this, arguments);
+  };
+
+  // Intercetta anche gli errors stack: ricezioneSalva li accumula in una var locale,
+  // ma stampa il riepilogo via showToast e console.log. Cattureremo dalla console.
+  try {
+    await window.ricezioneSalva();
+    // ricezioneSalva chiude la pagina ricezione e fa renderFabTab. Va bene.
+  } catch(e){
+    capturedMsg = '❌ Errore durante il salvataggio: ' + e.message;
+  } finally {
+    window.showToast = origToast;
+  }
+
+  // Mostra esito nel modal (sostituisce il footer)
+  var footer = document.getElementById('precon-modal-footer');
+  if(footer){
+    var ok = capturedMsg && capturedMsg.indexOf('✅')===0;
+    var bg = ok ? '#ecfdf5' : '#fef2f2';
+    var border = ok ? '#16a34a' : '#dc2626';
+    var color = ok ? '#166534' : '#991b1b';
+    footer.innerHTML =
+      '<div style="flex:1;background:'+bg+';border-left:3px solid '+border+';padding:10px 14px;border-radius:6px">'+
+        '<div style="font-size:13px;color:'+color+';font-weight:600">'+_escHtml(capturedMsg||'Salvataggio completato')+'</div>'+
+      '</div>'+
+      '<button onclick="ricezioneChiudiPreconferma()" style="background:#16a34a;border:none;color:#fff;border-radius:7px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Chiudi</button>';
+  }
+};
+
 // Lock globale anti-doppio-click per ricezione merce.
 // Tiene traccia dell'ultimo salvataggio (chiave: hash righe+timestamp) per
 // rilevare doppi click e click ripetuti dello stesso form entro 60 secondi.
@@ -26352,6 +27083,10 @@ window.ricezioneSalva=async function(){
     btnSalva.style.cursor = 'wait';
   }
   window._ricezioneLock.inCorso = true;
+  // Garantisco un minimo di 800ms di lock visivo, anche se il salvataggio
+  // è rapidissimo, così l'utente vede chiaramente che il click è stato
+  // ricevuto e processato.
+  var lockStartTs = Date.now();
 
   try {
     var openOrds=fabOrdini.filter(function(o){return o.stato==='attesa'||o.stato==='parziale';});
@@ -26507,12 +27242,20 @@ window.ricezioneSalva=async function(){
       console.log('[Ricezione] Pre-check Shopify:', skuChecked);
     }
 
+    // Aspetta che il toast sia visibile prima di chiudere la pagina (1.5s)
+    // così l'utente vede chiaramente la conferma.
+    await new Promise(function(resolve){setTimeout(resolve, 1500);});
+
     // Chiudi e torna agli ordini
     document.getElementById('ricezione-fullpage').style.display='none';
     var f=document.getElementById('fab-fullpage');
     if(f){f.style.display='flex';renderFabTab('ordini');}
   } finally {
-    // RIPRISTINO LOCK in ogni caso (anche se c'è eccezione)
+    // RIPRISTINO LOCK garantendo minimo 800ms di visibilità del bottone disabled
+    var elapsed = Date.now() - lockStartTs;
+    if(elapsed < 800){
+      await new Promise(function(resolve){setTimeout(resolve, 800-elapsed);});
+    }
     window._ricezioneLock.inCorso = false;
     if(btnSalva){
       btnSalva.disabled = false;
