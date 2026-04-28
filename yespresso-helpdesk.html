@@ -13772,8 +13772,10 @@ window._ritardiToggleAll = function(tipo, checkAll){
 // Esporta in Excel + PDF, raggruppato per fornitore.
 // ════════════════════════════════════════════════════════════════
 function renderOrdiniAnticipo(ignored, panel, ignored2) {
-  var ca = panel.querySelector('#filippo-content');
-  if (!ca) return;
+  console.log('[Anticipi] renderOrdiniAnticipo chiamato. panel:', panel);
+  var ca = panel ? panel.querySelector('#filippo-content') : null;
+  console.log('[Anticipi] container ca:', ca);
+  if (!ca){ console.warn('[Anticipi] container #filippo-content NON trovato'); return; }
   var ordini = (typeof fabOrdini !== 'undefined') ? fabOrdini : [];
   if (!ordini.length) {
     ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:20px">⚡ Ordini in Anticipo</div>' +
