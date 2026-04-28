@@ -1733,6 +1733,11 @@ async function selectTicket(tid){
   // prima che il pannello giacenza del nuovo ticket sia renderizzato.
   window._giacenzaData={};
   window._giacenzaOrigText={};
+  // Anche dati ordini Temu e mappa fermopoint sono cache per orderId che possono
+  // contaminare il context WhatsApp se il bottone WA della sidebar viene cliccato
+  // mentre vengono ancora popolate per il nuovo ticket.
+  window._temuOrderData={};
+  window._fermopointAddrMap={};
   window._imapAttachmentsHtml=""; // Reset allegati IMAP ad ogni cambio ticket
   window._ticketAttachments=[]; // Reset allegati ticket precedente
   window._podData={}; // Reset POD data ticket precedente
@@ -17660,6 +17665,31 @@ window._waInviaTemplate=async function(templateId, phone, orderId){
   var tpl=(window._waTemplates||[]).find(function(t){return t.id===templateId;});
   if(!tpl)return;
   var order=(window._temuOrderData||{})[orderId] || window._lastShopifyOrder;
+  // SAFETY CHECK COERENZA SIDEBAR ↔ TICKET
+  // Se l'orderId del bottone (preso al render del WA) non corrisponde
+  // all'ordine attualmente caricato in _lastShopifyOrder, vuol dire che
+  // l'utente sta cliccando un bottone WA appartenente a un ordine "stale"
+  // (es. era visibile prima del cambio ticket). Avvisa esplicitamente.
+  try {
+    var ordCorrente=window._lastShopifyOrder;
+    if(ordCorrente && orderId && String(ordCorrente.id)!==String(orderId)){
+      // Cerca nel _temuOrderData se l'ordine alternativo è valido
+      var altOrder=(window._temuOrderData||{})[orderId];
+      if(!altOrder){
+        // Nome destinatario per il messaggio di warning
+        var sa=ordCorrente.shipping_address||{};
+        var msg='⚠️ ATTENZIONE — POSSIBILE INVIO AL CLIENTE SBAGLIATO\n\n'+
+          'Stai cliccando un bottone WhatsApp legato a un ordine ('+orderId+') che NON corrisponde all\'ordine principale del ticket attuale ('+(ordCorrente.id)+').\n\n'+
+          'Telefono che riceverà il messaggio: '+phone+'\n'+
+          'Ordine corrente del ticket: '+(ordCorrente.name||ordCorrente.id)+' di '+(sa.name||'?')+'\n\n'+
+          'CONSIGLIO: chiudi, premi F5 e riprova dal ticket corretto.\n\n'+
+          'Vuoi inviare comunque?';
+        if(!confirm(msg)){
+          return; // Annulla
+        }
+      }
+    }
+  } catch(e){ console.warn('[WA sidebar safety check]', e); }
   var ctx=waBuildContext(order, orderId);
   var testo=waRenderTemplate(tpl.testo||'', ctx);
   // Apri WhatsApp Web con messaggio precompilato
