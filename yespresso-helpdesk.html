@@ -13868,40 +13868,43 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
   }
 
   // Filtro UI con bottoni "Tutti / Nessuno" come pagina Ritardi
+  // Uso onclick inline + funzioni globali (più robusto di addEventListener perchè
+  // la funzione viene re-renderata ricorsivamente quando si toggla un chip)
   html += '<div style="background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1px solid #e8eaf0">'+
     '<div style="display:flex;gap:18px;flex-wrap:wrap">'+
       '<div style="flex:1;min-width:240px">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
           '<span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase">Mesi consegna originale</span>'+
-          '<button data-anticipi-mesi-all="1" style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Tutti</button>'+
-          '<button data-anticipi-mesi-none="1" style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Nessuno</button>'+
+          '<button onclick="_anticipiToggleAll(\'mesi\',true)" style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Tutti</button>'+
+          '<button onclick="_anticipiToggleAll(\'mesi\',false)" style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Nessuno</button>'+
         '</div>'+
-        '<div id="anticipi-mesi-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">';
   mesiOrdinati.forEach(function(m){
     var parts = m.split('-');
     var lbl = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
     var on = filtri.mesi.has(m);
-    html += '<span data-anticipi-mese="'+m+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+(on?'☑ ':'☐ ')+lbl+' ('+anticipi[m].length+')</span>';
+    html += '<span onclick="_anticipiToggleChip(\'mesi\',\''+m+'\')" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+(on?'☑ ':'☐ ')+lbl+' ('+anticipi[m].length+')</span>';
   });
   html += '</div></div>'+
     '<div style="flex:1;min-width:240px">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
         '<span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase">Fornitori</span>'+
-        '<button data-anticipi-forn-all="1" style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Tutti</button>'+
-        '<button data-anticipi-forn-none="1" style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Nessuno</button>'+
+        '<button onclick="_anticipiToggleAll(\'fornitori\',true)" style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Tutti</button>'+
+        '<button onclick="_anticipiToggleAll(\'fornitori\',false)" style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Nessuno</button>'+
       '</div>'+
-      '<div id="anticipi-forn-chips" style="display:flex;gap:6px;flex-wrap:wrap">';
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">';
   fornArr.forEach(function(f){
     var on = filtri.fornitori.has(f);
     var nQta = mesiOrdinati.reduce(function(s,m){return s+anticipi[m].filter(function(r){return r.fornitore===f;}).length;},0);
-    html += '<span data-anticipi-forn="'+f.replace(/"/g,'&quot;')+'" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+(on?'☑ ':'☐ ')+f+' ('+nQta+')</span>';
+    var fEsc = f.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    html += '<span onclick="_anticipiToggleChip(\'fornitori\',\''+fEsc+'\')" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 11px;border-radius:14px;background:'+(on?'#dcfce7':'#f0f2f5')+';color:'+(on?'#166534':'#888')+';border:1px solid '+(on?'#86efac':'#e8eaf0')+'">'+(on?'☑ ':'☐ ')+f+' ('+nQta+')</span>';
   });
   html += '</div></div>'+
     '</div>'+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
-      '<button id="anticipi-carica-costi" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">💰 Carica costi da Shopify</button>'+
-      '<button id="anticipi-export-xlsx" style="background:#fff;border:1.5px solid #16a34a;color:#16a34a;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">📊 Esporta Excel</button>'+
-      '<button id="anticipi-export-pdf" style="background:#fff;border:1.5px solid #6d28d9;color:#6d28d9;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">📄 Esporta PDF</button>'+
+      '<button onclick="_anticipiClickCarica(this)" id="anticipi-carica-costi" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">💰 Carica costi da Shopify</button>'+
+      '<button onclick="_anticipiExportXlsx()" id="anticipi-export-xlsx" style="background:#fff;border:1.5px solid #16a34a;color:#16a34a;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">📊 Esporta Excel</button>'+
+      '<button onclick="_anticipiExportPdf()" id="anticipi-export-pdf" style="background:#fff;border:1.5px solid #6d28d9;color:#6d28d9;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">📄 Esporta PDF</button>'+
       '<span id="anticipi-status" style="font-size:11px;color:#888;margin-left:8px"></span>'+
     '</div>'+
   '</div>';
@@ -13914,7 +13917,9 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
   var tdR = tdS + ';text-align:right';
   var tdC = tdS + ';text-align:center';
 
-  var totGenerale = 0; // valore totale di tutte le righe filtrate
+  var totGenerale = 0;       // totale con IVA
+  var totGenImponibile = 0;  // somma imponibili
+  var totGenIva = 0;         // somma IVA
 
   mesiOrdinati.forEach(function(m){
     if(!filtri.mesi.has(m)) return;
@@ -13922,13 +13927,17 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
     if(!righeMese.length) return;
     var parts = m.split('-');
     var lbl = mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
-    var totMese = righeMese.reduce(function(s,r){return s+(r.costo==null?0:r.costo*r.qta);},0);
-    totGenerale += totMese;
+    var totMeseImponibile = righeMese.reduce(function(s,r){return s+(r.costo==null?0:r.costo*r.qta);},0);
+    var totMeseIva = righeMese.reduce(function(s,r){return s+(r.costo==null||r.iva==null?0:r.costo*r.qta*r.iva);},0);
+    var totMeseConIva = totMeseImponibile + totMeseIva;
+    totGenerale += totMeseConIva;
+    totGenImponibile += totMeseImponibile;
+    totGenIva += totMeseIva;
 
     html += '<div style="background:#fff;border-radius:10px;margin-bottom:14px;overflow:hidden;border:1px solid #e8eaf0">'+
       '<div style="background:linear-gradient(135deg,#166534,#16a34a);padding:10px 16px;color:#fff;display:flex;justify-content:space-between;align-items:center">'+
         '<div style="font-weight:700;font-size:14px">📅 Consegna originale: '+lbl+' &nbsp;·&nbsp; '+righeMese.length+' righe in anticipo</div>'+
-        '<div style="font-size:12px;font-weight:700">Totale: '+euro(totMese)+'</div>'+
+        '<div style="font-size:12px;font-weight:700">Imp. '+euro(totMeseImponibile)+' &nbsp;·&nbsp; IVA '+euro(totMeseIva)+' &nbsp;·&nbsp; Tot. '+euro(totMeseConIva)+'</div>'+
       '</div>'+
       '<table style="width:100%;border-collapse:collapse;font-family:inherit">'+
         '<thead><tr>'+
@@ -13941,11 +13950,18 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
           '<th style="'+thC+'">Cons. effettiva</th>'+
           '<th style="'+thR+'">Anticipo (gg)</th>'+
           '<th style="'+thR+'">Costo unit.</th>'+
-          '<th style="'+thR+'">Valore totale</th>'+
+          '<th style="'+thR+'">Imponibile</th>'+
+          '<th style="'+thC+'">IVA %</th>'+
+          '<th style="'+thR+'">IVA €</th>'+
+          '<th style="'+thR+'">Totale</th>'+
         '</tr></thead><tbody>';
     righeMese.forEach(function(r,i){
       var bg = i%2===0 ? '#fff' : '#f8faff';
-      var valore = r.costo==null ? null : r.costo * r.qta;
+      var imponibile = r.costo==null ? null : r.costo * r.qta;
+      var ivaPct = r.iva==null ? null : Math.round(r.iva*100);
+      var ivaEur = (imponibile==null||r.iva==null) ? null : imponibile * r.iva;
+      var totale = (imponibile==null||ivaEur==null) ? null : imponibile + ivaEur;
+      var ivaColor = ivaPct===10 ? '#0891b2' : (ivaPct===22 ? '#7e22ce' : '#888');
       html += '<tr style="background:'+bg+'">'+
         '<td style="'+tdS+';font-weight:600">'+r.numero+'</td>'+
         '<td style="'+tdS+'">'+fmtD(r.dataOrd)+'</td>'+
@@ -13956,75 +13972,69 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
         '<td style="'+tdC+';color:#16a34a;font-weight:600">'+fmtD(r.dataRic)+'</td>'+
         '<td style="'+tdR+';color:#16a34a;font-weight:700">−'+r.giorni+' gg</td>'+
         '<td style="'+tdR+'">'+(r.costo==null?'<span style="color:#aaa">?</span>':euro(r.costo))+'</td>'+
-        '<td style="'+tdR+';font-weight:700;color:#166534">'+(valore==null?'<span style="color:#aaa">?</span>':euro(valore))+'</td>'+
+        '<td style="'+tdR+'">'+(imponibile==null?'<span style="color:#aaa">?</span>':euro(imponibile))+'</td>'+
+        '<td style="'+tdC+';color:'+ivaColor+';font-weight:700">'+(ivaPct==null?'?':ivaPct+'%')+'</td>'+
+        '<td style="'+tdR+';color:'+ivaColor+'">'+(ivaEur==null?'<span style="color:#aaa">?</span>':euro(ivaEur))+'</td>'+
+        '<td style="'+tdR+';font-weight:700;color:#166534">'+(totale==null?'<span style="color:#aaa">?</span>':euro(totale))+'</td>'+
       '</tr>';
     });
     html += '</tbody></table></div>';
   });
 
-  // Riepilogo totale generale
-  html += '<div style="background:#166534;color:#fff;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">'+
-    '<div style="font-size:14px;font-weight:700">💼 TOTALE VALORE ORDINI IN ANTICIPO (da stornare dal pagamento)</div>'+
-    '<div style="font-size:18px;font-weight:700">'+euro(totGenerale)+'</div>'+
+  // Riepilogo totale generale (Imponibile, IVA, Totale con IVA)
+  html += '<div style="background:#166534;color:#fff;border-radius:10px;padding:14px 18px">'+
+    '<div style="font-size:14px;font-weight:700;margin-bottom:6px">💼 TOTALE ORDINI IN ANTICIPO <span style="font-size:11px;font-weight:400;opacity:0.85">(da stornare dal pagamento)</span></div>'+
+    '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px">'+
+      '<div>Imponibile: <strong>'+euro(totGenImponibile)+'</strong></div>'+
+      '<div>IVA: <strong>'+euro(totGenIva)+'</strong></div>'+
+      '<div style="font-size:16px;border-left:2px solid rgba(255,255,255,0.3);padding-left:18px">Totale (IVA inclusa): <strong>'+euro(totGenerale)+'</strong></div>'+
+    '</div>'+
   '</div>';
 
   ca.innerHTML = html;
 
-  // Wire-up event handler chip e bottoni
-  ca.querySelectorAll('[data-anticipi-mese]').forEach(function(el){
-    el.addEventListener('click', function(){
-      var m = el.getAttribute('data-anticipi-mese');
-      if(filtri.mesi.has(m)) filtri.mesi.delete(m); else filtri.mesi.add(m);
-      renderOrdiniAnticipo(null, panel, null);
-    });
-  });
-  ca.querySelectorAll('[data-anticipi-forn]').forEach(function(el){
-    el.addEventListener('click', function(){
-      var f = el.getAttribute('data-anticipi-forn');
-      if(filtri.fornitori.has(f)) filtri.fornitori.delete(f); else filtri.fornitori.add(f);
-      renderOrdiniAnticipo(null, panel, null);
-    });
-  });
-  // Bottoni Tutti / Nessuno per Mesi
-  var btnMesiAll = ca.querySelector('[data-anticipi-mesi-all]');
-  if(btnMesiAll) btnMesiAll.addEventListener('click', function(){
-    mesiOrdinati.forEach(function(m){filtri.mesi.add(m);});
-    renderOrdiniAnticipo(null, panel, null);
-  });
-  var btnMesiNone = ca.querySelector('[data-anticipi-mesi-none]');
-  if(btnMesiNone) btnMesiNone.addEventListener('click', function(){
-    filtri.mesi.clear();
-    renderOrdiniAnticipo(null, panel, null);
-  });
-  // Bottoni Tutti / Nessuno per Fornitori
-  var btnFornAll = ca.querySelector('[data-anticipi-forn-all]');
-  if(btnFornAll) btnFornAll.addEventListener('click', function(){
-    fornArr.forEach(function(f){filtri.fornitori.add(f);});
-    renderOrdiniAnticipo(null, panel, null);
-  });
-  var btnFornNone = ca.querySelector('[data-anticipi-forn-none]');
-  if(btnFornNone) btnFornNone.addEventListener('click', function(){
-    filtri.fornitori.clear();
-    renderOrdiniAnticipo(null, panel, null);
-  });
-  var btnCosti = ca.querySelector('#anticipi-carica-costi');
-  if(btnCosti) btnCosti.addEventListener('click', async function(){
-    btnCosti.disabled = true;
-    btnCosti.textContent = '⏳ Caricamento...';
-    await window._anticipiCaricaCosti();
-    btnCosti.disabled = false;
-    btnCosti.textContent = '💰 Ricarica costi';
-    renderOrdiniAnticipo(null, panel, null);
-  });
-  var btnXlsx = ca.querySelector('#anticipi-export-xlsx');
-  if(btnXlsx) btnXlsx.addEventListener('click', function(){window._anticipiExportXlsx();});
-  var btnPdf = ca.querySelector('#anticipi-export-pdf');
-  if(btnPdf) btnPdf.addEventListener('click', function(){window._anticipiExportPdf();});
+  // Salvo le liste correnti in window per le funzioni toggle globali
+  window._anticipiAllMesi = mesiOrdinati;
+  window._anticipiAllFornitori = fornArr;
+  window._anticipiPanel = panel;
 }
+
+// Wrapper bottone "Carica costi" — gestisce stato disabled e re-render
+window._anticipiClickCarica = async function(btn){
+  if(!btn) btn = document.getElementById('anticipi-carica-costi');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Caricamento...'; }
+  try {
+    await window._anticipiCaricaCosti();
+  } catch(e){
+    console.error('[Anticipi] errore carica costi:', e);
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '💰 Ricarica costi'; }
+  if(window._anticipiPanel) renderOrdiniAnticipo(null, window._anticipiPanel, null);
+};
+
+// Funzioni globali per i toggle dei chip filtri (uso onclick inline per
+// massima robustezza tra re-render successivi della pagina)
+window._anticipiToggleChip = function(tipo, valore){
+  if(!window._anticipiFiltri) return;
+  var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
+  if(set.has(valore)) set.delete(valore); else set.add(valore);
+  if(window._anticipiPanel) renderOrdiniAnticipo(null, window._anticipiPanel, null);
+};
+window._anticipiToggleAll = function(tipo, on){
+  if(!window._anticipiFiltri) return;
+  var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
+  var lista = tipo==='mesi' ? (window._anticipiAllMesi||[]) : (window._anticipiAllFornitori||[]);
+  set.clear();
+  if(on) lista.forEach(function(v){set.add(v);});
+  if(window._anticipiPanel) renderOrdiniAnticipo(null, window._anticipiPanel, null);
+};
 
 window._anticipiCaricaCosti = async function(){
   // Standalone — non dipende dalla pagina ritardi. Usa solo _ritardiCostiCache
   // come storage condiviso (così i costi sono comuni alle 2 pagine).
+  // Inoltre popola _anticipiIvaCache con l'IVA dedotta da product_type Shopify
+  // o da fallback su SKU (CAF→22%, SOL→10%).
+  window._anticipiIvaCache = window._anticipiIvaCache || {};
   var statusEl = document.getElementById('anticipi-status');
   try {
     // 1) Raccoglie SKU Shopify dalle righe in anticipo
@@ -14040,40 +14050,36 @@ window._anticipiCaricaCosti = async function(){
     }
     // 2) Filtra SKU non ancora in cache
     window._ritardiCostiCache = window._ritardiCostiCache || {};
-    var skusNeeded = Array.from(skuShopSet).filter(function(s){return window._ritardiCostiCache[s]===undefined;});
+    var skusNeeded = Array.from(skuShopSet).filter(function(s){
+      return window._ritardiCostiCache[s]===undefined || window._anticipiIvaCache[s]===undefined;
+    });
     if(!skusNeeded.length){
-      // Tutti già in cache → applica e basta
-      (window._anticipiMesi||[]).forEach(function(m){
-        (window._anticipiData[m]||[]).forEach(function(r){
-          if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
-            r.costo = window._ritardiCostiCache[r.skuShopify];
-          }
-        });
-      });
-      if(statusEl) statusEl.textContent = '✅ Costi già caricati dalla cache';
+      _anticipiApplicaCostiEIva();
+      if(statusEl) statusEl.textContent = '✅ Costi e IVA già in cache';
       return;
     }
 
     if(statusEl) statusEl.textContent = '⏳ Caricamento varianti Shopify...';
 
-    // 3) Scan products.json per mappare sku → inventory_item_id
-    var invIds = {};
+    // 3) Scan products.json per mappare sku → {inventory_item_id, product_type}
+    var skuInfo = {}; // sku.toLowerCase() → {invId, productType}
     var skuLowerNeeded = new Set(skusNeeded.map(function(s){return s.toLowerCase();}));
     var pageInfo = '';
     var maxPages = 50;
     for(var p=0; p<maxPages && skuLowerNeeded.size>0; p++){
-      var url = 'products.json?limit=250&fields=id,variants' + (pageInfo?'&page_info='+pageInfo:'');
+      var url = 'products.json?limit=250&fields=id,product_type,variants' + (pageInfo?'&page_info='+pageInfo:'');
       var data;
       try{
         data = await shopifyGet(url);
       }catch(e){ console.warn('[Anticipi] shopifyGet fallita:',e); break; }
       if(!data || !data.products) break;
       data.products.forEach(function(prod){
+        var pt = String(prod.product_type||'').toUpperCase();
         (prod.variants||[]).forEach(function(v){
           var sku = (v.sku||'').trim();
           if(!sku) return;
           if(skuLowerNeeded.has(sku.toLowerCase())){
-            invIds[sku.toLowerCase()] = v.inventory_item_id;
+            skuInfo[sku.toLowerCase()] = {invId: v.inventory_item_id, productType: pt};
             skuLowerNeeded.delete(sku.toLowerCase());
           }
         });
@@ -14082,7 +14088,7 @@ window._anticipiCaricaCosti = async function(){
     }
 
     // 4) Per ogni inventory_item_id, prendi il cost
-    var invIdsArr = Object.values(invIds).filter(Boolean);
+    var invIdsArr = Object.values(skuInfo).map(function(o){return o.invId;}).filter(Boolean);
     if(statusEl) statusEl.textContent = '⏳ Caricamento costi ('+invIdsArr.length+' prodotti)...';
     var chunks = [];
     for(var i=0; i<invIdsArr.length; i+=50) chunks.push(invIdsArr.slice(i,i+50));
@@ -14099,26 +14105,23 @@ window._anticipiCaricaCosti = async function(){
       }catch(e){ console.warn('[Anticipi] batch costi fallito:',e); }
     }
 
-    // 5) Popola cache condivisa
+    // 5) Popola cache costi e IVA
     skusNeeded.forEach(function(sku){
-      var invId = invIds[sku.toLowerCase()];
-      if(invId && invToCost[invId]!=null){
-        window._ritardiCostiCache[sku] = invToCost[invId];
-      } else {
-        window._ritardiCostiCache[sku] = null; // non trovato
+      var info = skuInfo[sku.toLowerCase()];
+      if(info && invToCost[info.invId]!=null){
+        window._ritardiCostiCache[sku] = invToCost[info.invId];
+      } else if(window._ritardiCostiCache[sku]===undefined){
+        window._ritardiCostiCache[sku] = null;
       }
+      // IVA: dal product_type Shopify, fallback sul nome SKU
+      var iva = _anticipiDeduceIva(info ? info.productType : '', sku);
+      window._anticipiIvaCache[sku] = iva;
     });
 
-    // 6) Applica i costi alle righe in anticipo
-    (window._anticipiMesi||[]).forEach(function(m){
-      (window._anticipiData[m]||[]).forEach(function(r){
-        if(r.skuShopify && window._ritardiCostiCache[r.skuShopify]!=null){
-          r.costo = window._ritardiCostiCache[r.skuShopify];
-        }
-      });
-    });
+    // 6) Applica costi e IVA alle righe
+    _anticipiApplicaCostiEIva();
     var trovati = skusNeeded.filter(function(s){return window._ritardiCostiCache[s]!=null;}).length;
-    if(statusEl) statusEl.textContent = '✅ Caricati '+trovati+'/'+skusNeeded.length+' costi';
+    if(statusEl) statusEl.textContent = '✅ Caricati '+trovati+'/'+skusNeeded.length+' costi (con IVA)';
     setTimeout(function(){if(statusEl)statusEl.textContent='';},5000);
   } catch(e){
     console.error('[Anticipi] caricaCosti errore:',e);
@@ -14126,28 +14129,101 @@ window._anticipiCaricaCosti = async function(){
   }
 };
 
+// Mappa autorevole IVA per SKU Shopify (definita da Filippo)
+// Fonte: elenco prodotti in Struttura Prodotti del Piano Fabbisogno
+// classificati manualmente come Caffè (22%) o Bevande (10%)
+window._anticipiIvaMap = {
+  // Caffè 22%
+  'CDGE16CAF004':    0.22, // 160 DOLCE GUSTO - CREMOSO
+  'CNX5CAF872-240':  0.22, // 240 NESPRESSO - GRANBAR
+  'CNFAX10CAF187':   0.22, // 100 NESPRESSO - CREMOSO
+  'CNALLAX10CAF014': 0.22, // 100 NESPRESSO - ALLUMINIO
+  'CAX20CAF001':     0.22, // 240 A MODO MIO - CREMOSO
+  'CAX20CAF002':     0.22, // 100 A MODO MIO - CREMOSO
+  'CBLX10CAF010':    0.22, // 240 BIALETTI - CREMOSO
+  'CBLX10CAF058':    0.22, // 100 BIALETTI - CREMOSO
+  'CCX10CAF144':     0.22, // 240 CAFFITALY - CREMOSO
+  'CCX10CAF205':     0.22, // 80 CAFFITALY - CREMOSO
+  'PFP416':          0.22, // 150 CIALDE CARTA - INTENSO
+  'CFFX1CAF016':     0.22, // 100 FIOR LUI - INTENSO
+  'CDGE16CAF010':    0.22, // 16 DOLCE GUSTO - DECA (decaffeinato = caffè)
+  // Bevande 10%
+  'CNBX10SOL93':     0.10, // 10 NESPRESSO - ORZO
+  'CNBX10SOL94':     0.10, // 10 NESPRESSO - GINSENG
+  'CDG16SOL229':     0.10, // 16 DOLCE GUSTO - ORZO
+  'CDG16SOL230':     0.10, // 16 DOLCE GUSTO - CAPPUCCINO
+  'CDG16SOL231':     0.10, // 16 DOLCE GUSTO - CORTADO
+  'CDG16SOL232':     0.10, // 16 DOLCE GUSTO - CIOCCOLATA
+  'CDG16SOL234':     0.10, // 16 DOLCE GUSTO - NOCCIOLINO
+  'CDG16SOL235':     0.10, // 16 DOLCE GUSTO - LIMONE
+  'CDG16SOL241':     0.10  // 16 DOLCE GUSTO - GRANGINSENG
+};
+
+// Determina IVA con priorità:
+// 1. Mappa autorevole _anticipiIvaMap (definita manualmente da Filippo)
+// 2. product_type Shopify (BEVANDE/CAFFÈ)
+// 3. Fallback su SKU (SOL→10%, CAF→22%)
+// 4. Default 22% per nuovi prodotti non ancora classificati
+function _anticipiDeduceIva(productType, sku){
+  // 1. Mappa autorevole — match esatto su SKU Shopify
+  if(sku && window._anticipiIvaMap && window._anticipiIvaMap[sku]!=null){
+    return window._anticipiIvaMap[sku];
+  }
+  // 2. product_type Shopify
+  var pt = String(productType||'').toUpperCase();
+  if(pt.indexOf('BEVAND')>=0) return 0.10;
+  if(pt.indexOf('CAFF')>=0) return 0.22;
+  // 3. Fallback pattern SKU
+  var sk = String(sku||'').toUpperCase();
+  if(sk.indexOf('SOL')>=0) return 0.10;
+  if(sk.indexOf('CAF')>=0) return 0.22;
+  // 4. Default cautelativo (22% — più sicuro per nuovi prodotti non classificati)
+  return 0.22;
+}
+
+// Applica costi e IVA dalla cache alle righe in anticipo
+function _anticipiApplicaCostiEIva(){
+  (window._anticipiMesi||[]).forEach(function(m){
+    (window._anticipiData[m]||[]).forEach(function(r){
+      if(r.skuShopify){
+        if(window._ritardiCostiCache[r.skuShopify]!=null){
+          r.costo = window._ritardiCostiCache[r.skuShopify];
+        }
+        if(window._anticipiIvaCache[r.skuShopify]!=null){
+          r.iva = window._anticipiIvaCache[r.skuShopify];
+        }
+      }
+    });
+  });
+}
+
 window._anticipiExportXlsx = function(){
   if(typeof XLSX==='undefined'){
     alert('Libreria XLSX non caricata. Riprova fra qualche secondo o ricarica la pagina.');
     return;
   }
   var filtri = window._anticipiFiltri;
-  var rows = [['Mese consegna originale','Ordine','Data ordine','Fornitore','SKU','Prodotto','Qtà','Data cons. richiesta','Data cons. effettiva','Anticipo (gg)','Costo unit. (€)','Valore totale (€)']];
-  var totGen = 0;
+  var rows = [['Mese consegna originale','Ordine','Data ordine','Fornitore','SKU','Prodotto','Qtà','Data cons. richiesta','Data cons. effettiva','Anticipo (gg)','Costo unit. (€)','Imponibile (€)','IVA %','IVA (€)','Totale (€)']];
+  var totImp = 0, totIva = 0, totGen = 0;
   (window._anticipiMesi||[]).forEach(function(m){
     if(!filtri.mesi.has(m)) return;
     var parts = m.split('-');
     var lbl = window._mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
     (window._anticipiData[m]||[]).forEach(function(r){
       if(!filtri.fornitori.has(r.fornitore)) return;
-      var valore = r.costo==null ? null : r.costo*r.qta;
-      if(valore!=null) totGen += valore;
-      rows.push([lbl, r.numero, r.dataOrd, r.fornitore, r.sku, r.prodotto, r.qta, r.dataCons, r.dataRic, r.giorni, r.costo, valore]);
+      var imp = r.costo==null ? null : r.costo*r.qta;
+      var ivaPct = r.iva==null ? null : Math.round(r.iva*100);
+      var ivaEur = (imp==null||r.iva==null) ? null : imp*r.iva;
+      var tot = (imp==null||ivaEur==null) ? null : imp+ivaEur;
+      if(imp!=null) totImp += imp;
+      if(ivaEur!=null) totIva += ivaEur;
+      if(tot!=null) totGen += tot;
+      rows.push([lbl, r.numero, r.dataOrd, r.fornitore, r.sku, r.prodotto, r.qta, r.dataCons, r.dataRic, r.giorni, r.costo, imp, ivaPct==null?null:ivaPct+'%', ivaEur, tot]);
     });
   });
-  rows.push(['','','','','','','','','','TOTALE','',totGen]);
+  rows.push(['','','','','','','','','','','TOTALE',totImp,'',totIva,totGen]);
   var ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:18},{wch:14},{wch:11},{wch:18},{wch:14},{wch:30},{wch:6},{wch:12},{wch:12},{wch:10},{wch:11},{wch:13}];
+  ws['!cols'] = [{wch:18},{wch:14},{wch:11},{wch:18},{wch:14},{wch:30},{wch:6},{wch:12},{wch:12},{wch:10},{wch:11},{wch:12},{wch:7},{wch:11},{wch:12}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ordini in Anticipo');
   XLSX.writeFile(wb, 'ordini_anticipo_'+new Date().toISOString().slice(0,10)+'.xlsx');
@@ -14158,36 +14234,43 @@ window._anticipiExportPdf = function(){
   var euro = function(n){if(n==null)return '—';return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(n);};
   var fmtD = function(s){if(!s)return '—';var p=s.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;};
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ordini in Anticipo</title>'+
-    '<style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1a1a2e;font-size:11px}'+
+    '<style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1a1a2e;font-size:10px}'+
     'table{width:100%;border-collapse:collapse;margin-bottom:14px}'+
     'thead tr{background:#dcfce7}'+
-    'th{padding:6px 8px;text-align:left;font-size:9px;color:#166534;text-transform:uppercase;font-weight:700;border-bottom:2px solid #86efac}'+
-    'td{padding:5px 8px;font-size:11px;border-bottom:1px solid #f0f2f5}'+
+    'th{padding:5px 6px;text-align:left;font-size:8px;color:#166534;text-transform:uppercase;font-weight:700;border-bottom:2px solid #86efac}'+
+    'td{padding:4px 6px;font-size:10px;border-bottom:1px solid #f0f2f5}'+
     '.r{text-align:right} .c{text-align:center}'+
     '.hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #16a34a}'+
     '.title{font-size:18px;font-weight:700;color:#166534}'+
-    '.tot{margin-top:14px;padding:10px 14px;background:#166534;color:#fff;border-radius:6px;font-weight:700;text-align:right;font-size:13px}'+
-    '.mese{background:#dcfce7;padding:8px 12px;font-weight:700;color:#166534;font-size:12px;margin-top:14px}'+
+    '.tot{margin-top:14px;padding:12px 14px;background:#166534;color:#fff;border-radius:6px;font-weight:700;font-size:12px}'+
+    '.tot-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px}'+
+    '.mese{background:#dcfce7;padding:8px 12px;font-weight:700;color:#166534;font-size:11px;margin-top:14px}'+
     '@media print{button{display:none!important}}</style></head><body>'+
-    '<div class="hdr"><div><div class="title">⚡ ORDINI IN ANTICIPO</div><div style="font-size:11px;color:#666;margin-top:3px">Yespresso · Generato il '+new Date().toLocaleString('it-IT')+'</div></div>'+
+    '<div class="hdr"><div><div class="title">⚡ ORDINI IN ANTICIPO</div><div style="font-size:10px;color:#666;margin-top:3px">Yespresso · Generato il '+new Date().toLocaleString('it-IT')+'</div></div>'+
     '<button onclick="window.print()" style="padding:8px 18px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700">🖨 Stampa / Salva PDF</button></div>';
-  var totGen = 0;
+  var totImp = 0, totIva = 0, totGen = 0;
   (window._anticipiMesi||[]).forEach(function(m){
     if(!filtri.mesi.has(m)) return;
     var righeMese = (window._anticipiData[m]||[]).filter(function(r){return filtri.fornitori.has(r.fornitore);});
     if(!righeMese.length) return;
     var parts = m.split('-');
     var lbl = window._mesiLabel[parseInt(parts[1])] + ' ' + parts[0];
-    var totMese = righeMese.reduce(function(s,r){return s+(r.costo==null?0:r.costo*r.qta);},0);
-    totGen += totMese;
-    html += '<div class="mese">📅 Consegna originale: '+lbl+' &nbsp;·&nbsp; '+righeMese.length+' righe &nbsp;·&nbsp; Totale '+euro(totMese)+'</div>';
+    var totMeseImp = righeMese.reduce(function(s,r){return s+(r.costo==null?0:r.costo*r.qta);},0);
+    var totMeseIva = righeMese.reduce(function(s,r){return s+(r.costo==null||r.iva==null?0:r.costo*r.qta*r.iva);},0);
+    var totMese = totMeseImp + totMeseIva;
+    totImp += totMeseImp; totIva += totMeseIva; totGen += totMese;
+    html += '<div class="mese">📅 Consegna originale: '+lbl+' &nbsp;·&nbsp; '+righeMese.length+' righe &nbsp;·&nbsp; Imp. '+euro(totMeseImp)+' &nbsp;·&nbsp; IVA '+euro(totMeseIva)+' &nbsp;·&nbsp; Tot. '+euro(totMese)+'</div>';
     html += '<table><thead><tr>'+
       '<th>Ordine</th><th>Fornitore</th><th>SKU</th><th class="r">Qtà</th>'+
       '<th class="c">Cons. richiesta</th><th class="c">Cons. effettiva</th>'+
-      '<th class="r">Anticipo</th><th class="r">Costo</th><th class="r">Valore</th>'+
+      '<th class="r">Anticipo</th><th class="r">Costo</th><th class="r">Imponibile</th>'+
+      '<th class="c">IVA %</th><th class="r">IVA €</th><th class="r">Totale</th>'+
       '</tr></thead><tbody>';
     righeMese.forEach(function(r){
-      var valore = r.costo==null ? null : r.costo*r.qta;
+      var imp = r.costo==null ? null : r.costo*r.qta;
+      var ivaPct = r.iva==null ? null : Math.round(r.iva*100);
+      var ivaEur = (imp==null||r.iva==null) ? null : imp*r.iva;
+      var tot = (imp==null||ivaEur==null) ? null : imp+ivaEur;
       html += '<tr>'+
         '<td>'+r.numero+'</td>'+
         '<td>'+r.fornitore+'</td>'+
@@ -14197,14 +14280,21 @@ window._anticipiExportPdf = function(){
         '<td class="c">'+fmtD(r.dataRic)+'</td>'+
         '<td class="r" style="color:#16a34a;font-weight:700">−'+r.giorni+' gg</td>'+
         '<td class="r">'+(r.costo==null?'?':euro(r.costo))+'</td>'+
-        '<td class="r" style="font-weight:700">'+(valore==null?'?':euro(valore))+'</td>'+
+        '<td class="r">'+(imp==null?'?':euro(imp))+'</td>'+
+        '<td class="c">'+(ivaPct==null?'?':ivaPct+'%')+'</td>'+
+        '<td class="r">'+(ivaEur==null?'?':euro(ivaEur))+'</td>'+
+        '<td class="r" style="font-weight:700">'+(tot==null?'?':euro(tot))+'</td>'+
       '</tr>';
     });
     html += '</tbody></table>';
   });
-  html += '<div class="tot">💼 TOTALE VALORE ORDINI IN ANTICIPO: '+euro(totGen)+'<br><span style="font-size:10px;font-weight:400">Importo da stornare dal pagamento delle fatture al fornitore</span></div>';
+  html += '<div class="tot">💼 TOTALE ORDINI IN ANTICIPO (da stornare dal pagamento delle fatture)'+
+    '<div class="tot-row"><span>Imponibile:</span><span>'+euro(totImp)+'</span></div>'+
+    '<div class="tot-row"><span>IVA totale:</span><span>'+euro(totIva)+'</span></div>'+
+    '<div class="tot-row" style="font-size:14px;border-top:1px solid rgba(255,255,255,0.3);padding-top:6px;margin-top:8px"><span>Totale (IVA inclusa):</span><span>'+euro(totGen)+'</span></div>'+
+  '</div>';
   html += '</body></html>';
-  var w = window.open('','_blank','width=900,height=720');
+  var w = window.open('','_blank','width=1100,height=720');
   if(w){w.document.write(html);w.document.close();}
   else alert('Abilita i pop-up per scaricare il PDF.');
 };
