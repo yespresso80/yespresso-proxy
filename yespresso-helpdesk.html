@@ -13772,10 +13772,8 @@ window._ritardiToggleAll = function(tipo, checkAll){
 // Esporta in Excel + PDF, raggruppato per fornitore.
 // ════════════════════════════════════════════════════════════════
 function renderOrdiniAnticipo(ignored, panel, ignored2) {
-  console.log('[Anticipi] renderOrdiniAnticipo chiamato. panel:', panel);
   var ca = panel ? panel.querySelector('#filippo-content') : null;
-  console.log('[Anticipi] container ca:', ca);
-  if (!ca){ console.warn('[Anticipi] container #filippo-content NON trovato'); return; }
+  if (!ca) return;
   var ordini = (typeof fabOrdini !== 'undefined') ? fabOrdini : [];
   if (!ordini.length) {
     ca.innerHTML = '<div style="font-size:18px;font-weight:700;color:#166534;margin-bottom:20px">⚡ Ordini in Anticipo</div>' +
@@ -13848,17 +13846,18 @@ function renderOrdiniAnticipo(ignored, panel, ignored2) {
   mesiOrdinati.forEach(function(m){anticipi[m].forEach(function(r){allFornitori.add(r.fornitore);});});
   var fornArr = Array.from(allFornitori).sort();
 
-  // Filtri persistenti in sessione
+  // Filtri persistenti in sessione.
+  // IMPORTANTE: dopo il primo render NON ri-aggiungere mesi/fornitori al filtro,
+  // altrimenti ogni deselezione manuale viene annullata al re-render successivo.
   if(!window._anticipiFiltri){
     window._anticipiFiltri = {
       mesi: new Set(mesiOrdinati),
       fornitori: new Set(fornArr)
     };
-  } else {
-    // Aggiungi nuovi mesi/fornitori scoperti
-    mesiOrdinati.forEach(function(m){if(!window._anticipiFiltri.mesi.has(m)) window._anticipiFiltri.mesi.add(m);});
-    fornArr.forEach(function(f){if(!window._anticipiFiltri.fornitori.has(f)) window._anticipiFiltri.fornitori.add(f);});
   }
+  // (Nota: se in futuro arrivano nuovi mesi/fornitori, l'utente dovrà chiudere
+  // e riaprire il pannello per vederli pre-selezionati. Questo è meglio del
+  // bug precedente dove le deselezioni venivano annullate ad ogni render.)
   var filtri = window._anticipiFiltri;
 
   // Salvo strutture globali per re-render e export
@@ -14047,32 +14046,20 @@ function _anticipiGetPanel(){
   return null;
 }
 window._anticipiToggleChip = function(tipo, valore){
-  console.log('[Anticipi] toggleChip tipo='+tipo+' valore='+valore);
-  if(!window._anticipiFiltri){ console.warn('[Anticipi] filtri non inizializzati'); return; }
+  if(!window._anticipiFiltri) return;
   var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
   if(set.has(valore)) set.delete(valore); else set.add(valore);
   var panel = _anticipiGetPanel();
-  if(panel){
-    renderOrdiniAnticipo(null, panel, null);
-  } else {
-    console.warn('[Anticipi] pannello non trovato per re-render');
-  }
+  if(panel) renderOrdiniAnticipo(null, panel, null);
 };
 window._anticipiToggleAll = function(tipo, on){
-  console.log('[Anticipi] toggleAll tipo='+tipo+' on='+on);
-  if(!window._anticipiFiltri){ console.warn('[Anticipi] filtri non inizializzati'); return; }
+  if(!window._anticipiFiltri) return;
   var set = tipo==='mesi' ? window._anticipiFiltri.mesi : window._anticipiFiltri.fornitori;
   var lista = tipo==='mesi' ? (window._anticipiAllMesi||[]) : (window._anticipiAllFornitori||[]);
-  console.log('[Anticipi] lista da applicare:', lista, 'on:', on);
   set.clear();
   if(on) lista.forEach(function(v){set.add(v);});
-  console.log('[Anticipi] filtri dopo:', window._anticipiFiltri);
   var panel = _anticipiGetPanel();
-  if(panel){
-    renderOrdiniAnticipo(null, panel, null);
-  } else {
-    console.warn('[Anticipi] pannello non trovato per re-render');
-  }
+  if(panel) renderOrdiniAnticipo(null, panel, null);
 };
 
 window._anticipiCaricaCosti = async function(){
