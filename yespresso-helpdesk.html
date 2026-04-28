@@ -1721,6 +1721,18 @@ function goPage(p){
 
 async function selectTicket(tid){
   window._lastShopifyCustomerId=null;
+  // FIX CONTAMINAZIONE TRA TICKET: resetta tutti i dati specifici del ticket
+  // precedente prima di caricare il nuovo ticket. Senza questo reset, il
+  // bottone WhatsApp può inviare il messaggio al telefono del cliente del
+  // ticket PRECEDENTE se l'ordine corrente non viene caricato in tempo.
+  window._lastShopifyOrder=null;
+  window._brtPickupData={};
+  window._allShopifyOrders=[];
+  // FIX CRITICO: _giacenzaData può causare invio WA con ordine/tracking/link
+  // del ticket BRT precedente se l'utente cambia ticket e clicca WhatsApp
+  // prima che il pannello giacenza del nuovo ticket sia renderizzato.
+  window._giacenzaData={};
+  window._giacenzaOrigText={};
   window._imapAttachmentsHtml=""; // Reset allegati IMAP ad ogni cambio ticket
   window._ticketAttachments=[]; // Reset allegati ticket precedente
   window._podData={}; // Reset POD data ticket precedente
@@ -3489,6 +3501,40 @@ function renderGiacenzaPanel(g, origText){
   }
   h += '</div>';
 
+  // ⚠️ SAFETY CHECK: confronta destinatario giacenza BRT con destinatario ordine Shopify
+  // Se i nomi sono molto diversi (es. cognome diverso), mostra warning prominente
+  // per evitare invio messaggio WA al cliente sbagliato.
+  try {
+    var ordCorrenteCheck = window._lastShopifyOrder;
+    if(ordCorrenteCheck && ordCorrenteCheck.shipping_address && ordCorrenteCheck.shipping_address.name && g.destNome){
+      var shipName = String(ordCorrenteCheck.shipping_address.name||'').toUpperCase().trim();
+      var giacName = String(g.destNome||'').toUpperCase().trim();
+      // Estrai cognomi (ultime 1-2 parole)
+      function _lastSurname(s){
+        var parts = s.split(/\s+/).filter(Boolean);
+        return parts[parts.length-1] || '';
+      }
+      var shipSurname = _lastSurname(shipName);
+      var giacSurname = _lastSurname(giacName);
+      // Match generoso: tollera typo BRT (BECCALOSSI vs BECCALOS)
+      var matchSurname = shipSurname && giacSurname &&
+                         (shipSurname.indexOf(giacSurname) >= 0 ||
+                          giacSurname.indexOf(shipSurname) >= 0 ||
+                          shipName.indexOf(giacSurname) >= 0 ||
+                          giacName.indexOf(shipSurname) >= 0);
+      if(!matchSurname){
+        h += '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:10px;padding:12px 14px;margin-top:10px">'+
+          '<div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:6px">⚠️ ATTENZIONE — Possibile cliente sbagliato</div>'+
+          '<div style="font-size:11px;color:#7f1d1d;line-height:1.6">'+
+            'Il <strong>destinatario della giacenza BRT</strong> ('+esc(g.destNome)+') NON corrisponde al <strong>destinatario dell\'ordine Shopify</strong> attualmente caricato in sidebar ('+esc(ordCorrenteCheck.shipping_address.name)+').<br><br>'+
+            'Se invii il messaggio WhatsApp ora, andrà al telefono di <strong>'+esc(ordCorrenteCheck.shipping_address.name)+'</strong> ma con i dati di spedizione di <strong>'+esc(g.destNome)+'</strong>.<br><br>'+
+            '<strong>Verifica manualmente</strong> il ticket prima di inviare. Se questo ticket appartiene davvero a '+esc(g.destNome)+', ricarica la pagina (F5) per ricaricare l\'ordine corretto.'+
+          '</div>'+
+        '</div>';
+      }
+    }
+  } catch(e){ console.warn('[Giacenza safety banner]', e); }
+
   // Azione principale: gestisci giacenza su BRT (full width)
   if(g.linkPortale || g.urlTracking){
     const linkBrt = g.linkPortale || g.urlTracking;
@@ -4527,6 +4573,65 @@ window.inviaGiacenzaWa = function(uid){
     alert('Numero di telefono cliente non trovato.\n\nAttendi che l\'ordine Shopify venga caricato nella sidebar destra (il bottone WhatsApp deve essere visibile là) e riprova.');
     return;
   }
+  // SAFETY CHECK COERENZA TICKET ↔ ORDINE
+  // Verifica che l'ordine corrente sia coerente con il ticket attuale prima
+  // di inviare il messaggio. Confronta:
+  // 1. Numero ordine giacenza vs numero ordine in _lastShopifyOrder
+  // 2. Nome destinatario giacenza BRT vs nome destinatario ordine Shopify
+  // Blocca con conferma esplicita se rileva incoerenza.
+  try {
+    var ordCorrente = window._lastShopifyOrder;
+    if(ordCorrente){
+      var warnings = [];
+      // Check 1: numero ordine
+      if(g.ordineShopify){
+        var ordineCorrenteName = String(ordCorrente.name||'').replace(/^#/,'');
+        var ordineCorrenteNum  = String(ordCorrente.order_number||'');
+        var giacenzaNum = String(g.ordineShopify||'').replace(/^#/,'');
+        var coerenteNum = (ordineCorrenteName.indexOf(giacenzaNum) >= 0) ||
+                       (giacenzaNum.indexOf(ordineCorrenteName) >= 0) ||
+                       (ordineCorrenteNum === giacenzaNum) ||
+                       ((ordCorrente.note_attributes||[]).some(function(a){
+                         var v = String(a.value||'');
+                         return v.indexOf(giacenzaNum) >= 0 || giacenzaNum.indexOf(v) >= 0;
+                       }));
+        if(!coerenteNum){
+          warnings.push('Numero ordine: ticket BRT cita "'+giacenzaNum+'" ma in sidebar c\'è "'+(ordCorrente.name||ordCorrente.id)+'"');
+        }
+      }
+      // Check 2: destinatario (cognomi)
+      if(g.destNome && ordCorrente.shipping_address && ordCorrente.shipping_address.name){
+        var shipName = String(ordCorrente.shipping_address.name||'').toUpperCase().trim();
+        var giacName = String(g.destNome||'').toUpperCase().trim();
+        function _lastWord(s){
+          var parts = s.split(/\s+/).filter(Boolean);
+          return parts[parts.length-1] || '';
+        }
+        var shipSurname = _lastWord(shipName);
+        var giacSurname = _lastWord(giacName);
+        var matchSurname = shipSurname && giacSurname &&
+                           (shipSurname.indexOf(giacSurname) >= 0 ||
+                            giacSurname.indexOf(shipSurname) >= 0 ||
+                            shipName.indexOf(giacSurname) >= 0 ||
+                            giacName.indexOf(shipSurname) >= 0);
+        if(!matchSurname){
+          warnings.push('Destinatario: ticket BRT cita "'+g.destNome+'" ma ordine Shopify è di "'+ordCorrente.shipping_address.name+'"');
+        }
+      }
+      if(warnings.length > 0){
+        var conf = '⚠️ ATTENZIONE — POSSIBILE INVIO AL CLIENTE SBAGLIATO\n\n'+
+          'Ho rilevato '+warnings.length+' incoeren'+(warnings.length===1?'za':'ze')+' tra il ticket BRT e l\'ordine Shopify in sidebar:\n\n'+
+          warnings.map(function(w,i){return (i+1)+'. '+w;}).join('\n\n')+'\n\n'+
+          'Telefono che riceverà il messaggio: '+phone+' (di '+(ordCorrente.shipping_address && ordCorrente.shipping_address.name || 'cliente sidebar')+')\n\n'+
+          'IL MESSAGGIO INVIATO CONTERRÀ I DATI DI '+(g.destNome || 'altro cliente').toUpperCase()+', NON di chi riceverà il WhatsApp.\n\n'+
+          'CONSIGLIO: chiudi questa finestra, premi F5 per ricaricare, riapri il ticket e riprova.\n\n'+
+          'Vuoi inviare comunque?';
+        if(!confirm(conf)){
+          return; // Annulla invio
+        }
+      }
+    }
+  } catch(e){ console.warn('[WA safety check]', e); }
   var messaggio = buildGiacenzaWaMessage(g);
   var url = 'https://wa.me/39'+phone+'?text='+encodeURIComponent(messaggio);
   window.open(url, '_blank');
