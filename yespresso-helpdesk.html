@@ -24623,8 +24623,12 @@ window.modificaOrdineConferma = async function(){
     changes.length+' righe modificate:\n\n';
   changes.forEach(function(c){
     msgConf += '• '+c.sku+'\n';
-    if(c.changeQty) msgConf += '   qty: '+c.qty_old+' → '+c.qty_new+' pz\n';
-    if(c.changeData) msgConf += '   data: '+(c.data_old||'?')+' → '+(c.data_new||'?')+'\n';
+    if(c.changeQty) msgConf += '   Modificata la quantità da '+c.qty_old+' a '+c.qty_new+' pz\n';
+    if(c.changeData){
+      var dO = c.data_old && c.data_old.length===10 ? c.data_old.split('-').reverse().join('/') : (c.data_old||'?');
+      var dN = c.data_new && c.data_new.length===10 ? c.data_new.split('-').reverse().join('/') : (c.data_new||'?');
+      msgConf += '   Modificata la data di consegna da '+dO+' a '+dN+'\n';
+    }
   });
   msgConf += '\nConfermare?';
   if(!confirm(msgConf)) return;
@@ -24675,15 +24679,17 @@ window.modificaOrdineConferma = async function(){
   var footer = document.getElementById('mod-ord-footer');
   if(footer){
     var righeMail = changes.map(function(c){
-      var line = '• '+c.sku;
-      if(c.changeQty) line += ' — qty '+c.qty_old+' → '+c.qty_new;
-      if(c.changeData){
-        var dOld = c.data_old && c.data_old.length===10 ? c.data_old.split('-').reverse().join('/') : c.data_old;
-        var dNew = c.data_new && c.data_new.length===10 ? c.data_new.split('-').reverse().join('/') : c.data_new;
-        line += ' — data '+(dOld||'?')+' → '+(dNew||'?');
+      var lines = ['• '+c.sku];
+      if(c.changeQty){
+        lines.push('  Modificata la quantità da '+c.qty_old+' a '+c.qty_new+' pz');
       }
-      return line;
-    }).join('\n');
+      if(c.changeData){
+        var dOld = c.data_old && c.data_old.length===10 ? c.data_old.split('-').reverse().join('/') : (c.data_old||'?');
+        var dNew = c.data_new && c.data_new.length===10 ? c.data_new.split('-').reverse().join('/') : (c.data_new||'?');
+        lines.push('  Modificata la data di consegna da '+dOld+' a '+dNew);
+      }
+      return lines.join('\n');
+    }).join('\n\n');
     footer.innerHTML =
       '<div style="flex:1;background:#f0fdf4;border-left:3px solid #16a34a;padding:10px 14px;border-radius:6px">'+
         '<div style="font-size:13px;color:#166534;font-weight:600">✅ Modifiche salvate. Vuoi inviare email al fornitore con il riepilogo?</div>'+
@@ -24696,61 +24702,186 @@ window.modificaOrdineConferma = async function(){
   }
 };
 
-window.modificaOrdineInviaEmail = async function(idOrdine){
+window.modificaOrdineInviaEmail = function(idOrdine){
   var ord = (fabOrdini||[]).find(function(o){return o.id===idOrdine;});
   if(!ord){ showToast('Ordine non trovato'); return; }
   var preview = window._modOrd_emailPreview || '(nessun riepilogo)';
 
-  // Determina destinatario fornitore
-  var destEmail = '';
-  // Cerca email mappata per fornitore (fornitorEmailOverride o fornitoriDb)
-  if(typeof fornitoriDb==='object' && fornitoriDb && fornitoriDb[ord.fornitore]){
-    destEmail = fornitoriDb[ord.fornitore].email||'';
-  } else if(ord.email_inviata_to){
-    destEmail = ord.email_inviata_to;
+  // Risolve email fornitore (stessa logica di inviaEmailOrdine)
+  var FORNITORI_EMAIL_OVERRIDE = {
+    'simfed srl': 'daniele.grilli@sim-fed.it',
+    'simfed': 'daniele.grilli@sim-fed.it',
+    'sim-fed srl': 'daniele.grilli@sim-fed.it',
+    'sim-fed': 'daniele.grilli@sim-fed.it'
+  };
+  var fornKeyLower = String(ord.fornitore||'').toLowerCase().trim();
+  var emailForn = '';
+  if(FORNITORI_EMAIL_OVERRIDE[fornKeyLower]){
+    emailForn = FORNITORI_EMAIL_OVERRIDE[fornKeyLower];
+  } else {
+    var prodForn = (fabProducts||[]).find(function(p){return p.fornitore===ord.fornitore && p.email;});
+    emailForn = prodForn ? (prodForn.email||'') : '';
+    if(!emailForn){
+      var anyProd = (fabProducts||[]).find(function(p){return p.fornitore===ord.fornitore;});
+      if(anyProd && anyProd.email) emailForn = anyProd.email;
+    }
   }
+  // Se ancora nessuna email, prendo l'ultima usata sull'ordine
+  if(!emailForn && ord.email_inviata_to) emailForn = ord.email_inviata_to;
 
-  var defaultEmail = destEmail;
-  var emailFinale = prompt(
-    'Invia email modifiche a:\n(modifica indirizzo se necessario)',
-    defaultEmail
-  );
-  if(emailFinale==null) return;
-  emailFinale = emailFinale.trim();
-  if(!emailFinale){ showToast('Indirizzo email vuoto'); return; }
-
-  var subject = 'Modifica ordine '+(ord.numero_ordine||ord.id)+' — '+ord.fornitore;
-  var body = 'Buongiorno,\n\n'+
-    'comunichiamo le seguenti modifiche al nostro ordine '+(ord.numero_ordine||ord.id)+':\n\n'+
+  var oggetto = 'Modifica ordine '+(ord.numero_ordine||ord.id)+' — '+ord.fornitore;
+  var dataOrd = ord.data_ordine || '';
+  var testo =
+    'Buongiorno,\n\n'+
+    'comunichiamo le seguenti modifiche al nostro ordine '+(ord.numero_ordine||ord.id)+
+    (dataOrd?' del '+dataOrd:'')+':\n\n'+
     preview+'\n\n'+
     'Vi preghiamo di confermare la presa in carico delle modifiche.\n\n'+
     'Cordiali saluti,\n'+
     'Yespresso';
 
-  // Usa endpoint /send-email come per gli altri invii
-  try {
-    var resp = await fetch(PROXY+'/send-email', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({to: emailFinale, subject: subject, text: body})
-    });
-    var d = await resp.json().catch(function(){return null;});
-    if(resp.ok){
-      // Logga in note_modifiche l'invio email
-      var nm = (ord.note_modifiche||[]);
-      if(nm.length){
-        nm[nm.length-1].email_to = emailFinale;
-        nm[nm.length-1].email_sent_at = new Date().toISOString();
-      }
-      if(typeof saveFabState==='function') saveFabState();
-      showToast('✅ Email modifiche inviata a '+emailFinale);
-    } else {
-      showToast('❌ Errore invio email: '+(d&&d.error?d.error:resp.status));
-    }
-  } catch(e){
-    showToast('❌ Errore invio: '+e.message);
-  }
+  // Chiudi il modal di modifica per fare spazio
   modificaOrdineChiudi();
-  if(typeof renderOrdiniInviati==='function') renderOrdiniInviati();
+
+  // Crea modal email con stesso layout di inviaEmailOrdine
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:12px;width:580px;max-width:98vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden">'+
+      '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#fef3c7">'+
+        '<span style="font-weight:700;color:#713f12">✏️ Email modifiche ordine — '+_escHtml(ord.fornitore||'?')+'</span>'+
+        '<button id="em-mod-close" style="background:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">×</button>'+
+      '</div>'+
+      '<div style="padding:14px 20px;flex:1;overflow-y:auto">'+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">A:</label>'+
+          '<input id="em-mod-to" type="email" value="'+_escHtml(emailForn||'')+'" placeholder="destinatario@fornitore.it" style="width:100%;padding:8px 10px;border:1.5px solid '+(emailForn?'#e0e4ea':'#fca5a5')+';border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+        (emailForn?'':'<div style="background:#fef3c7;color:#92400e;font-size:11px;padding:6px 10px;border-radius:6px;margin-bottom:10px">⚠️ Email fornitore non trovata. Inseriscila manualmente.</div>')+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">CC:</label>'+
+          '<input id="em-mod-cc" type="text" value="commerciale@yespresso.it" placeholder="cc1@..., cc2@..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Oggetto:</label>'+
+          '<input id="em-mod-subj" type="text" value="'+_escHtml(oggetto)+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+        '<div><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Testo email:</label>'+
+          '<textarea id="em-mod-body" style="width:100%;padding:10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:monospace;min-height:240px;box-sizing:border-box;outline:none;resize:vertical;white-space:pre">'+_escHtml(testo)+'</textarea></div>'+
+      '</div>'+
+      '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:space-between;align-items:center;flex-shrink:0;background:#fafbfc;flex-wrap:wrap">'+
+        '<div style="display:flex;gap:8px">'+
+          '<button id="em-mod-copy" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copia testo</button>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button id="em-mod-cancel" style="background:#fff;border:1px solid #e0e4ea;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">Annulla</button>'+
+          '<button id="em-mod-mailto" style="background:#fff;border:1.5px solid #1d4ed8;color:#1d4ed8;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Apre il client email installato">💻 Client locale</button>'+
+          '<button id="em-mod-send" style="background:#1d4ed8;border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" title="Invia direttamente dal server Yespresso">🚀 Invia dal server</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+
+  function closeModal(){ modal.remove(); }
+  modal.querySelector('#em-mod-close').onclick = closeModal;
+  modal.querySelector('#em-mod-cancel').onclick = closeModal;
+  modal.addEventListener('click', function(e){if(e.target===modal)closeModal();});
+
+  modal.querySelector('#em-mod-copy').onclick = function(){
+    var body = modal.querySelector('#em-mod-body').value;
+    navigator.clipboard.writeText(body).then(function(){
+      showToast('✅ Testo copiato negli appunti');
+    }).catch(function(){
+      var ta = modal.querySelector('#em-mod-body'); ta.select(); document.execCommand('copy');
+      showToast('✅ Testo copiato');
+    });
+  };
+
+  function _logEmailInviata(to){
+    var nm = ord.note_modifiche || [];
+    if(nm.length){
+      nm[nm.length-1].email_to = to;
+      nm[nm.length-1].email_sent_at = new Date().toISOString();
+    }
+    if(typeof saveFabState==='function'){ try{ saveFabState(); }catch(e){} }
+    if(typeof renderOrdiniInviati==='function'){ try{ renderOrdiniInviati(); }catch(e){} }
+  }
+
+  // Client locale (mailto:)
+  modal.querySelector('#em-mod-mailto').onclick = function(){
+    var to = modal.querySelector('#em-mod-to').value.trim();
+    var cc = modal.querySelector('#em-mod-cc').value.trim();
+    var subj = modal.querySelector('#em-mod-subj').value.trim();
+    var body = modal.querySelector('#em-mod-body').value;
+    if(!to){ alert('Inserisci l\'indirizzo email del destinatario.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ alert('Indirizzo email non valido.'); return; }
+
+    var mailtoUrl = 'mailto:'+encodeURIComponent(to);
+    var params = [];
+    if(cc) params.push('cc='+encodeURIComponent(cc));
+    if(subj) params.push('subject='+encodeURIComponent(subj));
+    params.push('body='+encodeURIComponent(body));
+    mailtoUrl += '?'+params.join('&');
+
+    if(mailtoUrl.length > 2000){
+      navigator.clipboard.writeText(body).catch(function(){});
+      alert('Il testo è stato copiato negli appunti. Incollalo nel corpo del client email.');
+      mailtoUrl = 'mailto:'+encodeURIComponent(to)+'?'+(cc?'cc='+encodeURIComponent(cc)+'&':'')+'subject='+encodeURIComponent(subj);
+    }
+
+    window.location.href = mailtoUrl;
+    _logEmailInviata(to);
+    setTimeout(function(){ showToast('✉️ Client email aperto'); closeModal(); }, 400);
+  };
+
+  // Invio SMTP dal server
+  modal.querySelector('#em-mod-send').onclick = async function(){
+    var btn = this;
+    var to = modal.querySelector('#em-mod-to').value.trim();
+    var cc = modal.querySelector('#em-mod-cc').value.trim();
+    var subj = modal.querySelector('#em-mod-subj').value.trim();
+    var body = modal.querySelector('#em-mod-body').value;
+    if(!to){ alert('Inserisci l\'indirizzo email del destinatario.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ alert('Indirizzo email non valido.'); return; }
+    if(cc){
+      var ccList = cc.split(/[,;]/).map(function(s){return s.trim();}).filter(Boolean);
+      for(var i=0;i<ccList.length;i++){
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ccList[i])){
+          alert('Indirizzo CC non valido: '+ccList[i]); return;
+        }
+      }
+    }
+    if(!confirm('Invio email modifiche a:\n\n'+to+(cc?'\nCC: '+cc:'')+'\n\nOggetto: '+subj+'\n\nProcedere?')) return;
+
+    btn.disabled = true;
+    var oldLabel = btn.textContent;
+    btn.textContent = '⏳ Invio...';
+    try {
+      var res = await proxyFetch(PROXY+'/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          to: to,
+          cc: cc||'',
+          subject: subj,
+          body: body,
+          orderId: ord.id,
+          fornitore: ord.fornitore
+        })
+      });
+      if(!res.ok){
+        var errText = await res.text();
+        throw new Error('HTTP '+res.status+': '+errText.substring(0,200));
+      }
+      var result = await res.json();
+      if(result && result.ok){
+        _logEmailInviata(to);
+        showToast('✅ Email modifiche inviata a '+to);
+        closeModal();
+      } else {
+        throw new Error(result && result.error ? result.error : 'Errore sconosciuto');
+      }
+    } catch(e){
+      console.error('[send-email modifiche]', e);
+      alert('Errore invio email: '+e.message+'\n\nPuoi provare con "Client locale" come alternativa.');
+      btn.disabled = false;
+      btn.textContent = oldLabel;
+    }
+  };
 };
 
 // ══════════════════════════════════════════════════════════════════
