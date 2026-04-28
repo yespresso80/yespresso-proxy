@@ -26416,20 +26416,33 @@ window.ricezioneSalva=async function(){
       });
       righeAperte.sort(function(a,b){return a.data.localeCompare(b.data);});
 
+      // LOG DIAGNOSTICO scaling
+      console.log('[Ricezione] SKU '+sku+' qty_input='+qtyRicevuta+' ms='+ms+' righe_aperte='+righeAperte.length);
+      righeAperte.forEach(function(x,i){
+        console.log('  ['+i+'] ordine='+x.ord.id+' data='+x.data+' qty_ord='+x.riga.qty_ordinata+' qty_ric='+(x.riga.qty_ricevuta||0)+' residuo='+x.residuo);
+      });
+
       var rimanente=qtyRicevuta;
       var todayRec=new Date().toISOString().split('T')[0];
-      righeAperte.forEach(function(entry){
+      righeAperte.forEach(function(entry, idx){
         if(rimanente<=0) return;
         var scala=Math.min(rimanente,entry.residuo);
-        entry.riga.qty_ricevuta=(entry.riga.qty_ricevuta||0)+scala;
+        var prima = entry.riga.qty_ricevuta||0;
+        entry.riga.qty_ricevuta=prima+scala;
         if(!entry.riga.data_ricezione_effettiva) entry.riga.data_ricezione_effettiva=todayRec;
         if(ms>1) entry.riga.qty_ricevuta_master=Math.ceil(entry.riga.qty_ricevuta/ms);
         rimanente-=scala;
+        // LOG SCALA
+        console.log('[Ricezione] scalo '+scala+' su ordine '+entry.ord.id+' (riga.qty_ricevuta: '+prima+' -> '+entry.riga.qty_ricevuta+'). Rimanente: '+rimanente);
         // Controlla se ordine completato
         var allDone=entry.ord.righe.every(function(r){return (r.qty_ricevuta||0)>=r.qty_ordinata;});
         if(allDone) entry.ord.stato='ricevuto';
         else if((entry.riga.qty_ricevuta||0)>0) entry.ord.stato='parziale';
       });
+      if(rimanente>0){
+        console.warn('[Ricezione] ATTENZIONE rimanenti '+rimanente+' pz NON scalati (forse non ci sono abbastanza ordini aperti)');
+        errors.push(p.sku+': '+rimanente+' pz NON scalati (nessun ordine aperto sufficiente)');
+      }
 
       // Aggiorna inventario Shopify se checkbox attiva E se non saltato dal check duplicato
       if(aggiornaShopify && !skipShopify){
