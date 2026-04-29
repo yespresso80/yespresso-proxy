@@ -20216,11 +20216,17 @@ window.fabInviaSollecitoEmail = function(btn){
     var toList = _validaListaEmail(to);
     if(toList===null){ alert('Uno o più indirizzi destinatario non validi'); return; }
     if(!toList.length){ alert('Inserisci almeno un destinatario'); return; }
+    var ccListInp = [];
     if(cc){
-      var ccList = _validaListaEmail(cc);
-      if(ccList===null){ alert('Uno o più indirizzi CC non validi'); return; }
+      ccListInp = _validaListaEmail(cc);
+      if(ccListInp===null){ alert('Uno o più indirizzi CC non validi'); return; }
     }
     if(!confirm('Invio sollecito a:\n\n'+toList.join('\n')+(cc?'\n\nCC: '+cc:'')+'\n\nOggetto: '+subj+'\n\nProcedere?')) return;
+
+    // Il backend SMTP accetta UN SOLO indirizzo nel campo "to" e una lista nel "cc".
+    // Quindi: primo destinatario nel "to", tutti gli altri (e i CC originali) nel "cc".
+    var toServer = toList[0];
+    var ccServer = toList.slice(1).concat(ccListInp).join(', ');
 
     btnSend.disabled = true;
     var oldLabel = btnSend.textContent;
@@ -20230,8 +20236,8 @@ window.fabInviaSollecitoEmail = function(btn){
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
-          to: toList.join(','),
-          cc: cc||'',
+          to: toServer,
+          cc: ccServer,
           subject: subj,
           body: body,
           fornitore: forn,
