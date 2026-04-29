@@ -20035,6 +20035,229 @@ function _fmtDataOrd(ymd){
   return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:ymd;
 }
 
+// Copia il testo del sollecito (decodificato dall'attributo data-testo) negli appunti.
+// Chiamato dai bottoni "Copia sollecito" del Piano Fabbisogno.
+window.fabCopiaSollecito = function(btn){
+  if(!btn) return;
+  var encoded = btn.getAttribute('data-testo') || '';
+  var testo;
+  try { testo = decodeURIComponent(encoded); }
+  catch(e){ testo = encoded; }
+  if(!testo){ if(typeof showToast==='function') showToast('Nessun testo da copiare'); return; }
+
+  // Feedback visivo: cambia testo del bottone temporaneamente
+  var origTxt = btn.textContent;
+  function feedback(ok){
+    btn.textContent = ok ? '✅ Copiato!' : '⚠️ Errore copia';
+    setTimeout(function(){ btn.textContent = origTxt; }, 1500);
+  }
+
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(testo).then(function(){
+      feedback(true);
+      if(typeof showToast==='function') showToast('✅ Sollecito copiato negli appunti');
+    }).catch(function(){
+      // Fallback con textarea temporanea
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = testo;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        feedback(true);
+        if(typeof showToast==='function') showToast('✅ Sollecito copiato');
+      } catch(err){
+        feedback(false);
+        if(typeof showToast==='function') showToast('⚠️ Errore copia: '+err.message);
+      }
+    });
+  } else {
+    // Browser senza Clipboard API: fallback con textarea
+    try {
+      var ta2 = document.createElement('textarea');
+      ta2.value = testo;
+      ta2.style.position='fixed'; ta2.style.opacity='0';
+      document.body.appendChild(ta2);
+      ta2.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta2);
+      feedback(true);
+      if(typeof showToast==='function') showToast('✅ Sollecito copiato');
+    } catch(err2){
+      feedback(false);
+      if(typeof showToast==='function') showToast('⚠️ Errore copia: '+err2.message);
+    }
+  }
+};
+
+// Apre il modal email per inviare il sollecito al fornitore.
+// Per Noire srl precompila i 3 destinatari forniti dall'utente.
+window.fabInviaSollecitoEmail = function(btn){
+  if(!btn) return;
+  var forn = btn.getAttribute('data-forn') || '';
+  var encoded = btn.getAttribute('data-testo') || '';
+  var testo;
+  try { testo = decodeURIComponent(encoded); } catch(e){ testo = encoded; }
+  if(!testo){ if(typeof showToast==='function') showToast('Nessun testo da inviare'); return; }
+
+  // Mappa destinatari pre-compilati per fornitore
+  var DEST_FORN = {
+    'noire srl': 'm.bonaguro@neronobile.com, commerciale@neronobile.com, e.bisa@neronobile.com'
+  };
+  var fornKeyLower = String(forn).toLowerCase().trim();
+  var emailDest = DEST_FORN[fornKeyLower] || '';
+
+  // Se non c'è una mappa, prova a recuperare l'email del fornitore dai prodotti
+  if(!emailDest){
+    var prodForn = (fabProducts||[]).find(function(p){return p.fornitore===forn && p.email;});
+    if(prodForn) emailDest = prodForn.email||'';
+  }
+
+  var oggetto = 'Sollecito consegna urgente — prodotti out of stock';
+
+  // Modal email — stesso layout di inviaEmailOrdine
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:12px;width:580px;max-width:98vw;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25);overflow:hidden">'+
+      '<div style="padding:14px 20px;border-bottom:1px solid #e8eaf0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#fee2e2">'+
+        '<span style="font-weight:700;color:#991b1b">📧 Sollecito urgente — '+_escHtml(forn)+'</span>'+
+        '<button id="em-soll-close" style="background:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">×</button>'+
+      '</div>'+
+      '<div style="padding:14px 20px;flex:1;overflow-y:auto">'+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">A:</label>'+
+          '<input id="em-soll-to" type="text" value="'+_escHtml(emailDest)+'" placeholder="destinatario@fornitore.it" style="width:100%;padding:8px 10px;border:1.5px solid '+(emailDest?'#e0e4ea':'#fca5a5')+';border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+        (emailDest?'':'<div style="background:#fef3c7;color:#92400e;font-size:11px;padding:6px 10px;border-radius:6px;margin-bottom:10px">⚠️ Email fornitore non trovata. Inseriscila manualmente.</div>')+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">CC:</label>'+
+          '<input id="em-soll-cc" type="text" value="commerciale@yespresso.it" placeholder="cc1@..., cc2@..." style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Oggetto:</label>'+
+          '<input id="em-soll-subj" type="text" value="'+_escHtml(oggetto)+'" style="width:100%;padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"></div>'+
+        '<div><label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Testo email:</label>'+
+          '<textarea id="em-soll-body" style="width:100%;padding:10px;border:1.5px solid #e0e4ea;border-radius:6px;font-size:12px;font-family:monospace;min-height:240px;box-sizing:border-box;outline:none;resize:vertical;white-space:pre">'+_escHtml(testo)+'</textarea></div>'+
+      '</div>'+
+      '<div style="padding:12px 20px;border-top:1px solid #e8eaf0;display:flex;gap:8px;justify-content:space-between;align-items:center;flex-shrink:0;background:#fafbfc;flex-wrap:wrap">'+
+        '<div style="display:flex;gap:8px">'+
+          '<button id="em-soll-copy" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copia testo</button>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button id="em-soll-cancel" style="background:#fff;border:1px solid #e0e4ea;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">Annulla</button>'+
+          '<button id="em-soll-mailto" style="background:#fff;border:1.5px solid #1d4ed8;color:#1d4ed8;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit" title="Apre il client email installato">💻 Client locale</button>'+
+          '<button id="em-soll-send" style="background:#dc2626;border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" title="Invia direttamente dal server Yespresso">🚀 Invia dal server</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+
+  function closeModal(){ modal.remove(); }
+  modal.querySelector('#em-soll-close').onclick = closeModal;
+  modal.querySelector('#em-soll-cancel').onclick = closeModal;
+  modal.addEventListener('click', function(e){if(e.target===modal)closeModal();});
+
+  modal.querySelector('#em-soll-copy').onclick = function(){
+    var body = modal.querySelector('#em-soll-body').value;
+    navigator.clipboard.writeText(body).then(function(){
+      showToast('✅ Testo copiato negli appunti');
+    }).catch(function(){
+      var ta = modal.querySelector('#em-soll-body'); ta.select(); document.execCommand('copy');
+      showToast('✅ Testo copiato');
+    });
+  };
+
+  // Validatore lista email separate da virgola/punto-e-virgola
+  function _validaListaEmail(s){
+    if(!s) return [];
+    var arr = s.split(/[,;]/).map(function(x){return x.trim();}).filter(Boolean);
+    for(var i=0;i<arr.length;i++){
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(arr[i])) return null;
+    }
+    return arr;
+  }
+
+  // Client locale (mailto:)
+  modal.querySelector('#em-soll-mailto').onclick = function(){
+    var to = modal.querySelector('#em-soll-to').value.trim();
+    var cc = modal.querySelector('#em-soll-cc').value.trim();
+    var subj = modal.querySelector('#em-soll-subj').value.trim();
+    var body = modal.querySelector('#em-soll-body').value;
+    var toList = _validaListaEmail(to);
+    if(toList===null){ alert('Uno o più indirizzi destinatario non validi'); return; }
+    if(!toList.length){ alert('Inserisci almeno un destinatario'); return; }
+    if(cc){
+      var ccList = _validaListaEmail(cc);
+      if(ccList===null){ alert('Uno o più indirizzi CC non validi'); return; }
+    }
+
+    var mailtoUrl = 'mailto:'+encodeURIComponent(toList.join(','));
+    var params = [];
+    if(cc) params.push('cc='+encodeURIComponent(cc));
+    if(subj) params.push('subject='+encodeURIComponent(subj));
+    params.push('body='+encodeURIComponent(body));
+    mailtoUrl += '?'+params.join('&');
+
+    if(mailtoUrl.length > 2000){
+      navigator.clipboard.writeText(body).catch(function(){});
+      alert('Il testo è stato copiato negli appunti. Incollalo nel corpo del client email.');
+      mailtoUrl = 'mailto:'+encodeURIComponent(toList.join(','))+'?'+(cc?'cc='+encodeURIComponent(cc)+'&':'')+'subject='+encodeURIComponent(subj);
+    }
+
+    window.location.href = mailtoUrl;
+    setTimeout(function(){ showToast('✉️ Client email aperto'); closeModal(); }, 400);
+  };
+
+  // Invio dal server
+  modal.querySelector('#em-soll-send').onclick = async function(){
+    var btnSend = this;
+    var to = modal.querySelector('#em-soll-to').value.trim();
+    var cc = modal.querySelector('#em-soll-cc').value.trim();
+    var subj = modal.querySelector('#em-soll-subj').value.trim();
+    var body = modal.querySelector('#em-soll-body').value;
+    var toList = _validaListaEmail(to);
+    if(toList===null){ alert('Uno o più indirizzi destinatario non validi'); return; }
+    if(!toList.length){ alert('Inserisci almeno un destinatario'); return; }
+    if(cc){
+      var ccList = _validaListaEmail(cc);
+      if(ccList===null){ alert('Uno o più indirizzi CC non validi'); return; }
+    }
+    if(!confirm('Invio sollecito a:\n\n'+toList.join('\n')+(cc?'\n\nCC: '+cc:'')+'\n\nOggetto: '+subj+'\n\nProcedere?')) return;
+
+    btnSend.disabled = true;
+    var oldLabel = btnSend.textContent;
+    btnSend.textContent = '⏳ Invio...';
+    try {
+      var res = await proxyFetch(PROXY+'/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          to: toList.join(','),
+          cc: cc||'',
+          subject: subj,
+          body: body,
+          fornitore: forn,
+          tipo: 'sollecito'
+        })
+      });
+      if(!res.ok){
+        var errText = await res.text();
+        throw new Error('HTTP '+res.status+': '+errText.substring(0,200));
+      }
+      var result = await res.json();
+      if(result && result.ok){
+        showToast('✅ Sollecito inviato a '+toList.length+' destinatario/i');
+        closeModal();
+      } else {
+        throw new Error(result && result.error ? result.error : 'Errore sconosciuto');
+      }
+    } catch(e){
+      console.error('[send-email sollecito]', e);
+      alert('Errore invio email: '+e.message+'\n\nPuoi provare con "Client locale" come alternativa.');
+      btnSend.disabled = false;
+      btnSend.textContent = oldLabel;
+    }
+  };
+};
+
 // Handler messaggi da iframe Molnar
 window.addEventListener('message',function(e){
   if(!e.data)return;
@@ -22608,15 +22831,25 @@ function renderFabPiano(body){
       var btnId='soll_'+forn.replace(/[^a-z0-9]/gi,'');
       var righeText=pp.map(function(a){return (a.p.codice_forn?'['+a.p.codice_forn+'] ':'')+a.p.sku;}).join('\n');
       var oggiStr=new Date().toLocaleDateString('it-IT');
-      var testo='Oggetto: Sollecito consegna urgente\n\nGentile '+forn+',\n\nvi segnaliamo che i seguenti prodotti sono in esaurimento scorte e richiedono consegna urgente:\n\n'+righeText+'\n\nVi chiediamo cortesemente di confermare la data di consegna al più presto.\n\nGrazie,\nYespresso';
+      var testo='Gentile '+forn+',\n\n'+
+        'vi segnaliamo che i seguenti prodotti sono out of stock da diversi giorni e richiedono consegna urgente:\n\n'+
+        righeText+'\n\n'+
+        'Vi chiediamo di fornirci urgentemente il piano di consegne dei prodotti in elenco con data/e e quantità di consegna per singolo articolo.\n\n'+
+        'Grazie,\nYespresso';
       html+=
         '<div style="padding:10px 16px;border-bottom:1px solid #fecaca">'+
-          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">'+
             '<span style="font-size:12px;font-weight:700;color:#dc2626">'+forn+' — '+pp.length+' prodotto'+(pp.length>1?'i':'')+' critic'+(pp.length>1?'i':'o')+'</span>'+
-            '<button id="'+btnId+'" data-testo="'+encodeURIComponent(testo)+'" onclick="fabCopiaSollecito(this)" '+
-              'style="background:#dc2626;border:none;border-radius:6px;padding:4px 12px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">'+
-              '📋 Copia sollecito'+
-            '</button>'+
+            '<div style="display:flex;gap:6px">'+
+              '<button id="'+btnId+'" data-testo="'+encodeURIComponent(testo)+'" onclick="fabCopiaSollecito(this)" '+
+                'style="background:#dc2626;border:none;border-radius:6px;padding:4px 12px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">'+
+                '📋 Copia sollecito'+
+              '</button>'+
+              '<button data-forn="'+_escHtml(forn)+'" data-testo="'+encodeURIComponent(testo)+'" onclick="fabInviaSollecitoEmail(this)" '+
+                'style="background:#1d4ed8;border:none;border-radius:6px;padding:4px 12px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">'+
+                '📧 Invia email'+
+              '</button>'+
+            '</div>'+
           '</div>'+
           pp.map(function(a){
             return '<div style="font-size:12px;color:#7f1d1d;padding:1px 0">'+
