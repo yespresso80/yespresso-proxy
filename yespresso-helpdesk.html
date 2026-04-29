@@ -22724,7 +22724,9 @@ function renderFabPiano(body){
       var qty=nuoviOrdini[wc]||0;
       if(qty===0) continue;
       var isOpzionale=!!nuoviOrdini['_opzionale_'+wc];
-      var dataOrdine=_dataLavorativa(today,wo*7);
+      // data_ordine = sempre OGGI (non spostiamo nel futuro: è la data in cui creiamo l'ordine adesso).
+      // dataConsegna invece è giustamente futura (settimana di consegna richiesta).
+      var dataOrdine=new Date(today);
       var dataConsegna=_dataLavorativa(today,wc*7);
       var qm=ms>1?Math.ceil(qty/ms):null;
       ordiniDaEmettere.push({
