@@ -1752,9 +1752,9 @@ function goPage(p){
 }
 
 async function selectTicket(tid){
-  // Notifica multi-PC: avvia il monitoraggio presenza per questo ticket.
-  // Se altri agenti hanno aperto lo stesso ticket negli ultimi 60s, mostrerà un banner.
-  try { if(typeof window.presenceStart==='function') window.presenceStart(tid); } catch(e){}
+  // PRESENCE MULTI-PC DISATTIVATA — causava loop deploy su Render
+  // (ogni 10s scriveva su GitHub, ogni commit = restart server, restart = nuova scrittura, loop infinito)
+  // Le funzioni window.presenceStart/Stop restano definite ma sono no-op.
 
   window._lastShopifyCustomerId=null;
   // FIX CONTAMINAZIONE TRA TICKET: resetta tutti i dati specifici del ticket
@@ -20207,7 +20207,12 @@ function _presenceUpdateBanner(others){
 }
 
 // Avvia il monitoraggio per il ticket corrente
+// DISATTIVATA — causava loop deploy continui su Render.
+// Trasformata in no-op per sicurezza (impedisce ping IO continui anche se
+// per errore qualcuno la chiama). Per riattivare in futuro togliere il return.
 window.presenceStart = function(ticketId){
+  return; // disattivata
+  /* CODICE DISATTIVATO - INIZIO
   if(!ticketId) return;
   // Se cambiamo ticket, ferma il timer vecchio
   if(window._presence.pingTimer){
@@ -20222,6 +20227,7 @@ window.presenceStart = function(ticketId){
   _presencePingAndCheck();
   // Ping ricorsivo ogni 10 secondi
   window._presence.pingTimer = setInterval(_presencePingAndCheck, 10000);
+  CODICE DISATTIVATO - FINE */
 };
 
 // Ferma il monitoraggio (es. quando l'utente chiude/lascia il ticket)
