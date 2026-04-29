@@ -4262,10 +4262,11 @@ function parseBrtCcEmail(text){
 function openTicketByRef(refId){
   if(!refId) return;
   refId = String(refId).toUpperCase().trim();
-  // 1. Prova match diretto con ticket già caricati in memoria
+  // 1. Prova match diretto con ticket già caricati in memoria (cerca per shortID, ID o UUID)
   var match = (tickets||[]).find(function(t){
+    var sid = String(t.shortID||t.shortId||"").toUpperCase();
     var tid = String(t.ID||t.id||"").toUpperCase();
-    return tid === refId;
+    return sid === refId || tid === refId;
   });
   if(match){
     selectTicket(match);
@@ -19011,7 +19012,8 @@ function openBrtContact(orderId){
   var refTicket="";
   try{
     if(typeof selectedTicket!=="undefined" && selectedTicket){
-      var tid=selectedTicket.ID||selectedTicket.id||"";
+      // Usa shortID (es. C8CORO) invece dell'UUID lungo, come fa la sidebar TICKET INFO
+      var tid=selectedTicket.shortID||selectedTicket.shortId||selectedTicket.ID||selectedTicket.id||"";
       var reqEmail=(selectedTicket.requesterEmail||"").toLowerCase();
       // Non includere il riferimento se siamo già dentro a un ticket BRT
       var isBrtTicket=reqEmail.indexOf("brt.it")>=0 || reqEmail.indexOf("servizioclienti@brt")>=0;
