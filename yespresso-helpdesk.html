@@ -1752,6 +1752,10 @@ function goPage(p){
 }
 
 async function selectTicket(tid){
+  // Notifica multi-PC: avvia il monitoraggio presenza per questo ticket.
+  // Se altri agenti hanno aperto lo stesso ticket negli ultimi 60s, mostrerà un banner.
+  try { if(typeof window.presenceStart==='function') window.presenceStart(tid); } catch(e){}
+
   window._lastShopifyCustomerId=null;
   // FIX CONTAMINAZIONE TRA TICKET: resetta tutti i dati specifici del ticket
   // precedente prima di caricare il nuovo ticket. Senza questo reset, il
@@ -6423,7 +6427,7 @@ async function generateReplyNotaInterna(lastMsg,email,fullThread){
   if(genBox)genBox.innerHTML='<div class="spinner"></div> Genero nota interna...';
   try{
     const res=await proxyFetch(PROXY+"/anthropic/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,system:"Sei l'assistente clienti di Yespresso. Scrivi una nota interna breve che riassume l'azione da fare per questo ticket Temu. Rispondi in italiano."+buildSolvedContext(selectedTicket),
+      body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1000,temperature:0.2,system:"Sei l'assistente clienti di Yespresso. Scrivi una nota interna breve che riassume l'azione da fare per questo ticket Temu. Rispondi in italiano."+buildSolvedContext(selectedTicket),
         messages:[{role:"user",content:(window._lastTemuOrder?"\n\nDati ordine:\n"+formatOrderInfo(window._lastTemuOrder):"")+"\n\nUltimo messaggio:\n"+(lastMsg||"")+(fullThread?"\n\nThread:\n"+fullThread:"")}]})});
     if(!res.ok)throw new Error(res.status);
     const data=await res.json();const reply=data.content?.[0]?.text||"";
@@ -6866,9 +6870,39 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     window._annullamentoDati = null;
   }
 
+  // Determina il nome del cliente con priorità all'ordine Shopify (= chi ha
+  // effettivamente fatto l'ordine), e fallback a "Cliente" generico se
+  // l'ordine Shopify non c'è. Questo evita il caso in cui HelpDesk registra
+  // un nome diverso dal destinatario reale dell'ordine (es. account email
+  // intestato a un familiare). Il nome HelpDesk NON viene più usato perché
+  // può essere fuorviante.
+  var nomeClienteAi = '';
+  if(order){
+    if(order.shipping_address && order.shipping_address.first_name){
+      nomeClienteAi = order.shipping_address.first_name;
+      if(order.shipping_address.last_name) nomeClienteAi += ' '+order.shipping_address.last_name;
+    } else if(order.shipping_address && order.shipping_address.name){
+      nomeClienteAi = order.shipping_address.name;
+    } else if(order.customer && order.customer.first_name){
+      nomeClienteAi = order.customer.first_name;
+      if(order.customer.last_name) nomeClienteAi += ' '+order.customer.last_name;
+    } else if(order.billing_address && order.billing_address.first_name){
+      nomeClienteAi = order.billing_address.first_name;
+      if(order.billing_address.last_name) nomeClienteAi += ' '+order.billing_address.last_name;
+    }
+    nomeClienteAi = (nomeClienteAi||'').trim();
+  }
+  // Se nessun nome certo dall'ordine Shopify → "Cliente" generico.
+  // Volutamente NON facciamo fallback al nome HelpDesk (t.requester.name) perché
+  // può essere sbagliato (es. email intestata a un familiare diverso dall'acquirente).
+  var _aiNomeAffidabile = !!nomeClienteAi;
+  if(!nomeClienteAi){
+    nomeClienteAi = 'Cliente';
+  }
+
   const prompt =
     "Oggetto: "+t.subject+
-    "\nDa: "+((t.requester&&t.requester.name)||"Cliente")+
+    "\nDa: "+nomeClienteAi+(_aiNomeAffidabile?' (nome dall\'ordine Shopify, AFFIDABILE)':' (nome non certo, usa saluto generico)')+
     "\nEmail: "+(email||"")+
     (orderInfoFull?"\n\nDati ordine: "+orderInfoFull:"")+
     _annullamentoInfo+
@@ -6887,7 +6921,8 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     "6. NON introdurre il contesto (\"come da precedente conversazione\", \"come le avevamo già scritto\"): vai al punto.\n"+
     "7. Risposta BREVE e CONCRETA: se il cliente chiede X, rispondi X. Niente preamboli lunghi, niente riepiloghi inutili.\n"+
     "8. CRITICO — STATO CONSEGNA: usa SOLO lo stato dichiarato nei 'Dati ordine' sopra. NON inventare date di consegna, NON affermare che il pacco è stato consegnato a meno che nei dati ordine appaia esplicitamente '✅ PACCO CONSEGNATO'. Se lo stato è 'In transito', 'In consegna', 'Tentativo fallito' o simili, comunicalo come tale al cliente e invitalo a verificare il tracking BRT. Se non hai una data di consegna certa dai dati, NON inventarla.\n"+
-    "9. CRITICO — IDENTIFICA IL PROBLEMA REALE GUARDANDO TUTTO IL THREAD: se nei messaggi precedenti il cliente ha segnalato un problema specifico (es. 'mancano X capsule', 'capsule rotte', 'prodotto difettoso'), QUESTO è il problema vero da gestire. Se l'ultimo messaggio dice 'restituisco il pacco' o 'voglio fare reso' ma il problema reale è merce mancante / capsule rotte, applica la regola corretta (merce mancante / qualità) e NON la regola acquisto errato. Il cliente potrebbe usare la parola 'reso' impropriamente.";
+    "9. CRITICO — IDENTIFICA IL PROBLEMA REALE GUARDANDO TUTTO IL THREAD: se nei messaggi precedenti il cliente ha segnalato un problema specifico (es. 'mancano X capsule', 'capsule rotte', 'prodotto difettoso'), QUESTO è il problema vero da gestire. Se l'ultimo messaggio dice 'restituisco il pacco' o 'voglio fare reso' ma il problema reale è merce mancante / capsule rotte, applica la regola corretta (merce mancante / qualità) e NON la regola acquisto errato. Il cliente potrebbe usare la parola 'reso' impropriamente.\n"+
+    "10. CRITICO — NOME CLIENTE: il campo 'Da:' qui sopra ti dice se il nome è AFFIDABILE (preso dall'ordine Shopify). Se è AFFIDABILE, usa quel nome nel saluto (es. 'Gentile Francesco,'). Se invece è marcato 'nome non certo', usa SEMPRE il saluto generico 'Gentile Cliente,' — NON dedurre nomi dall'email, dalla firma o dallo storico, perché potrebbero essere il nome di un familiare e non del vero destinatario dell'ordine.";
 
   // Se stato spedizione critico → non chiamare Claude
   if(order && order._criticalShipping){ return; }
@@ -6983,7 +7018,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   }
 
   try{
-    const res=await anthropicFetch({model:"claude-sonnet-4-5",max_tokens:1000,
+    const res=await anthropicFetch({model:"claude-sonnet-4-5",max_tokens:1000,temperature:0.2,
         system:getAISystemPrompt()+buildSolvedContext(selectedTicket),
         messages:[{role:"user",content:(()=>{
           if(!aiImgParts.length)return "Genera una risposta professionale per questo ticket:\n\n"+prompt;
@@ -20035,6 +20070,185 @@ function _fmtDataOrd(ymd){
   return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:ymd;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// SISTEMA "TICKET PRESENCE" — notifica visiva quando 2 agenti aprono lo stesso ticket
+//
+// Funzionamento:
+// 1. All'apertura di un ticket, il PC corrente fa ping ogni 10s sul server
+//    salvando: {ticketId: ID, agente: nomeBrowser, ts: timestamp}
+// 2. Allo stesso momento legge le presence degli altri PC dal server
+// 3. Se trova un'altra presence con stesso ticketId e ts < 60 secondi fa,
+//    mostra un banner giallo in alto: "⚠️ Ticket aperto anche da X su altro PC"
+// 4. Ogni 10s ricontrolla. Se l'altro PC smette di pingare per 60s, banner sparisce
+// 5. Lo storage usa /filippo-data con key "ticket_presence_v1"
+//
+// Identificazione agente:
+// - Genera ID univoco per tab al primo caricamento (in sessionStorage)
+// - Prende il nome agente da localStorage 'helpdesk_agent_name' o "PC senza nome"
+// ═══════════════════════════════════════════════════════════════════════
+
+window._presence = window._presence || {
+  myId: null,
+  myName: null,
+  currentTicket: null,
+  pingTimer: null,
+  bannerEl: null
+};
+
+// ID univoco per questa tab/sessione browser (resta stabile nella sessione)
+function _presenceGetMyId(){
+  if(window._presence.myId) return window._presence.myId;
+  try {
+    var existing = sessionStorage.getItem('helpdesk_presence_id');
+    if(existing) { window._presence.myId = existing; return existing; }
+  } catch(e){}
+  var id = 'pc_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2,8);
+  try { sessionStorage.setItem('helpdesk_presence_id', id); } catch(e){}
+  window._presence.myId = id;
+  return id;
+}
+
+// Nome utente del PC (modificabile dall'agente). Salvato in localStorage.
+function _presenceGetMyName(){
+  if(window._presence.myName) return window._presence.myName;
+  var name = '';
+  try { name = localStorage.getItem('helpdesk_agent_name') || ''; } catch(e){}
+  if(!name){
+    name = (typeof navigator!=='undefined' && navigator.platform) ? ('PC ' + navigator.platform) : 'Anonimo';
+  }
+  window._presence.myName = name;
+  return name;
+}
+
+// Permette all'utente di impostare il proprio nome agente (richiamabile da console).
+window.presenceSetName = function(name){
+  if(!name || typeof name!=='string'){
+    var current = _presenceGetMyName();
+    name = prompt('Nome agente per questo PC (per la notifica multi-PC):', current);
+    if(!name) return;
+  }
+  try { localStorage.setItem('helpdesk_agent_name', name); } catch(e){}
+  window._presence.myName = name;
+  console.log('[Presence] nome agente impostato a: ' + name);
+};
+
+// Ping: scrive la presenza corrente nel server e legge le altre.
+async function _presencePingAndCheck(){
+  if(!window._presence.currentTicket) return;
+  var myId = _presenceGetMyId();
+  var myName = _presenceGetMyName();
+  var nowTs = Date.now();
+  var data = {};
+  // Leggi stato corrente del server (key dedicata, non cache)
+  try {
+    var r = await proxyFetch(PROXY + '/filippo-data?key=ticket_presence_v1&_t=' + nowTs);
+    if(r.ok){
+      var resp = await r.json();
+      // Accetta sia { value: {...} } sia direttamente l'oggetto
+      data = (resp && resp.value && typeof resp.value==='object') ? resp.value : (resp || {});
+    }
+  } catch(e){}
+  if(!data || typeof data !== 'object') data = {};
+  // Aggiorna la nostra presenza
+  data[myId] = {
+    ticketId: window._presence.currentTicket,
+    agente: myName,
+    ts: nowTs
+  };
+  // Pulisci entry vecchie (oltre 5 minuti)
+  Object.keys(data).forEach(function(k){
+    if(!data[k] || !data[k].ts || (nowTs - data[k].ts) > 5*60*1000) delete data[k];
+  });
+  // Salva sul server (POST)
+  try {
+    await proxyFetch(PROXY + '/filippo-data', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({key:'ticket_presence_v1', value:data})
+    });
+  } catch(e){}
+  // Cerca altri agenti sullo stesso ticket nei ultimi 60 secondi
+  var others = [];
+  Object.keys(data).forEach(function(k){
+    if(k === myId) return;
+    var p = data[k];
+    if(!p || p.ticketId !== window._presence.currentTicket) return;
+    if((nowTs - p.ts) > 60*1000) return; // troppo vecchio
+    others.push(p);
+  });
+  _presenceUpdateBanner(others);
+}
+
+function _presenceUpdateBanner(others){
+  var existing = document.getElementById('presence-banner');
+  if(!others || !others.length){
+    if(existing) existing.remove();
+    return;
+  }
+  var labelAgenti = others.map(function(o){
+    var sec = Math.round((Date.now() - o.ts)/1000);
+    return o.agente + ' (' + sec + 's fa)';
+  }).join(', ');
+  var msg = '⚠️ Ticket aperto anche da: ' + labelAgenti + ' — coordinatevi prima di rispondere';
+  if(existing){
+    existing.querySelector('.presence-msg').textContent = msg;
+    return;
+  }
+  // Trova la posizione: in cima al pannello principale del ticket
+  var anchor = document.querySelector('.ticket-content') || document.querySelector('main') || document.body;
+  var b = document.createElement('div');
+  b.id = 'presence-banner';
+  b.style.cssText = 'background:#fef3c7;border:1px solid #fcd34d;color:#92400e;padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:10px;border-radius:0;position:sticky;top:0;z-index:9000;font-family:inherit;box-shadow:0 1px 3px rgba(0,0,0,0.05)';
+  b.innerHTML =
+    '<span class="presence-msg">'+_escHtml(msg)+'</span>'+
+    '<button onclick="this.parentElement.remove()" style="background:transparent;border:1px solid #92400e;color:#92400e;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Chiudi</button>';
+  anchor.insertBefore(b, anchor.firstChild);
+  window._presence.bannerEl = b;
+}
+
+// Avvia il monitoraggio per il ticket corrente
+window.presenceStart = function(ticketId){
+  if(!ticketId) return;
+  // Se cambiamo ticket, ferma il timer vecchio
+  if(window._presence.pingTimer){
+    clearInterval(window._presence.pingTimer);
+    window._presence.pingTimer = null;
+  }
+  // Rimuovi vecchio banner
+  var oldB = document.getElementById('presence-banner');
+  if(oldB) oldB.remove();
+  window._presence.currentTicket = ticketId;
+  // Primo ping immediato
+  _presencePingAndCheck();
+  // Ping ricorsivo ogni 10 secondi
+  window._presence.pingTimer = setInterval(_presencePingAndCheck, 10000);
+};
+
+// Ferma il monitoraggio (es. quando l'utente chiude/lascia il ticket)
+window.presenceStop = function(){
+  if(window._presence.pingTimer){
+    clearInterval(window._presence.pingTimer);
+    window._presence.pingTimer = null;
+  }
+  window._presence.currentTicket = null;
+  var oldB = document.getElementById('presence-banner');
+  if(oldB) oldB.remove();
+};
+
+// Quando la pagina viene chiusa, prova a rimuovere la nostra presenza
+window.addEventListener('beforeunload', function(){
+  try {
+    if(!window._presence.currentTicket) return;
+    var myId = _presenceGetMyId();
+    // Best-effort: usa sendBeacon se disponibile per non bloccare la chiusura
+    var url = PROXY + '/filippo-data';
+    var payload = JSON.stringify({key:'ticket_presence_remove_v1', value:{id:myId}});
+    if(navigator.sendBeacon){
+      navigator.sendBeacon(url, payload);
+    }
+  } catch(e){}
+});
+
 // Copia il testo del sollecito (decodificato dall'attributo data-testo) negli appunti.
 // Chiamato dai bottoni "Copia sollecito" del Piano Fabbisogno.
 window.fabCopiaSollecito = function(btn){
@@ -27530,13 +27744,33 @@ window.ricezioneSalva=async function(){
       });
 
       var rimanente=qtyRicevuta;
-      var todayRec=new Date().toISOString().split('T')[0];
+      // FIX BUG UTC: usiamo la data LOCALE non quella UTC. toISOString() restituisce
+      // sempre UTC: se sei in Italia tra le 00:00-01:59 (CET/CEST), UTC è ancora il
+      // giorno precedente, quindi data_ricezione_effettiva risulterebbe sbagliata di 1 giorno.
+      // toLocaleDateString('en-CA') restituisce il formato YYYY-MM-DD nella timezone locale.
+      var todayRec=new Date().toLocaleDateString('en-CA');
       righeAperte.forEach(function(entry, idx){
         if(rimanente<=0) return;
         var scala=Math.min(rimanente,entry.residuo);
         var prima = entry.riga.qty_ricevuta||0;
         entry.riga.qty_ricevuta=prima+scala;
-        if(!entry.riga.data_ricezione_effettiva) entry.riga.data_ricezione_effettiva=todayRec;
+        // FIX: aggiorna SEMPRE la data ricezione all'ultima ricezione effettiva.
+        // Senza questo, una riga parziale ricevuta in 2 giorni diversi mostra
+        // sempre la data del PRIMO arrivo, non l'ultimo.
+        // Manteniamo anche uno storico cronologico in data_ricezioni_storia[].
+        var dataPrec = entry.riga.data_ricezione_effettiva;
+        entry.riga.data_ricezione_effettiva = todayRec;
+        entry.riga.data_ricezioni_storia = entry.riga.data_ricezioni_storia || [];
+        // Se la data precedente non era oggi e non è già nello storico, la registro
+        if(dataPrec && dataPrec!==todayRec){
+          var giaInStoria = entry.riga.data_ricezioni_storia.some(function(s){return s.data===dataPrec;});
+          if(!giaInStoria){
+            entry.riga.data_ricezioni_storia.push({data:dataPrec, qty:prima, ts:new Date().toISOString()});
+          }
+        }
+        // Aggiungo questa ricezione allo storico
+        entry.riga.data_ricezioni_storia.push({data:todayRec, qty:scala, ts:new Date().toISOString()});
+
         if(ms>1) entry.riga.qty_ricevuta_master=Math.ceil(entry.riga.qty_ricevuta/ms);
         rimanente-=scala;
         // LOG SCALA
