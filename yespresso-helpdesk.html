@@ -7470,11 +7470,27 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     // Estrai numero ordine Amazon dal subject (es. 404-3157788-4736302)
     var orderNumMatch = (subject||'').match(/(\d{3}-\d{7}-\d{7})/);
     var orderNum = orderNumMatch ? orderNumMatch[1] : '';
+    // Per ticket BRT: estrai numero ticket BRT (8 cifre dopo "[Ticket]")
+    // o numero spedizione BRT (12 cifre, di solito 179...).
+    // Nota: nel subject BRT il numero spedizione è preceduto dal prefisso "26"
+    // (es. "Spedizioni 26179011135007"), ma nel body delle email BRT è scritto
+    // come 12 cifre pure ("179011135007"). Estraiamo le 12 cifre vere per match più robusto.
+    if(!orderNum){
+      var brtTicketMatch = (subject||'').match(/\[Ticket\]\s*(\d{6,10})/i);
+      // Cerca 179 seguito da 9 cifre, anche se preceduto da altre cifre (es. 26179...)
+      var brtSpedMatch = (subject||'').match(/(179\d{9})/);
+      if(brtSpedMatch) orderNum = brtSpedMatch[1];
+      else if(brtTicketMatch) orderNum = brtTicketMatch[1];
+    }
     // Per email Amazon anonime cerca solo per numero ordine
     var isAmazonEmail = email.includes('marketplace.amazon') || email.includes('bounce-') || email.includes('atoz-guarantee');
+    // Per email BRT (servizioclienti@brt.it) NON usiamo il match per email puro,
+    // perché restituisce tutte le email BRT in cache. Usiamo il numero ticket/spedizione
+    // come filtro principale (più specifico).
+    var isBrtEmail = email.includes('brt.it') || email.includes('servizioclienti@brt');
     var url = PROXY+"/imap/attachments?email="+encodeURIComponent(email);
     if(orderNum) url += "&ordernum="+encodeURIComponent(orderNum);
-    if(subject&&!isAmazonEmail) url += "&subject="+encodeURIComponent(subject);
+    if(subject && !isAmazonEmail && !isBrtEmail) url += "&subject="+encodeURIComponent(subject);
     const imapRes0=await proxyFetch(url);
     const imapData0=await imapRes0.json();
     const imapAtts0=imapData0.attachments||[];
