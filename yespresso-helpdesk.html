@@ -2595,7 +2595,8 @@ async function selectTicket(tid){
     const evs=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
     return evs.map(ev=>{
       const isAgent=ev.author&&ev.author.type==="agent";
-      const role=isAgent?"AGENTE YESPRESSO":"CLIENTE";
+      const isPrivate=ev.private||ev.isPrivate||ev.type==="private"||ev.messageType==="private"||(ev.message&&(ev.message.private||ev.message.isPrivate))||false;
+      const role=isPrivate?"NOTA INTERNA STAFF":(isAgent?"AGENTE YESPRESSO":"CLIENTE");
       const txt=(ev.message.text||ev.message.richTextHtml||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").substring(0,1000).trim();
       // Aggiungi data e ora del messaggio per permettere all'AI di applicare regole temporali
       const evTs=ev.date||ev.createdAt||ev.created_at||"";
@@ -4259,27 +4260,96 @@ function parseBrtCcEmail(text){
 }
 
 // Apre un ticket cliente per ID (es. C8CORO) cercato dal pannello BRT
-function openTicketByRef(refId){
+// Se brtInfo è fornito, aggiunge automaticamente una nota privata col contesto BRT al ticket cliente
+async function openTicketByRef(refId, brtInfo){
   if(!refId) return;
   refId = String(refId).toUpperCase().trim();
+
   // 1. Prova match diretto con ticket già caricati in memoria (cerca per shortID, ID o UUID)
   var match = (tickets||[]).find(function(t){
     var sid = String(t.shortID||t.shortId||"").toUpperCase();
     var tid = String(t.ID||t.id||"").toUpperCase();
     return sid === refId || tid === refId;
   });
+
+  // Se ho info BRT da iniettare e ho il ticket, aggiungo la nota privata PRIMA di aprire
+  if(match && brtInfo && brtInfo.text){
+    try{
+      var tidApi = match.ID || match.id;
+      var noteText = '📦 RISPOSTA BRT (ricevuta '+(brtInfo.date||'oggi')+')';
+      if(brtInfo.tracking) noteText += ' - Spedizione '+brtInfo.tracking;
+      noteText += ':\n\n'+brtInfo.text;
+      var notePayload = {message:{text:noteText}, isPrivateNote:true};
+      // Verifica se la nota è già presente (evita duplicati su click multipli)
+      var alreadyHasNote = (match.events||[]).some(function(ev){
+        var isPriv = ev.private||ev.isPrivate||(ev.message&&(ev.message.private||ev.message.isPrivate));
+        var t = (ev.message && (ev.message.text||"")) || "";
+        return isPriv && t.indexOf('RISPOSTA BRT') >= 0 && (brtInfo.tracking ? t.indexOf(brtInfo.tracking)>=0 : true);
+      });
+      if(!alreadyHasNote){
+        showToast('📦 Aggiungo info BRT come nota privata...','info');
+        await proxyFetch(PROXY+'/api/v1/tickets/'+tidApi, {
+          method:'PATCH',
+          headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},
+          body:JSON.stringify(notePayload)
+        });
+        // Aspetta che il server committi la nota, poi ricarica gli events freschi dal server
+        // Questo evita che la nota appena creata non sia visibile nel fullThread per l'AI
+        await new Promise(function(r){setTimeout(r,250);});
+        try{
+          var freshTicket = await hdFetch("/v1/tickets/"+tidApi);
+          if(freshTicket && freshTicket.events){
+            match.events = freshTicket.events;
+            // Aggiorna anche l'array tickets globale per coerenza
+            var idx = tickets.findIndex(function(tt){return (tt.ID||tt.id)===tidApi;});
+            if(idx>=0) tickets[idx] = Object.assign({},tickets[idx],freshTicket);
+          } else {
+            // Fallback: push locale (meglio di niente se hdFetch fallisce)
+            if(!match.events) match.events = [];
+            match.events.push({
+              message:{text:noteText, isPrivate:true},
+              isPrivate:true,
+              author:{type:'agent',name:'Sistema'},
+              date:new Date().toISOString()
+            });
+          }
+        }catch(_e){
+          console.warn('Reload ticket fallito, uso fallback locale:', _e.message);
+          if(!match.events) match.events = [];
+          match.events.push({
+            message:{text:noteText, isPrivate:true},
+            isPrivate:true,
+            author:{type:'agent',name:'Sistema'},
+            date:new Date().toISOString()
+          });
+        }
+        showToast('📦 Info BRT aggiunte come nota privata','success');
+      }
+    }catch(e){
+      console.warn('Errore aggiunta nota BRT:', e.message);
+      showToast('⚠️ Nota BRT non aggiunta: '+e.message,'error');
+    }
+  }
+
   if(match){
     selectTicket(match);
-    showToast('🎫 Ticket cliente '+refId+' aperto','success');
+    if(!brtInfo) showToast('🎫 Ticket cliente '+refId+' aperto','success');
     return;
   }
+
   // 2. Fallback: compila la barra di ricerca per trovarlo via API
   var searchInput = document.getElementById('sidebar-search');
   if(searchInput){
     searchInput.value = refId;
     searchInput.dispatchEvent(new Event('input',{bubbles:true}));
     searchInput.focus();
-    showToast('🔍 Cerco ticket '+refId+'...','info');
+    // Salva temporaneamente le info BRT da applicare quando il ticket viene caricato
+    if(brtInfo && brtInfo.text){
+      window._pendingBrtNote = {refId:refId, brtInfo:brtInfo, ts:Date.now()};
+      showToast('🔍 Cerco ticket '+refId+'... (info BRT in attesa)','info');
+    } else {
+      showToast('🔍 Cerco ticket '+refId+'...','info');
+    }
   } else {
     showToast('Ticket '+refId+' non trovato in memoria','error');
   }
@@ -4392,8 +4462,18 @@ function renderBrtCcPanel(b, origText){
       h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">'+esc(b.codiceCliente)+'</div>';
     }
     if(b.refTicketCliente){
+      // Salva il contesto BRT in una mappa globale per recuperarlo al click (evita escape complessi nell'inline onclick)
+      window._brtPanelContexts = window._brtPanelContexts || {};
+      var ctxKey = 'ctx_'+b.refTicketCliente+'_'+(b.tracking||'');
+      window._brtPanelContexts[ctxKey] = {
+        text: b.corpoPulito || '',
+        tracking: b.tracking || '',
+        date: new Date().toLocaleDateString('it-IT'),
+        operatore: b.operatore || '',
+        filiale: b.filiale || ''
+      };
       h += '<div style="color:#888">Ticket Cliente</div>';
-      h += '<div><button onclick="openTicketByRef(\''+esc(b.refTicketCliente)+'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;font-family:monospace;cursor:pointer">🎫 '+esc(b.refTicketCliente)+' ↗</button></div>';
+      h += '<div><button onclick="openTicketByRef(\''+esc(b.refTicketCliente)+'\', window._brtPanelContexts[\''+esc(ctxKey)+'\'])" style="background:#1a73e8;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;font-family:monospace;cursor:pointer" title="Apri ticket cliente con info BRT come nota privata">🎫 '+esc(b.refTicketCliente)+' ↗</button></div>';
     } else if(b.ordineYespresso){
       // Nessun ticket HelpDesk: lookup async dell'ordine per scoprire il channel marketplace
       var lookupId = 'brtmkt_'+Math.random().toString(36).slice(2);
@@ -6585,7 +6665,8 @@ async function generateReplyWithFermopoint(){
   const lastMsg = events.length ? ((events[events.length-1].message||{}).text||'') : '';
   const fullThread = events.map(ev=>{
     const isAgent=ev.author&&ev.author.type==='agent';
-    const role=isAgent?'AGENTE YESPRESSO':'CLIENTE';
+    const isPrivate=ev.private||ev.isPrivate||ev.type==='private'||ev.messageType==='private'||(ev.message&&(ev.message.private||ev.message.isPrivate))||false;
+    const role=isPrivate?'NOTA INTERNA STAFF':(isAgent?'AGENTE YESPRESSO':'CLIENTE');
     const evTs=ev.date||ev.createdAt||ev.created_at||'';
     const evDateStr=evTs?(function(){var d=new Date(evTs);return d.toLocaleDateString('it-IT')+' ore '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');})():'';
     return role+(evDateStr?' ['+evDateStr+']':'')+': '+((ev.message&&(ev.message.text||ev.message.richTextHtml))||'').substring(0,600);
@@ -16239,6 +16320,7 @@ async function loadSolvedExamples(){
 var AI_PROMPT_SECTIONS_KEY='yespresso_ai_prompt_sections';
 var AI_PROMPT_SECTIONS_DEFAULT=[
   {id:'base',label:'🧠 Base — Identità e tono',locked:true,text:"Sei l'assistente clienti di Yespresso, azienda italiana che vende macchine caffe, capsule e prodotti per il caffe. Rispondi sempre in italiano, con tono cordiale e professionale. Firma sempre come Il Team Yespresso. Sii conciso e risolutivo. Se hai i dati dell'ordine, usali per dare una risposta precisa con i dettagli reali. Se c'e un link BRT includilo. IMPORTANTE: NON usare mai markdown. Scrivi solo testo plain normale.\\n\\nREGOLA METODO DI PAGAMENTO E RIMBORSI: Controlla sempre il metodo di pagamento nei dati ordine. Se il metodo e 'Contanti alla consegna (COD)': in caso di annullamento ordine NON spedito non c'e nulla da rimborsare poiche il cliente non ha ancora pagato (paga solo alla consegna); in caso di reso offrire solo credito/credito sul sito. Per tutti gli altri metodi (PayPal, carta, Shopify Payments, Amazon Pay, Klarna ecc.) il rimborso avviene sul metodo di pagamento originale entro 3-5 giorni lavorativi."},
+  {id:'note_interne',label:'🔒 Note interne staff (BRT, comunicazioni interne)',locked:false,text:"REGOLA NOTE INTERNE STAFF: Se nel thread vedi messaggi etichettati come 'NOTA INTERNA STAFF', queste sono informazioni interne degli agenti Yespresso, NON sono messaggi inviati al cliente e il cliente NON le ha mai viste.\n\nUsa queste note come INFORMAZIONI OPERATIVE per formulare la risposta al cliente:\n- Se la nota contiene 'RISPOSTA BRT' con info su una spedizione (es. data di consegna verificata, esito ricerca filiale, conferma POD, indicazioni del corriere), USA queste informazioni per rispondere al cliente in modo preciso e aggiornato.\n- Esempio: se la nota dice che BRT ha confermato la consegna avvenuta in una certa data con firma, comunica al cliente questa informazione come verifica fatta dal corriere.\n- Esempio: se la nota dice che BRT non trova il pacco e sta indagando, comunica al cliente che abbiamo aperto una pratica e stiamo aspettando aggiornamenti.\n\nNON copiare letteralmente il testo della nota interna nella risposta al cliente. NON menzionare mai espressioni come 'come da nota', 'come scritto internamente', 'l'agente ha annotato'. Riformula sempre l'informazione con tono cordiale e professionale rivolto al cliente.\n\nNON considerare le NOTA INTERNA STAFF come una risposta gia data al cliente: anche se sono presenti, devi comunque generare una risposta normale per il cliente."},
   {id:'marketplace',label:'🛒 Marketplace (Amazon, Temu, TikTok)',locked:false,text:"Se il messaggio proviene da Temu (seller@orders.temu.com) o e una notifica automatica di marketplace, NON rispondere come se fosse un cliente: scrivi invece una nota interna breve.\n\nREGOLE TICKET AMAZON: NON includere link esterni (BRT, yespresso.it ecc) perche Amazon li blocca. Gli ordini Amazon sono gestiti direttamente da Yespresso. Per il tracking: invita il cliente a verificare dal suo account Amazon senza includere link BRT.\n\nREGOLA NUMERO ORDINE AMAZON: Se il messaggio proviene da un cliente Amazon (@marketplace.amazon.it) e non e presente un numero ordine Amazon nel thread, DEVI come PRIMA risposta chiederlo. Non procedere con rimborsi, sostituzioni, soluzioni tecniche o qualsiasi altra azione senza aver verificato il numero ordine."},
   {id:'prezzo_capsula_amazon',label:'💶 Prezzo per capsula Amazon',locked:false,text:"REGOLA PREZZO PER CAPSULA AMAZON: Si applica quando il cliente Amazon si lamenta che il prezzo per capsula moltiplicato per il numero di capsule non corrisponde al prezzo totale della confezione, oppure che il prezzo unitario mostrato sembra errato/incoerente.\n\n1) PRIMA RISPOSTA — se non c'è ancora stata una nostra risposta sull'argomento:\nSpiega al cliente, in modo cordiale, che il prezzo per capsula mostrato da Amazon è un valore calcolato automaticamente dalla piattaforma con arrotondamenti. Se moltiplica questo valore per il numero di capsule otterrà un totale che non coincide esattamente con il prezzo effettivo dell'ordine, per i seguenti motivi:\n- Il prezzo unitario (per capsula) è generalmente indicato IVA esclusa, mentre il prezzo della confezione è IVA inclusa: questa è la principale causa della differenza\n- Il prezzo per unità viene arrotondato a 2 decimali\n- Eventuali sconti, promozioni o coupon si applicano al totale e non al prezzo singolo\n- L'indicazione per unità, per legge sugli alimentari, può essere espressa per peso (kg/100g) e non per capsula\nConcludi confermando che il prezzo pagato è quello del totale dell'ordine e che la confezione contiene il numero di capsule indicato nella descrizione.\n\n2) RISPOSTA SUCCESSIVA — SOLO se il cliente INSISTE dopo aver ricevuto la prima risposta (non accetta la spiegazione, continua a lamentarsi):\nRibadisci che siamo in contatto con Amazon per migliorare la visualizzazione del prezzo unitario, proprio per evitare fraintendimenti di questo tipo. Conferma nuovamente che il prezzo pagato è quello del totale ordine e la confezione contiene il numero di capsule indicato nella descrizione. Ringrazia per la comprensione.\n\nREGOLA CRITICA — NIENTE RIMBORSI PARZIALI:\n- NON offrire mai rimborsi parziali come compensazione per la presunta discrepanza di prezzo\n- NON proporre sconti, credito o buoni su questa tematica\n- NON ammettere che si tratti di un errore di Amazon o nostro: è un normale comportamento della piattaforma dovuto ad arrotondamenti e differenza IVA\n- NON fornire calcoli numerici, esempi matematici o formule di conversione: limitati alla spiegazione generale dei quattro punti sopra\n\nREGOLA LUNGHEZZA: Mantieni la risposta sintetica. Non dilungarti in esempi numerici anche se il cliente ne fornisce."},
   {id:'spedizione',label:'📦 Spedizione e pacco non ricevuto',locked:false,text:"REGOLA CRITICA STATO SPEDIZIONE: Lo stato spedizione nei dati Shopify potrebbe non essere aggiornato in tempo reale. Se il messaggio del cliente descrive un problema di spedizione, fidati del messaggio del cliente.\n\nREGOLE PACCO NON RICEVUTO:\n3a) Pacco al BRT-FERMOPOINT: comunica che e pronto per il ritiro, includi il link BRT. REGOLA CRITICA FERMOPOINT: Se nei dati ordine e presente il campo 'Indirizzo BRT-Fermopoint (inserito manualmente)' DEVI includerlo nella risposta indicando l indirizzo esatto del punto di ritiro. Se invece l indirizzo NON e presente nei dati ordine, NON inventarlo — di' solo che il pacco e disponibile al punto BRT-fermopoint piu vicino e invita il cliente a verificare l indirizzo esatto tramite il link BRT fornito. Se il cliente chiede la consegna a domicilio invece del punto di ritiro: specificare che quando il pacco e presso il punto di ritiro NON e possibile riconsegnarlo a domicilio. Invitare il cliente a recarsi al punto di ritiro il prima possibile per evitare aggravio di costi. Avvisare che se non dovesse ritirarlo, il pacco rientrera presso la nostra sede e verranno decurtati dal credito/rimborso i costi di gestione del rientro e del reso.\n3b) Fermopoint in aggiornamento: invita il cliente a verificare il link BRT tra qualche ora.\n3c) Tracking consegnato A DOMICILIO: comunica che il pacco risulta consegnato, includi tracking e link BRT, non offrire rimborso. ATTENZIONE: NON usare la data di spedizione come data di consegna — usa SOLO la data effettiva di consegna dal tracking BRT se disponibile, altrimenti non indicare date. NON dire al cliente di contattare Amazon o altri marketplace — di' sempre di contattare noi (Il Team Yespresso) per segnalare il problema cosi da poter contattare il corriere.\n4) Se il cliente insiste: ribadisci che risulta consegnato e invitalo a contattarci per aprire una pratica con il corriere BRT.\n\nREGOLA RITIRO BRT: Ogni volta che proponi un ritiro BRT includi SEMPRE: utilizzare la scatola ricevuta o equivalente, sigillare bene con nastro adesivo, inserire copia dell'ordine all'interno del pacco."},
