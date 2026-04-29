@@ -4187,6 +4187,14 @@ function parseBrtCcEmail(text){
   const codCliMatch = rawT.match(/Codice\s+Cliente\s*:?\s*(\d+)/i);
   if(codCliMatch) out.codiceCliente = codCliMatch[1];
 
+  // Riferimento ticket cliente (es. "Rif. Ticket: C8CORO" — iniettato da openBrtContact)
+  const refTicketMatch = rawT.match(/Rif\.?\s*Ticket\s*:?\s*([A-Z0-9]{4,8})/i);
+  if(refTicketMatch) out.refTicketCliente = refTicketMatch[1].toUpperCase();
+
+  // Numero ordine Yespresso (es. "Ordine: #2024197231" — sempre incluso nei messaggi precompilati)
+  const ordineMatch = rawT.match(/Ordine\s*:?\s*#?(20\d{7,9})\b/);
+  if(ordineMatch) out.ordineYespresso = ordineMatch[1];
+
   // ═══ Estrai il corpo utile (la risposta dell'operatore BRT) ═══
   // Taglia tutto dal separatore messaggio originale in giù
   let body = rawT;
@@ -4250,6 +4258,102 @@ function parseBrtCcEmail(text){
   return out;
 }
 
+// Apre un ticket cliente per ID (es. C8CORO) cercato dal pannello BRT
+function openTicketByRef(refId){
+  if(!refId) return;
+  refId = String(refId).toUpperCase().trim();
+  // 1. Prova match diretto con ticket già caricati in memoria
+  var match = (tickets||[]).find(function(t){
+    var tid = String(t.ID||t.id||"").toUpperCase();
+    return tid === refId;
+  });
+  if(match){
+    selectTicket(match);
+    showToast('🎫 Ticket cliente '+refId+' aperto','success');
+    return;
+  }
+  // 2. Fallback: compila la barra di ricerca per trovarlo via API
+  var searchInput = document.getElementById('sidebar-search');
+  if(searchInput){
+    searchInput.value = refId;
+    searchInput.dispatchEvent(new Event('input',{bubbles:true}));
+    searchInput.focus();
+    showToast('🔍 Cerco ticket '+refId+'...','info');
+  } else {
+    showToast('Ticket '+refId+' non trovato in memoria','error');
+  }
+}
+
+// Risolve il marketplace di un ordine Yespresso e popola il bottone "Vedi Msg X" nel pannello BRT
+async function resolveBrtMarketplaceBtn(containerId, orderName){
+  try{
+    var container = document.getElementById(containerId);
+    if(!container || !orderName) return;
+    var esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');};
+
+    // 1. Prima prova: cache locale (window._allShopifyOrders)
+    var orders = window._allShopifyOrders || [];
+    var order = orders.find(function(o){
+      return String(o.name||'').replace('#','') === String(orderName);
+    });
+
+    // 2. Fallback: cerca via API
+    if(!order && typeof searchOrderForAction === 'function'){
+      try{
+        var found = await searchOrderForAction('#'+orderName);
+        if(found && found.length) order = found[0];
+      }catch(_e){}
+    }
+
+    if(!order){
+      container.innerHTML = '#'+esc(orderName)+' <span style="color:#aaa;font-size:10px">(ordine non trovato)</span>';
+      return;
+    }
+
+    // 3. Detect channel
+    var channel = (typeof detectChannelFromOrder === 'function') ? detectChannelFromOrder(order) : 'shopify';
+    var attrs = order.note_attributes || [];
+    var btnHtml = '#'+esc(orderName)+' ';
+    var shopifyUrl = 'https://admin.shopify.com/store/yespresso-1/orders/'+order.id;
+
+    if(channel === 'amazon'){
+      var amzAttr = attrs.find(function(a){return a.name==='Amazon Order Id';});
+      var amzId = (amzAttr && amzAttr.value) || '';
+      var amzMsgUrl = amzId ? ('https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+amzId) : 'https://sellercentral.amazon.it/messaging/inbox';
+      btnHtml += '<button onclick="window.open(\''+amzMsgUrl+'\',\'_blank\')" style="background:#e8a000;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;font-family:monospace;cursor:pointer;margin-left:6px" title="Apri messaggi Amazon Seller Central">💬 Vedi Msg Amz ↗</button>';
+    } else if(channel === 'temu'){
+      // Priorità: PARENT_ORDER_SN (formato PO-098-XXXXXXXXX) è l'ID corretto da copiare in chat Temu
+      var temuId = '';
+      var priorityKeys = ['PARENT_ORDER_SN','Temu Order Id','temu_order_id','Marketplace Order Id','order_id'];
+      for(var i=0;i<priorityKeys.length && !temuId;i++){
+        var found = attrs.find(function(a){return a.name===priorityKeys[i];});
+        if(found && found.value) temuId = found.value;
+      }
+      // Fallback finale: cerca qualsiasi attributo con formato PO-XXX-XXXXX
+      if(!temuId){
+        var poAttr = attrs.find(function(a){return a.value && /^PO-\d{3}-\d+$/i.test(a.value);});
+        if(poAttr) temuId = poAttr.value;
+      }
+      var temuChat = 'https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei';
+      btnHtml += '<button onclick="navigator.clipboard.writeText(\''+esc(temuId)+'\');window.open(\''+temuChat+'\',\'_blank\')" style="background:#cc4400;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;font-family:monospace;cursor:pointer;margin-left:6px" title="Copia ID Temu '+esc(temuId)+' e apri chat">💬 Vedi Msg Temu ↗</button>';
+    } else if(channel === 'tiktok'){
+      var ttAttr = attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id','order_id'].indexOf(a.name)>=0 && a.value && a.value.length>10;});
+      var ttId = (ttAttr && ttAttr.value) || (attrs.find(function(a){return a.value && /^\d{18,}$/.test(a.value);})||{}).value || '';
+      var ttChat = 'https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT';
+      btnHtml += '<button onclick="navigator.clipboard.writeText(\''+esc(ttId)+'\');window.open(\''+ttChat+'\',\'_blank\')" style="background:#000;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;font-family:monospace;cursor:pointer;margin-left:6px" title="Copia ID TikTok '+esc(ttId)+' e apri chat">💬 Vedi Msg Tik ↗</button>';
+    } else {
+      // Shopify: niente messaggio marketplace, solo link a Shopify Admin
+      btnHtml += '<a href="'+shopifyUrl+'" target="_blank" style="color:#1a73e8;font-weight:700;font-size:11px;text-decoration:none;margin-left:6px">↗ Shopify Admin</a>';
+    }
+
+    container.innerHTML = btnHtml;
+  }catch(e){
+    console.warn('resolveBrtMarketplaceBtn:', e.message);
+    var c = document.getElementById(containerId);
+    if(c) c.innerHTML = '#'+(orderName||'?');
+  }
+}
+
 // Render pannello BRT Servizio Clienti compatto
 function renderBrtCcPanel(b, origText){
   const uid = 'brtcc_'+Math.random().toString(36).slice(2);
@@ -4270,7 +4374,7 @@ function renderBrtCcPanel(b, origText){
   h += '</div>';
 
   // Grid riferimenti
-  if(b.numeroTicket || b.tracking || b.codiceCliente){
+  if(b.numeroTicket || b.tracking || b.codiceCliente || b.refTicketCliente || b.ordineYespresso){
     h += '<div style="background:#fff;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px">';
     h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px">';
     if(b.numeroTicket){
@@ -4285,6 +4389,17 @@ function renderBrtCcPanel(b, origText){
     if(b.codiceCliente){
       h += '<div style="color:#888">Cod. Cliente</div>';
       h += '<div style="color:#1a1a2e;font-weight:600;font-family:monospace">'+esc(b.codiceCliente)+'</div>';
+    }
+    if(b.refTicketCliente){
+      h += '<div style="color:#888">Ticket Cliente</div>';
+      h += '<div><button onclick="openTicketByRef(\''+esc(b.refTicketCliente)+'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;font-family:monospace;cursor:pointer">🎫 '+esc(b.refTicketCliente)+' ↗</button></div>';
+    } else if(b.ordineYespresso){
+      // Nessun ticket HelpDesk: lookup async dell'ordine per scoprire il channel marketplace
+      var lookupId = 'brtmkt_'+Math.random().toString(36).slice(2);
+      h += '<div style="color:#888">Ordine</div>';
+      h += '<div id="'+lookupId+'" style="font-family:monospace;color:#1a1a2e;font-weight:600">#'+esc(b.ordineYespresso)+' <span style="color:#aaa;font-weight:400;font-size:10px">(rilevamento canale...)</span></div>';
+      // Lancia lookup async senza bloccare il rendering
+      setTimeout(function(){ resolveBrtMarketplaceBtn(lookupId, b.ordineYespresso); }, 50);
     }
     h += '</div></div>';
   }
@@ -18892,15 +19007,26 @@ function openBrtContact(orderId){
   var tn=(d&&d.tn)||"";
   var on2=(d&&d.orderName)||"";
   var cn=(d&&d.name)||"";
+  // Riferimento al ticket cliente attualmente aperto (se non è un ticket BRT)
+  var refTicket="";
+  try{
+    if(typeof selectedTicket!=="undefined" && selectedTicket){
+      var tid=selectedTicket.ID||selectedTicket.id||"";
+      var reqEmail=(selectedTicket.requesterEmail||"").toLowerCase();
+      // Non includere il riferimento se siamo già dentro a un ticket BRT
+      var isBrtTicket=reqEmail.indexOf("brt.it")>=0 || reqEmail.indexOf("servizioclienti@brt")>=0;
+      if(tid && !isBrtTicket) refTicket=" - Rif. Ticket: "+tid;
+    }
+  }catch(_e){}
   var msgs=[
-    ["MODIFICA INDIRIZZO","Per la spedizione in oggetto si richiede cambio indirizzo di consegna. Ordine: "+on2+" - Cliente: "+cn],
-    ["NO CONSEGNA","Per la spedizione in oggetto il cliente non ha ricevuto il collo pur risultando consegnato. Ordine: "+on2+" - Cliente: "+cn],
-    ["RESO MITTENTE","Per la spedizione in oggetto chiediamo reso al mittente. Ordine: "+on2+" - Cliente: "+cn],
-    ["AGGIORNAMENTI","Per la spedizione in oggetto chiediamo aggiornamenti sulla consegna. Ordine: "+on2+" - Cliente: "+cn],
-    ["NON IN PUDO","Per la spedizione in oggetto il cliente segnala che il pacco non e disponibile al pudo. Ordine: "+on2+" - Cliente: "+cn],
-    ["INDIRIZZO PUDO","Per la spedizione in oggetto non e presente indirizzo del pudo, potete inviarcelo? Ordine: "+on2+" - Cliente: "+cn],
-    ["MANDARE AL PUDO","Per la spedizione in oggetto il cliente chiede consegna al pudo piu vicino. Ordine: "+on2+" - Cliente: "+cn],
-    ["RICHIESTA PESO SPEDIZIONE","Per la spedizione in oggetto puo inviarmi il peso reale della spedizione? Ordine: "+on2+" - Cliente: "+cn]
+    ["MODIFICA INDIRIZZO","Per la spedizione in oggetto si richiede cambio indirizzo di consegna. Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["NO CONSEGNA","Per la spedizione in oggetto il cliente non ha ricevuto il collo pur risultando consegnato. Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["RESO MITTENTE","Per la spedizione in oggetto chiediamo reso al mittente. Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["AGGIORNAMENTI","Per la spedizione in oggetto chiediamo aggiornamenti sulla consegna. Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["NON IN PUDO","Per la spedizione in oggetto il cliente segnala che il pacco non e disponibile al pudo. Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["INDIRIZZO PUDO","Per la spedizione in oggetto non e presente indirizzo del pudo, potete inviarcelo? Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["MANDARE AL PUDO","Per la spedizione in oggetto il cliente chiede consegna al pudo piu vicino. Ordine: "+on2+" - Cliente: "+cn+refTicket],
+    ["RICHIESTA PESO SPEDIZIONE","Per la spedizione in oggetto puo inviarmi il peso reale della spedizione? Ordine: "+on2+" - Cliente: "+cn+refTicket]
   ];
   var mh='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
   msgs.forEach(function(m){
