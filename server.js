@@ -703,6 +703,12 @@ function findAttachmentsForTicket(requesterEmail, subject, orderNum) {
     const emailMatch = !isAnonEmail && emailLow.length > 5 && fromLow.length > 5 &&
       (fromLow === emailLow || fromLow.includes('<'+emailLow+'>') || fromLow.includes(emailLow));
 
+    const isBrtEmail = emailLow.includes("brt.it") || emailLow.includes("servizioclienti@brt") || emailLow.includes("vasnoreply@brt");
+    let _emailMatchBrt = emailMatch;
+    if (isBrtEmail && _emailMatchBrt && orderNumLow.length >= 6) {
+      const brtBodyMatch = dataSubjLow.includes(orderNumLow) || bodyTextLow.includes(orderNumLow);
+      if (!brtBodyMatch) _emailMatchBrt = false;
+    }
     // 2. Match per numero ordine Amazon nel subject O nel body (solo se orderNum >= 10 chars)
     const orderMatch = orderNumLow.length >= 10 && (
       dataSubjLow.includes(orderNumLow) ||
@@ -715,7 +721,7 @@ function findAttachmentsForTicket(requesterEmail, subject, orderNum) {
     const subjMatch = !isAnonEmail && subjClean.length >= 15 && emailMatch &&
       dataSubjLow.includes(subjClean.substring(0, 30));
 
-    if (emailMatch || orderMatch || subjMatch) {
+    if (_emailMatchBrt || orderMatch || subjMatch) {
       results.push(...data.attachments.map(a => ({ ...a, from: data.from, date: data.date, subject: data.subject })));
     }
   }
