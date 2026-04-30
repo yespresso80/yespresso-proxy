@@ -2795,92 +2795,12 @@ server.emit = function(eventName, req, res) {
   });
 };
 console.log('[SMTP] Endpoint /send-email registrato');
-═══════════════════════════════════════════════════════════════════════════
-  PATCH BACKEND server.js — VERSIONE CORRETTA
-  Adattata al codice esistente che hai gia su GitHub
-═══════════════════════════════════════════════════════════════════════════
- 
-Servono TRE modifiche in totale:
-  - PATCH A: una riga modificata a riga 2734 (aggiunge attachments al destructuring)
-  - PATCH B: una riga modificata a riga 2764 (aggiunge attachments al sendMail)
-  - PATCH C: nuovo blocco in fondo al file (endpoint /contestazioni)
- 
-Tutte e tre via editor web GitHub. Le applichi nell'ordine.
- 
- 
-═══════════════════════════════════════════════════════════════════════════
-  PATCH A — Estrai attachments dal payload (riga 2734)
-═══════════════════════════════════════════════════════════════════════════
- 
-ZONA: vicino alla riga 2734 di server.js. Cerca con Ctrl+F:
- 
-   const { to, cc, subject, body, orderId, fornitore } = payload;
- 
-SOSTITUISCI quella singola riga con:
- 
-   const { to, cc, subject, body, orderId, fornitore, attachments } = payload;
- 
-(unica differenza: aggiunto ", attachments" prima di "} = payload;")
- 
- 
-═══════════════════════════════════════════════════════════════════════════
-  PATCH B — Aggiungi attachments al sendMail (riga ~2764)
-═══════════════════════════════════════════════════════════════════════════
- 
-ZONA: cerca il blocco transporter.sendMail vicino a riga 2759-2765.
-Sembra cosi:
- 
-   const info = await transporter.sendMail({
-     from: `"${smtpFromName}" <${smtpUser}>`,
-     to: to,
-     cc: ccList.length ? ccList.join(', ') : undefined,
-     subject: subject,
-     text: body
-   });
- 
-DOVE C'E "text: body" (riga 2764), aggiungere una virgola e dopo le righe
-allegati. Il blocco modificato deve diventare:
- 
-   const info = await transporter.sendMail({
-     from: `"${smtpFromName}" <${smtpUser}>`,
-     to: to,
-     cc: ccList.length ? ccList.join(', ') : undefined,
-     subject: subject,
-     text: body,
-     attachments: Array.isArray(attachments) ? attachments.map(function(a){
-       return {
-         filename: a.filename || 'allegato',
-         content: a.content || '',
-         encoding: a.encoding || 'base64',
-         contentType: a.contentType || 'application/octet-stream'
-       };
-     }) : undefined
-   });
- 
-Cioe' in pratica:
-  - Cambia "text: body" in "text: body,"
-  - Aggiungi 7 righe nuove subito dopo, prima della chiusa "});"
- 
- 
-═══════════════════════════════════════════════════════════════════════════
-  PATCH C — Endpoint /contestazioni (in FONDO al file)
-═══════════════════════════════════════════════════════════════════════════
- 
-ZONA: vai a fine file (Ctrl+End). L'ultima riga oggi e':
- 
-   console.log('[SMTP] Endpoint /send-email registrato');
- 
-INCOLLA QUESTO BLOCCO subito DOPO quella riga:
- 
-────────────────────────────── INIZIO BLOCCO C ──────────────────────────────
- 
 // ════════════════════════════════════════════════════════════════════════
 // CONTESTAZIONI PRODOTTO — endpoint /contestazioni GET / POST
-// Storage: contestazioni-data.json sulla repo yespresso80/yespresso-proxy
 // ════════════════════════════════════════════════════════════════════════
- 
+
 const GH_CONTEST_URL = 'https://api.github.com/repos/yespresso80/yespresso-proxy/contents/contestazioni-data.json';
- 
+
 async function ghContestGet() {
   const ghToken = process.env.GH_TOKEN;
   if (!ghToken) return { data: [], sha: null };
@@ -2897,7 +2817,7 @@ async function ghContestGet() {
     sha: j.sha
   };
 }
- 
+
 async function ghContestSave(data, sha) {
   const ghToken = process.env.GH_TOKEN;
   if (!ghToken) throw new Error('GH_TOKEN non configurato');
@@ -2919,20 +2839,15 @@ async function ghContestSave(data, sha) {
     throw new Error('GitHub PUT contestazioni: ' + (err.message || r.status));
   }
 }
- 
-// Wrapper server.emit per intercettare /contestazioni (riusa la stessa tecnica
-// gia' usata per /send-email, sovrascrivendo l'override esistente)
+
 const _origEmitContest = server.emit.bind(server);
 server.emit = function(eventName, req, res) {
   if (eventName !== 'request' || !req || !req.url) {
     return _origEmitContest.apply(server, arguments);
   }
-  // Rotte gestite qui: /contestazioni GET e POST
   if (req.url !== '/contestazioni') {
     return _origEmitContest.apply(server, arguments);
   }
- 
-  // Preflight CORS
   if (req.method === 'OPTIONS') {
     res.writeHead(200, {
       'Access-Control-Allow-Origin': '*',
@@ -2942,9 +2857,7 @@ server.emit = function(eventName, req, res) {
     res.end();
     return;
   }
- 
   const CORS_CT = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
- 
   if (req.method === 'GET') {
     (async function() {
       try {
@@ -2959,7 +2872,6 @@ server.emit = function(eventName, req, res) {
     })();
     return;
   }
- 
   if (req.method === 'POST') {
     const chunks = [];
     req.on('data', c => chunks.push(c));
@@ -2985,10 +2897,8 @@ server.emit = function(eventName, req, res) {
     });
     return;
   }
- 
-  // Metodo non supportato
   res.writeHead(405, CORS_CT);
   res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
 };
- 
+
 console.log('[CONTEST] Endpoint /contestazioni registrato');
