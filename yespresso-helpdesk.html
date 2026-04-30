@@ -11842,19 +11842,29 @@ function openFilippoPanel(){
       return false;
     }
   }
-  // Destinatari email per fornitore
+  // Destinatari email per fornitore - cerca prima nell'anagrafica fabbisogno, poi fallback default
   function _contestDestinatari(fornitore){
     var f=String(fornitore||'').toLowerCase();
+    var ccDefault = ['commerciale@yespresso.it'];
+    // Per Noire usiamo SOLO commerciale@neronobile.com (override richiesto da Filippo)
     if(f.indexOf('noire')>=0||f.indexOf('nero nobile')>=0||f.indexOf('neronobile')>=0){
-      return {to:['commerciale@neronobile.com'], cc:['commerciale@yespresso.it']};
+      return {to:['commerciale@neronobile.com'], cc:ccDefault};
     }
-    if(f.indexOf('best')>=0||f.indexOf('best espresso')>=0){
-      return {to:['info@bestespresso.it'], cc:['commerciale@yespresso.it']};
+    // Per altri fornitori, cerca l'email nell'anagrafica fabbisogno
+    if(typeof fabProducts !== 'undefined' && Array.isArray(fabProducts)){
+      var match = fabProducts.find(function(p){return (p.fornitore||'').toLowerCase().indexOf(f)>=0 || f.indexOf((p.fornitore||'').toLowerCase())>=0;});
+      if(match && match.email){
+        return {to:[match.email], cc:ccDefault};
+      }
+    }
+    // Fallback default
+    if(f.indexOf('best')>=0){
+      return {to:['p.moro@bestespresso.biz'], cc:ccDefault};
     }
     if(f.indexOf('simfed')>=0){
-      return {to:['info@simfed.it'], cc:['commerciale@yespresso.it']};
+      return {to:['daniele.grilli@sim-fed.it'], cc:ccDefault};
     }
-    return {to:[], cc:['commerciale@yespresso.it']};
+    return {to:[], cc:ccDefault};
   }
   // Calcola giorni passati da una data ISO
   function _contestGiorniDa(isoDate){
@@ -12129,6 +12139,53 @@ function openFilippoPanel(){
   }
 
   // Modal nuova/modifica contestazione
+  // Fetch costo unitario di uno SKU Shopify (cached)
+  // Pattern: products.json -> inventory_item_id -> inventory_items.json -> cost
+  async function _contestGetSkuCost(skuShopify){
+    if(!skuShopify) return 0;
+    window._contestCostCache = window._contestCostCache || {};
+    var cache = window._contestCostCache;
+    if(cache[skuShopify] !== undefined) return cache[skuShopify];
+    if(typeof shopifyGet !== 'function') return 0;
+    try{
+      // 1. Trova inventory_item_id per lo sku
+      var invId = null;
+      var pageInfo = '';
+      for(var p=0; p<10 && !invId; p++){
+        var url = 'products.json?limit=250&fields=id,variants' + (pageInfo?'&page_info='+encodeURIComponent(pageInfo):'');
+        var data = await shopifyGet(url);
+        if(!data || !data.products) break;
+        for(var pi=0; pi<data.products.length && !invId; pi++){
+          var prod = data.products[pi];
+          for(var vi=0; vi<(prod.variants||[]).length; vi++){
+            var v = prod.variants[vi];
+            if((v.sku||'').trim().toLowerCase() === skuShopify.toLowerCase()){
+              invId = v.inventory_item_id;
+              break;
+            }
+          }
+        }
+        if(data.products.length < 250) break;
+      }
+      if(!invId){
+        cache[skuShopify] = 0;
+        return 0;
+      }
+      // 2. Recupera cost
+      var inv = await shopifyGet('inventory_items.json?ids='+invId);
+      var cost = 0;
+      if(inv && inv.inventory_items && inv.inventory_items.length){
+        cost = parseFloat(inv.inventory_items[0].cost) || 0;
+      }
+      cache[skuShopify] = cost;
+      return cost;
+    }catch(e){
+      console.warn('[CONTEST] Errore fetch costo SKU '+skuShopify+':',e.message);
+      cache[skuShopify] = 0;
+      return 0;
+    }
+  }
+
   function _contestModal(existing,onSave){
     var existingMode=!!existing;
     var c=existing?JSON.parse(JSON.stringify(existing)):{
@@ -12160,13 +12217,17 @@ function openFilippoPanel(){
         return '<option value="'+_contestEsc(v)+'"'+(v===curr?' selected':'')+'>'+_contestEsc(l)+'</option>';
       }).join('');
     }
-    var FORNITORI=[
-      {v:'',l:'-- Seleziona fornitore --'},
-      {v:'Noire (Nero Nobile)',l:'Noire (Nero Nobile)'},
-      {v:'Best Espresso',l:'Best Espresso'},
-      {v:'Simfed',l:'Simfed'},
-      {v:'Altro',l:'Altro (specifica nel testo email)'}
-    ];
+    // Lista prodotti dal fabbisogno (con SKU e fornitore già configurati)
+    var FAB_LIST = (typeof fabProducts !== 'undefined' && Array.isArray(fabProducts)) ? fabProducts : [];
+    // Trova il prodotto attualmente selezionato (per modifica)
+    var fabProdSelectedId = '';
+    if(c.sku && c.prodotto){
+      var foundFab = FAB_LIST.find(function(p){return (p.codice_forn===c.sku || p.sku===c.prodotto);});
+      if(foundFab) fabProdSelectedId = String(foundFab.id);
+    }
+    var FAB_OPTIONS = [{v:'',l:'-- Seleziona prodotto dal fabbisogno --'}].concat(
+      FAB_LIST.map(function(p){return {v:String(p.id), l:p.sku+' ('+p.codice_forn+') - '+p.fornitore};})
+    ).concat([{v:'__manual__', l:'➕ Inserisci manualmente (prodotto non in lista)'}]);
     var TIPIPROB=[
       '',
       'Difetto di confezionamento',
@@ -12184,16 +12245,23 @@ function openFilippoPanel(){
       '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:16px;font-weight:700">⚖️ '+(existingMode?'Modifica':'Nuova')+' Contestazione</h3>'+
       '<button id="cmclose" style="background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">×</button></div></div>'+
       '<div style="padding:20px">'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-          '<div>'+fld('Fornitore *','<select data-fld="fornitore" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">'+_bldOptions(FORNITORI,c.fornitore)+'</select>')+'</div>'+
-          '<div>'+fld('Data apertura',input('dataApertura',c.dataApertura?c.dataApertura.substring(0,10):new Date().toISOString().substring(0,10),'date'))+'</div>'+
+        '<div style="background:#eff6ff;padding:12px;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:14px">'+
+          fld('🔮 Prodotto dal Fabbisogno *','<select id="contest-fab-select" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box;font-weight:600">'+_bldOptions(FAB_OPTIONS, fabProdSelectedId || (existingMode?'__manual__':''))+'</select>')+
+          '<div id="contest-fab-status" style="font-size:11px;color:#1e40af;margin-top:-6px"></div>'+
         '</div>'+
-        fld('Prodotto *',input('prodotto',c.prodotto,'text','Es: 240 Capsule Lavazza A Modo Mio'))+
+        '<div id="contest-manual-fields" style="display:none">'+
+          fld('Fornitore *',input('fornitoreManual',c.fornitore,'text','Es: Noire (Nero Nobile)'))+
+          fld('Prodotto *',input('prodottoManual',c.prodotto,'text','Es: 240 Capsule Lavazza A Modo Mio'))+
+          fld('Codice/SKU fornitore',input('skuManual',c.sku,'text','Es: P031120001'))+
+        '</div>'+
+        '<input type="hidden" data-fld="fornitore" value="'+_contestEsc(c.fornitore||'')+'">'+
+        '<input type="hidden" data-fld="prodotto" value="'+_contestEsc(c.prodotto||'')+'">'+
+        '<input type="hidden" data-fld="sku" value="'+_contestEsc(c.sku||'')+'">'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-          '<div>'+fld('Codice/SKU',input('sku',c.sku,'text','Es: LAVDOM240'))+'</div>'+
           '<div>'+fld('Lotto *',input('lotto',c.lotto,'text','Es: L1234A'))+'</div>'+
+          '<div>'+fld('Data scadenza',input('scadenza',c.scadenza?c.scadenza.substring(0,10):'','date'))+'</div>'+
         '</div>'+
-        fld('Data scadenza',input('scadenza',c.scadenza?c.scadenza.substring(0,10):'','date'))+
+        '<div>'+fld('Data apertura',input('dataApertura',c.dataApertura?c.dataApertura.substring(0,10):new Date().toISOString().substring(0,10),'date'))+'</div>'+
         fld('Tipo problema *','<select data-fld="tipoProblema" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">'+_bldOptions(TIPIPROB.map(function(t){return {v:t,l:t||'-- Seleziona --'};}),c.tipoProblema)+'</select>')+
         fld('Descrizione dettagliata','<textarea data-fld="descrizione" placeholder="Descrivi nel dettaglio il problema riscontrato..." style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box;min-height:80px;resize:vertical">'+_contestEsc(c.descrizione)+'</textarea>')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fde68a;margin-bottom:12px">'+
@@ -12214,7 +12282,7 @@ function openFilippoPanel(){
             '<div>'+fld('Destinatario WA',input('waDestinatario',c.waDestinatario,'text','Es: Mario Rossi - Nero Nobile'))+'</div>'+
           '</div>'+
         '</div>'+
-        fld('Allegati (foto/video del difetto)','<div id="contest-alleg-area" style="border:2px dashed #cbd5e1;border-radius:8px;padding:14px;background:#f8fafc;text-align:center"><input type="file" id="contest-alleg-input" multiple accept="image/*,video/*" style="display:none"><button type="button" id="contest-alleg-btn" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">📎 Aggiungi file</button><div id="contest-alleg-list" style="margin-top:10px;text-align:left"></div></div>')+
+        fld('Allegati (foto/video del difetto)','<div id="contest-alleg-area" style="border:2px dashed #cbd5e1;border-radius:8px;padding:14px;background:#f8fafc;text-align:center;transition:all .2s"><input type="file" id="contest-alleg-input" multiple accept="image/*,video/*" style="display:none"><button type="button" id="contest-alleg-btn" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">📎 Aggiungi file</button><div style="font-size:11px;color:#64748b;margin-top:8px">oppure trascina qui i file · clicca qui e premi <kbd style="background:#fff;border:1px solid #d1d5db;border-radius:3px;padding:1px 5px;font-family:monospace;font-size:10px">Ctrl+V</kbd> per incollare uno screenshot</div><div id="contest-alleg-list" style="margin-top:10px;text-align:left"></div></div>')+
       '</div>'+
       '<div style="padding:14px 22px;background:#f8fafc;border-radius:0 0 12px 12px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #e5e7eb">'+
         '<button id="cmcancel" style="background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Annulla</button>'+
@@ -12224,6 +12292,56 @@ function openFilippoPanel(){
     document.body.appendChild(modal);
     box.querySelector('#cmclose').onclick=function(){modal.remove();};
     box.querySelector('#cmcancel').onclick=function(){modal.remove();};
+    // Handler dropdown prodotto fabbisogno
+    var fabSelect = box.querySelector('#contest-fab-select');
+    var fabStatus = box.querySelector('#contest-fab-status');
+    var manualFields = box.querySelector('#contest-manual-fields');
+    function _applyFabSelection(){
+      var val = fabSelect.value;
+      if(val === '__manual__'){
+        manualFields.style.display = 'block';
+        fabStatus.innerHTML = 'ℹ️ Inserimento manuale: compila fornitore, prodotto e SKU sotto';
+        // Gli hidden saranno aggiornati al save dai campi manuali
+        // Sincronizza con gli input manuali esistenti
+        var ff=box.querySelector('input[data-fld="fornitoreManual"]');
+        var pp=box.querySelector('input[data-fld="prodottoManual"]');
+        var ss=box.querySelector('input[data-fld="skuManual"]');
+        if(ff) ff.oninput=function(){box.querySelector('input[data-fld="fornitore"]').value=ff.value;};
+        if(pp) pp.oninput=function(){box.querySelector('input[data-fld="prodotto"]').value=pp.value;};
+        if(ss) ss.oninput=function(){box.querySelector('input[data-fld="sku"]').value=ss.value;};
+      } else if(val === ''){
+        manualFields.style.display = 'none';
+        fabStatus.innerHTML = '';
+        box.querySelector('input[data-fld="fornitore"]').value='';
+        box.querySelector('input[data-fld="prodotto"]').value='';
+        box.querySelector('input[data-fld="sku"]').value='';
+      } else {
+        manualFields.style.display = 'none';
+        var p = FAB_LIST.find(function(x){return String(x.id)===val;});
+        if(!p) return;
+        box.querySelector('input[data-fld="fornitore"]').value = p.fornitore || '';
+        box.querySelector('input[data-fld="prodotto"]').value = p.sku || '';
+        box.querySelector('input[data-fld="sku"]').value = p.codice_forn || '';
+        fabStatus.innerHTML = '✅ Fornitore: <b>'+_contestEsc(p.fornitore)+'</b> · SKU Shopify: <b>'+_contestEsc(p.sku_shopify)+'</b>';
+        // Fetch costo Shopify (se prezzoAcquisto vuoto)
+        var prezzoInput = box.querySelector('input[data-fld="prezzoAcquisto"]');
+        if(prezzoInput && (!prezzoInput.value || parseFloat(prezzoInput.value)===0)){
+          fabStatus.innerHTML += ' · ⏳ Recupero costo da Shopify...';
+          _contestGetSkuCost(p.sku_shopify).then(function(cost){
+            if(cost > 0){
+              prezzoInput.value = cost.toFixed(4).replace(/\.?0+$/,'');
+              fabStatus.innerHTML = '✅ Fornitore: <b>'+_contestEsc(p.fornitore)+'</b> · SKU Shopify: <b>'+_contestEsc(p.sku_shopify)+'</b> · 💰 Costo Shopify: <b>€ '+cost.toFixed(4)+'</b>';
+              if(typeof _updateValTot==='function') _updateValTot();
+            } else {
+              fabStatus.innerHTML = '✅ Fornitore: <b>'+_contestEsc(p.fornitore)+'</b> · SKU Shopify: <b>'+_contestEsc(p.sku_shopify)+'</b> · ⚠️ Costo Shopify non trovato (inserisci manualmente)';
+            }
+          });
+        }
+      }
+    }
+    fabSelect.onchange = _applyFabSelection;
+    // Apply iniziale (per modalità modifica)
+    if(fabSelect.value) _applyFabSelection();
     // Toggle WA fields
     box.querySelector('input[data-fld="waInviato"]').onchange=function(){
       box.querySelector('#contest-wa-fields').style.display=this.checked?'grid':'none';
@@ -12258,23 +12376,86 @@ function openFilippoPanel(){
       });
     }
     renderAlleg();
+    // Helper: aggiunge file alla lista allegati (con check dimensione)
+    function _addFile(f){
+      if(!f) return;
+      if(f.size>20*1024*1024){alert('File troppo grande: '+f.name+' ('+(f.size/1024/1024).toFixed(1)+' MB). Max 20 MB per file.');return;}
+      // Filtra solo immagini e video
+      if(!/^(image|video)\//.test(f.type||'')){
+        // Permetti anche se manca type ma estensione è nota
+        var nm=(f.name||'').toLowerCase();
+        if(!/\.(jpg|jpeg|png|gif|webp|heic|mp4|mov|avi|mkv|webm)$/i.test(nm)){
+          alert('Tipo file non supportato: '+f.name+'. Solo immagini e video.');
+          return;
+        }
+      }
+      var reader=new FileReader();
+      reader.onload=function(){
+        // Per immagini incollate da clipboard, il nome è "image.png" - gli do un nome più sensato
+        var fname=f.name||('screenshot_'+Date.now()+'.'+(f.type.split('/')[1]||'png'));
+        allegList.push({name:fname,type:f.type,size:f.size,dataUrl:reader.result});
+        renderAlleg();
+      };
+      reader.readAsDataURL(f);
+    }
     box.querySelector('#contest-alleg-btn').onclick=function(){box.querySelector('#contest-alleg-input').click();};
     box.querySelector('#contest-alleg-input').onchange=function(ev){
-      var files=Array.from(ev.target.files||[]);
-      files.forEach(function(f){
-        if(f.size>20*1024*1024){alert('File troppo grande: '+f.name+' ('+(f.size/1024/1024).toFixed(1)+' MB). Max 20 MB per file.');return;}
-        var reader=new FileReader();
-        reader.onload=function(){
-          allegList.push({name:f.name,type:f.type,size:f.size,dataUrl:reader.result});
-          renderAlleg();
-        };
-        reader.readAsDataURL(f);
-      });
+      Array.from(ev.target.files||[]).forEach(_addFile);
       ev.target.value='';
     };
+    // DRAG & DROP support
+    var allegArea=box.querySelector('#contest-alleg-area');
+    if(allegArea){
+      ['dragenter','dragover'].forEach(function(evt){
+        allegArea.addEventListener(evt,function(e){e.preventDefault();e.stopPropagation();allegArea.style.borderColor='#3b82f6';allegArea.style.background='#eff6ff';});
+      });
+      ['dragleave','drop'].forEach(function(evt){
+        allegArea.addEventListener(evt,function(e){e.preventDefault();e.stopPropagation();allegArea.style.borderColor='#cbd5e1';allegArea.style.background='#f8fafc';});
+      });
+      allegArea.addEventListener('drop',function(e){
+        var files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]);
+        files.forEach(_addFile);
+      });
+    }
+    // PASTE support (Ctrl+V): cattura paste sul modal intero, non solo sull'area
+    // così funziona sia se clicchi nell'area sia se hai focus su altri campi
+    var pasteHandler=function(e){
+      // Skip se l'utente sta incollando in un input testuale (per non rubare il paste normale)
+      var tgt=e.target;
+      var isTextField=tgt&&(tgt.tagName==='INPUT'&&tgt.type!=='file'||tgt.tagName==='TEXTAREA'||tgt.contentEditable==='true');
+      var items=(e.clipboardData||window.clipboardData||{}).items||[];
+      var hasMedia=false;
+      for(var i=0;i<items.length;i++){
+        if(/^(image|video)\//.test(items[i].type||'')){hasMedia=true;break;}
+      }
+      // Se c'è un'immagine nel clipboard, processala anche se il focus è su un text field
+      // (serve per incollare screenshot mentre stai in un campo testo)
+      if(!hasMedia && isTextField) return; // nessuna media, lascia fare il paste normale
+      if(hasMedia){
+        for(var j=0;j<items.length;j++){
+          var it=items[j];
+          if(/^(image|video)\//.test(it.type||'')){
+            var blob=it.getAsFile();
+            if(blob) _addFile(blob);
+            e.preventDefault(); // impedisci il paste del binario nel campo testo
+          }
+        }
+      }
+    };
+    box.addEventListener('paste',pasteHandler);
     // Save
     box.querySelector('#cmsave').onclick=async function(){
       function getVal(name){var el=box.querySelector('[data-fld="'+name+'"]');if(!el) return '';if(el.type==='checkbox') return el.checked;return el.value;}
+      // Se in modalità manuale, leggi dai campi manuali e aggiorna gli hidden
+      var fabVal = (box.querySelector('#contest-fab-select')||{}).value || '';
+      if(fabVal === '__manual__'){
+        var fm = (box.querySelector('input[data-fld="fornitoreManual"]')||{}).value || '';
+        var pm = (box.querySelector('input[data-fld="prodottoManual"]')||{}).value || '';
+        var sm = (box.querySelector('input[data-fld="skuManual"]')||{}).value || '';
+        box.querySelector('input[data-fld="fornitore"]').value = fm.trim();
+        box.querySelector('input[data-fld="prodotto"]').value = pm.trim();
+        box.querySelector('input[data-fld="sku"]').value = sm.trim();
+      }
       var newC={
         id:c.id,
         dataApertura:getVal('dataApertura')?new Date(getVal('dataApertura')).toISOString():c.dataApertura,
@@ -12298,8 +12479,8 @@ function openFilippoPanel(){
         dataChiusura:c.dataChiusura||''
       };
       // Validazione minima
-      if(!newC.fornitore){alert('Seleziona il fornitore.');return;}
-      if(!newC.prodotto){alert('Inserisci il nome prodotto.');return;}
+      if(!newC.fornitore){alert('Seleziona un prodotto dal fabbisogno o compila il fornitore manualmente.');return;}
+      if(!newC.prodotto){alert('Seleziona un prodotto dal fabbisogno o inserisci il nome manualmente.');return;}
       if(!newC.lotto){alert('Inserisci il numero di lotto.');return;}
       if(!newC.tipoProblema){alert('Seleziona il tipo di problema.');return;}
       var btn=box.querySelector('#cmsave');btn.disabled=true;btn.textContent='⏳ Salvataggio...';
