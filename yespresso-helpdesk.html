@@ -8876,6 +8876,63 @@ function openFilippoPanel(){
     if(f.indexOf('simfed')>=0 || f.indexOf('sim-fed')>=0) return 'simfed';
     return 'altro';
   }
+  // Cache costi prodotti (sku_shopify → cost) — popolata al primo apri del modal
+  // Pattern identico a quello di Anticipi/Margine (riga 14941 e 15204):
+  // 1) products.json → mappa sku_shopify → inventory_item_id
+  // 2) inventory_items.json?ids=... → recupera cost (campo "cost" del COGS Shopify)
+  window._contestCostCache = window._contestCostCache || null;
+  async function contestEnsureCostCache(){
+    if(window._contestCostCache) return window._contestCostCache;
+    var cache = {};
+    try {
+      // Recupero gli SKU dal fabbisogno
+      var skus = (typeof fabProducts !== 'undefined' ? fabProducts : (typeof FAB_PRODUCTS_DEFAULT !== 'undefined' ? FAB_PRODUCTS_DEFAULT : []))
+                 .map(function(p){return (p.sku_shopify||'').toLowerCase();}).filter(Boolean);
+      if(!skus.length){ window._contestCostCache = cache; return cache; }
+      var skuSet = new Set(skus);
+      // Step 1: mappa sku → inventory_item_id (pagino tutti i products)
+      var invIds = {};
+      var nextUrl = 'products.json?limit=250&fields=id,variants';
+      for(var pageGuard=0; pageGuard<10 && nextUrl; pageGuard++){
+        try {
+          var pd = await shopifyGet(nextUrl);
+          if(pd && pd.products){
+            pd.products.forEach(function(p){
+              (p.variants||[]).forEach(function(v){
+                var s = (v.sku||'').toLowerCase();
+                if(s && skuSet.has(s) && v.inventory_item_id){
+                  invIds[s] = v.inventory_item_id;
+                }
+              });
+            });
+          }
+          nextUrl = pd && pd._nextPageInfo ? 'products.json?limit=250&fields=id,variants&page_info='+pd._nextPageInfo : null;
+        } catch(eP){ console.warn('[contest cost] products page error:', eP.message); break; }
+      }
+      // Step 2: recupera cost in batch da inventory_items
+      var ids = Object.values(invIds).filter(Boolean);
+      if(!ids.length){ window._contestCostCache = cache; return cache; }
+      var invToCost = {};
+      for(var i=0; i<ids.length; i+=50){
+        var batch = ids.slice(i, i+50);
+        try {
+          var resp = await shopifyGet('inventory_items.json?ids='+batch.join(','));
+          if(resp && resp.inventory_items){
+            resp.inventory_items.forEach(function(it){
+              invToCost[it.id] = parseFloat(it.cost) || 0;
+            });
+          }
+        } catch(eI){ console.warn('[contest cost] inventory_items batch error:', eI.message); }
+      }
+      // Mappa finale: sku_shopify → cost
+      Object.keys(invIds).forEach(function(sku){
+        var cost = invToCost[invIds[sku]];
+        if(cost != null) cache[sku] = cost;
+      });
+    } catch(eAll){ console.warn('[contest cost] errore generale:', eAll.message); }
+    window._contestCostCache = cache;
+    return cache;
+  }
   function contestEmailContestazione(c){
     var prod = c.prodotto || '(prodotto)';
     var lotto = c.lotto || '(lotto)';
@@ -8887,6 +8944,7 @@ function openFilippoPanel(){
     lines.push('');
     lines.push('• Prodotto: '+prod);
     if(c.sku) lines.push('• SKU: '+c.sku);
+    if(c.codiceFornitore) lines.push('• Vs. codice: '+c.codiceFornitore);
     lines.push('• Lotto: '+lotto);
     if(c.scadenza) lines.push('• Scadenza: '+c.scadenza);
     lines.push('• Problema riscontrato: '+(c.tipoProblema||'—'));
@@ -9032,6 +9090,7 @@ function openFilippoPanel(){
     s +=     '<div style="font-size:14px;font-weight:700;color:#1a1a2e">'+contestEsc(c.prodotto||'(senza prodotto)')+'</div>';
     s +=     '<div style="font-size:11px;color:#666;margin-top:3px">📦 '+contestEsc(c.fornitore||'—')+
               (c.sku?(' · SKU '+contestEsc(c.sku)):'')+
+              (c.codiceFornitore?(' · Cod.Forn '+contestEsc(c.codiceFornitore)):'')+
               (c.lotto?(' · Lotto '+contestEsc(c.lotto)):'')+
               (c.scadenza?(' · Scad. '+contestEsc(c.scadenza)):'')+'</div>';
     s +=     '<div style="font-size:12px;color:#1a1a2e;margin-top:6px">⚠️ '+contestEsc(c.tipoProblema||'—')+'</div>';
@@ -9111,7 +9170,7 @@ function openFilippoPanel(){
   function contestOpenModal(panel, existing){
     var c = existing || {
       id: 'ct_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-      fornitore:'',prodotto:'',sku:'',lotto:'',scadenza:'',
+      fornitore:'',prodotto:'',sku:'',codiceFornitore:'',lotto:'',scadenza:'',
       tipoProblema:'',descrizione:'',
       prezzoUnitario:0,quantita:0,
       campioni:'non_specificato',
@@ -9150,8 +9209,29 @@ function openFilippoPanel(){
     h +=       fornOpt('Simfed S.r.l.','Simfed S.r.l. (info@simfed.it)');
     h +=       fornOpt('Altro','Altro (email da specificare al momento dell\'invio)');
     h +=     '</select></label>';
-    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Prodotto *</div><input id="ct-prodotto" type="text" value="'+contestEsc(c.prodotto)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
-    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">SKU</div><input id="ct-sku" type="text" value="'+contestEsc(c.sku)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Prodotto *</div>';
+    h +=     '<select id="ct-prodotto-select" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px">';
+    h +=       '<option value="">— scegli dal fabbisogno —</option>';
+    var _fabList = (typeof fabProducts !== 'undefined' ? fabProducts : (typeof FAB_PRODUCTS_DEFAULT !== 'undefined' ? FAB_PRODUCTS_DEFAULT : []));
+    var _isExistingNotInFab = false;
+    _fabList.forEach(function(p){
+      var sel = (c.sku === p.sku || c.prodotto === p.sku) ? ' selected' : '';
+      h += '<option value="'+contestEsc(p.sku)+'" data-sku-shopify="'+contestEsc(p.sku_shopify||'')+'" data-codice-forn="'+contestEsc(p.codice_forn||'')+'" data-fornitore="'+contestEsc(p.fornitore||'')+'"'+sel+'>'+contestEsc(p.sku)+(p.fornitore?' — '+contestEsc(p.fornitore):'')+'</option>';
+    });
+    // Se modifichi una contestazione esistente con prodotto NON nel fabbisogno, mostra opzione "altro"
+    if(c.prodotto && !_fabList.some(function(p){return p.sku===c.prodotto || p.sku===c.sku;})){
+      _isExistingNotInFab = true;
+      h += '<option value="__custom__" selected>Altro / personalizzato: '+contestEsc(c.prodotto)+'</option>';
+    } else {
+      h += '<option value="__custom__">Altro / personalizzato (inserisci manualmente)</option>';
+    }
+    h +=     '</select>';
+    h +=   '</label>';
+    // Campi nascosti / readonly che vengono popolati dal dropdown
+    var _showCustom = _isExistingNotInFab;
+    h +=   '<label id="ct-prodotto-libero-wrap" style="'+(_showCustom?'':'display:none;')+'"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Nome prodotto (libero)</div><input id="ct-prodotto" type="text" value="'+contestEsc(c.prodotto)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">SKU (codice prodotto)</div><input id="ct-sku" type="text" value="'+contestEsc(c.sku)+'" '+(_showCustom?'':'readonly')+' style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;'+(_showCustom?'':'background:#f8f9fc;color:#666')+'"></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Codice fornitore</div><input id="ct-cod-forn" type="text" value="'+contestEsc(c.codiceFornitore||'')+'" '+(_showCustom?'':'readonly')+' style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;'+(_showCustom?'':'background:#f8f9fc;color:#666')+'"></label>';
     h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Lotto *</div><input id="ct-lotto" type="text" value="'+contestEsc(c.lotto)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
     h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Scadenza</div><input id="ct-scadenza" type="text" placeholder="MM/AAAA o GG/MM/AAAA" value="'+contestEsc(c.scadenza)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
     h +=   '<label style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Tipo problema *</div>';
@@ -9198,6 +9278,84 @@ function openFilippoPanel(){
     box.querySelector('#ct-prezzo').addEventListener('input', recalcTotale);
     box.querySelector('#ct-quantita').addEventListener('input', recalcTotale);
     recalcTotale();
+
+    // ── Logica dropdown prodotto: autocompila SKU, codice fornitore, fornitore + fetch prezzo Shopify
+    var prodSelect = box.querySelector('#ct-prodotto-select');
+    var prodLiberoWrap = box.querySelector('#ct-prodotto-libero-wrap');
+    var skuInput = box.querySelector('#ct-sku');
+    var codFornInput = box.querySelector('#ct-cod-forn');
+    var prodLiberoInput = box.querySelector('#ct-prodotto');
+    var fornSelect = box.querySelector('#ct-fornitore');
+    var prezzoInput = box.querySelector('#ct-prezzo');
+    function applyCustomMode(custom){
+      if(custom){
+        prodLiberoWrap.style.display = '';
+        skuInput.removeAttribute('readonly');
+        skuInput.style.background = '';
+        skuInput.style.color = '';
+        codFornInput.removeAttribute('readonly');
+        codFornInput.style.background = '';
+        codFornInput.style.color = '';
+      } else {
+        prodLiberoWrap.style.display = 'none';
+        skuInput.setAttribute('readonly','readonly');
+        skuInput.style.background = '#f8f9fc';
+        skuInput.style.color = '#666';
+        codFornInput.setAttribute('readonly','readonly');
+        codFornInput.style.background = '#f8f9fc';
+        codFornInput.style.color = '#666';
+      }
+    }
+    prodSelect.addEventListener('change', async function(){
+      var val = prodSelect.value;
+      if(val === '__custom__'){
+        applyCustomMode(true);
+        skuInput.value = '';
+        codFornInput.value = '';
+        prodLiberoInput.value = '';
+        prodLiberoInput.focus();
+        return;
+      }
+      if(!val){
+        applyCustomMode(false);
+        skuInput.value = '';
+        codFornInput.value = '';
+        return;
+      }
+      applyCustomMode(false);
+      var opt = prodSelect.options[prodSelect.selectedIndex];
+      var skuShopify = opt.getAttribute('data-sku-shopify') || '';
+      var codForn = opt.getAttribute('data-codice-forn') || '';
+      var fornFab = opt.getAttribute('data-fornitore') || '';
+      skuInput.value = skuShopify;
+      codFornInput.value = codForn;
+      // Auto-seleziona fornitore corrispondente nel dropdown
+      var fornLow = fornFab.toLowerCase();
+      var fornVal = '';
+      if(fornLow.indexOf('noire') >= 0) fornVal = 'Noire S.r.l.';
+      else if(fornLow.indexOf('best') >= 0) fornVal = 'Best Espresso S.r.l.';
+      else if(fornLow.indexOf('simfed') >= 0 || fornLow.indexOf('sim-fed') >= 0) fornVal = 'Simfed S.r.l.';
+      else fornVal = 'Altro';
+      fornSelect.value = fornVal;
+      // Fetch costo da Shopify (solo se prezzo non è stato già impostato manualmente)
+      if(skuShopify){
+        prezzoInput.placeholder = '⏳ Caricamento da Shopify...';
+        try {
+          var cache = await contestEnsureCostCache();
+          var cost = cache[skuShopify.toLowerCase()];
+          if(cost != null && cost > 0){
+            prezzoInput.value = cost.toFixed(4);
+          }
+          prezzoInput.placeholder = '';
+        } catch(eF){
+          console.warn('[contest] errore fetch costo:', eF.message);
+          prezzoInput.placeholder = '';
+        }
+        recalcTotale();
+      }
+    });
+    // Inizializza modalità custom se sto modificando un esistente non in fab
+    if(prodSelect.value === '__custom__') applyCustomMode(true);
 
     var waCb = box.querySelector('#ct-wa-cb');
     waCb.addEventListener('change', function(){
@@ -9251,7 +9409,15 @@ function openFilippoPanel(){
 
     box.querySelector('#ct-mod-save').onclick = async function(){
       var fornitore = box.querySelector('#ct-fornitore').value;
-      var prodotto = box.querySelector('#ct-prodotto').value.trim();
+      // Determino il nome prodotto: se c'è un valore valido nel select usa quello,
+      // altrimenti (modalità "altro") usa il campo libero
+      var prodSelectVal = prodSelect.value;
+      var prodotto = '';
+      if(prodSelectVal && prodSelectVal !== '__custom__'){
+        prodotto = prodSelectVal; // è il sku/nome dal fabbisogno (es. "240 NESPRESSO - GRANBAR")
+      } else {
+        prodotto = (prodLiberoInput.value||'').trim();
+      }
       var lotto = box.querySelector('#ct-lotto').value.trim();
       var tipo = box.querySelector('#ct-tipo').value;
       if(!fornitore || !prodotto || !lotto || !tipo){
@@ -9263,6 +9429,7 @@ function openFilippoPanel(){
         fornitore: fornitore,
         prodotto: prodotto,
         sku: box.querySelector('#ct-sku').value.trim(),
+        codiceFornitore: box.querySelector('#ct-cod-forn').value.trim(),
         lotto: lotto,
         scadenza: box.querySelector('#ct-scadenza').value.trim(),
         tipoProblema: tipo,
