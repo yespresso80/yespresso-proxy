@@ -8968,7 +8968,7 @@ function openFilippoPanel(){
       lines.push('Campioni: vi sono stati inviati per analisi.');
     } else if(c.campioni === 'in_possesso'){
       lines.push('');
-      lines.push('Campioni: sono in nostro possesso, disponibili per eventuale ritiro o invio su richiesta.');
+      lines.push('Campioni: sono già in vostro possesso.');
     }
     if(c.whatsapp && c.whatsapp.inviato){
       lines.push('');
@@ -9244,7 +9244,7 @@ function openFilippoPanel(){
     h +=   '<div style="grid-column:1/-1;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;font-size:12px;color:#6d28d9;font-weight:600">Valore totale: € <span id="ct-totale">0.00</span></div>';
     h +=   '<div style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Campioni</div>';
     h +=     '<label style="margin-right:16px;font-size:13px"><input type="radio" name="ct-camp" value="inviati"'+(camp==='inviati'?' checked':'')+'> Inviati al fornitore</label>';
-    h +=     '<label style="margin-right:16px;font-size:13px"><input type="radio" name="ct-camp" value="in_possesso"'+(camp==='in_possesso'?' checked':'')+'> In nostro possesso</label>';
+    h +=     '<label style="margin-right:16px;font-size:13px"><input type="radio" name="ct-camp" value="in_possesso"'+(camp==='in_possesso'?' checked':'')+'> In vostro possesso</label>';
     h +=     '<label style="font-size:13px"><input type="radio" name="ct-camp" value="non_specificato"'+(camp==='non_specificato'?' checked':'')+'> Non specificato</label>';
     h +=   '</div>';
     h +=   '<div style="grid-column:1/-1"><label style="font-size:13px"><input type="checkbox" id="ct-wa-cb"'+(wa.inviato?' checked':'')+'> Materiale inviato via WhatsApp al fornitore</label>';
