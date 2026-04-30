@@ -274,19 +274,60 @@ textarea.field{min-height:80px;resize:vertical}
       <button class="modal-close" onclick="closeSettingsModal()">×</button>
     </div>
     <div class="modal-body" style="gap:16px">
-      <!-- Sezione: Auto-risposta -->
+      <!-- Sezione: Auto-risposta AI con doppio interruttore -->
       <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div style="font-size:14px;font-weight:700;color:#166534">🤖 Auto-risposta AI</div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <span id="auto-reply-label" style="font-size:12px;font-weight:700;color:#166534">OFF</span>
-            <div id="auto-reply-toggle" onclick="toggleAutoReplyUI()" style="width:44px;height:24px;border-radius:12px;background:#e0e4ea;cursor:pointer;position:relative;transition:background .2s">
-              <div id="auto-reply-knob" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s"></div>
+        <div style="font-size:14px;font-weight:700;color:#166534;margin-bottom:12px">🤖 Auto-risposta AI</div>
+
+        <!-- Interruttore 1: Sempre attiva -->
+        <div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:#166534">⚡ Sempre attiva (24/7)</div>
+              <div style="font-size:11px;color:#666;margin-top:2px">L'AI risponde automaticamente in qualunque momento, senza limiti di orario.</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="auto-reply-always-label" style="font-size:11px;font-weight:700;color:#166534">OFF</span>
+              <div id="auto-reply-always-toggle" onclick="toggleAutoReplyMode('always')" style="width:44px;height:24px;border-radius:12px;background:#e0e4ea;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0">
+                <div id="auto-reply-always-knob" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s"></div>
+              </div>
             </div>
           </div>
         </div>
-        <div style="font-size:12px;color:#166534;margin-bottom:8px">Quando attiva, l'AI invia automaticamente la risposta e chiude il ticket — solo se non sono richieste azioni manuali.</div>
-        <div style="font-size:11px;color:#888;background:#fff;border-radius:8px;padding:10px 12px;line-height:1.7">
+
+        <!-- Interruttore 2: Scheduled (fasce orarie) -->
+        <div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:#166534">🕐 Solo in fasce orarie programmate</div>
+              <div style="font-size:11px;color:#666;margin-top:2px">L'AI risponde solo nelle fasce orarie configurate. Fuso orario: Italia (Europe/Rome).</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="auto-reply-scheduled-label" style="font-size:11px;font-weight:700;color:#166534">OFF</span>
+              <div id="auto-reply-scheduled-toggle" onclick="toggleAutoReplyMode('scheduled')" style="width:44px;height:24px;border-radius:12px;background:#e0e4ea;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0">
+                <div id="auto-reply-scheduled-knob" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s"></div>
+              </div>
+            </div>
+          </div>
+          <div id="auto-reply-schedule-config" style="display:none;border-top:1px solid #d1fae5;margin-top:8px;padding-top:10px">
+            <div style="font-size:11px;font-weight:700;color:#166534;margin-bottom:6px">📅 Giorni feriali (Lun-Ven) — Fasce attive:</div>
+            <div id="weekday-slots-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+            <button onclick="addAutoReplySlot()" style="background:transparent;border:1px dashed #86efac;border-radius:6px;color:#166534;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;width:100%">+ Aggiungi fascia</button>
+
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid #d1fae5">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" id="weekend-24h-cb" onchange="toggleWeekend24h()">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:#166534">Sab/Dom/Festività italiane: AI sempre ON 24h</div>
+                  <div style="font-size:10px;color:#888">Include festività: Capodanno, Epifania, Pasqua, Pasquetta, Liberazione, Festa lavoratori, Festa Repubblica, Ferragosto, Tutti i Santi, Immacolata, Natale, Santo Stefano</div>
+                </div>
+              </label>
+            </div>
+
+            <div id="schedule-now-status" style="margin-top:10px;padding:8px 10px;background:#f0fdf4;border-radius:6px;font-size:11px;font-weight:700;text-align:center"></div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;color:#888;background:#fff;border-radius:8px;padding:10px 12px;line-height:1.7;margin-top:10px">
           <strong>Non invia automaticamente se:</strong><br>
           • La risposta contiene rimborso, credito, buono, annullamento, rispedizione, ritiro, sostituzione<br>
           • Lo stato spedizione è: Pronto al ritiro, Problema spedizione, Tentativo fallito<br>
@@ -7301,18 +7342,17 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       var _fullText=(_replyText+' '+_threadText).toLowerCase();
       // Rileva merce mancante DENTRO l'ordine (non pacco non consegnato)
       var _merceMancante=(/articol.*manc|capsule.*manc|prodott.*manc|merce.*manc|solo.*\d+.*capsul|ho ricevu.*\d+.*capsul|ricevuto solo|mancanti dall.ordin|buste mancanti|pezzi mancanti/i.test(_fullText)) && !(/non ho ricevuto il pacco|pacco non.*arrivat|non.*ricevuto il pacco|pacco.*non.*consegnat|spedizione.*non.*arrivat/i.test(_fullText));
-      // Cerca quantità ≥100
-      var _qty100=false;
-      var _qtyMatches=_fullText.match(/(\d+)\s*(capsul|cialda|pezzi|pz|unit)/gi)||[];
-      _qtyMatches.forEach(function(m){if(parseInt(m)>=100)_qty100=true;});
-      // Mostra menu solo se merce mancante rilevata CON quantità ≥100
+      // Mostra menu SEMPRE quando merce mancante è rilevata, indipendentemente dalla quantità.
+      // Questo dà all'agente la possibilità di gestire manualmente anche casi sotto soglia 100
+      // (es. bundle, casi border, prodotti specifici come 80 Caffitaly che potrebbero richiedere
+      // valutazione manuale anche per quantità totale < 100).
       var mmWrap=document.getElementById('merce-mancante-btn-wrap');
       if(mmWrap){
-        mmWrap.style.display=(_merceMancante&&_qty100)?'block':'none';
-        if(_merceMancante&&_qty100){
+        mmWrap.style.display=_merceMancante?'block':'none';
+        if(_merceMancante){
           // Salva dati ordine per uso nel menu
           window._merceMananteOrderId=window._lastShopifyOrder&&window._lastShopifyOrder.id;
-          console.log('[MERCE MANCANTE] Rilevata ≥100 pezzi — mostro menu');
+          console.log('[MERCE MANCANTE] Rilevata — mostro menu (disponibile sia per AZIONE_MANUALE che per casi automatici sotto soglia)');
         }
       }
     },300);
@@ -12641,9 +12681,22 @@ function openFilippoPanel(){
       if(categoria === 'SOLO_INFO'){
         istruzioni = 'Rispondi SOLO con informazioni fattuali (tracking, stato ordine, tempi). Se risulta consegnato dillo chiaramente. NON promettere rimborsi o compensazioni.';
       } else {
-        if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt2)){
+        // CHECK MERCE MANCANTE: se il cliente segnala merce mancante con foto+quantità → AZIONE_MANUALE
+        // Va PRIMA del check capsule danneggiate perché alcune parole (es. "manca") sono meno specifiche.
+        if(/manca|manche|mancan|incomplet|non.*ricevut.*tutt|mancato.*prodott|prodott.*manca|scatola.*manca|confezione.*manca|busta.*manca|capsul.*manca|cialde.*manca|arrivat.*solo|solo.*invece|invece di|ricevut.*invece|non.*arrivat.*tutto|mi sono arrivat.*solo/i.test(txt2)){
+          var hasFotoMm = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato|foto allegat|allegat[oae]\\s|allegando/i.test(txt2);
+          var hasQtaMm = /\d+\s*capsul/i.test(txt2) || /\d+\s*cialde/i.test(txt2) || /\d+\s*scatole?/i.test(txt2) || /\d+\s*confezion/i.test(txt2) || /\d+\s*bust/i.test(txt2) || /\d+\s*pacc/i.test(txt2) || /manca.*\d+/i.test(txt2) || /\b(una|un|uno)\s+(scatola|confezione|busta|pacco|cartone)/i.test(txt2) || /solo\s+\d+\s+invece/i.test(txt2) || /invece\s+di\s+\d+/i.test(txt2);
+          if(hasFotoMm && hasQtaMm){
+            categoria = 'AZIONE_MANUALE';
+            istruzioni = '';
+            addStep('🔄 Auto-upgrade: merce_mancante con foto+quantità → AZIONE_MANUALE');
+          } else {
+            istruzioni = 'Il cliente segnala merce mancante. Chiedi SOLO: 1) quali prodotti mancano (nome e tipo), 2) quante capsule/cialde/buste/scatole mancano esattamente, 3) foto del pacco ricevuto con etichetta BRT visibile in JPG, 4) foto del contenuto ricevuto. NON promettere rimborsi, crediti o rispedizioni. NON calcolare compensazioni.';
+          }
+        }
+        else if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt2)){
           // Se il cliente ha già inviato le foto e dichiarato la quantità → AZIONE_MANUALE
-          var hasFoto = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato/i.test(txt2);
+          var hasFoto = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato|foto allegat|allegat[oae]\\s|allegando/i.test(txt2);
           var hasQta = /\d+\s*capsule\s*(dann|rott|difett|guast|bruci|mancant)/i.test(txt2) || /ho\s+(trovato|contato|riscontrato).*\d+/i.test(txt2);
           if(hasFoto || hasQta){
             categoria = 'AZIONE_MANUALE';
@@ -16002,17 +16055,192 @@ const AUTO_REPLY_TEST_MODE = false; // 🧪 TEST: risponde solo a commerciale@ye
 const AUTO_REPLY_TEST_EMAIL = 'commerciale@yespresso.it';
 
 // ── AUTO-RISPOSTA ──
-function isAutoReplyEnabled(){
-  return loadSettings().autoReplyEnabled===true;
+// Tre stati possibili:
+//  - 'off'       : AI auto-reply disattivata (default)
+//  - 'always'    : sempre attiva, 24/7
+//  - 'scheduled' : attiva solo nelle fasce orarie configurate (Italia + festivi italiani)
+//
+// Con 'scheduled' l'utente può configurare:
+//  - fasce orarie per giorni feriali (lun-ven), default: 15:00-09:00 + 13:00-14:00
+//  - giorni festivi (sabato/domenica/festività italiane) → AI sempre ON 24h
+//
+// Le verifiche sono fatte SEMPRE in fuso orario "Europe/Rome".
+// Le festività italiane sono calcolate dinamicamente (fisse + Pasqua/Pasquetta via algoritmo).
+
+// ── Festività italiane (calendario nazionale) ──
+// Pasqua → algoritmo di Gauss; Pasquetta = Pasqua + 1 giorno; le altre sono fisse.
+function _italianEasterDate(year){
+  // Algoritmo di Gauss / Meeus per la Pasqua (calendario gregoriano)
+  var a = year % 19;
+  var b = Math.floor(year / 100);
+  var c = year % 100;
+  var d = Math.floor(b / 4);
+  var e = b % 4;
+  var f = Math.floor((b + 8) / 25);
+  var g = Math.floor((b - f + 1) / 3);
+  var h = (19 * a + b - d - g + 15) % 30;
+  var i = Math.floor(c / 4);
+  var k = c % 4;
+  var L = (32 + 2 * e + 2 * i - h - k) % 7;
+  var m = Math.floor((a + 11 * h + 22 * L) / 451);
+  var month = Math.floor((h + L - 7 * m + 114) / 31); // 3=marzo, 4=aprile
+  var day = ((h + L - 7 * m + 114) % 31) + 1;
+  return { month: month, day: day }; // 1-indexed
 }
-function setAutoReply(val){
-  var s=loadSettings();
-  s.autoReplyEnabled=val;
+function _isItalianHoliday(dateInRome){
+  // dateInRome: oggetto {year, month (1-12), day (1-31)}
+  var Y = dateInRome.year, M = dateInRome.month, D = dateInRome.day;
+  // Festività fisse
+  var fixed = [
+    [1,1],   // Capodanno
+    [1,6],   // Epifania
+    [4,25],  // Liberazione
+    [5,1],   // Festa dei Lavoratori
+    [6,2],   // Festa della Repubblica
+    [8,15],  // Ferragosto
+    [11,1],  // Tutti i Santi
+    [12,8],  // Immacolata Concezione
+    [12,25], // Natale
+    [12,26]  // Santo Stefano
+  ];
+  for(var i=0; i<fixed.length; i++){
+    if(fixed[i][0]===M && fixed[i][1]===D) return true;
+  }
+  // Pasqua e Pasquetta (variabili)
+  var easter = _italianEasterDate(Y);
+  if(easter.month===M && easter.day===D) return true;
+  // Pasquetta = Pasqua + 1 giorno
+  var paqDate = new Date(Date.UTC(Y, easter.month - 1, easter.day));
+  paqDate.setUTCDate(paqDate.getUTCDate() + 1);
+  if(paqDate.getUTCMonth()+1===M && paqDate.getUTCDate()===D) return true;
+  return false;
+}
+
+// Ritorna data "Italia" come oggetto con campi anno/mese/giorno/ora/minuto/giorno_settimana
+function _nowInRome(){
+  // Uso Intl.DateTimeFormat per estrarre i campi in fuso Europe/Rome
+  var now = new Date();
+  var fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Rome',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false, weekday: 'short'
+  });
+  var parts = fmt.formatToParts(now);
+  var get = function(type){ var p = parts.find(function(x){return x.type===type;}); return p ? p.value : ''; };
+  var weekdayMap = {'Mon':1,'Tue':2,'Wed':3,'Thu':4,'Fri':5,'Sat':6,'Sun':0};
+  return {
+    year: parseInt(get('year'),10),
+    month: parseInt(get('month'),10),
+    day: parseInt(get('day'),10),
+    hour: parseInt(get('hour'),10),
+    minute: parseInt(get('minute'),10),
+    weekday: weekdayMap[get('weekday')] !== undefined ? weekdayMap[get('weekday')] : new Date().getDay()
+  };
+}
+
+// Verifica se un orario (minuti dalla mezzanotte) ricade in una delle fasce.
+// Una fascia può "attraversare la mezzanotte" (es. 15:00-09:00 = dalle 15:00 alla 09:00 del giorno dopo).
+function _isWithinSlot(nowMinutes, slot){
+  var startMin = slot.startH * 60 + slot.startM;
+  var endMin = slot.endH * 60 + slot.endM;
+  if(startMin === endMin) return false; // fascia degenere
+  if(startMin < endMin){
+    // Fascia "normale" stesso giorno (es. 09:00-13:00)
+    return nowMinutes >= startMin && nowMinutes < endMin;
+  } else {
+    // Fascia che supera la mezzanotte (es. 15:00-09:00) → vale dalle 15 a 23:59 OPPURE da 0 a 9:00
+    return nowMinutes >= startMin || nowMinutes < endMin;
+  }
+}
+
+// Default schedule: lun-ven 15:00-09:00 + 13:00-14:00 (= AI attiva fuori orario lavoro);
+// sabato/domenica/festivi: 24h (sempre attiva)
+function _getDefaultSchedule(){
+  return {
+    weekdays: [
+      { startH:15, startM:0, endH:9, endM:0 },   // 15:00 → 09:00 (attraversa mezzanotte)
+      { startH:13, startM:0, endH:14, endM:0 }   // 13:00 → 14:00 (pausa pranzo)
+    ],
+    weekendsAndHolidays24h: true
+  };
+}
+
+// Verifica se l'auto-reply è attualmente in fascia attiva, secondo lo schedule configurato.
+function _isAutoReplyInScheduledWindow(){
+  try {
+    var s = loadSettings();
+    var schedule = (s && s.autoReplySchedule) ? s.autoReplySchedule : _getDefaultSchedule();
+    var now = _nowInRome();
+    var isWeekend = (now.weekday === 0 || now.weekday === 6); // dom o sab
+    var isHoliday = _isItalianHoliday({year:now.year,month:now.month,day:now.day});
+    if((isWeekend || isHoliday) && schedule.weekendsAndHolidays24h){
+      return true; // sabato/domenica/festivi sempre on
+    }
+    if(isWeekend || isHoliday){
+      // se NON 24h ma cmq c'è uno schedule per festivi (futuro), per ora torniamo false
+      return false;
+    }
+    // Giorno feriale: controllo le fasce
+    var nowMin = now.hour * 60 + now.minute;
+    var slots = schedule.weekdays || [];
+    for(var i=0; i<slots.length; i++){
+      if(_isWithinSlot(nowMin, slots[i])) return true;
+    }
+    return false;
+  } catch(e){
+    console.warn('[autoReply] error checking schedule:', e.message);
+    return false;
+  }
+}
+
+function isAutoReplyEnabled(){
+  // Compatibilità: il vecchio campo autoReplyEnabled (true/false) viene mappato sul nuovo modello
+  var s = loadSettings();
+  // Nuovo modello: autoReplyMode = 'off' | 'always' | 'scheduled'
+  var mode = s.autoReplyMode;
+  if(!mode){
+    // Fallback al vecchio toggle bool (retrocompatibilità)
+    mode = s.autoReplyEnabled === true ? 'always' : 'off';
+  }
+  if(mode === 'off') return false;
+  if(mode === 'always') return true;
+  if(mode === 'scheduled') return _isAutoReplyInScheduledWindow();
+  return false;
+}
+function getAutoReplyMode(){
+  var s = loadSettings();
+  if(s.autoReplyMode) return s.autoReplyMode;
+  return s.autoReplyEnabled === true ? 'always' : 'off';
+}
+function setAutoReplyMode(mode){
+  // mode: 'off' | 'always' | 'scheduled'
+  var s = loadSettings();
+  s.autoReplyMode = mode;
+  // Mantieni anche il vecchio flag in sync per retrocompatibilità con worker server-side
+  s.autoReplyEnabled = (mode === 'always' || mode === 'scheduled');
   localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
-  // Salva anche su server così il worker server-side lo legge
   if(!_filippoDataCache) _filippoDataCache={};
-  _filippoDataCache.autoReplyEnabled=val;
+  _filippoDataCache.autoReplyEnabled = s.autoReplyEnabled;
+  _filippoDataCache.autoReplyMode = mode;
+  _filippoDataCache.autoReplySchedule = s.autoReplySchedule || _getDefaultSchedule();
   _saveFilippoData();
+}
+function getAutoReplySchedule(){
+  var s = loadSettings();
+  return s.autoReplySchedule || _getDefaultSchedule();
+}
+function setAutoReplySchedule(schedule){
+  var s = loadSettings();
+  s.autoReplySchedule = schedule;
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  if(!_filippoDataCache) _filippoDataCache={};
+  _filippoDataCache.autoReplySchedule = schedule;
+  _saveFilippoData();
+}
+// Mantengo setAutoReply legacy per chiamate esterne, ma ora delega al nuovo
+function setAutoReply(val){
+  setAutoReplyMode(val ? 'always' : 'off');
 }
 
 // Determina se la risposta AI richiede azione manuale (no auto-invio)
@@ -16246,8 +16474,18 @@ async function autoProcessTickets(freshTickets){
         if(categoria === 'SOLO_INFO'){
           istruzioni = 'Rispondi SOLO con informazioni fattuali (tracking, tempi, stato ordine). NON promettere rimborsi, crediti o compensazioni.';
         } else {
-          if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt)){
-            var hasFoto2=/allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato/i.test(txt);
+          // CHECK MERCE MANCANTE: foto+quantità → AZIONE_MANUALE (va prima di capsule danneggiate)
+          if(/manca|manche|mancan|incomplet|non.*ricevut.*tutt|mancato.*prodott|prodott.*manca|scatola.*manca|confezione.*manca|busta.*manca|capsul.*manca|cialde.*manca|arrivat.*solo|solo.*invece|invece di|ricevut.*invece|non.*arrivat.*tutto|mi sono arrivat.*solo/i.test(txt)){
+            var hasFotoMm2 = /allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato|foto allegat|allegat[oae]\\s|allegando/i.test(txt);
+            var hasQtaMm2 = /\d+\s*capsul/i.test(txt) || /\d+\s*cialde/i.test(txt) || /\d+\s*scatole?/i.test(txt) || /\d+\s*confezion/i.test(txt) || /\d+\s*bust/i.test(txt) || /\d+\s*pacc/i.test(txt) || /manca.*\d+/i.test(txt) || /\b(una|un|uno)\s+(scatola|confezione|busta|pacco|cartone)/i.test(txt) || /solo\s+\d+\s+invece/i.test(txt) || /invece\s+di\s+\d+/i.test(txt);
+            if(hasFotoMm2 && hasQtaMm2){
+              console.log('[AUTO-REPLY] merce_mancante con foto+quantità → AZIONE_MANUALE per ticket', tid);
+              _autoReplyStatus.needsAction.add(String(tid));
+              continue;
+            }
+            istruzioni = 'Il cliente segnala merce mancante. Chiedi SOLO: 1) quali prodotti mancano (nome e tipo), 2) quante capsule/cialde/buste/scatole mancano esattamente, 3) foto del pacco ricevuto con etichetta BRT in JPG, 4) foto del contenuto ricevuto. NON promettere rimborsi, crediti o rispedizioni. NON calcolare compensazioni.';
+          } else if(/capsul.*dann|dann.*capsul|capsul.*rott|qualit|lotto|bruciato|difettos/i.test(txt)){
+            var hasFoto2=/allego|invio le foto|foto inviate|ho inviato|vedi foto|in allegato|foto allegat|allegat[oae]\\s|allegando/i.test(txt);
             var hasQta2=/\d+\s*capsule\s*(dann|rott|difett|guast|bruci|mancant)/i.test(txt) || /ho\s+(trovato|contato|riscontrato).*\d+/i.test(txt);
             if(hasFoto2||hasQta2){ _autoReplyStatus.needsAction.add(String(tid)); continue; }
             istruzioni = 'Chiedi SOLO: 1) foto capsule/buste danneggiate in JPG, 2) foto pacco ricevuto, 3) quantità esatta. NON promettere rimborsi o crediti. NON calcolare compensazioni.';
@@ -16403,6 +16641,43 @@ function clienteInsoddisfatto(msgCliente){
 function needsManualAction(replyText, order){
   var t=replyText||'';
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // CHECK 1 (PRIORITÀ ALTA) — KEYWORD-AZIONE SEMANTICHE
+  // Rete di sicurezza: appena la risposta menziona un'azione operativa
+  // che richiede SEMPRE intervento manuale (rispedizione, sostituzione,
+  // rimborso, credito, gift card), si blocca l'auto-invio.
+  // Questo previene il caso in cui l'AI promette al cliente un'azione
+  // che nessuno poi esegue fisicamente in magazzino o sul gestionale.
+  // Le keyword sono volutamente larghe: queste parole NON compaiono in
+  // risposte puramente informative (tracking, FAQ, info raccolta).
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  var actionKeywords = [
+    // Rispedizione (qualunque forma verbale o sostantivo)
+    'rispedi', 'rispedizione', 'rispedito',
+    'nuova spedizione', 'nuovo invio', 'reinvi',
+    'spediremo', 'invieremo', 'spedire gratuit',
+    // Sostituzione
+    'sostitui', 'sostituzione', 'sostitutivo', 'sostitutiva',
+    'nuovo prodotto', 'nuovo lotto', 'prodotto nuovo',
+    // Rimborso (qualunque forma)
+    'rimborso', 'rimborsa', 'rimborser', 'rimborsiamo', 'rimborsato',
+    // Credito / accredito
+    'accredit', 'gift card', 'voucher', 'buono sconto',
+    'credito di', 'credito pari', 'credito proporzional',
+    // Annullamento
+    'annulleremo', 'abbiamo annullato', 'annullato l\'ordine', 'annullamento dell\'ordine',
+    // Modifica indirizzo
+    'modificheremo l\'indirizzo', 'aggiorneremo l\'indirizzo', 'cambieremo l\'indirizzo',
+    'cambio indirizzo', 'modifica indirizzo'
+  ];
+  for(var ki=0; ki<actionKeywords.length; ki++){
+    if(t.toLowerCase().indexOf(actionKeywords[ki]) >= 0){
+      console.log('[needsManualAction] Bloccato per keyword-azione: "'+actionKeywords[ki]+'"');
+      return true;
+    }
+  }
+
+  // CHECK 2 — Pattern legacy specifici (mantenuti per retro-compatibilità)
   // Azioni CONFERMATE che richiedono intervento manuale immediato
   // (frasi che indicano che l'azione è già stata decisa/emessa, non condizionale)
   var manualKeywords=[
@@ -16633,18 +16908,136 @@ function openSettingsModal(){
 }
 
 function _syncAutoReplyToggle(){
-  var enabled=isAutoReplyEnabled();
-  var tog=document.getElementById("auto-reply-toggle");
-  var knob=document.getElementById("auto-reply-knob");
-  var lbl=document.getElementById("auto-reply-label");
-  var ind=document.getElementById("auto-reply-indicator");
-  var vaiBtn=document.getElementById("vai-auto-btn");
-  if(tog) tog.style.background=enabled?"#16a34a":"#e0e4ea";
-  if(knob) knob.style.left=enabled?"23px":"3px";
-  if(lbl){ lbl.textContent=enabled?"ON":"OFF"; lbl.style.color=enabled?"#166534":"#888"; }
-  if(ind) ind.style.display=enabled?"block":"none";
-  if(vaiBtn) vaiBtn.style.display=enabled?"inline-block":"none";
+  // Nuovo modello: 3 stati esclusivi (off/always/scheduled)
+  var mode = getAutoReplyMode();
+  var enabled = isAutoReplyEnabled(); // tiene conto anche dello scheduling
+
+  // Toggle "Sempre attiva (always)"
+  var togA = document.getElementById("auto-reply-always-toggle");
+  var knobA = document.getElementById("auto-reply-always-knob");
+  var lblA = document.getElementById("auto-reply-always-label");
+  var isAlwaysOn = (mode === 'always');
+  if(togA) togA.style.background = isAlwaysOn ? "#16a34a" : "#e0e4ea";
+  if(knobA) knobA.style.left = isAlwaysOn ? "23px" : "3px";
+  if(lblA){ lblA.textContent = isAlwaysOn ? "ON" : "OFF"; lblA.style.color = isAlwaysOn ? "#166534" : "#888"; }
+
+  // Toggle "Programmata (scheduled)"
+  var togS = document.getElementById("auto-reply-scheduled-toggle");
+  var knobS = document.getElementById("auto-reply-scheduled-knob");
+  var lblS = document.getElementById("auto-reply-scheduled-label");
+  var isSched = (mode === 'scheduled');
+  if(togS) togS.style.background = isSched ? "#16a34a" : "#e0e4ea";
+  if(knobS) knobS.style.left = isSched ? "23px" : "3px";
+  if(lblS){ lblS.textContent = isSched ? "ON" : "OFF"; lblS.style.color = isSched ? "#166534" : "#888"; }
+
+  // Mostra/nascondi sezione configurazione fasce
+  var cfg = document.getElementById('auto-reply-schedule-config');
+  if(cfg) cfg.style.display = isSched ? 'block' : 'none';
+  if(isSched) _renderAutoReplyScheduleConfig();
+
+  // Indicatori globali (badge piccolo + bottone "vai automatica")
+  var ind = document.getElementById("auto-reply-indicator");
+  var vaiBtn = document.getElementById("vai-auto-btn");
+  if(ind) ind.style.display = enabled ? "block" : "none";
+  if(vaiBtn) vaiBtn.style.display = enabled ? "inline-block" : "none";
 }
+
+function _renderAutoReplyScheduleConfig(){
+  var sch = getAutoReplySchedule();
+  var listEl = document.getElementById('weekday-slots-list');
+  if(listEl){
+    listEl.innerHTML = '';
+    (sch.weekdays || []).forEach(function(slot, idx){
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;background:#f8f9fc;border-radius:6px;padding:6px 8px';
+      row.innerHTML =
+        '<span style="font-size:11px;color:#666">Da</span>' +
+        '<input type="time" value="'+_pad2(slot.startH)+':'+_pad2(slot.startM)+'" data-slot-idx="'+idx+'" data-slot-field="start" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;font-family:inherit">' +
+        '<span style="font-size:11px;color:#666">a</span>' +
+        '<input type="time" value="'+_pad2(slot.endH)+':'+_pad2(slot.endM)+'" data-slot-idx="'+idx+'" data-slot-field="end" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;font-family:inherit">' +
+        '<button onclick="removeAutoReplySlot('+idx+')" style="background:transparent;border:none;color:#dc2626;cursor:pointer;font-size:14px;margin-left:auto">×</button>';
+      listEl.appendChild(row);
+    });
+    listEl.querySelectorAll('input[type=time]').forEach(function(inp){
+      inp.addEventListener('change', _onSlotTimeChange);
+    });
+  }
+  var cb = document.getElementById('weekend-24h-cb');
+  if(cb) cb.checked = sch.weekendsAndHolidays24h !== false;
+  // Mostra stato corrente
+  var statusEl = document.getElementById('schedule-now-status');
+  if(statusEl){
+    var inWindow = _isAutoReplyInScheduledWindow();
+    var now = _nowInRome();
+    var dayLbl = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'][now.weekday];
+    var holiday = _isItalianHoliday({year:now.year,month:now.month,day:now.day});
+    statusEl.style.background = inWindow ? '#dcfce7' : '#fef3c7';
+    statusEl.style.color = inWindow ? '#166534' : '#92400e';
+    statusEl.innerHTML = (inWindow ? '✅ AI ATTIVA ora' : '⏸ AI in pausa ora') +
+      ' &middot; '+dayLbl+' '+_pad2(now.hour)+':'+_pad2(now.minute)+
+      (holiday ? ' &middot; 🎉 Festività italiana' : '');
+  }
+}
+function _pad2(n){ n = parseInt(n,10)||0; return n<10 ? '0'+n : ''+n; }
+function _onSlotTimeChange(e){
+  var idx = parseInt(e.target.getAttribute('data-slot-idx'),10);
+  var field = e.target.getAttribute('data-slot-field');
+  var val = e.target.value || '00:00';
+  var parts = val.split(':');
+  var h = parseInt(parts[0],10) || 0;
+  var m = parseInt(parts[1],10) || 0;
+  var sch = getAutoReplySchedule();
+  if(!sch.weekdays || !sch.weekdays[idx]) return;
+  if(field === 'start'){ sch.weekdays[idx].startH = h; sch.weekdays[idx].startM = m; }
+  else { sch.weekdays[idx].endH = h; sch.weekdays[idx].endM = m; }
+  setAutoReplySchedule(sch);
+  _renderAutoReplyScheduleConfig();
+}
+window.addAutoReplySlot = function(){
+  var sch = getAutoReplySchedule();
+  sch.weekdays = sch.weekdays || [];
+  sch.weekdays.push({ startH:9, startM:0, endH:13, endM:0 });
+  setAutoReplySchedule(sch);
+  _renderAutoReplyScheduleConfig();
+};
+window.removeAutoReplySlot = function(idx){
+  var sch = getAutoReplySchedule();
+  if(!sch.weekdays || !sch.weekdays[idx]) return;
+  sch.weekdays.splice(idx, 1);
+  setAutoReplySchedule(sch);
+  _renderAutoReplyScheduleConfig();
+};
+window.toggleWeekend24h = function(){
+  var cb = document.getElementById('weekend-24h-cb');
+  var sch = getAutoReplySchedule();
+  sch.weekendsAndHolidays24h = !!(cb && cb.checked);
+  setAutoReplySchedule(sch);
+  _renderAutoReplyScheduleConfig();
+};
+
+window.toggleAutoReplyMode = function(targetMode){
+  // Click su un toggle: se attivo si spegne (off), se spento si accende (e l'altro va off automaticamente)
+  var current = getAutoReplyMode();
+  var newMode;
+  if(current === targetMode){
+    newMode = 'off';
+  } else {
+    newMode = targetMode; // attiva quello cliccato e spegne implicitamente l'altro
+  }
+  setAutoReplyMode(newMode);
+  _syncAutoReplyToggle();
+  var msg = '';
+  if(newMode === 'always') msg = 'Auto-risposta ATTIVA 24/7 ✅';
+  else if(newMode === 'scheduled') msg = 'Auto-risposta ATTIVA in fasce orarie 🕐';
+  else msg = 'Auto-risposta disattivata';
+  showToast(msg, newMode === 'off' ? 'info' : 'success');
+};
+
+// Compatibilità: la vecchia toggleAutoReplyUI continua a funzionare (toggle tra off e always)
+window.toggleAutoReplyUI = function(){
+  var cur = getAutoReplyMode();
+  window.toggleAutoReplyMode(cur === 'always' ? 'always' : 'always');
+};
 
 window.vaiAuto=async function(){
   if(!isAutoReplyEnabled()){ showToast("Attiva prima l'auto-risposta nelle impostazioni","error"); return; }
@@ -16672,12 +17065,6 @@ window.vaiAuto=async function(){
   }
 };
 
-window.toggleAutoReplyUI=function(){
-  var cur=isAutoReplyEnabled();
-  setAutoReply(!cur);
-  _syncAutoReplyToggle();
-  showToast("Auto-risposta "+((!cur)?"attivata ✅":"disattivata"),"success");
-};
 function closeSettingsModal(){
   document.getElementById("settings-modal").style.display="none";
 }
@@ -26332,24 +26719,53 @@ function renderStoricoRicezioni(){
   if(!body) return;
 
   // Raccogli tutte le ricezioni: ogni riga con qty_ricevuta > 0
+  // Se la riga ha data_ricezioni_storia con dettagli per singolo evento, esplodiamo in N eventi.
+  // Altrimenti fallback: una sola voce col cumulativo (compatibilità righe vecchie).
   var ricezioni=[];
   (fabOrdini||[]).forEach(function(ord){
     (ord.righe||[]).forEach(function(r, rigaIdx){
       var qRic=r.qty_ricevuta||0;
       if(qRic<=0) return;
+      var storia = Array.isArray(r.data_ricezioni_storia) ? r.data_ricezioni_storia : null;
+      // Se la storia esiste ed è coerente (somma qty = qty_ricevuta totale), usiamo gli eventi
+      if(storia && storia.length){
+        var sommaStoria = storia.reduce(function(s,e){return s+(e.qty||0);},0);
+        if(sommaStoria === qRic){
+          // Esplodi in N voci, una per ricezione
+          storia.forEach(function(ev){
+            if(!ev.qty || ev.qty<=0) return;
+            ricezioni.push({
+              ord:ord, riga:r, rigaIdx:rigaIdx,
+              dataRic: ev.data || r.data_ricezione_effettiva || ord.data_ordine || '',
+              fornitore: ord.fornitore||'?',
+              sku: r.sku||r.sku_shopify||r.nome_prodotto||'?',
+              sku_shopify: r.sku_shopify||'',
+              qtyRic: ev.qty,
+              qtyOrd: r.qty_ordinata||0,
+              qtyRicevutaTotaleRiga: qRic,
+              dataOrd: ord.data_ordine||'',
+              dataCons: r.data_cons_riga||ord.data_consegna_prevista||'',
+              idOrdine: ord.id,
+              isEventoSingolo: true
+            });
+          });
+          return; // saltiamo il fallback
+        }
+      }
+      // Fallback: una voce col cumulativo (riga vecchia o storia inconsistente)
       ricezioni.push({
-        ord:ord,
-        riga:r,
-        rigaIdx:rigaIdx,
-        dataRic:r.data_ricezione_effettiva||ord.data_ordine||'',
-        fornitore:ord.fornitore||'?',
-        sku:r.sku||r.sku_shopify||r.nome_prodotto||'?',
-        sku_shopify:r.sku_shopify||'',
-        qtyRic:qRic,
-        qtyOrd:r.qty_ordinata||0,
-        dataOrd:ord.data_ordine||'',
-        dataCons:r.data_cons_riga||ord.data_consegna_prevista||'',
-        idOrdine:ord.id
+        ord:ord, riga:r, rigaIdx:rigaIdx,
+        dataRic: r.data_ricezione_effettiva||ord.data_ordine||'',
+        fornitore: ord.fornitore||'?',
+        sku: r.sku||r.sku_shopify||r.nome_prodotto||'?',
+        sku_shopify: r.sku_shopify||'',
+        qtyRic: qRic,
+        qtyOrd: r.qty_ordinata||0,
+        qtyRicevutaTotaleRiga: qRic,
+        dataOrd: ord.data_ordine||'',
+        dataCons: r.data_cons_riga||ord.data_consegna_prevista||'',
+        idOrdine: ord.id,
+        isEventoSingolo: false
       });
     });
   });
@@ -28695,14 +29111,19 @@ window.ricezioneSalva=async function(){
         var dataPrec = entry.riga.data_ricezione_effettiva;
         entry.riga.data_ricezione_effettiva = todayRec;
         entry.riga.data_ricezioni_storia = entry.riga.data_ricezioni_storia || [];
-        // Se la data precedente non era oggi e non è già nello storico, la registro
+        // BUG-FIX: se c'è una data precedente non oggi e non è ancora registrata nello storico,
+        // significa che è una ricezione precedente di cui abbiamo perso il dettaglio quantità.
+        // Registriamo la qty come 'prima' (cumulativo precedente) MA SOLO se lo storico è vuoto:
+        // se ha già altre voci, sommarle darebbe il vero cumulativo, quindi prima = somma_storia
+        // e va saltato per non creare doppioni.
         if(dataPrec && dataPrec!==todayRec){
           var giaInStoria = entry.riga.data_ricezioni_storia.some(function(s){return s.data===dataPrec;});
-          if(!giaInStoria){
+          if(!giaInStoria && entry.riga.data_ricezioni_storia.length===0){
+            // Solo se lo storico è vuoto, salviamo il cumulativo come voce iniziale
             entry.riga.data_ricezioni_storia.push({data:dataPrec, qty:prima, ts:new Date().toISOString()});
           }
         }
-        // Aggiungo questa ricezione allo storico
+        // Aggiungo questa ricezione allo storico (qty = solo la scala di QUESTA ricezione)
         entry.riga.data_ricezioni_storia.push({data:todayRec, qty:scala, ts:new Date().toISOString()});
 
         if(ms>1) entry.riga.qty_ricevuta_master=Math.ceil(entry.riga.qty_ricevuta/ms);
