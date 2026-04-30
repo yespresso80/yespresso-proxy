@@ -1826,16 +1826,24 @@ async function selectTicket(tid){
     openTickets = [base];
   } else if(isAmazonGroup){
     // Per Amazon: tutti i ticket (qualsiasi stato) con stessa email E stesso ordine.
-    // FIX: la cache `tickets[]` di solito contiene solo open+pending. Per vedere
-    // l'intero storico (anche solved/closed) andiamo a cercarli sull'API HelpDesk
-    // tramite query full-text sul numero ordine Amazon.
+    // FIX: la cache `tickets[]` di solito contiene solo i ticket recenti (open+pending+ultimi 90gg).
+    // Per vedere l'intero storico (anche solved/closed vecchi) facciamo una chiamata mirata
+    // all'API HelpDesk filtrando per email del cliente (parametro requester={email:...}).
+    // NOTA: la vecchia versione usava il parametro `q=` che però restituisce errore 422
+    // (parametro non supportato dall'API HelpDesk). Per quello finora i ticket Solved
+    // vecchi del cliente non venivano caricati nel banner "X ticket chiusi sullo stesso ordine".
     try{
-      // Cerca direttamente per il numero ordine Amazon (full-text su subject/body)
-      const _amzSearch = await hdFetch("/v1/tickets?pageSize=50&q="+encodeURIComponent(amazonOrderNum)+"&sortBy=lastMessageAt&order=desc").catch(function(){return [];});
+      const _reqObj = JSON.stringify({email: email});
+      const _amzSearch = await hdFetch("/v1/tickets?pageSize=100&page=1&requester="+encodeURIComponent(_reqObj)+"&sortBy=lastMessageAt&order=desc").catch(function(){return [];});
       const _foundList = Array.isArray(_amzSearch)?_amzSearch:(_amzSearch.tickets||_amzSearch.data||[]);
+      // Filtra solo quelli con stesso numero ordine Amazon
+      const _matchingList = _foundList.filter(function(_ft){
+        const _s = (_ft.subject||'') + ' ' + ((_ft.events&&_ft.events[0]&&_ft.events[0].message&&_ft.events[0].message.text)||'');
+        return _s.indexOf(amazonOrderNum)>=0;
+      });
       // Carica anche gli eventi per ogni ticket trovato (necessari per vedere i messaggi)
       // Solo per quelli che NON sono già in cache con eventi
-      for(const _ft of _foundList){
+      for(const _ft of _matchingList){
         const _tid = _ft.ID||_ft.id;
         const _ix = tickets.findIndex(function(x){return (x.ID||x.id)===_tid;});
         const _existing = _ix>=0 ? tickets[_ix] : null;
@@ -1853,7 +1861,7 @@ async function selectTicket(tid){
           }catch(_e){ /* skip */ }
         }
       }
-      console.log('[Amazon group] caricati '+_foundList.length+' ticket per ordine '+amazonOrderNum);
+      console.log('[Amazon group] caricati '+_matchingList.length+' ticket per ordine '+amazonOrderNum+' (su '+_foundList.length+' totali del cliente)');
     }catch(_amzErr){
       console.warn('[Amazon group] errore caricamento storico:', _amzErr);
     }
