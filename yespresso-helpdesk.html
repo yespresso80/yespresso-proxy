@@ -4310,6 +4310,75 @@ function renderBrtCcPanel(b, origText){
     h += '</div>';
   }
 
+  // 🎫 BOTTONE "TICKET CLIENTE" — solo per "Conferma apertura ticket BRT"
+  // Estrae il shortID del ticket cliente di origine dal corpo originale (cercato come "Rif. Ticket: <SHORTID>")
+  // Iniettato automaticamente da openBrtContact() quando l'agente apre il modal Contatta BRT.
+  // Cliccando il bottone si torna al ticket cliente e viene aggiunta una nota privata col contesto BRT.
+  var refTicketCliente = '';
+  try {
+    var refMatch = String(origText||'').match(/Rif\.?\s*Ticket\s*:?\s*([A-Z0-9]{4,12})/i);
+    if(refMatch) refTicketCliente = refMatch[1];
+  } catch(e){}
+  // Costruisco un context BRT da iniettare come nota privata nel ticket cliente
+  var brtContextNota = '🚚 Conferma apertura ticket BRT';
+  if(b.numeroTicket) brtContextNota += ' #'+b.numeroTicket;
+  if(b.tracking) brtContextNota += ' · Spedizione: '+b.tracking;
+  if(b.corpoPulito) brtContextNota += '\n\n'+b.corpoPulito;
+  var brtContextNotaEsc = brtContextNota.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+
+  // Costruisco il bottone azione corretto in base alla regola di priorità:
+  //   1) Se c'è Rif. Ticket → 🎫 Ticket Cliente HelpDesk (priorità massima)
+  //   2) Altrimenti, se c'è ordine marketplace nel contesto → Vedi Msg Amz/Temu/Tik
+  //   3) Altrimenti, se c'è ordine sito → ↗ Shopify Admin
+  //   4) Altrimenti → niente
+  var actionBtnHtml = '';
+  if(refTicketCliente){
+    actionBtnHtml = '<button onclick="openTicketByRef(\''+refTicketCliente+'\',\''+brtContextNotaEsc+'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">🎫 Ticket Cliente <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(refTicketCliente)+'</span> ↗</button>';
+  } else {
+    // Determino il canale dell'ordine corrente (se presente in window._lastShopifyOrder)
+    try {
+      var _ord = window._lastShopifyOrder;
+      var _src = '';
+      if(_ord){
+        if(typeof detectOrderSource === 'function') _src = detectOrderSource(_ord);
+        var _attrs = _ord.note_attributes || [];
+        // AMAZON
+        if(_src === 'amazon' || (_attrs.find(function(a){return a.name==='Amazon Order Id' && a.value;}))){
+          var amzAttr = _attrs.find(function(a){return a.name==='Amazon Order Id' && a.value;});
+          var amzId = amzAttr ? amzAttr.value : '';
+          var amzMsgUrl = amzId ? ('https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+encodeURIComponent(amzId)) : 'https://sellercentral.amazon.it/messaging/inbox';
+          actionBtnHtml = '<button onclick="window.open(\''+amzMsgUrl+'\',\'_blank\')" style="background:#c07800;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Amz'+(amzId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(amzId)+'</span>'):'')+' ↗</button>';
+        }
+        // TEMU
+        else if(_src === 'temu' || (_attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id'].indexOf(a.name)>=0 && a.value;}))){
+          var temuAttr = _attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id'].indexOf(a.name)>=0 && a.value;});
+          var temuId = temuAttr ? temuAttr.value : '';
+          var temuMsgUrl = 'https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei';
+          var copyJs = temuId ? ("navigator.clipboard.writeText('"+temuId.replace(/'/g,"\\'")+"');") : '';
+          actionBtnHtml = '<button onclick="'+copyJs+'window.open(\''+temuMsgUrl+'\',\'_blank\')" style="background:#cc4400;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Temu'+(temuId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(temuId)+'</span>'):'')+' ↗</button>';
+        }
+        // TIKTOK
+        else if(_src === 'tiktok' || (_attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value;}))){
+          var ttAttr = _attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value;});
+          var ttId = ttAttr ? ttAttr.value : '';
+          var ttMsgUrl = 'https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT';
+          var copyJsTT = ttId ? ("navigator.clipboard.writeText('"+ttId.replace(/'/g,"\\'")+"');") : '';
+          actionBtnHtml = '<button onclick="'+copyJsTT+'window.open(\''+ttMsgUrl+'\',\'_blank\')" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Tik'+(ttId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(ttId)+'</span>'):'')+' ↗</button>';
+        }
+        // SITO YESPRESSO
+        else if(_ord.id && _ord.name){
+          var shopifyUrl = 'https://admin.shopify.com/store/40f758-3/orders/'+_ord.id;
+          actionBtnHtml = '<button onclick="window.open(\''+shopifyUrl+'\',\'_blank\')" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">↗ Shopify Admin <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(_ord.name||'')+'</span></button>';
+        }
+      }
+    } catch(eMk){ console.warn('[BRT panel] errore rilevamento marketplace:', eMk.message); }
+  }
+  if(actionBtnHtml){
+    h += '<div style="margin-top:10px;display:flex;justify-content:center">';
+    h += actionBtnHtml;
+    h += '</div>';
+  }
+
   // Toggle email originale
   h += '<div style="margin-top:10px;text-align:center">';
   h += '<button onclick="toggleBrtCcRaw(\''+uid+'\')" style="background:transparent;border:none;color:#9a3412;font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">👁 Vedi email BRT originale</button>';
@@ -4328,6 +4397,47 @@ window.toggleBrtCcRaw = function(uid){
   const el = document.getElementById('brtcc-raw-'+uid);
   if(!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+// 🎫 Apre un ticket cliente (per shortID) e iniettando una nota privata col contesto BRT.
+// Pattern: PATCH /v1/tickets/{ID}/private-notes con body = nota interna,
+// poi reload events via hdFetch per evitare race condition,
+// infine selectTicket(shortID) per aprire la vista del ticket.
+window.openTicketByRef = async function(shortIdRef, brtContextNota){
+  if(!shortIdRef) return;
+  try {
+    // Trova il ticket nella lista corrente: shortID o ID o id
+    var tkt = null;
+    if(typeof allTickets !== 'undefined' && Array.isArray(allTickets)){
+      tkt = allTickets.find(function(x){
+        return x && (x.shortID===shortIdRef || x.shortId===shortIdRef || x.ID===shortIdRef || x.id===shortIdRef);
+      });
+    }
+    var tid = tkt ? (tkt.ID || tkt.id) : null;
+    // Se non c'è ID UUID, prova a passare lo shortID direttamente a selectTicket
+    if(!tid){
+      if(typeof selectTicket === 'function') selectTicket(shortIdRef);
+      return;
+    }
+    // Aggiungi nota privata col contesto BRT (se fornito)
+    if(brtContextNota){
+      try {
+        var notaTxt = String(brtContextNota||'').replace(/\\n/g,'\n');
+        await hdFetch('/v1/tickets/'+encodeURIComponent(tid)+'/private-notes', {
+          method:'POST',
+          body: JSON.stringify({ message:{ text: '[Nota da BRT]\n'+notaTxt } })
+        });
+        console.log('[openTicketByRef] Nota privata aggiunta al ticket', shortIdRef);
+      } catch(eN){
+        console.warn('[openTicketByRef] errore aggiunta nota:', eN.message);
+      }
+    }
+    // Apri ticket
+    if(typeof selectTicket === 'function') selectTicket(tid);
+  } catch(err){
+    console.error('[openTicketByRef] errore:', err);
+    alert('⚠️ Impossibile aprire il ticket '+shortIdRef+': '+err.message);
+  }
 };
 
 // Store globale dei dati giacenza per ciascun uid (necessario per i callback WhatsApp)
@@ -8601,6 +8711,8 @@ function openFilippoPanel(){
   },{
     id:'margine_canale',label:'🛒 Margine Canale',periodo:'',custom:true,groups:[]
   },{
+    id:'contestazioni',label:'⚖️ Contestazioni Prodotto',periodo:'',custom:true,groups:[]
+  },{
     id:'whatsapp_templates',label:'💬 Template WhatsApp',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
@@ -8682,11 +8794,584 @@ function openFilippoPanel(){
       else if(activeSec.id==='margine_prodotto') renderMargineProdotto(panel);
       else if(activeSec.id==='margine_canale') renderMargineCanale(panel);
       else if(activeSec.id==='whatsapp_templates') renderWhatsappTemplates(panel);
-      else if(activeSec.id==='whatsapp_templates') renderWhatsappTemplates(panel);
+      else if(activeSec.id==='contestazioni') renderContestazioni(panel);
       else renderCorrispettivi(null,panel,null);
     }
   }
   window.filippoSetSection=function(id){activeSection=id;renderPanel();};
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ⚖️ CONTESTAZIONI PRODOTTO
+  // Storage: contestazioni-data.json su GitHub via PROXY (/contestazioni)
+  // Stato: 'aperta' | 'sollecitata' | 'risolta'
+  // Item: {id,fornitore,prodotto,sku,lotto,scadenza,tipoProblema,descrizione,
+  //        prezzoUnitario,quantita,campioni,whatsapp,allegati,
+  //        dataApertura,dataSollecito,dataRisoluzione,emailInviateLog}
+  // ══════════════════════════════════════════════════════════════════════
+  var CONTEST_TIPI = [
+    'Capsule rotte / forate',
+    'Capsule gonfie / pressurizzate',
+    'Capsule che scoppiano in macchina',
+    'Problema gusto / sapore',
+    'Lotto difettoso',
+    'Confezione danneggiata',
+    'Etichetta / scadenza errata',
+    'Polvere / perdita di caffè',
+    'Quantità errata in busta',
+    'Altro'
+  ];
+  var CONTEST_FORNITORI_EMAIL = {
+    'noire':       { to:['commerciale@neronobile.com'], cc:['commerciale@yespresso.it'] },
+    'best':        { to:['info@bestespresso.it'],       cc:['commerciale@yespresso.it'] },
+    'simfed':      { to:['info@simfed.it'],             cc:['commerciale@yespresso.it'] },
+    'altro':       { to:[],                              cc:['commerciale@yespresso.it'] }
+  };
+  function _contestProxyUrl(){ return (typeof PROXY!=='undefined' && PROXY) ? PROXY : ''; }
+  async function ghContestGet(){
+    try {
+      var r = await fetch(_contestProxyUrl()+'/contestazioni',{cache:'no-store'});
+      if(!r.ok) return [];
+      var arr = await r.json();
+      return Array.isArray(arr) ? arr : [];
+    } catch(e){ console.warn('[contestazioni] GET error',e); return []; }
+  }
+  async function ghContestSave(arr){
+    try {
+      var r = await fetch(_contestProxyUrl()+'/contestazioni',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(arr||[])
+      });
+      return r.ok;
+    } catch(e){ console.warn('[contestazioni] POST error',e); return false; }
+  }
+  function contestEsc(s){
+    return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function contestFormatDate(iso){
+    if(!iso) return '';
+    try {
+      var d = new Date(iso);
+      if(isNaN(d.getTime())) return iso;
+      return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
+    } catch(e){ return iso; }
+  }
+  function contestDaysSince(iso){
+    if(!iso) return 0;
+    var d = new Date(iso); if(isNaN(d.getTime())) return 0;
+    return Math.floor((Date.now() - d.getTime())/(1000*60*60*24));
+  }
+  function contestStato(c){
+    if(c.dataRisoluzione) return 'risolta';
+    var dRif = c.dataSollecito || c.dataApertura;
+    if(!dRif) return 'aperta';
+    var gg = contestDaysSince(dRif);
+    if(!c.dataSollecito && gg >= 15) return 'sollecitabile';
+    return c.dataSollecito ? 'sollecitata' : 'aperta';
+  }
+  function contestFornitoreKey(forn){
+    var f = String(forn||'').toLowerCase().trim();
+    if(f.indexOf('noire')>=0 || f.indexOf('nero nobile')>=0 || f.indexOf('neronobile')>=0) return 'noire';
+    if(f.indexOf('best')>=0) return 'best';
+    if(f.indexOf('simfed')>=0 || f.indexOf('sim-fed')>=0) return 'simfed';
+    return 'altro';
+  }
+  function contestEmailContestazione(c){
+    var prod = c.prodotto || '(prodotto)';
+    var lotto = c.lotto || '(lotto)';
+    var subject = 'Contestazione qualità - '+prod+' - Lotto '+lotto;
+    var lines = [];
+    lines.push('Buongiorno,');
+    lines.push('');
+    lines.push('vi segnaliamo una contestazione di qualità sul prodotto in oggetto.');
+    lines.push('');
+    lines.push('• Prodotto: '+prod);
+    if(c.sku) lines.push('• SKU: '+c.sku);
+    lines.push('• Lotto: '+lotto);
+    if(c.scadenza) lines.push('• Scadenza: '+c.scadenza);
+    lines.push('• Problema riscontrato: '+(c.tipoProblema||'—'));
+    if(c.descrizione) {
+      lines.push('');
+      lines.push('Descrizione: '+c.descrizione);
+    }
+    var qty = parseFloat(c.quantita)||0;
+    var price = parseFloat(c.prezzoUnitario)||0;
+    var totale = qty * price;
+    if(qty > 0 && price > 0){
+      lines.push('');
+      lines.push('Quantità interessata: '+qty);
+      lines.push('Prezzo unitario: € '+price.toFixed(4));
+      lines.push('Valore totale contestato: € '+totale.toFixed(2));
+      lines.push('');
+      lines.push('Vi chiediamo cortesemente di emettere una nota di credito a copertura del valore sopra indicato.');
+    }
+    if(c.campioni === 'inviati'){
+      lines.push('');
+      lines.push('Campioni: vi sono stati inviati per analisi.');
+    } else if(c.campioni === 'in_possesso'){
+      lines.push('');
+      lines.push('Campioni: sono in nostro possesso, disponibili per eventuale ritiro o invio su richiesta.');
+    }
+    if(c.whatsapp && c.whatsapp.inviato){
+      lines.push('');
+      lines.push('Materiale fotografico/video aggiuntivo è stato inviato via WhatsApp'+
+        (c.whatsapp.data?(' in data '+contestFormatDate(c.whatsapp.data)):'')+
+        (c.whatsapp.destinatario?(' al riferimento '+c.whatsapp.destinatario):'')+'.');
+    }
+    var nAll = (c.allegati||[]).length;
+    if(nAll > 0){
+      lines.push('');
+      lines.push('In allegato '+nAll+' file con documentazione fotografica.');
+    }
+    lines.push('');
+    lines.push('Restiamo in attesa di un vostro riscontro.');
+    lines.push('');
+    lines.push('Cordiali saluti,');
+    lines.push('Yespresso');
+    return { subject: subject, body: lines.join('\n') };
+  }
+  function contestEmailSollecito(c){
+    var prod = c.prodotto || '(prodotto)';
+    var lotto = c.lotto || '(lotto)';
+    var subject = 'Richiesta nota di credito - '+prod+' - Lotto '+lotto;
+    var dataPrima = c.dataApertura ? contestFormatDate(c.dataApertura) : '';
+    var lines = [];
+    lines.push('Buongiorno,');
+    lines.push('');
+    lines.push('in riferimento alla nostra contestazione di qualità inviata in data '+(dataPrima||'(data prima email)')+
+               ' sul prodotto '+prod+' lotto '+lotto+', non risulta ad oggi pervenuta alcuna risposta da parte vostra.');
+    lines.push('');
+    lines.push('Decorsi 15 giorni dalla nostra prima comunicazione, la contestazione si intende tacitamente accettata.');
+    var qty = parseFloat(c.quantita)||0;
+    var price = parseFloat(c.prezzoUnitario)||0;
+    var totale = qty * price;
+    if(qty > 0 && price > 0){
+      lines.push('');
+      lines.push('Vi richiediamo pertanto l\'emissione della nota di credito per il valore di € '+totale.toFixed(2)+
+                 ' (quantità '+qty+' x € '+price.toFixed(4)+').');
+    } else {
+      lines.push('');
+      lines.push('Vi richiediamo pertanto l\'emissione della relativa nota di credito.');
+    }
+    lines.push('');
+    lines.push('In assenza di riscontro entro 7 giorni, procederemo con la compensazione automatica sulla prossima fattura.');
+    lines.push('');
+    lines.push('Cordiali saluti,');
+    lines.push('Yespresso');
+    return { subject: subject, body: lines.join('\n') };
+  }
+
+  async function renderContestazioni(panel){
+    var ca = panel.querySelector('#filippo-content');
+    if(!ca) return;
+    ca.innerHTML = '<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento contestazioni...</div>';
+    var data = await ghContestGet();
+    contestDoRender(panel, data);
+  }
+  function contestDoRender(panel, data){
+    var ca = panel.querySelector('#filippo-content');
+    if(!ca) return;
+    var lista = (data||[]).slice();
+    var aperte = lista.filter(function(c){return contestStato(c)==='aperta';});
+    var sollecitabili = lista.filter(function(c){return contestStato(c)==='sollecitabile';});
+    var sollecitate = lista.filter(function(c){return contestStato(c)==='sollecitata';});
+    var risolte = lista.filter(function(c){return contestStato(c)==='risolta';});
+
+    var html = '';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">';
+    html +=   '<div style="font-size:18px;font-weight:700;color:#6d28d9">⚖️ Contestazioni Prodotto</div>';
+    html +=   '<div style="display:flex;gap:8px;align-items:center">';
+    html +=     '<button id="contest-new-btn" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Nuova contestazione</button>';
+    html +=   '</div>';
+    html += '</div>';
+
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:18px">';
+    html +=   '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px"><div style="font-size:11px;color:#92400e;font-weight:700;text-transform:uppercase;letter-spacing:.5px">🟡 In attesa</div><div style="font-size:24px;font-weight:800;color:#92400e;margin-top:4px">'+aperte.length+'</div></div>';
+    html +=   '<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px"><div style="font-size:11px;color:#b91c1c;font-weight:700;text-transform:uppercase;letter-spacing:.5px">🚨 Da sollecitare (>15gg)</div><div style="font-size:24px;font-weight:800;color:#b91c1c;margin-top:4px">'+sollecitabili.length+'</div></div>';
+    html +=   '<div style="background:#fed7aa;border:1px solid #fb923c;border-radius:10px;padding:12px"><div style="font-size:11px;color:#9a3412;font-weight:700;text-transform:uppercase;letter-spacing:.5px">📨 Sollecitate</div><div style="font-size:24px;font-weight:800;color:#9a3412;margin-top:4px">'+sollecitate.length+'</div></div>';
+    html +=   '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:12px"><div style="font-size:11px;color:#166534;font-weight:700;text-transform:uppercase;letter-spacing:.5px">✅ Risolte</div><div style="font-size:24px;font-weight:800;color:#166534;margin-top:4px">'+risolte.length+'</div></div>';
+    html += '</div>';
+
+    function sezione(titolo, items, colore){
+      if(!items.length) return '';
+      var s = '<div style="font-size:13px;font-weight:700;color:'+colore+';margin:18px 0 10px;text-transform:uppercase;letter-spacing:.5px">'+titolo+' ('+items.length+')</div>';
+      items.forEach(function(c){ s += contestCardHtml(c); });
+      return s;
+    }
+    html += sezione('🚨 Da sollecitare (oltre 15 giorni)', sollecitabili, '#b91c1c');
+    html += sezione('🟡 In attesa di risposta', aperte, '#92400e');
+    html += sezione('📨 Sollecitate', sollecitate, '#9a3412');
+    html += sezione('✅ Risolte', risolte, '#166534');
+
+    if(!lista.length){
+      html += '<div style="background:#fff;border:1px dashed #e0e4ea;border-radius:10px;padding:40px;text-align:center;color:#888">Nessuna contestazione registrata.<br><span style="font-size:12px">Clicca "+ Nuova contestazione" per crearne una.</span></div>';
+    }
+    ca.innerHTML = html;
+
+    var newBtn = ca.querySelector('#contest-new-btn');
+    if(newBtn) newBtn.onclick = function(){ contestOpenModal(panel, null); };
+    ca.querySelectorAll('[data-contest-action]').forEach(function(btn){
+      btn.onclick = function(){
+        var action = btn.getAttribute('data-contest-action');
+        var id = btn.getAttribute('data-contest-id');
+        contestHandleAction(panel, action, id);
+      };
+    });
+  }
+  function contestCardHtml(c){
+    var stato = contestStato(c);
+    var bg = stato==='risolta'?'#f0fdf4':(stato==='sollecitabile'?'#fef2f2':(stato==='sollecitata'?'#fff7ed':'#fefce8'));
+    var bd = stato==='risolta'?'#86efac':(stato==='sollecitabile'?'#fca5a5':(stato==='sollecitata'?'#fdba74':'#fde68a'));
+    var qty = parseFloat(c.quantita)||0;
+    var price = parseFloat(c.prezzoUnitario)||0;
+    var totale = qty*price;
+    var giorni = contestDaysSince(c.dataApertura);
+    var s = '<div style="background:'+bg+';border:1.5px solid '+bd+';border-radius:10px;padding:14px;margin-bottom:10px">';
+    s += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">';
+    s +=   '<div style="flex:1;min-width:240px">';
+    s +=     '<div style="font-size:14px;font-weight:700;color:#1a1a2e">'+contestEsc(c.prodotto||'(senza prodotto)')+'</div>';
+    s +=     '<div style="font-size:11px;color:#666;margin-top:3px">📦 '+contestEsc(c.fornitore||'—')+
+              (c.sku?(' · SKU '+contestEsc(c.sku)):'')+
+              (c.lotto?(' · Lotto '+contestEsc(c.lotto)):'')+
+              (c.scadenza?(' · Scad. '+contestEsc(c.scadenza)):'')+'</div>';
+    s +=     '<div style="font-size:12px;color:#1a1a2e;margin-top:6px">⚠️ '+contestEsc(c.tipoProblema||'—')+'</div>';
+    if(c.descrizione){
+      s +=   '<div style="font-size:11px;color:#555;margin-top:4px;font-style:italic">'+contestEsc(c.descrizione)+'</div>';
+    }
+    s +=   '</div>';
+    s +=   '<div style="text-align:right;font-size:11px;color:#666">';
+    if(qty>0 && price>0) s += '<div style="font-size:14px;font-weight:700;color:#6d28d9">€ '+totale.toFixed(2)+'</div><div>'+qty+' × € '+price.toFixed(4)+'</div>';
+    if(c.dataApertura) s += '<div style="margin-top:4px">📅 '+contestFormatDate(c.dataApertura)+' ('+giorni+'gg)</div>';
+    if(c.dataSollecito) s += '<div>📨 Sollecito '+contestFormatDate(c.dataSollecito)+'</div>';
+    if(c.dataRisoluzione) s += '<div style="color:#166534;font-weight:700">✅ '+contestFormatDate(c.dataRisoluzione)+'</div>';
+    s +=   '</div>';
+    s += '</div>';
+
+    s += '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">';
+    if(stato!=='risolta'){
+      if(!c.emailInviateLog || !(c.emailInviateLog||[]).some(function(e){return e.tipo==='contestazione';})){
+        s += '<button data-contest-action="invia" data-contest-id="'+contestEsc(c.id)+'" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📧 Invia Contestazione</button>';
+      }
+      if(stato==='sollecitabile' || stato==='aperta'){
+        s += '<button data-contest-action="sollecito" data-contest-id="'+contestEsc(c.id)+'" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🔔 Invia Sollecito</button>';
+      }
+      s += '<button data-contest-action="risolvi" data-contest-id="'+contestEsc(c.id)+'" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✅ Segna risolta</button>';
+    } else {
+      s += '<button data-contest-action="riapri" data-contest-id="'+contestEsc(c.id)+'" style="background:#fbbf24;color:#1a1a2e;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Riapri</button>';
+    }
+    s += '<button data-contest-action="modifica" data-contest-id="'+contestEsc(c.id)+'" style="background:#f0f2f5;color:#374151;border:1px solid #e0e4ea;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✏️ Modifica</button>';
+    s += '<button data-contest-action="elimina" data-contest-id="'+contestEsc(c.id)+'" style="background:transparent;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-left:auto">🗑 Elimina</button>';
+    s += '</div>';
+
+    if(c.emailInviateLog && c.emailInviateLog.length){
+      s += '<div style="margin-top:8px;font-size:10px;color:#888;border-top:1px solid '+bd+';padding-top:6px">';
+      c.emailInviateLog.forEach(function(e){
+        s += '<div>📤 '+contestEsc(e.tipo||'')+' inviata '+contestFormatDate(e.data)+(e.to?(' a '+contestEsc(e.to)):'')+'</div>';
+      });
+      s += '</div>';
+    }
+    s += '</div>';
+    return s;
+  }
+
+  async function contestHandleAction(panel, action, id){
+    var data = await ghContestGet();
+    var c = data.find(function(x){return x.id===id;});
+    if(!c){ alert('Contestazione non trovata'); return; }
+    if(action==='modifica'){ contestOpenModal(panel, c); return; }
+    if(action==='elimina'){
+      if(!confirm('Eliminare definitivamente questa contestazione?')) return;
+      var newData = data.filter(function(x){return x.id!==id;});
+      var ok = await ghContestSave(newData);
+      if(ok) contestDoRender(panel, newData);
+      else alert('Errore salvataggio');
+      return;
+    }
+    if(action==='risolvi'){
+      c.dataRisoluzione = new Date().toISOString();
+      var ok2 = await ghContestSave(data);
+      if(ok2) contestDoRender(panel, data);
+      else alert('Errore salvataggio');
+      return;
+    }
+    if(action==='riapri'){
+      delete c.dataRisoluzione;
+      var ok3 = await ghContestSave(data);
+      if(ok3) contestDoRender(panel, data);
+      else alert('Errore salvataggio');
+      return;
+    }
+    if(action==='invia' || action==='sollecito'){
+      var tipo = action==='invia' ? 'contestazione' : 'sollecito';
+      contestOpenSendEmailModal(panel, c, tipo);
+      return;
+    }
+  }
+
+  function contestOpenModal(panel, existing){
+    var c = existing || {
+      id: 'ct_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      fornitore:'',prodotto:'',sku:'',lotto:'',scadenza:'',
+      tipoProblema:'',descrizione:'',
+      prezzoUnitario:0,quantita:0,
+      campioni:'non_specificato',
+      whatsapp:{inviato:false,data:'',destinatario:''},
+      allegati:[],
+      dataApertura:'',
+      emailInviateLog:[]
+    };
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.25)';
+    box.innerHTML = contestModalHtml(c, !!existing);
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+    contestModalBindEvents(panel, modal, box, c, !!existing);
+  }
+  function contestModalHtml(c, isEdit){
+    var fornOpt = function(v,l){ return '<option value="'+v+'"'+(c.fornitore===v?' selected':'')+'>'+l+'</option>'; };
+    var tipoOpt = CONTEST_TIPI.map(function(t){
+      return '<option value="'+contestEsc(t)+'"'+(c.tipoProblema===t?' selected':'')+'>'+contestEsc(t)+'</option>';
+    }).join('');
+    var camp = c.campioni || 'non_specificato';
+    var wa = c.whatsapp || {};
+    var h = '';
+    h += '<div style="padding:18px 22px;border-bottom:1px solid #e8eaf0;display:flex;justify-content:space-between;align-items:center">';
+    h +=   '<div style="font-size:16px;font-weight:700;color:#6d28d9">⚖️ '+(isEdit?'Modifica':'Nuova')+' contestazione</div>';
+    h +=   '<button id="ct-mod-close" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#888">×</button>';
+    h += '</div>';
+    h += '<div style="padding:18px 22px;display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    h +=   '<label style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Fornitore *</div>';
+    h +=     '<select id="ct-fornitore" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px">';
+    h +=       '<option value="">— scegli —</option>';
+    h +=       fornOpt('Noire S.r.l.','Noire S.r.l. (commerciale@neronobile.com)');
+    h +=       fornOpt('Best Espresso S.r.l.','Best Espresso S.r.l. (info@bestespresso.it)');
+    h +=       fornOpt('Simfed S.r.l.','Simfed S.r.l. (info@simfed.it)');
+    h +=       fornOpt('Altro','Altro (email da specificare al momento dell\'invio)');
+    h +=     '</select></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Prodotto *</div><input id="ct-prodotto" type="text" value="'+contestEsc(c.prodotto)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">SKU</div><input id="ct-sku" type="text" value="'+contestEsc(c.sku)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Lotto *</div><input id="ct-lotto" type="text" value="'+contestEsc(c.lotto)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Scadenza</div><input id="ct-scadenza" type="text" placeholder="MM/AAAA o GG/MM/AAAA" value="'+contestEsc(c.scadenza)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Tipo problema *</div>';
+    h +=     '<select id="ct-tipo" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px">';
+    h +=       '<option value="">— scegli —</option>'+tipoOpt;
+    h +=     '</select></label>';
+    h +=   '<label style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Descrizione</div><textarea id="ct-descrizione" rows="3" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box">'+contestEsc(c.descrizione)+'</textarea></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Prezzo unitario (€)</div><input id="ct-prezzo" type="number" step="0.0001" min="0" value="'+(parseFloat(c.prezzoUnitario)||0)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<label><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Quantità</div><input id="ct-quantita" type="number" step="1" min="0" value="'+(parseFloat(c.quantita)||0)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></label>';
+    h +=   '<div style="grid-column:1/-1;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;font-size:12px;color:#6d28d9;font-weight:600">Valore totale: € <span id="ct-totale">0.00</span></div>';
+    h +=   '<div style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Campioni</div>';
+    h +=     '<label style="margin-right:16px;font-size:13px"><input type="radio" name="ct-camp" value="inviati"'+(camp==='inviati'?' checked':'')+'> Inviati al fornitore</label>';
+    h +=     '<label style="margin-right:16px;font-size:13px"><input type="radio" name="ct-camp" value="in_possesso"'+(camp==='in_possesso'?' checked':'')+'> In nostro possesso</label>';
+    h +=     '<label style="font-size:13px"><input type="radio" name="ct-camp" value="non_specificato"'+(camp==='non_specificato'?' checked':'')+'> Non specificato</label>';
+    h +=   '</div>';
+    h +=   '<div style="grid-column:1/-1"><label style="font-size:13px"><input type="checkbox" id="ct-wa-cb"'+(wa.inviato?' checked':'')+'> Materiale inviato via WhatsApp al fornitore</label>';
+    h +=     '<div id="ct-wa-fields" style="display:'+(wa.inviato?'grid':'none')+';grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';
+    h +=       '<input id="ct-wa-data" type="date" value="'+contestEsc(wa.data||'')+'" style="padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:12px">';
+    h +=       '<input id="ct-wa-dest" type="text" placeholder="Destinatario WhatsApp" value="'+contestEsc(wa.destinatario||'')+'" style="padding:8px 10px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:12px">';
+    h +=     '</div>';
+    h +=   '</div>';
+    h +=   '<div style="grid-column:1/-1"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Allegati (max 20MB ciascuno)</div>';
+    h +=     '<div id="ct-drop" style="border:2px dashed #c4b5fd;border-radius:10px;padding:18px;text-align:center;background:#faf5ff;cursor:pointer;font-size:12px;color:#6d28d9">📎 Trascina file qui, clicca per selezionare, oppure incolla con Ctrl+V<input id="ct-file-input" type="file" multiple style="display:none"></div>';
+    h +=     '<div id="ct-attachments-list" style="margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>';
+    h +=   '</div>';
+    h += '</div>';
+    h += '<div style="padding:14px 22px;border-top:1px solid #e8eaf0;background:#fafafa;display:flex;justify-content:flex-end;gap:8px;border-radius:0 0 12px 12px">';
+    h +=   '<button id="ct-mod-cancel" style="background:#fff;color:#666;border:1.5px solid #e0e4ea;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Annulla</button>';
+    h +=   '<button id="ct-mod-save" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">💾 Salva</button>';
+    h += '</div>';
+    return h;
+  }
+  function contestModalBindEvents(panel, modal, box, c, isEdit){
+    function close(){ modal.remove(); }
+    box.querySelector('#ct-mod-close').onclick = close;
+    box.querySelector('#ct-mod-cancel').onclick = close;
+    modal.addEventListener('click', function(e){ if(e.target===modal) close(); });
+
+    function recalcTotale(){
+      var p = parseFloat(box.querySelector('#ct-prezzo').value)||0;
+      var q = parseFloat(box.querySelector('#ct-quantita').value)||0;
+      box.querySelector('#ct-totale').textContent = (p*q).toFixed(2);
+    }
+    box.querySelector('#ct-prezzo').addEventListener('input', recalcTotale);
+    box.querySelector('#ct-quantita').addEventListener('input', recalcTotale);
+    recalcTotale();
+
+    var waCb = box.querySelector('#ct-wa-cb');
+    waCb.addEventListener('change', function(){
+      box.querySelector('#ct-wa-fields').style.display = waCb.checked?'grid':'none';
+    });
+
+    // Allegati management (mantenuti in c.allegati come {filename, contentType, dataB64, size})
+    var allegati = (c.allegati||[]).slice();
+    function renderAttList(){
+      var listEl = box.querySelector('#ct-attachments-list');
+      if(!listEl) return;
+      if(!allegati.length){ listEl.innerHTML='<div style="font-size:11px;color:#aaa;font-style:italic">Nessun allegato</div>'; return; }
+      listEl.innerHTML = allegati.map(function(a,i){
+        var sz = (a.size||0)>1024*1024 ? ((a.size/(1024*1024)).toFixed(1)+' MB') : (Math.round((a.size||0)/1024)+' KB');
+        return '<div style="display:flex;align-items:center;gap:8px;background:#f8f9fc;border:1px solid #e0e4ea;border-radius:6px;padding:6px 10px;font-size:12px"><span style="flex:1">📎 '+contestEsc(a.filename||'file')+' <span style="color:#888;font-size:10px">('+sz+')</span></span><button data-rm="'+i+'" style="background:transparent;border:none;color:#dc2626;cursor:pointer;font-size:14px">×</button></div>';
+      }).join('');
+      listEl.querySelectorAll('[data-rm]').forEach(function(btn){
+        btn.onclick = function(){
+          var idx = parseInt(btn.getAttribute('data-rm'));
+          allegati.splice(idx,1); renderAttList();
+        };
+      });
+    }
+    function addFiles(files){
+      Array.from(files||[]).forEach(function(f){
+        if(f.size > 20*1024*1024){ alert('File troppo grande (>20MB): '+f.name); return; }
+        var rd = new FileReader();
+        rd.onload = function(){
+          var dataUrl = rd.result; // data:mime;base64,xxx
+          var b64 = String(dataUrl).split(',')[1] || '';
+          allegati.push({ filename:f.name, contentType:f.type||'application/octet-stream', dataB64:b64, size:f.size });
+          renderAttList();
+        };
+        rd.readAsDataURL(f);
+      });
+    }
+    var drop = box.querySelector('#ct-drop');
+    var input = box.querySelector('#ct-file-input');
+    drop.onclick = function(){ input.click(); };
+    input.onchange = function(){ addFiles(input.files); input.value=''; };
+    drop.addEventListener('dragover', function(e){ e.preventDefault(); drop.style.background='#ede9fe'; });
+    drop.addEventListener('dragleave', function(){ drop.style.background='#faf5ff'; });
+    drop.addEventListener('drop', function(e){ e.preventDefault(); drop.style.background='#faf5ff'; addFiles(e.dataTransfer.files); });
+    box.addEventListener('paste', function(e){
+      var items = (e.clipboardData||{}).items||[];
+      var files = [];
+      for(var i=0;i<items.length;i++){ if(items[i].kind==='file'){ var f = items[i].getAsFile(); if(f) files.push(f); } }
+      if(files.length){ addFiles(files); }
+    });
+    renderAttList();
+
+    box.querySelector('#ct-mod-save').onclick = async function(){
+      var fornitore = box.querySelector('#ct-fornitore').value;
+      var prodotto = box.querySelector('#ct-prodotto').value.trim();
+      var lotto = box.querySelector('#ct-lotto').value.trim();
+      var tipo = box.querySelector('#ct-tipo').value;
+      if(!fornitore || !prodotto || !lotto || !tipo){
+        alert('Compila almeno: Fornitore, Prodotto, Lotto, Tipo problema');
+        return;
+      }
+      var item = {
+        id: c.id,
+        fornitore: fornitore,
+        prodotto: prodotto,
+        sku: box.querySelector('#ct-sku').value.trim(),
+        lotto: lotto,
+        scadenza: box.querySelector('#ct-scadenza').value.trim(),
+        tipoProblema: tipo,
+        descrizione: box.querySelector('#ct-descrizione').value.trim(),
+        prezzoUnitario: parseFloat(box.querySelector('#ct-prezzo').value)||0,
+        quantita: parseFloat(box.querySelector('#ct-quantita').value)||0,
+        campioni: (box.querySelector('input[name="ct-camp"]:checked')||{}).value || 'non_specificato',
+        whatsapp: {
+          inviato: waCb.checked,
+          data: waCb.checked ? box.querySelector('#ct-wa-data').value : '',
+          destinatario: waCb.checked ? box.querySelector('#ct-wa-dest').value.trim() : ''
+        },
+        allegati: allegati,
+        dataApertura: c.dataApertura || new Date().toISOString(),
+        dataSollecito: c.dataSollecito || '',
+        dataRisoluzione: c.dataRisoluzione || '',
+        emailInviateLog: c.emailInviateLog || []
+      };
+      var data = await ghContestGet();
+      var idx = data.findIndex(function(x){return x.id===item.id;});
+      if(idx>=0) data[idx] = item;
+      else data.unshift(item);
+      var ok = await ghContestSave(data);
+      if(!ok){ alert('Errore salvataggio'); return; }
+      modal.remove();
+      contestDoRender(panel, data);
+    };
+  }
+
+  function contestOpenSendEmailModal(panel, c, tipo){
+    var emailObj = (tipo==='sollecito') ? contestEmailSollecito(c) : contestEmailContestazione(c);
+    var fornKey = contestFornitoreKey(c.fornitore);
+    var preset = CONTEST_FORNITORI_EMAIL[fornKey] || CONTEST_FORNITORI_EMAIL.altro;
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.25)';
+    var titoloIcona = tipo==='sollecito' ? '🔔 Invia Sollecito' : '📧 Invia Contestazione';
+
+    var html = '';
+    html += '<div style="padding:18px 22px;border-bottom:1px solid #e8eaf0;display:flex;justify-content:space-between;align-items:center">';
+    html +=   '<div style="font-size:16px;font-weight:700;color:#6d28d9">'+titoloIcona+'</div>';
+    html +=   '<button id="ct-send-close" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#888">×</button>';
+    html += '</div>';
+    html += '<div style="padding:18px 22px">';
+    html +=   '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">A:</div><input id="ct-send-to" type="text" value="'+contestEsc((preset.to||[]).join(', '))+'" placeholder="email destinatario" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></div>';
+    html +=   '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">CC:</div><input id="ct-send-cc" type="text" value="'+contestEsc((preset.cc||[]).join(', '))+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></div>';
+    html +=   '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Oggetto:</div><input id="ct-send-subj" type="text" value="'+contestEsc(emailObj.subject)+'" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></div>';
+    html +=   '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:4px">Corpo:</div><textarea id="ct-send-body" rows="14" style="width:100%;padding:9px 11px;border:1.5px solid #e0e4ea;border-radius:8px;font-family:monospace;font-size:12px;box-sizing:border-box;resize:vertical">'+contestEsc(emailObj.body)+'</textarea></div>';
+    if((c.allegati||[]).length){
+      html += '<div style="background:#faf5ff;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;font-size:12px;color:#6d28d9">📎 '+(c.allegati.length)+' allegato/i verranno inclusi.</div>';
+    }
+    html += '</div>';
+    html += '<div style="padding:14px 22px;border-top:1px solid #e8eaf0;background:#fafafa;display:flex;justify-content:flex-end;gap:8px;border-radius:0 0 12px 12px">';
+    html +=   '<button id="ct-send-cancel" style="background:#fff;color:#666;border:1.5px solid #e0e4ea;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Annulla</button>';
+    html +=   '<button id="ct-send-go" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🚀 Invia</button>';
+    html += '</div>';
+    box.innerHTML = html;
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+    function close(){ modal.remove(); }
+    box.querySelector('#ct-send-close').onclick = close;
+    box.querySelector('#ct-send-cancel').onclick = close;
+    modal.addEventListener('click', function(e){ if(e.target===modal) close(); });
+    box.querySelector('#ct-send-go').onclick = async function(){
+      var to = box.querySelector('#ct-send-to').value.trim();
+      var cc = box.querySelector('#ct-send-cc').value.trim();
+      var subject = box.querySelector('#ct-send-subj').value.trim();
+      var body = box.querySelector('#ct-send-body').value;
+      if(!to){ alert('Indica almeno un destinatario'); return; }
+      var btn = box.querySelector('#ct-send-go');
+      btn.disabled = true; btn.textContent = '⏳ Invio...';
+      try {
+        var payload = { to: to, cc: cc, subject: subject, body: body };
+        if((c.allegati||[]).length){
+          payload.attachments = c.allegati.map(function(a){
+            return { filename: a.filename, contentType: a.contentType, content: a.dataB64, encoding:'base64' };
+          });
+        }
+        var r = await fetch(_contestProxyUrl()+'/send-email', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        var rj = await r.json().catch(function(){return{};});
+        if(!r.ok || rj.ok===false){
+          throw new Error((rj && rj.error) || ('HTTP '+r.status));
+        }
+        // Aggiorna log e date
+        var data = await ghContestGet();
+        var item = data.find(function(x){return x.id===c.id;});
+        if(item){
+          item.emailInviateLog = item.emailInviateLog || [];
+          item.emailInviateLog.push({ tipo: tipo, data: new Date().toISOString(), to: to });
+          if(tipo==='sollecito') item.dataSollecito = new Date().toISOString();
+          await ghContestSave(data);
+        }
+        alert('✅ Email inviata a '+to);
+        close();
+        contestDoRender(panel, data);
+      } catch(err){
+        alert('❌ Errore invio: '+err.message);
+        btn.disabled = false; btn.textContent = '🚀 Invia';
+      }
+    };
+  }
+  // ── FINE CONTESTAZIONI PRODOTTO ─────────────────────────────────────────
+
   // ── ARCHIVIO BOLLE ──────────────────────────────────────────────────────
   async function renderArchivioBolle(panel){
     var ca=panel.querySelector('#filippo-content');
@@ -14847,15 +15532,30 @@ function toggleMerceMananteDropdown(){
     // Aggiorna pulsanti copia
     _aggiornaMmCopiaBar();
   },50);
+  // Outside-click handler con guard contro listener duplicati e check robusto su wrap+dropdown.
+  // BUG-FIX: il vecchio handler non controllava se il click era DENTRO il dropdown stesso (che è
+  // stato spostato sul body con appendChild), quindi in alcune situazioni — ad es. quando una voce
+  // dropdown chiama inviaMessaggioMerceMancante() e questo modifica il DOM o quando wrap viene
+  // momentaneamente staccato — il dropdown poteva restare aperto. Il nuovo handler considera "dentro"
+  // sia il wrap che il dropdown stesso, ed è single-shot tramite flag globale.
+  if(window._mmCloseMMRegistered){
+    document.removeEventListener('click', window._mmCloseMMRegistered, true);
+    window._mmCloseMMRegistered = null;
+  }
   setTimeout(function(){
-    document.addEventListener('click',function closeMM(e){
-      var w=document.getElementById('merce-mancante-btn-wrap');
-      if(w&&!w.contains(e.target)){
-        var d=document.getElementById('merce-mancante-dropdown');
-        if(d)d.style.display='none';
-        document.removeEventListener('click',closeMM);
+    var handler = function closeMM(e){
+      var w2 = document.getElementById('merce-mancante-btn-wrap');
+      var dd2 = document.getElementById('merce-mancante-dropdown');
+      var clickedInsideWrap = w2 && w2.contains(e.target);
+      var clickedInsideDropdown = dd2 && dd2.contains(e.target);
+      if(!clickedInsideWrap && !clickedInsideDropdown){
+        if(dd2) dd2.style.display='none';
+        document.removeEventListener('click', handler, true);
+        window._mmCloseMMRegistered = null;
       }
-    });
+    };
+    window._mmCloseMMRegistered = handler;
+    document.addEventListener('click', handler, true);
   },10);
 }
 
@@ -16152,6 +16852,7 @@ var AI_PROMPT_SECTIONS_DEFAULT=[
   {id:'compatibilita',label:'📋 Compatibilità capsule',locked:false,text:"REGOLA COMPATIBILITA CAPSULE — FONDAMENTALE: I sistemi capsule venduti da Yespresso sono INCOMPATIBILI tra loro. Non confonderli mai.\\n\\nSISTEMI DISPONIBILI:\\n- Capsule A MODO MIO: compatibili con macchine Lavazza A Modo Mio. NON compatibili con macchine Bialetti.\\n- Capsule BIALETTI (Mokona/Mokespresso): compatibili con macchine Bialetti Mokona e Mokespresso. NON compatibili con macchine Lavazza A Modo Mio. NON sono la stessa cosa delle capsule A Modo Mio.\\n- Capsule NESPRESSO: compatibili con macchine Nespresso. Sistema diverso da tutti gli altri.\\n- Capsule CAFFITALY: compatibili con macchine Caffitaly/Tchibo/Wacaco. Sistema diverso.\\n- Capsule DOLCE GUSTO: compatibili con macchine Nescafe Dolce Gusto.\\n- Cialde ESE 44mm: compatibili con macchine che accettano cialde carta standard ESE 44mm.\\n\\nATTENZIONE: Se il cliente ha ordinato capsule A Modo Mio ma ha una macchina Bialetti Mokona (o viceversa), il prodotto NON e compatibile con la sua macchina. Non dire mai che le capsule A Modo Mio sono compatibili con macchine Bialetti generiche — Bialetti Mokona usa un sistema diverso da A Modo Mio.\\n\\nCAPSULE BIALETTI E MACCHINA GIOIA:\\nLe nostre capsule compatibili Bialetti sono in PLASTICA con uno strato di alluminio INTERNO. Il modello Bialetti Gioia ha un sensore che a volte fatica a leggere questo strato interno.\\n\\nRISPONDI IN BASE ALLA SITUAZIONE:\\n1) SE C'E' UN ORDINE SHOPIFY COLLEGATO AL TICKET (cliente ha gia comprato):\\n   → Spiega che le capsule sono in plastica con alluminio interno → il sensore del modello Gioia puo fare difficolta a leggerlo → suggerisci: a) avvolgere il retro della capsula con carta alluminio per testare, b) pulire l'alloggiamento della capsula con un panno caldo per rimuovere residui che ostruiscono il sensore\\n\\n2) SE NON C'E' ORDINE SHOPIFY (cliente sta valutando l'acquisto):\\n   → Spiega solo che le capsule sono in plastica con alluminio interno → avvisa che il modello Gioia puo avere difficolta di compatibilita con le nostre capsule → NON dare suggerimenti pratici di test perche non ha ancora il prodotto\\n\\n3) SE IL CLIENTE HA GIA RICEVUTO I SUGGERIMENTI (carta alluminio, pulizia sensore) E RISPONDE CHE LE CAPSULE CONTINUANO A NON FUNZIONARE:\\n   → Esprimi dispiacere → spiega che purtroppo il modello Gioia non e sempre compatibile con le nostre capsule come indicato nella descrizione prodotto → offri reso a spese del cliente entro 14 giorni: spedire il prodotto integro e non aperto a YESPRESSO Via Galileo Galilei 16 20054 Segrate includendo copia dell'ordine → una volta ricevuto il reso emettiamo credito (sito) o rimborso (Amazon/Temu/TikTok) per il prodotto integro restituito"},
   {id:'credito',label:'🎁 Credito e rimborsi negozio',locked:false,text:"ISTRUZIONI CREDITO NEGOZIO: Quando proponi un credito sul sito yespresso.it, includi SEMPRE queste istruzioni: Il credito e valido per 90 giorni. Per utilizzarlo: aggiungere i prodotti al carrello, andare al checkout, in alto a destra apparira un banner con scritto utilizzalo.\n\nREGOLA RICHIESTA SCONTO: 1) Se ha un ordine recente non ancora spedito: rispondi che i prezzi sono gia scontati. 2) Se non ha ordini in corso: usa la risposta rapida PROMOZIONE DELLA SETTIMANA."},
   {id:'merce_mancante',label:'📦 Merce mancante',locked:false,text:"REGOLA MERCE MANCANTE:\n\nQuando il cliente segnala di aver ricevuto meno prodotti di quelli ordinati (capsule, cialde o altri articoli mancanti dall'ordine):\n\nREGOLA PRIORITARIA — SE NEL THREAD È PRESENTE UNA SEGNALAZIONE DI MERCE MANCANTE:\nApplica SEMPRE questa regola, anche se l'ultimo messaggio del cliente parla di 'reso', 'restituire il pacco', 'restituire ordine', 'fare il reso'. Il cliente potrebbe usare 'reso' impropriamente — il vero problema è la merce mancante e va trattato come tale. NON applicare la regola acquisto errato (procedura reso a Segrate) quando il problema vero è merce mancante.\n\nGESTIONE PER CANALE QUANDO IL PROBLEMA È MERCE MANCANTE:\nPer clienti Amazon, Temu e TikTok con merce mancante: il cliente TIENE il pacco e riceve un rimborso parziale proporzionale alla merce mancante. NON proporre la restituzione del pacco né l'indirizzo di Segrate per questo specifico problema. Se l'ultimo messaggio dice 'restituisco il pacco' su un ordine marketplace con merce mancante, ignora la richiesta di restituzione e procedi direttamente con il rimborso parziale (se hai già foto e quantità) o richiedi le info mancanti.\nPer clienti SITO YESPRESSO con merce mancante: si emette un credito proporzionale, anche qui senza richiedere reso fisico.\n\n1) PRIMA RISPOSTA — RICHIEDI SEMPRE queste informazioni se non sono già tutte presenti:\n- Quali prodotti mancano (nome e tipo)\n- Quante capsule/cialde/buste mancano esattamente\n- Foto del pacco ricevuto con etichetta BRT visibile (in formato JPG)\n- Foto del contenuto ricevuto\nNON procedere con rimborsi, crediti o rispedizioni prima di avere foto E quantità.\n\n2) SE HA GIÀ FORNITO FOTO E QUANTITÀ — distingui per quantità:\n\n⚠️ INTERPRETAZIONE PAROLE DEL CLIENTE — REGOLA CRITICA ⚠️\nQuando il cliente parla di 'confezione', 'busta', 'scatola' o 'pacco' mancante, devi prima CAPIRE cosa intende guardando l'ordine e il contesto del messaggio. NON saltare a conclusioni numeriche senza avere chiaro questo punto.\n\nDue scenari possibili:\nA) CONFEZIONE INTERA DEL PRODOTTO = il cartone/scatola venduto come singolo articolo (es. la scatola da '240 Capsule Lavazza A Modo Mio' è UN articolo dell'ordine).\nB) BUSTA INTERNA = una delle buste sigillate dentro la confezione (es. la confezione da 240 capsule potrebbe contenere 24 buste sigillate da 10 capsule ciascuna).\n\nIndizi linguistici nel messaggio del cliente:\n- 'scatola', 'pacco', 'confezione intera', 'cartone', 'scatolone' → quasi sempre CONFEZIONE INTERA\n- 'busta', 'bustina', 'sacchetto' → quasi sempre BUSTA INTERNA\n- 'confezione' da sola → AMBIGUO. Rileggi il contesto: se il cliente dice 'manca una confezione su due ordinate' e l'ordine ha 2 unità del prodotto, intende la confezione intera. Se dice 'mancano alcune confezioni dentro la scatola', intende le buste interne.\n\nSE È AMBIGUO E NON RIESCI A DEDURLO DAL CONTESTO:\nNON inventare un numero. Chiedi al cliente di precisare in modo gentile: indica chiaramente le due possibilità (es. 'Per procedere correttamente, ci può confermare se manca una confezione intera del prodotto X (la scatola da NNN capsule) oppure una singola busta interna alla confezione?'). NON procedere con calcolo o rimborso finché non hai conferma.\n\n⚠️ CALCOLO QUANTITÀ MANCANTI — REGOLA CRITICA ⚠️\nIl conteggio si fa SEMPRE in NUMERO TOTALE DI CAPSULE/CIALDE mancanti, NON in numero di confezioni o buste.\n\nSE confezione intera mancante:\nLeggi il numero all'inizio del titolo del prodotto. Es. '240 Capsule Lavazza' = 240 capsule per confezione → 1 confezione mancante = 240 capsule mancanti. '64 Capsule Dolce Gusto' = 64 capsule per confezione → 1 confezione mancante = 64 capsule. '50 Cialde ESE' = 50 cialde per confezione → 1 confezione mancante = 50 cialde.\n\nSE busta interna mancante:\nIl numero di capsule per busta NON è quasi mai indicato nel titolo prodotto. Quindi devi chiedere al cliente quante capsule conteneva la busta mancante (es. 'Per calcolare correttamente l'importo, può indicarci quante capsule conteneva la busta mancante?'). Se conosci la composizione interna del prodotto specifico (es. è scritto in note prodotto o in una conversazione precedente), usa quel numero senza chiedere.\n\nA) MENO DI 100 capsule/cialde mancanti:\n- Esprimi dispiacere\n- Se acquistato su SITO YESPRESSO: crea un credito pari al valore dei prodotti mancanti\n- Se acquistato su AMAZON / TEMU / TIKTOK: procedi con rimborso parziale (NO reso del pacco)\n- Calcola il valore: prezzo riga / quantità totale x quantità mancante\n- Includi sempre il calcolo trasparente\n\nB) 100 O PIÙ capsule/cialde mancanti:\n- Calcola comunque l'importo del valore mancante (prezzo riga / quantità totale x quantità mancante)\n- Per sito/Temu/TikTok: calcola importo IVA inclusa\n- Per Amazon: calcola ENTRAMBI i valori (IVA esclusa e IVA inclusa)\n- NON generare nessuna risposta al cliente\n- Rispondi SOLO con la parola chiave seguita dall'importo calcolato:\n  Per sito/Temu/TikTok: AZIONE_MANUALE_MERCE_MANCANTE [COPIA_IMPORTO:X,XX]\n  Per Amazon: AZIONE_MANUALE_MERCE_MANCANTE [COPIA_IMPORTO:X,XX|Y,YY]\n- L'operatore sceglierà manualmente come procedere\n\nESEMPI APPLICATIVI:\n- Cliente Amazon, ordinate 2 confezioni '240 Capsule Lavazza', dice 'manca una scatola' → confezione intera → 240 capsule mancanti → REGOLA B (≥100) → AZIONE_MANUALE_MERCE_MANCANTE [COPIA_IMPORTO:X,XX|Y,YY]\n- Cliente Amazon, ordinate 2 confezioni '64 Capsule Dolce Gusto', dice 'manca una scatola' → confezione intera → 64 capsule mancanti → REGOLA A (<100) → rimborso parziale diretto con calcolo\n- Cliente sito, ordinata 1 confezione '240 Capsule Lavazza', dice 'mancano 2 buste' → buste interne → chiedere quante capsule per busta (oppure se sai che sono buste da 10, sono 20 capsule mancanti) → REGOLA A (<100) → credito con calcolo proporzionale\n- Cliente Amazon, ordine '160 Capsule Nespresso' x2, dice 'manca una confezione' (ambiguo) → chiedere chiarimento se intende la scatola intera (160) o una busta interna\n\nCALCOLO IVA: IVA 10% per: ginseng, orzo, cioccolata, nocciolino, te limone, cortado, cappuccino. Tutti gli altri IVA 22%.\nPer sito/Temu/TikTok: indica SOLO valore IVA inclusa. Per Amazon: indica ENTRAMBI i valori.\n\nIMPORTANTE: alla fine del messaggio aggiungi SEMPRE su riga separata per i casi con importo: per sito/Temu/TikTok [COPIA_IMPORTO:X,XX]; per Amazon [COPIA_IMPORTO:X,XX|Y,YY]."},
+  {id:'note_interne',label:'🗒️ Note interne staff',locked:false,text:"REGOLA NOTE INTERNE STAFF — CRITICA:\n\nNel thread del ticket possono essere presenti messaggi marcati come NOTA INTERNA STAFF (private notes) inseriti dagli operatori. Esempi tipici di intestazioni di nota interna:\n- '[Nota da BRT]'\n- 'NOTA INTERNA'\n- 'Conferma apertura ticket BRT #...'\n- 'Spedizione: 179...'\n- contenuto inserito da un altro agente che descrive azioni interne (apertura ticket BRT, contatti con il fornitore, verifica magazzino, ecc.)\n\nQUESTE NOTE NON SONO RISPOSTE AL CLIENTE. Sono informazioni operative INTERNE che l'operatore ha lasciato per sé o per altri colleghi. Il cliente NON le ha viste e NON le vedrà mai.\n\nCOSA DEVI FARE:\n1) Usa le note interne come CONTESTO OPERATIVO per capire lo stato della pratica (es. 'è stato già aperto un ticket BRT #12345', 'il magazzino ha verificato la spedizione', 'il fornitore ha confermato la sostituzione').\n2) NON citare mai il contenuto di una nota interna nella risposta al cliente.\n3) NON dire al cliente frasi come 'come ti ho già scritto', 'come ti ho già detto', 'ti ho già comunicato' riferendoti al contenuto di una nota interna: il cliente non l'ha mai ricevuta.\n4) NON considerare la nota interna come una nostra risposta precedente quando applichi le regole 'PRIMA RISPOSTA' o 'RISPOSTA SUCCESSIVA' (es. flusso Dolce Gusto scoppiate): se nel thread ci sono solo note interne ma nessuna nostra risposta inviata al cliente, è ancora il PRIMO contatto.\n5) Distingui chiaramente le note interne dalle risposte realmente inviate al cliente: solo i messaggi con direzione AGENT verso il cliente (campo 'visibility' pubblico, non 'private') sono risposte effettive."},
   {id:'custom',label:'➕ Regole personalizzate',locked:false,text:''}
 ];
 function getAIPromptSections(){
@@ -18906,15 +19607,22 @@ function openBrtContact(orderId){
   var tn=(d&&d.tn)||"";
   var on2=(d&&d.orderName)||"";
   var cn=(d&&d.name)||"";
+  // Estrai shortID del ticket cliente corrente (NON l'UUID lungo).
+  // Il shortID viene incluso in fondo ai messaggi precompilati come "Rif. Ticket: <shortID>"
+  // così, quando arriva la risposta automatica BRT (vasnoreply@brt.it) e si apre il pannello
+  // "Conferma apertura ticket BRT", possiamo tornare al ticket cliente di origine.
+  var _curTkt = (typeof selectedTicket !== 'undefined' && selectedTicket) ? selectedTicket : (window.selectedTicket || null);
+  var shortIdTkt = _curTkt ? (_curTkt.shortID || _curTkt.shortId || '') : '';
+  var refSuffix = shortIdTkt ? (" - Rif. Ticket: "+shortIdTkt) : "";
   var msgs=[
-    ["MODIFICA INDIRIZZO","Per la spedizione in oggetto si richiede cambio indirizzo di consegna. Ordine: "+on2+" - Cliente: "+cn],
-    ["NO CONSEGNA","Per la spedizione in oggetto il cliente non ha ricevuto il collo pur risultando consegnato. Ordine: "+on2+" - Cliente: "+cn],
-    ["RESO MITTENTE","Per la spedizione in oggetto chiediamo reso al mittente. Ordine: "+on2+" - Cliente: "+cn],
-    ["AGGIORNAMENTI","Per la spedizione in oggetto chiediamo aggiornamenti sulla consegna. Ordine: "+on2+" - Cliente: "+cn],
-    ["NON IN PUDO","Per la spedizione in oggetto il cliente segnala che il pacco non e disponibile al pudo. Ordine: "+on2+" - Cliente: "+cn],
-    ["INDIRIZZO PUDO","Per la spedizione in oggetto non e presente indirizzo del pudo, potete inviarcelo? Ordine: "+on2+" - Cliente: "+cn],
-    ["MANDARE AL PUDO","Per la spedizione in oggetto il cliente chiede consegna al pudo piu vicino. Ordine: "+on2+" - Cliente: "+cn],
-    ["RICHIESTA PESO SPEDIZIONE","Per la spedizione in oggetto puo inviarmi il peso reale della spedizione? Ordine: "+on2+" - Cliente: "+cn]
+    ["MODIFICA INDIRIZZO","Per la spedizione in oggetto si richiede cambio indirizzo di consegna. Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["NO CONSEGNA","Per la spedizione in oggetto il cliente non ha ricevuto il collo pur risultando consegnato. Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["RESO MITTENTE","Per la spedizione in oggetto chiediamo reso al mittente. Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["AGGIORNAMENTI","Per la spedizione in oggetto chiediamo aggiornamenti sulla consegna. Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["NON IN PUDO","Per la spedizione in oggetto il cliente segnala che il pacco non e disponibile al pudo. Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["INDIRIZZO PUDO","Per la spedizione in oggetto non e presente indirizzo del pudo, potete inviarcelo? Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["MANDARE AL PUDO","Per la spedizione in oggetto il cliente chiede consegna al pudo piu vicino. Ordine: "+on2+" - Cliente: "+cn+refSuffix],
+    ["RICHIESTA PESO SPEDIZIONE","Per la spedizione in oggetto puo inviarmi il peso reale della spedizione? Ordine: "+on2+" - Cliente: "+cn+refSuffix]
   ];
   var mh='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
   msgs.forEach(function(m){
