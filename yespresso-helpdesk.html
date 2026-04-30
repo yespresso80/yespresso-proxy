@@ -8784,6 +8784,8 @@ function openFilippoPanel(){
   },{
     id:'margine_canale',label:'🛒 Margine Canale',periodo:'',custom:true,groups:[]
   },{
+    id:'contestazioni',label:'⚖️ Contestazioni Prodotto',periodo:'',custom:true,groups:[]
+  },{
     id:'whatsapp_templates',label:'💬 Template WhatsApp',periodo:'',custom:true,groups:[]
   }];
   var activeSection='daniela';
@@ -8865,6 +8867,7 @@ function openFilippoPanel(){
       else if(activeSec.id==='margine_prodotto') renderMargineProdotto(panel);
       else if(activeSec.id==='margine_canale') renderMargineCanale(panel);
       else if(activeSec.id==='whatsapp_templates') renderWhatsappTemplates(panel);
+      else if(activeSec.id==='contestazioni') renderContestazioni(panel);
       else if(activeSec.id==='whatsapp_templates') renderWhatsappTemplates(panel);
       else renderCorrispettivi(null,panel,null);
     }
@@ -11805,6 +11808,562 @@ function openFilippoPanel(){
     render();
   }
   // ── FINE TEMPLATE WHATSAPP ─────────────────────────────────────────────
+  // ── CONTESTAZIONI PRODOTTO ──────────────────────────────────────────────
+  // Storage: contestazioni-data.json su GitHub via proxy /contestazioni
+  // Schema record: {
+  //   id, dataApertura, fornitore, prodotto, sku, lotto, scadenza,
+  //   tipoProblema, descrizione, prezzoAcquisto, quantita, valoreTotale,
+  //   campioniStato (''|'inviati'|'in_possesso'),
+  //   waInviato (bool), waData, waDestinatario,
+  //   allegati: [{name, type, size, dataUrl}],
+  //   emailInviate: [{tipo:'contestazione'|'sollecito', data, destinatari, oggetto}],
+  //   stato ('attesa'|'risolto'),
+  //   notaSoluzione, dataChiusura
+  // }
+  async function _contestGet(){
+    try{
+      var r=await proxyFetch(PROXY_URL_CONTEST+'/contestazioni');
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var data=await r.json();
+      return Array.isArray(data)?data:[];
+    }catch(e){
+      console.warn('[CONTEST] Server non disponibile, fallback localStorage:',e.message);
+      try{return JSON.parse(localStorage.getItem('yespresso_contestazioni')||'[]');}catch(e2){return [];}
+    }
+  }
+  async function _contestSave(list){
+    try{localStorage.setItem('yespresso_contestazioni',JSON.stringify(list));}catch(e){}
+    try{
+      var r=await proxyFetch(PROXY_URL_CONTEST+'/contestazioni',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(list)});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return true;
+    }catch(e){
+      console.warn('[CONTEST] Errore salvataggio server:',e.message);
+      return false;
+    }
+  }
+  // Destinatari email per fornitore
+  function _contestDestinatari(fornitore){
+    var f=String(fornitore||'').toLowerCase();
+    if(f.indexOf('noire')>=0||f.indexOf('nero nobile')>=0||f.indexOf('neronobile')>=0){
+      return {to:['commerciale@neronobile.com'], cc:['commerciale@yespresso.it']};
+    }
+    if(f.indexOf('best')>=0||f.indexOf('best espresso')>=0){
+      return {to:['info@bestespresso.it'], cc:['commerciale@yespresso.it']};
+    }
+    if(f.indexOf('simfed')>=0){
+      return {to:['info@simfed.it'], cc:['commerciale@yespresso.it']};
+    }
+    return {to:[], cc:['commerciale@yespresso.it']};
+  }
+  // Calcola giorni passati da una data ISO
+  function _contestGiorniDa(isoDate){
+    if(!isoDate) return 0;
+    var d=new Date(isoDate);
+    if(isNaN(d.getTime())) return 0;
+    var now=new Date();
+    return Math.floor((now-d)/(1000*60*60*24));
+  }
+  // Genera HTML email contestazione iniziale
+  function _contestBuildEmail1(c){
+    var nAlleg=(c.allegati||[]).length;
+    var hasImg=(c.allegati||[]).some(function(a){return /^image\//.test(a.type||'');});
+    var hasVid=(c.allegati||[]).some(function(a){return /^video\//.test(a.type||'');});
+    var allegLabel='allegati';
+    if(nAlleg===1) allegLabel = hasImg?'immagine':(hasVid?'video':'allegato');
+    else if(nAlleg>1){
+      if(hasImg && !hasVid) allegLabel='immagini';
+      else if(hasVid && !hasImg) allegLabel='video';
+      else allegLabel='file allegati';
+    }
+    var oggetto='Contestazione qualità - '+(c.prodotto||'')+' - Lotto '+(c.lotto||'');
+    var corpo='Buongiorno,\n\n';
+    corpo+='vi scriviamo per segnalare un problema di qualità riscontrato sul seguente prodotto:\n\n';
+    corpo+='Prodotto:        '+(c.prodotto||'')+'\n';
+    if(c.sku) corpo+='Codice/SKU:      '+c.sku+'\n';
+    corpo+='Lotto:           '+(c.lotto||'')+'\n';
+    if(c.scadenza) corpo+='Scadenza:        '+_contestFmtDate(c.scadenza)+'\n';
+    corpo+='Tipo problema:   '+(c.tipoProblema||'')+'\n';
+    if(c.descrizione){
+      corpo+='\nDescrizione:\n'+c.descrizione+'\n';
+    }
+    if(c.quantita && Number(c.quantita)>0 && c.prezzoAcquisto && Number(c.prezzoAcquisto)>0){
+      var qta=Number(c.quantita);
+      var prz=Number(c.prezzoAcquisto);
+      var valTot=(qta*prz);
+      corpo+='\nQuantità interessata dal difetto:  '+qta+' pz\n';
+      corpo+='Prezzo unitario di acquisto:       € '+prz.toFixed(2)+'\n';
+      corpo+='Valore complessivo della merce:    € '+valTot.toFixed(2)+'\n';
+      corpo+='\nVi chiediamo pertanto l\'emissione di nota di credito pari a € '+valTot.toFixed(2)+' a copertura della merce non conforme.\n';
+    }
+    if(c.campioniStato==='inviati'){
+      corpo+='\nVi abbiamo inviato i campioni del lotto contestato per le verifiche del caso.\n';
+    } else if(c.campioniStato==='in_possesso'){
+      corpo+='\nI campioni del lotto contestato sono già in vostro possesso.\n';
+    }
+    if(c.waInviato && c.waData){
+      corpo+='\nCome già anticipato via WhatsApp in data '+_contestFmtDate(c.waData);
+      if(c.waDestinatario) corpo+=' a '+c.waDestinatario;
+      corpo+=', restiamo in attesa di un vostro riscontro.\n';
+    } else {
+      corpo+='\nRestiamo in attesa di un vostro riscontro.\n';
+    }
+    if(nAlleg>0){
+      corpo+='\nIn allegato '+nAlleg+' '+allegLabel+' a documentazione del difetto.\n';
+    }
+    corpo+='\nCordiali saluti,\nIl Team Yespresso\ncommerciale@yespresso.it\n';
+    return {oggetto:oggetto, testo:corpo};
+  }
+  // Genera HTML email sollecito 15 giorni
+  function _contestBuildEmail2(c){
+    var primaEmail=(c.emailInviate||[]).find(function(e){return e.tipo==='contestazione';});
+    var dataPrimaEmail=primaEmail?_contestFmtDate(primaEmail.data):'';
+    var oggetto='Richiesta nota di credito - '+(c.prodotto||'')+' - Lotto '+(c.lotto||'');
+    var corpo='Buongiorno,\n\n';
+    corpo+='facciamo seguito alla nostra comunicazione del '+dataPrimaEmail+' relativa alla contestazione qualità sul seguente prodotto:\n\n';
+    corpo+='Prodotto:        '+(c.prodotto||'')+'\n';
+    if(c.sku) corpo+='Codice/SKU:      '+c.sku+'\n';
+    corpo+='Lotto:           '+(c.lotto||'')+'\n';
+    if(c.scadenza) corpo+='Scadenza:        '+_contestFmtDate(c.scadenza)+'\n';
+    corpo+='Tipo problema:   '+(c.tipoProblema||'')+'\n\n';
+    corpo+='Essendo trascorsi oltre 15 giorni dalla nostra prima comunicazione senza ricevere alcun riscontro, come da accordi contrattuali la contestazione si intende tacitamente accettata.\n';
+    if(c.quantita && Number(c.quantita)>0 && c.prezzoAcquisto && Number(c.prezzoAcquisto)>0){
+      var qta=Number(c.quantita);
+      var prz=Number(c.prezzoAcquisto);
+      var valTot=(qta*prz);
+      corpo+='\nVi chiediamo pertanto l\'emissione della nota di credito per:\n\n';
+      corpo+='Quantità contestata:    '+qta+' pz\n';
+      corpo+='Prezzo unitario:        € '+prz.toFixed(2)+'\n';
+      corpo+='Importo nota credito:   € '+valTot.toFixed(2)+'\n';
+    } else {
+      corpo+='\nVi chiediamo pertanto l\'emissione della nota di credito per la merce contestata.\n';
+    }
+    corpo+='\nCordiali saluti,\nIl Team Yespresso\ncommerciale@yespresso.it\n';
+    return {oggetto:oggetto, testo:corpo};
+  }
+  function _contestFmtDate(iso){
+    if(!iso) return '';
+    var d=new Date(iso);
+    if(isNaN(d.getTime())){
+      // Forse è già in formato dd/mm/yyyy
+      return iso;
+    }
+    return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+  }
+  function _contestEsc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+  async function renderContestazioni(panel){
+    var ca=panel.querySelector('#filippo-content');
+    if(!ca) return;
+    ca.innerHTML='<div style="padding:40px;text-align:center;color:#888">⏳ Caricamento contestazioni...</div>';
+    var PROXY_URL_CONTEST=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+
+    var lista=await _contestGet();
+    // Calcola stato dinamico per ogni contestazione (in_attesa / da_sollecitare / risolto)
+    function _stato(c){
+      if(c.stato==='risolto') return 'risolto';
+      var primaEmail=(c.emailInviate||[]).find(function(e){return e.tipo==='contestazione';});
+      var sollecito=(c.emailInviate||[]).find(function(e){return e.tipo==='sollecito';});
+      if(primaEmail && !sollecito){
+        var giorni=_contestGiorniDa(primaEmail.data);
+        if(giorni>=15) return 'da_sollecitare';
+      }
+      return 'in_attesa';
+    }
+    function _badge(stato){
+      if(stato==='risolto') return '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">✅ RISOLTO</span>';
+      if(stato==='da_sollecitare') return '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;animation:pulse 2s infinite">🚨 DA SOLLECITARE</span>';
+      return '<span style="background:#fef3c7;color:#a16207;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">🟡 IN ATTESA</span>';
+    }
+    var contAttesa=lista.filter(function(c){return _stato(c)==='in_attesa';}).sort(function(a,b){return (b.dataApertura||'').localeCompare(a.dataApertura||'');});
+    var contSollecitare=lista.filter(function(c){return _stato(c)==='da_sollecitare';}).sort(function(a,b){return (b.dataApertura||'').localeCompare(a.dataApertura||'');});
+    var contRisolte=lista.filter(function(c){return _stato(c)==='risolto';}).sort(function(a,b){return (b.dataChiusura||b.dataApertura||'').localeCompare(a.dataChiusura||a.dataApertura||'');});
+    var html='<div style="padding:20px 24px;max-width:1400px;margin:0 auto">';
+    html+='<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.55}}</style>';
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap">';
+    html+='<div><h2 style="margin:0;font-size:20px;color:#1a1a2e">⚖️ Contestazioni Prodotto</h2>';
+    html+='<div style="font-size:12px;color:#666;margin-top:3px">Gestione contestazioni qualità verso fornitori - '+lista.length+' totali</div></div>';
+    html+='<button id="contest-new-btn" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">+ Nuova Contestazione</button>';
+    html+='</div>';
+    // Statistiche colonne
+    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">';
+    html+='<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:14px;text-align:center"><div style="font-size:24px;font-weight:700;color:#a16207">'+contAttesa.length+'</div><div style="font-size:12px;color:#a16207;font-weight:600">🟡 In attesa</div></div>';
+    html+='<div style="background:'+(contSollecitare.length>0?'#fee2e2':'#fff')+';border:1px solid '+(contSollecitare.length>0?'#fecaca':'#e5e7eb')+';border-radius:10px;padding:14px;text-align:center"><div style="font-size:24px;font-weight:700;color:'+(contSollecitare.length>0?'#dc2626':'#888')+'">'+contSollecitare.length+'</div><div style="font-size:12px;color:'+(contSollecitare.length>0?'#dc2626':'#888')+';font-weight:600">🚨 Da sollecitare (>15gg)</div></div>';
+    html+='<div style="background:#dcfce7;border:1px solid #bbf7d0;border-radius:10px;padding:14px;text-align:center"><div style="font-size:24px;font-weight:700;color:#15803d">'+contRisolte.length+'</div><div style="font-size:12px;color:#15803d;font-weight:600">✅ Risolte</div></div>';
+    html+='</div>';
+
+    function _cardHtml(c){
+      var stato=_stato(c);
+      var primaEmail=(c.emailInviate||[]).find(function(e){return e.tipo==='contestazione';});
+      var solEmail=(c.emailInviate||[]).find(function(e){return e.tipo==='sollecito';});
+      var giorniDa=primaEmail?_contestGiorniDa(primaEmail.data):null;
+      var qta=Number(c.quantita||0);
+      var prz=Number(c.prezzoAcquisto||0);
+      var valTot=(qta>0&&prz>0)?(qta*prz):0;
+      var nAlleg=(c.allegati||[]).length;
+      var bg=stato==='risolto'?'#f0fdf4':(stato==='da_sollecitare'?'#fef2f2':'#fffbeb');
+      var bord=stato==='risolto'?'#bbf7d0':(stato==='da_sollecitare'?'#fecaca':'#fde68a');
+      var h='<div data-cid="'+_contestEsc(c.id)+'" style="background:'+bg+';border:1px solid '+bord+';border-radius:10px;padding:14px;margin-bottom:12px">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">';
+      h+='<div style="flex:1;min-width:0">';
+      h+='<div style="font-weight:700;color:#1a1a2e;font-size:14px;margin-bottom:2px">'+_contestEsc(c.prodotto||'(senza nome)')+'</div>';
+      h+='<div style="font-size:11px;color:#666">'+_contestEsc(c.fornitore||'')+(c.sku?' · SKU '+_contestEsc(c.sku):'')+' · Lotto '+_contestEsc(c.lotto||'')+(c.scadenza?' · Scad. '+_contestFmtDate(c.scadenza):'')+'</div>';
+      h+='<div style="font-size:11px;color:#888;margin-top:3px">Aperta '+_contestFmtDate(c.dataApertura)+' · '+_contestEsc(c.tipoProblema||'-')+'</div>';
+      h+='</div>';
+      h+='<div style="text-align:right">'+_badge(stato)+'</div>';
+      h+='</div>';
+      if(c.descrizione){
+        h+='<div style="font-size:12px;color:#374151;background:rgba(255,255,255,.6);padding:8px;border-radius:6px;margin-bottom:8px;white-space:pre-wrap">'+_contestEsc(c.descrizione)+'</div>';
+      }
+      // Info finanziarie
+      if(qta>0||prz>0){
+        h+='<div style="display:flex;gap:14px;font-size:12px;color:#374151;margin-bottom:8px;flex-wrap:wrap">';
+        if(qta>0) h+='<span><b>Quantità:</b> '+qta+' pz</span>';
+        if(prz>0) h+='<span><b>Prezzo unit.:</b> € '+prz.toFixed(2)+'</span>';
+        if(valTot>0) h+='<span style="color:#dc2626;font-weight:700"><b>Valore:</b> € '+valTot.toFixed(2)+'</span>';
+        h+='</div>';
+      }
+      // Info aggiuntive
+      var info=[];
+      if(c.campioniStato==='inviati') info.push('📦 Campioni inviati al fornitore');
+      else if(c.campioniStato==='in_possesso') info.push('📦 Campioni in possesso fornitore');
+      if(c.waInviato) info.push('💬 WA inviato'+(c.waData?' '+_contestFmtDate(c.waData):'')+(c.waDestinatario?' a '+_contestEsc(c.waDestinatario):''));
+      if(nAlleg>0) info.push('📎 '+nAlleg+' allegat'+(nAlleg===1?'o':'i'));
+      if(info.length){
+        h+='<div style="font-size:11px;color:#555;margin-bottom:8px">'+info.join(' · ')+'</div>';
+      }
+      // Storia email
+      if(primaEmail||solEmail){
+        h+='<div style="font-size:11px;color:#555;background:rgba(255,255,255,.6);padding:6px 8px;border-radius:6px;margin-bottom:8px">';
+        if(primaEmail){
+          h+='✉️ Contestazione inviata il '+_contestFmtDate(primaEmail.data);
+          if(giorniDa!=null) h+=' ('+giorniDa+'gg fa)';
+          h+='<br>';
+        }
+        if(solEmail){
+          h+='📧 Sollecito inviato il '+_contestFmtDate(solEmail.data);
+        }
+        h+='</div>';
+      }
+      // Nota soluzione (se risolto)
+      if(stato==='risolto'&&c.notaSoluzione){
+        h+='<div style="font-size:12px;color:#15803d;background:rgba(220,252,231,.5);padding:8px;border-radius:6px;margin-bottom:8px;border-left:3px solid #16a34a">✅ <b>Soluzione:</b> '+_contestEsc(c.notaSoluzione)+'</div>';
+      }
+      // Bottoni azione
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      if(!primaEmail){
+        h+='<button data-act="invia1" data-cid="'+_contestEsc(c.id)+'" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✉️ Invia Contestazione</button>';
+      }
+      if(stato==='da_sollecitare'){
+        h+='<button data-act="invia2" data-cid="'+_contestEsc(c.id)+'" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">🚨 Invia Sollecito</button>';
+      }
+      if(stato!=='risolto'){
+        h+='<button data-act="risolto" data-cid="'+_contestEsc(c.id)+'" style="background:#15803d;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✅ Segna Risolto</button>';
+      } else {
+        h+='<button data-act="riapri" data-cid="'+_contestEsc(c.id)+'" style="background:#a16207;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">↩️ Riapri</button>';
+      }
+      h+='<button data-act="modifica" data-cid="'+_contestEsc(c.id)+'" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✏️ Modifica</button>';
+      h+='<button data-act="elimina" data-cid="'+_contestEsc(c.id)+'" style="background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">🗑️ Elimina</button>';
+      h+='</div></div>';
+      return h;
+    }
+
+    function _section(titolo,arr,emoji){
+      if(!arr.length) return '';
+      var h='<div style="margin-bottom:20px"><h3 style="font-size:14px;color:#374151;margin:0 0 10px 0;font-weight:700">'+emoji+' '+titolo+' ('+arr.length+')</h3>';
+      arr.forEach(function(c){h+=_cardHtml(c);});
+      h+='</div>';
+      return h;
+    }
+
+    if(lista.length===0){
+      html+='<div style="padding:40px;text-align:center;color:#888;background:#fff;border-radius:10px;border:1px dashed #ccc">Nessuna contestazione registrata. Clicca <b>+ Nuova Contestazione</b> per iniziare.</div>';
+    } else {
+      html+=_section('Da sollecitare (oltre 15gg senza risposta)',contSollecitare,'🚨');
+      html+=_section('In attesa di risposta',contAttesa,'🟡');
+      html+=_section('Risolte',contRisolte,'✅');
+    }
+    html+='</div>';
+    ca.innerHTML=html;
+    ca.querySelector('#contest-new-btn').onclick=function(){_contestModal(null,async function(){await renderContestazioni(panel);});};
+    Array.from(ca.querySelectorAll('button[data-act]')).forEach(function(btn){
+      btn.onclick=async function(){
+        var act=btn.getAttribute('data-act');
+        var cid=btn.getAttribute('data-cid');
+        var all=await _contestGet();
+        var c=all.find(function(x){return x.id===cid;});
+        if(!c) return;
+        if(act==='modifica'){
+          _contestModal(c,async function(){await renderContestazioni(panel);});
+        } else if(act==='elimina'){
+          if(!confirm('Eliminare questa contestazione?')) return;
+          var filt=all.filter(function(x){return x.id!==cid;});
+          await _contestSave(filt);
+          await renderContestazioni(panel);
+        } else if(act==='invia1'){
+          await _contestInviaEmail(c,'contestazione',panel);
+        } else if(act==='invia2'){
+          await _contestInviaEmail(c,'sollecito',panel);
+        } else if(act==='risolto'){
+          var nota=prompt('Nota soluzione concordata con il fornitore:',c.notaSoluzione||'');
+          if(nota===null) return;
+          c.stato='risolto';
+          c.notaSoluzione=nota;
+          c.dataChiusura=new Date().toISOString();
+          var idx=all.findIndex(function(x){return x.id===cid;});
+          if(idx>=0) all[idx]=c;
+          await _contestSave(all);
+          showToast('✅ Contestazione segnata come risolta','success');
+          await renderContestazioni(panel);
+        } else if(act==='riapri'){
+          if(!confirm('Riaprire questa contestazione?')) return;
+          c.stato='attesa';
+          c.dataChiusura='';
+          var idx2=all.findIndex(function(x){return x.id===cid;});
+          if(idx2>=0) all[idx2]=c;
+          await _contestSave(all);
+          await renderContestazioni(panel);
+        }
+      };
+    });
+  }
+
+  // Modal nuova/modifica contestazione
+  function _contestModal(existing,onSave){
+    var existingMode=!!existing;
+    var c=existing?JSON.parse(JSON.stringify(existing)):{
+      id:'cnt_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+      dataApertura:new Date().toISOString(),
+      fornitore:'',prodotto:'',sku:'',lotto:'',scadenza:'',
+      tipoProblema:'',descrizione:'',
+      prezzoAcquisto:'',quantita:'',
+      campioniStato:'',
+      waInviato:false,waData:'',waDestinatario:'',
+      allegati:[],
+      emailInviate:[],
+      stato:'attesa',
+      notaSoluzione:'',dataChiusura:''
+    };
+    var modal=document.createElement('div');
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    var box=document.createElement('div');
+    box.style.cssText='background:#fff;border-radius:12px;padding:0;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)';
+    function fld(label,inner){return '<div style="margin-bottom:12px"><label style="display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px">'+label+'</label>'+inner+'</div>';}
+    function input(name,val,type,placeholder){
+      type=type||'text';
+      return '<input type="'+type+'" data-fld="'+name+'" value="'+_contestEsc(val||'')+'" placeholder="'+_contestEsc(placeholder||'')+'" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">';
+    }
+    function _bldOptions(opts,curr){
+      return opts.map(function(o){
+        var v=typeof o==='string'?o:o.v;
+        var l=typeof o==='string'?o:o.l;
+        return '<option value="'+_contestEsc(v)+'"'+(v===curr?' selected':'')+'>'+_contestEsc(l)+'</option>';
+      }).join('');
+    }
+    var FORNITORI=[
+      {v:'',l:'-- Seleziona fornitore --'},
+      {v:'Noire (Nero Nobile)',l:'Noire (Nero Nobile)'},
+      {v:'Best Espresso',l:'Best Espresso'},
+      {v:'Simfed',l:'Simfed'},
+      {v:'Altro',l:'Altro (specifica nel testo email)'}
+    ];
+    var TIPIPROB=[
+      '',
+      'Difetto di confezionamento',
+      'Capsule rotte/danneggiate',
+      'Polvere di caffè all\'esterno della capsula',
+      'Difetto di erogazione',
+      'Aroma/gusto non conforme',
+      'Macchine difettose',
+      'Quantità errata',
+      'Etichettatura errata',
+      'Scadenza ravvicinata',
+      'Altro (specifica in descrizione)'
+    ];
+    box.innerHTML='<div style="padding:18px 22px;background:linear-gradient(135deg,#dc2626,#ea580c);color:#fff;border-radius:12px 12px 0 0">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:16px;font-weight:700">⚖️ '+(existingMode?'Modifica':'Nuova')+' Contestazione</h3>'+
+      '<button id="cmclose" style="background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">×</button></div></div>'+
+      '<div style="padding:20px">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+          '<div>'+fld('Fornitore *','<select data-fld="fornitore" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">'+_bldOptions(FORNITORI,c.fornitore)+'</select>')+'</div>'+
+          '<div>'+fld('Data apertura',input('dataApertura',c.dataApertura?c.dataApertura.substring(0,10):new Date().toISOString().substring(0,10),'date'))+'</div>'+
+        '</div>'+
+        fld('Prodotto *',input('prodotto',c.prodotto,'text','Es: 240 Capsule Lavazza A Modo Mio'))+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+          '<div>'+fld('Codice/SKU',input('sku',c.sku,'text','Es: LAVDOM240'))+'</div>'+
+          '<div>'+fld('Lotto *',input('lotto',c.lotto,'text','Es: L1234A'))+'</div>'+
+        '</div>'+
+        fld('Data scadenza',input('scadenza',c.scadenza?c.scadenza.substring(0,10):'','date'))+
+        fld('Tipo problema *','<select data-fld="tipoProblema" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box">'+_bldOptions(TIPIPROB.map(function(t){return {v:t,l:t||'-- Seleziona --'};}),c.tipoProblema)+'</select>')+
+        fld('Descrizione dettagliata','<textarea data-fld="descrizione" placeholder="Descrivi nel dettaglio il problema riscontrato..." style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box;min-height:80px;resize:vertical">'+_contestEsc(c.descrizione)+'</textarea>')+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fde68a;margin-bottom:12px">'+
+          '<div style="grid-column:1/-1;font-size:11px;color:#a16207;font-weight:700;margin-bottom:-4px">💰 Dati per richiesta nota di credito (opzionali)</div>'+
+          '<div>'+fld('Prezzo unitario acquisto (€)',input('prezzoAcquisto',c.prezzoAcquisto,'number','0.00'))+'</div>'+
+          '<div>'+fld('Quantità interessata (pz)',input('quantita',c.quantita,'number','0'))+'</div>'+
+          '<div id="contest-valtot" style="grid-column:1/-1;font-size:13px;color:#a16207;font-weight:700"></div>'+
+        '</div>'+
+        fld('Campioni del lotto contestato','<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<label style="cursor:pointer;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><input type="radio" name="campioni" value="" '+(!c.campioniStato?'checked':'')+'> Non specificato</label>'+
+          '<label style="cursor:pointer;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><input type="radio" name="campioni" value="inviati" '+(c.campioniStato==='inviati'?'checked':'')+'> 📤 Inviati al fornitore</label>'+
+          '<label style="cursor:pointer;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><input type="radio" name="campioni" value="in_possesso" '+(c.campioniStato==='in_possesso'?'checked':'')+'> 📥 In possesso del fornitore</label>'+
+        '</div>')+
+        '<div style="background:#eff6ff;padding:12px;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:12px">'+
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px"><input type="checkbox" data-fld="waInviato" '+(c.waInviato?'checked':'')+'> <span style="font-size:13px;font-weight:700;color:#1e40af">💬 Comunicazione anche via WhatsApp</span></label>'+
+          '<div id="contest-wa-fields" style="display:'+(c.waInviato?'grid':'none')+';grid-template-columns:1fr 2fr;gap:8px;margin-top:8px">'+
+            '<div>'+fld('Data WA',input('waData',c.waData?c.waData.substring(0,10):'','date'))+'</div>'+
+            '<div>'+fld('Destinatario WA',input('waDestinatario',c.waDestinatario,'text','Es: Mario Rossi - Nero Nobile'))+'</div>'+
+          '</div>'+
+        '</div>'+
+        fld('Allegati (foto/video del difetto)','<div id="contest-alleg-area" style="border:2px dashed #cbd5e1;border-radius:8px;padding:14px;background:#f8fafc;text-align:center"><input type="file" id="contest-alleg-input" multiple accept="image/*,video/*" style="display:none"><button type="button" id="contest-alleg-btn" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">📎 Aggiungi file</button><div id="contest-alleg-list" style="margin-top:10px;text-align:left"></div></div>')+
+      '</div>'+
+      '<div style="padding:14px 22px;background:#f8fafc;border-radius:0 0 12px 12px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #e5e7eb">'+
+        '<button id="cmcancel" style="background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Annulla</button>'+
+        '<button id="cmsave" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer">💾 '+(existingMode?'Salva modifiche':'Crea contestazione')+'</button>'+
+      '</div>';
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+    box.querySelector('#cmclose').onclick=function(){modal.remove();};
+    box.querySelector('#cmcancel').onclick=function(){modal.remove();};
+    // Toggle WA fields
+    box.querySelector('input[data-fld="waInviato"]').onchange=function(){
+      box.querySelector('#contest-wa-fields').style.display=this.checked?'grid':'none';
+    };
+    // Calcolo valore totale live
+    function _updateValTot(){
+      var p=parseFloat(box.querySelector('input[data-fld="prezzoAcquisto"]').value)||0;
+      var q=parseFloat(box.querySelector('input[data-fld="quantita"]').value)||0;
+      var v=p*q;
+      var box1=box.querySelector('#contest-valtot');
+      if(box1){
+        if(v>0) box1.innerHTML='💰 Valore complessivo: <span style="color:#dc2626">€ '+v.toFixed(2)+'</span>';
+        else box1.innerHTML='';
+      }
+    }
+    box.querySelector('input[data-fld="prezzoAcquisto"]').oninput=_updateValTot;
+    box.querySelector('input[data-fld="quantita"]').oninput=_updateValTot;
+    _updateValTot();
+    // Allegati upload
+    var allegList=c.allegati||[];
+    function renderAlleg(){
+      var area=box.querySelector('#contest-alleg-list');
+      if(!area) return;
+      if(!allegList.length){area.innerHTML='<div style="font-size:11px;color:#94a3b8">Nessun file</div>';return;}
+      area.innerHTML=allegList.map(function(a,i){
+        var size=a.size?(a.size/1024/1024).toFixed(2)+' MB':'';
+        var icon=/^image\//.test(a.type||'')?'🖼️':(/^video\//.test(a.type||'')?'🎬':'📄');
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#fff;border-radius:4px;margin-bottom:4px;font-size:12px"><span>'+icon+' '+_contestEsc(a.name)+' <span style="color:#888">('+size+')</span></span><button data-rm="'+i+'" style="background:#fee2e2;color:#dc2626;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕</button></div>';
+      }).join('');
+      Array.from(area.querySelectorAll('button[data-rm]')).forEach(function(b){
+        b.onclick=function(){var i=parseInt(b.getAttribute('data-rm'),10);allegList.splice(i,1);renderAlleg();};
+      });
+    }
+    renderAlleg();
+    box.querySelector('#contest-alleg-btn').onclick=function(){box.querySelector('#contest-alleg-input').click();};
+    box.querySelector('#contest-alleg-input').onchange=function(ev){
+      var files=Array.from(ev.target.files||[]);
+      files.forEach(function(f){
+        if(f.size>20*1024*1024){alert('File troppo grande: '+f.name+' ('+(f.size/1024/1024).toFixed(1)+' MB). Max 20 MB per file.');return;}
+        var reader=new FileReader();
+        reader.onload=function(){
+          allegList.push({name:f.name,type:f.type,size:f.size,dataUrl:reader.result});
+          renderAlleg();
+        };
+        reader.readAsDataURL(f);
+      });
+      ev.target.value='';
+    };
+    // Save
+    box.querySelector('#cmsave').onclick=async function(){
+      function getVal(name){var el=box.querySelector('[data-fld="'+name+'"]');if(!el) return '';if(el.type==='checkbox') return el.checked;return el.value;}
+      var newC={
+        id:c.id,
+        dataApertura:getVal('dataApertura')?new Date(getVal('dataApertura')).toISOString():c.dataApertura,
+        fornitore:getVal('fornitore').trim(),
+        prodotto:getVal('prodotto').trim(),
+        sku:getVal('sku').trim(),
+        lotto:getVal('lotto').trim(),
+        scadenza:getVal('scadenza')?new Date(getVal('scadenza')).toISOString():'',
+        tipoProblema:getVal('tipoProblema').trim(),
+        descrizione:getVal('descrizione').trim(),
+        prezzoAcquisto:getVal('prezzoAcquisto'),
+        quantita:getVal('quantita'),
+        campioniStato:(box.querySelector('input[name="campioni"]:checked')||{}).value||'',
+        waInviato:!!getVal('waInviato'),
+        waData:getVal('waData')?new Date(getVal('waData')).toISOString():'',
+        waDestinatario:getVal('waDestinatario').trim(),
+        allegati:allegList,
+        emailInviate:c.emailInviate||[],
+        stato:c.stato||'attesa',
+        notaSoluzione:c.notaSoluzione||'',
+        dataChiusura:c.dataChiusura||''
+      };
+      // Validazione minima
+      if(!newC.fornitore){alert('Seleziona il fornitore.');return;}
+      if(!newC.prodotto){alert('Inserisci il nome prodotto.');return;}
+      if(!newC.lotto){alert('Inserisci il numero di lotto.');return;}
+      if(!newC.tipoProblema){alert('Seleziona il tipo di problema.');return;}
+      var btn=box.querySelector('#cmsave');btn.disabled=true;btn.textContent='⏳ Salvataggio...';
+      var all=await _contestGet();
+      var idx=all.findIndex(function(x){return x.id===newC.id;});
+      if(idx>=0) all[idx]=newC; else all.push(newC);
+      await _contestSave(all);
+      modal.remove();
+      showToast('💾 Contestazione salvata','success');
+      if(typeof onSave==='function') onSave();
+    };
+  }
+
+  // Invia email contestazione o sollecito
+  async function _contestInviaEmail(c,tipo,panel){
+    var PROXY_URL_CONTEST=window.PROXY_URL||'https://yespresso-proxy.onrender.com';
+    var dest=_contestDestinatari(c.fornitore);
+    if(!dest.to.length){
+      var manualTo=prompt('Email destinatario (non configurato per "'+c.fornitore+'"):','');
+      if(!manualTo) return;
+      dest.to=[manualTo.trim()];
+    }
+    var bodyOgg=tipo==='contestazione'?_contestBuildEmail1(c):_contestBuildEmail2(c);
+    // Anteprima e conferma
+    var conferma=confirm('📧 Invio email '+(tipo==='contestazione'?'CONTESTAZIONE':'SOLLECITO')+'\n\n'+
+      'A: '+dest.to.join(', ')+'\n'+
+      (dest.cc.length?'CC: '+dest.cc.join(', ')+'\n':'')+
+      'Oggetto: '+bodyOgg.oggetto+'\n\n'+
+      'Allegati: '+(c.allegati||[]).length+'\n\n'+
+      'Procedere con l\'invio?');
+    if(!conferma) return;
+    var payload={
+      to:dest.to.join(','),
+      cc:dest.cc.join(','),
+      subject:bodyOgg.oggetto,
+      text:bodyOgg.testo,
+      attachments:(c.allegati||[]).map(function(a){
+        // Estrae base64 puro dal dataUrl
+        var b64=(a.dataUrl||'').split(',')[1]||'';
+        return {filename:a.name,content:b64,contentType:a.type||'application/octet-stream',encoding:'base64'};
+      })
+    };
+    try{
+      var r=await proxyFetch(PROXY_URL_CONTEST+'/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      var jr=await r.json().catch(function(){return {};});
+      if(!r.ok||jr.error){throw new Error(jr.error||('HTTP '+r.status));}
+      // Registra invio
+      var all=await _contestGet();
+      var idx=all.findIndex(function(x){return x.id===c.id;});
+      if(idx>=0){
+        all[idx].emailInviate=all[idx].emailInviate||[];
+        all[idx].emailInviate.push({tipo:tipo,data:new Date().toISOString(),destinatari:dest.to.concat(dest.cc),oggetto:bodyOgg.oggetto});
+        await _contestSave(all);
+      }
+      showToast('✉️ Email '+(tipo==='contestazione'?'contestazione':'sollecito')+' inviata a '+dest.to.join(', '),'success');
+      await renderContestazioni(panel);
+    }catch(e){
+      console.error('[CONTEST] Errore invio email:',e);
+      alert('❌ Errore invio email: '+e.message+'\n\nVerifica il backend SMTP.');
+    }
+  }
+  // ── FINE CONTESTAZIONI PRODOTTO ─────────────────────────────────────────
+
+
 
 
 
