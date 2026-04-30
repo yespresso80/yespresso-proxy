@@ -8940,82 +8940,105 @@ function openFilippoPanel(){
     var lines = [];
     lines.push('Buongiorno,');
     lines.push('');
-    lines.push('vi segnaliamo una contestazione di qualità sul prodotto in oggetto.');
+    lines.push('vi scriviamo per segnalare un problema di qualità riscontrato sul seguente prodotto:');
     lines.push('');
-    lines.push('• Prodotto: '+prod);
-    if(c.sku) lines.push('• SKU: '+c.sku);
-    if(c.codiceFornitore) lines.push('• Vs. codice: '+c.codiceFornitore);
-    lines.push('• Lotto: '+lotto);
-    if(c.scadenza) lines.push('• Scadenza: '+c.scadenza);
-    lines.push('• Problema riscontrato: '+(c.tipoProblema||'—'));
+    // Formato tabellare a colonne (allineato con padding)
+    function pad(label){ while(label.length < 35) label += ' '; return label; }
+    lines.push(pad('Prodotto:')+prod);
+    if(c.sku) lines.push(pad('Codice/SKU:')+c.sku);
+    if(c.codiceFornitore) lines.push(pad('Vs. codice:')+c.codiceFornitore);
+    lines.push(pad('Lotto:')+lotto);
+    if(c.scadenza) lines.push(pad('Scadenza:')+c.scadenza);
+    lines.push(pad('Tipo problema:')+(c.tipoProblema||'—'));
     if(c.descrizione) {
       lines.push('');
-      lines.push('Descrizione: '+c.descrizione);
+      lines.push('Descrizione:');
+      lines.push(c.descrizione);
     }
     var qty = parseFloat(c.quantita)||0;
     var price = parseFloat(c.prezzoUnitario)||0;
     var totale = qty * price;
     if(qty > 0 && price > 0){
       lines.push('');
-      lines.push('Quantità interessata: '+qty);
-      lines.push('Prezzo unitario: € '+price.toFixed(4));
-      lines.push('Valore totale contestato: € '+totale.toFixed(2));
-      lines.push('');
-      lines.push('Vi chiediamo cortesemente di emettere una nota di credito a copertura del valore sopra indicato.');
+      lines.push(pad('Quantità interessata dal difetto:')+qty+' pz');
+      lines.push(pad('Prezzo unitario di acquisto:')+'€ '+price.toFixed(4));
+      lines.push(pad('Valore complessivo della merce:')+'€ '+totale.toFixed(2));
     }
     if(c.campioni === 'inviati'){
       lines.push('');
-      lines.push('Campioni: vi sono stati inviati per analisi.');
+      lines.push('Vi abbiamo inviato i campioni del lotto contestato per le verifiche del caso.');
     } else if(c.campioni === 'in_possesso'){
       lines.push('');
-      lines.push('Campioni: sono già in vostro possesso.');
+      lines.push('I campioni del lotto contestato sono già in vostro possesso.');
     }
     if(c.whatsapp && c.whatsapp.inviato){
       lines.push('');
-      lines.push('Materiale fotografico/video aggiuntivo è stato inviato via WhatsApp'+
+      lines.push('Come già anticipato via WhatsApp'+
         (c.whatsapp.data?(' in data '+contestFormatDate(c.whatsapp.data)):'')+
-        (c.whatsapp.destinatario?(' al riferimento '+c.whatsapp.destinatario):'')+'.');
+        (c.whatsapp.destinatario?(' a '+c.whatsapp.destinatario):'')+
+        ', restiamo in attesa di un vostro riscontro.');
+    } else {
+      lines.push('');
+      lines.push('Restiamo in attesa di un vostro riscontro.');
     }
     var nAll = (c.allegati||[]).length;
     if(nAll > 0){
+      // Distinguo immagini vs video dai contentType degli allegati
+      var nImg = 0, nVid = 0;
+      (c.allegati||[]).forEach(function(a){
+        var ct = (a.contentType||'').toLowerCase();
+        if(ct.indexOf('video/')===0) nVid++; else nImg++;
+      });
+      var descAll = '';
+      if(nImg && nVid) descAll = nImg+' immagine'+(nImg>1?'/i':'')+' e '+nVid+' video';
+      else if(nVid) descAll = nVid+' video';
+      else descAll = nImg+' immagine'+(nImg>1?'/i':'');
       lines.push('');
-      lines.push('In allegato '+nAll+' file con documentazione fotografica.');
+      lines.push('In allegato '+descAll+' a documentazione del difetto.');
     }
     lines.push('');
-    lines.push('Restiamo in attesa di un vostro riscontro.');
-    lines.push('');
     lines.push('Cordiali saluti,');
-    lines.push('Yespresso');
+    lines.push('Il Team Yespresso');
+    lines.push('commerciale@yespresso.it');
     return { subject: subject, body: lines.join('\n') };
   }
   function contestEmailSollecito(c){
     var prod = c.prodotto || '(prodotto)';
     var lotto = c.lotto || '(lotto)';
     var subject = 'Richiesta nota di credito - '+prod+' - Lotto '+lotto;
-    var dataPrima = c.dataApertura ? contestFormatDate(c.dataApertura) : '';
+    var dataPrima = c.dataApertura ? contestFormatDate(c.dataApertura) : '(data prima email)';
     var lines = [];
+    function pad(label){ while(label.length < 35) label += ' '; return label; }
     lines.push('Buongiorno,');
     lines.push('');
-    lines.push('in riferimento alla nostra contestazione di qualità inviata in data '+(dataPrima||'(data prima email)')+
-               ' sul prodotto '+prod+' lotto '+lotto+', non risulta ad oggi pervenuta alcuna risposta da parte vostra.');
+    lines.push('facciamo seguito alla nostra comunicazione del '+dataPrima+' relativa alla contestazione qualità sul seguente prodotto:');
     lines.push('');
-    lines.push('Decorsi 15 giorni dalla nostra prima comunicazione, la contestazione si intende tacitamente accettata.');
+    lines.push(pad('Prodotto:')+prod);
+    if(c.sku) lines.push(pad('Codice/SKU:')+c.sku);
+    if(c.codiceFornitore) lines.push(pad('Vs. codice:')+c.codiceFornitore);
+    lines.push(pad('Lotto:')+lotto);
+    if(c.scadenza) lines.push(pad('Scadenza:')+c.scadenza);
+    lines.push(pad('Tipo problema:')+(c.tipoProblema||'—'));
+    lines.push('');
+    lines.push('Essendo trascorsi oltre 15 giorni dalla nostra prima comunicazione senza ricevere alcun riscontro, come da accordi contrattuali la contestazione si intende tacitamente accettata.');
     var qty = parseFloat(c.quantita)||0;
     var price = parseFloat(c.prezzoUnitario)||0;
     var totale = qty * price;
     if(qty > 0 && price > 0){
       lines.push('');
-      lines.push('Vi richiediamo pertanto l\'emissione della nota di credito per il valore di € '+totale.toFixed(2)+
-                 ' (quantità '+qty+' x € '+price.toFixed(4)+').');
+      lines.push('Vi chiediamo pertanto l\'emissione della nota di credito per:');
+      lines.push('');
+      lines.push(pad('Quantità contestata:')+qty+' pz');
+      lines.push(pad('Prezzo unitario:')+'€ '+price.toFixed(4));
+      lines.push(pad('Importo nota credito:')+'€ '+totale.toFixed(2));
     } else {
       lines.push('');
-      lines.push('Vi richiediamo pertanto l\'emissione della relativa nota di credito.');
+      lines.push('Vi chiediamo pertanto l\'emissione della nota di credito per la merce contestata.');
     }
     lines.push('');
-    lines.push('In assenza di riscontro entro 7 giorni, procederemo con la compensazione automatica sulla prossima fattura.');
-    lines.push('');
     lines.push('Cordiali saluti,');
-    lines.push('Yespresso');
+    lines.push('Il Team Yespresso');
+    lines.push('commerciale@yespresso.it');
     return { subject: subject, body: lines.join('\n') };
   }
 
