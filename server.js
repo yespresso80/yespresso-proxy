@@ -2771,7 +2771,6 @@ server.emit = function(eventName, req, res) {
         };
       }) : undefined
     });
-      });
       console.log(`[send-email] OK a ${to}${cc?' cc:'+cc:''} — ord:${orderId||'?'} — forn:${fornitore||'?'} — msgId:${info.messageId}`);
       res.writeHead(200, CORS_SE);
       res.end(JSON.stringify({
