@@ -16956,6 +16956,14 @@ async function tryAutoReply(replyText, order){
     // Pallino verde
     _autoReplyStatus.processed.add(String(tid));
 
+    // ★ FIX DOPPIA AUTO-REPLY: salva timestamp processing in localStorage.
+    // Senza questo, se la pagina viene ricaricata mentre tryAutoReply è in corso o
+    // se per qualunque motivo viene richiamata di nuovo, l'auto-reply parte 2 volte
+    // e il cliente riceve il messaggio doppio. La guard alla riga 16921 controlla
+    // questo valore ma prima del fix non veniva mai salvato qui.
+    _autoProcessedIds[String(tid)] = new Date().toISOString();
+    _saveAutoProcessedIds();
+
     // Aggiorna stato locale
     selectedTicket.status="solved";
     var idx=tickets.findIndex(function(t){return (t.ID||t.id)===tid;});
