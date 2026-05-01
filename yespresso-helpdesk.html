@@ -7308,9 +7308,10 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     // Intercetta AZIONE_MANUALE_FERMOPOINT — la bozza AI è valida ma serve review umano
     // Diversamente da MERCE_MANCANTE, qui mostriamo la risposta nella textarea (è una bozza
     // di partenza utile per l'agente). Rimuoviamo solo il marker dal testo visibile.
+    var _replyForDisplay = reply;
     if(reply && reply.includes('AZIONE_MANUALE_FERMOPOINT')){
       // Rimuovi il marker dal testo (e da tutta la riga in cui si trova)
-      reply = reply.replace(/^.*AZIONE_MANUALE_FERMOPOINT.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+      _replyForDisplay = reply.replace(/^.*AZIONE_MANUALE_FERMOPOINT.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
       var lblF=document.getElementById('ai-label');
       if(lblF) lblF.textContent='📬 Pacco al fermopoint — bozza AI, richiede review (NON inviata automaticamente)';
     }
@@ -7334,7 +7335,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     }
     const rt=document.getElementById("reply-text");
     if(rt){
-      rt.value=reply;
+      rt.value=_replyForDisplay;
       rt.style.minHeight="180px";
       setupQRPopup(rt);
     }
@@ -7348,7 +7349,7 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       const aa2=document.getElementById("action-area");
       const rt2=document.getElementById("reply-text");
       if(aa2)aa2.style.cssText="display:block!important;visibility:visible!important";
-      if(rt2&&!rt2.value)rt2.value=reply;
+      if(rt2&&!rt2.value)rt2.value=_replyForDisplay;
     },200);
     console.log("✅ AI reply set, action-area:",aa?"found":"NOT FOUND","reply-text:",rt?"found":"NOT FOUND");
 
