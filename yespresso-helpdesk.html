@@ -6822,11 +6822,26 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
     } else {
       const fCheck=order.fulfillments&&order.fulfillments[0];
       const tnCheck=fCheck&&(fCheck.tracking_number||(fCheck.tracking_numbers&&fCheck.tracking_numbers[0]))||'';
-      const isFermopointStatus=fCheck&&(fCheck.shipment_status==='delivered'||fCheck.shipment_status==='ready_for_pickup');
+      // ★ FIX: il check fermopoint deve partire SOLO per pacchi NON ancora consegnati.
+      // Prima includeva 'delivered' che era sbagliato: un pacco consegnato non è al fermopoint,
+      // anche se in passato vi è transitato. BRT può rispondere at_fermopoint=true per ordini
+      // che sono PASSATI dal fermopoint nella loro storia, non solo per quelli attualmente lì.
+      const isFermopointStatus=fCheck&&fCheck.shipment_status==='ready_for_pickup';
       if(isFermopointStatus&&tnCheck){
         // Asincrono — non blocca la generazione AI ma aggiorna i dati per eventuali rigenera
         proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck)).then(async function(brtR){
-          if(brtR&&brtR.ok){const brtD=await brtR.json();if(brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup'){order._brtFermopoint=true;order._brtScadenza=brtD.scadenza_ritiro||'';order._brtPuntoInfo=brtD.punto_info||'';console.log('[BRT] Fermopoint scadenza:',order._brtScadenza||'nd');}}
+          if(brtR&&brtR.ok){
+            const brtD=await brtR.json();
+            // ★ FIX 2: marca _brtFermopoint=true solo se BRT conferma at_fermopoint
+            // E lo stato attuale Shopify è ancora ready_for_pickup (non già consegnato/ritirato).
+            // Questo previene che pacchi già consegnati restino marcati come "al fermopoint".
+            if((brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup') && fCheck.shipment_status!=='delivered'){
+              order._brtFermopoint=true;
+              order._brtScadenza=brtD.scadenza_ritiro||'';
+              order._brtPuntoInfo=brtD.punto_info||'';
+              console.log('[BRT] Fermopoint scadenza:',order._brtScadenza||'nd');
+            }
+          }
         }).catch(function(){});
       }
     }
@@ -16563,6 +16578,17 @@ async function autoProcessTickets(freshTickets){
         var email = (fullTicket.requester&&fullTicket.requester.email)||'';
         if(isSpamTicket(fullTicket)||isNoAiEmailAutoOnly(email)) continue;
 
+        // ★ FIX: le notifiche automatiche da Amazon Seller Central (donotreply@amazon)
+        // — es. richieste di annullamento ordine — non sono messaggi del cliente,
+        // ma notifiche di sistema. Non vanno mai auto-risposte: la decisione di accettare
+        // o rifiutare l'annullamento è dell'agente. Marca il ticket come azione manuale.
+        if(email.toLowerCase().includes('donotreply@amazon') || email.toLowerCase().includes('do-not-reply@amazon')){
+          console.log('[AUTO-REPLY] Ticket '+tid+' — notifica automatica Amazon Seller, skip auto-reply (azione manuale)');
+          _autoReplyStatus.needsAction.add(String(tid));
+          _autoProcessingTids.delete(tid);
+          continue;
+        }
+
         // Costruisci thread
         var events = fullTicket.events || fullTicket.messages || [];
         var lastMsg = '';
@@ -16712,12 +16738,17 @@ async function autoProcessTickets(freshTickets){
           // Caso d'uso: ordine in stato "in_transit" su Shopify ma in realtà già al fermopoint (delay sync).
           // Senza questa chiamata, l'auto-reply risponderebbe "in transito" mentre invece è ritirabile al punto.
           var tnFp = fship && fship.tracking_number;
-          if(tnFp && /^179\d{9}$/.test(tnFp) && !order._brtFermopoint){
+          // ★ FIX: il check fermopoint deve partire SOLO per pacchi NON ancora consegnati.
+          // Senza questo, ordini gia consegnati con storia di passaggio al fermopoint vengono
+          // erroneamente marcati come ancora al fermopoint (BRT puo' rispondere at_fermopoint=true
+          // anche per ordini transitati ma poi ritirati).
+          if(tnFp && /^179\d{9}$/.test(tnFp) && !order._brtFermopoint && shipSt!=='delivered'){
             try {
               var brtRf = await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnFp));
               if(brtRf && brtRf.ok){
                 var brtDf = await brtRf.json();
-                if(brtDf.at_fermopoint || shipSt === 'ready_for_pickup'){
+                // Marca _brtFermopoint solo se BRT conferma E lo stato non e' delivered
+                if((brtDf.at_fermopoint || shipSt === 'ready_for_pickup') && shipSt!=='delivered'){
                   order._brtFermopoint = true;
                   order._brtScadenza = brtDf.scadenza_ritiro || '';
                   order._brtPuntoInfo = brtDf.punto_info || '';
@@ -17122,19 +17153,29 @@ async function tryAutoReply(replyText, order){
     .replace(/<[^>]+>/g,' ')
     .replace(/\s{2,}/g,' ')
     .trim();
+  // ★ FIX: se la risposta inizia con "NOTA INTERNA" significa che l'AI ha generato
+  // una nota privata (es. per notifiche automatiche marketplace come donotreply@amazon).
+  // Va inviata come nota privata, NON come risposta pubblica al cliente.
+  var _isInternalNote = /^\s*NOTA\s+INTERNA[:\s]/i.test(cleanReply);
   try{
+    var _msgBody = _isInternalNote
+      ? {message:{text:cleanReply}, isPrivateNote:true, status:"solved"}
+      : {message:{text:cleanReply}, status:"solved"};
     // Invia messaggio E chiudi in una sola chiamata PATCH
     var msgRes=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
       method:"PATCH",
       headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-      body:JSON.stringify({message:{text:cleanReply}, status:"solved"})
+      body:JSON.stringify(_msgBody)
     });
     if(!msgRes.ok){
       // Fallback: invia separato poi chiudi
+      var _msgBody2 = _isInternalNote
+        ? {message:{text:cleanReply}, isPrivateNote:true}
+        : {message:{text:cleanReply}};
       var msgRes2=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
         method:"PATCH",
         headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
-        body:JSON.stringify({message:{text:cleanReply}})
+        body:JSON.stringify(_msgBody2)
       });
       if(!msgRes2.ok) return false;
       for(var _m of ['PUT','PATCH']){
