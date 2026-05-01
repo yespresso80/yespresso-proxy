@@ -1826,6 +1826,11 @@ async function selectTicket(tid){
   if(_imapArea) _imapArea.innerHTML="";
   var _onb=document.getElementById('order-note-box');if(_onb)_onb.remove();
   var _mpBox=document.getElementById('mp-orders-box');if(_mpBox)_mpBox.parentNode.removeChild(_mpBox);
+  // ★ FIX: nascondi esplicitamente il bottone "SE Data scaduta" al cambio ticket.
+  // Senza questo, se il ticket precedente era fermopoint il bottone resta visibile
+  // sul nuovo ticket finché _updateDataScadutaBtn non viene richiamato.
+  var _btnDS = document.getElementById('data-scaduta-btn');
+  if(_btnDS) _btnDS.style.display = 'none';
   // Find all open tickets for same customer and redirect to newest
   let base=tickets.find(t=>(t.ID||t.id)===tid);
   if(!base)return;
@@ -12744,13 +12749,27 @@ function openFilippoPanel(){
       var now = new Date();
       var h = created.getHours()+created.getMinutes()/60;
       var day = created.getDay();
-      var isWd = day>=1&&day<=5;
+      // ★ FIX: considera anche festività italiane come weekend
+      var isHolidayCreated = false;
+      try { isHolidayCreated = _isItalianHoliday({year:created.getFullYear(), month:created.getMonth()+1, day:created.getDate()}); } catch(_e){}
+      var isWd = day>=1&&day<=5 && !isHolidayCreated;
       var deadline = null;
-      if(!isWd){ var nd=new Date(created);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);while(nd.getDay()<1||nd.getDay()>5)nd.setDate(nd.getDate()+1);nd.setHours(9,0,0,0);deadline=nd; }
+      // Helper: avanza al prossimo giorno feriale NON festivo
+      function _nextWorkDay(d){
+        var nd=new Date(d);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);
+        while(true){
+          var dow=nd.getDay();
+          var hol=false; try { hol = _isItalianHoliday({year:nd.getFullYear(), month:nd.getMonth()+1, day:nd.getDate()}); } catch(_e){}
+          if(dow>=1 && dow<=5 && !hol) break;
+          nd.setDate(nd.getDate()+1);
+        }
+        return nd;
+      }
+      if(!isWd){ var nd=_nextWorkDay(created);nd.setHours(9,0,0,0);deadline=nd; }
       else if(h<=9){ var d1=new Date(created);d1.setHours(9,0,0,0);deadline=d1; }
       else if(h<=16){ var d2=new Date(created.getTime()+3600000);var d3=new Date(created);d3.setHours(16,15,0,0);deadline=d2<d3?d2:d3; }
       else if(h<=16.75){ deadline=null; }
-      else{ var nd2=new Date(created);nd2.setHours(0,0,0,0);nd2.setDate(nd2.getDate()+1);while(nd2.getDay()<1||nd2.getDay()>5)nd2.setDate(nd2.getDate()+1);nd2.setHours(9,0,0,0);deadline=nd2; }
+      else{ var nd2=_nextWorkDay(created);nd2.setHours(9,0,0,0);deadline=nd2; }
       cancelSimulation = deadline ? (now<=deadline ? {canCancel:true, deadline:deadline} : {canCancel:false, deadline:deadline}) : {canCancel:false, deadline:null};
     }
 
@@ -16577,7 +16596,20 @@ async function autoProcessTickets(freshTickets){
         var order = null;
         try{
           var subj = fullTicket.subject||'';
+          // ★ FIX: cerca numero ordine Amazon anche nel thread, non solo nel subject.
+          // Casi tipici: cliente Gmail (non marketplace) che ha comprato su Amazon
+          // e fornisce il numero ordine in un messaggio successivo, o subject senza numero ordine
           var amzMatch = subj.match(/\d{3}-\d{7}-\d{7}/);
+          if(!amzMatch){
+            // Fallback: cerca nel thread completo
+            amzMatch = (fullThread||'').match(/\d{3}-\d{7}-\d{7}/);
+            if(amzMatch) console.log('[AUTO-REPLY] Numero ordine Amazon trovato nel thread:', amzMatch[0]);
+          }
+          if(!amzMatch){
+            // Fallback 2: cerca nell'ultimo messaggio
+            amzMatch = (lastMsg||'').match(/\d{3}-\d{7}-\d{7}/);
+            if(amzMatch) console.log('[AUTO-REPLY] Numero ordine Amazon trovato in lastMsg:', amzMatch[0]);
+          }
           var shopMatch = subj.match(/#?(\d{8,13})/);
           var temuMatch = subj.match(/PO-\d+-\d+/i);
           var tiktokMatch = subj.match(/\b5\d{17,18}\b/);
@@ -16597,12 +16629,90 @@ async function autoProcessTickets(freshTickets){
           }
         }catch(oe){ console.log('[AUTO-REPLY] order fetch err:', oe.message); }
 
+        // ★ FIX Caso 3: cerca ticket precedenti chiusi sullo stesso ordine,
+        // così l'AI considera il contesto storico e non risponde info ripetute o contraddittorie.
+        // Limite: max 2 ticket precedenti, ultimi 30 giorni, primi 300 caratteri di ogni messaggio.
+        if(order){
+          try {
+            // Cerca per numero ordine Amazon o nome ordine Shopify
+            var _searchQry = '';
+            var _amzAttr = (order.note_attributes||[]).find(function(a){ return a.name==='Amazon Order Id'; });
+            if(_amzAttr && _amzAttr.value) _searchQry = _amzAttr.value;
+            else if(order.name) _searchQry = order.name;
+            if(_searchQry){
+              var _histRes = await hdFetch('/v1/tickets?query='+encodeURIComponent(_searchQry)+'&status=solved&limit=3').catch(function(){ return null; });
+              if(_histRes && _histRes.tickets){
+                // Filtra: stesso requester, escludi il ticket corrente, ultimi 30 giorni
+                var _now30 = new Date(Date.now()-30*24*3600*1000);
+                var _histTickets = _histRes.tickets.filter(function(ht){
+                  if(String(ht.ID||ht.id) === String(tid)) return false;
+                  var _hreq = (ht.requester&&ht.requester.email)||'';
+                  if(_hreq !== email) return false;
+                  var _htDate = new Date(ht.updatedAt||ht.updated_at||ht.createdAt||ht.created_at||0);
+                  return _htDate >= _now30;
+                }).slice(0, 2); // max 2 ticket storici
+                if(_histTickets.length){
+                  var _histText = '\n\n--- CONTESTO STORICO (ticket precedenti chiusi sullo stesso ordine) ---\n';
+                  for(var _hi=0; _hi<_histTickets.length; _hi++){
+                    var _hticket = _histTickets[_hi];
+                    var _htid = String(_hticket.ID||_hticket.id);
+                    var _hfull = await hdFetch('/v1/tickets/'+_htid).catch(function(){ return null; });
+                    if(_hfull && _hfull.events){
+                      var _hSorted = _hfull.events.slice().sort(function(a,b){
+                        return new Date(a.createdAt||a.created_at||0)-new Date(b.createdAt||b.created_at||0);
+                      });
+                      _histText += '\nTicket precedente "'+(_hfull.subject||'')+'":\n';
+                      _hSorted.forEach(function(ev){
+                        var _txt = (ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'';
+                        _txt = _txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().substring(0,300);
+                        if(!_txt) return;
+                        var _who = ev.actor ? (ev.actor.name||ev.actor.email||'Agente') : 'Cliente';
+                        _histText += _who+': '+_txt+'\n';
+                      });
+                    }
+                  }
+                  _histText += '--- FINE CONTESTO STORICO ---\n';
+                  fullThread = _histText + '\n--- TICKET CORRENTE ---\n' + fullThread;
+                  console.log('[AUTO-REPLY] Aggiunti '+_histTickets.length+' ticket storici al contesto');
+                }
+              }
+            }
+          } catch(_eHist){
+            console.log('[AUTO-REPLY] Errore ricerca storici:', _eHist.message);
+          }
+        }
+
         // Controlla stato spedizione
         if(order){
           var fship = (order.fulfillments||[]).slice(-1)[0];
           var shipSt = fship&&fship.shipment_status;
+          // ★ FIX: chiama BRT check-fermopoint anche in auto-reply (come fa generazione manuale).
+          // Questo carica _brtFermopoint, _brtScadenza, _brtPuntoInfo prima della classificazione.
+          // Caso d'uso: ordine in stato "in_transit" su Shopify ma in realtà già al fermopoint (delay sync).
+          // Senza questa chiamata, l'auto-reply risponderebbe "in transito" mentre invece è ritirabile al punto.
+          var tnFp = fship && fship.tracking_number;
+          if(tnFp && /^179\d{9}$/.test(tnFp) && !order._brtFermopoint){
+            try {
+              var brtRf = await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnFp));
+              if(brtRf && brtRf.ok){
+                var brtDf = await brtRf.json();
+                if(brtDf.at_fermopoint || shipSt === 'ready_for_pickup'){
+                  order._brtFermopoint = true;
+                  order._brtScadenza = brtDf.scadenza_ritiro || '';
+                  order._brtPuntoInfo = brtDf.punto_info || '';
+                  // Aggiorna anche shipSt per il check successivo
+                  shipSt = 'ready_for_pickup';
+                  console.log('[AUTO-REPLY] BRT check fermopoint OK, scadenza:', order._brtScadenza || 'nd');
+                }
+              }
+            } catch(brte){
+              console.log('[AUTO-REPLY] BRT check err:', brte.message);
+            }
+          }
           if(['ready_for_pickup','failure','attempted_delivery'].includes(shipSt)){
             console.log('[AUTO-REPLY] Skip ticket '+tid+' — stato spedizione critico:', shipSt);
+            _autoReplyStatus.needsAction.add(String(tid));
+            _autoProcessingTids.delete(tid);
             continue;
           }
         }
@@ -16672,13 +16782,26 @@ async function autoProcessTickets(freshTickets){
               var _nw = new Date();
               var _hh = _cr.getHours()+_cr.getMinutes()/60;
               var _dy = _cr.getDay();
-              var _iswd = _dy>=1&&_dy<=5;
+              // ★ FIX: considera anche festività italiane come weekend
+              var _isHolCr = false;
+              try { _isHolCr = _isItalianHoliday({year:_cr.getFullYear(), month:_cr.getMonth()+1, day:_cr.getDate()}); } catch(_eh){}
+              var _iswd = _dy>=1&&_dy<=5 && !_isHolCr;
               var _dl = null;
-              if(!_iswd){ var _nd=new Date(_cr);_nd.setHours(0,0,0,0);_nd.setDate(_nd.getDate()+1);while(_nd.getDay()<1||_nd.getDay()>5)_nd.setDate(_nd.getDate()+1);_nd.setHours(9,0,0,0);_dl=_nd; }
+              function _nextWd2(d){
+                var nd=new Date(d);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);
+                while(true){
+                  var dow=nd.getDay();
+                  var hol=false; try { hol = _isItalianHoliday({year:nd.getFullYear(), month:nd.getMonth()+1, day:nd.getDate()}); } catch(_eh){}
+                  if(dow>=1 && dow<=5 && !hol) break;
+                  nd.setDate(nd.getDate()+1);
+                }
+                return nd;
+              }
+              if(!_iswd){ var _nd=_nextWd2(_cr);_nd.setHours(9,0,0,0);_dl=_nd; }
               else if(_hh<=9){ var _dd1=new Date(_cr);_dd1.setHours(9,0,0,0);_dl=_dd1; }
               else if(_hh<=16){ var _dd2=new Date(_cr.getTime()+3600000);var _dd3=new Date(_cr);_dd3.setHours(16,15,0,0);_dl=_dd2<_dd3?_dd2:_dd3; }
               else if(_hh<=16.75){ _dl=null; }
-              else{ var _nd2=new Date(_cr);_nd2.setHours(0,0,0,0);_nd2.setDate(_nd2.getDate()+1);while(_nd2.getDay()<1||_nd2.getDay()>5)_nd2.setDate(_nd2.getDate()+1);_nd2.setHours(9,0,0,0);_dl=_nd2; }
+              else{ var _nd2=_nextWd2(_cr);_nd2.setHours(9,0,0,0);_dl=_nd2; }
               _cancelSim = _dl ? (_nw<=_dl?{canCancel:true}:{canCancel:false}) : {canCancel:false};
             }
             if(_cancelSim && _cancelSim.canCancel){
@@ -16906,6 +17029,13 @@ function isSpamTicket(ticket){
   var isMarketplace = subject.includes('amazon') || subject.includes('temu') || subject.includes('tiktok') ||
     email.includes('marketplace.amazon') || email.includes('orders.temu') || email.includes('amazonpayments');
   if(isMarketplace) return false;
+
+  // ★ FIX: notifiche Amazon Seller Central (donotreply@amazon) per richieste annullamento o eventi marketplace
+  // sono ticket legittimi e devono essere processati, non scartati come spam.
+  // Esempio subject: "Richiesta di annullamento per l'ordine numero: 404-XXXXXXX-XXXXXXX"
+  var isAmazonNotification = (email.indexOf('donotreply@amazon')>=0 || email.indexOf('do-not-reply@amazon')>=0) &&
+    (/\d{3}-\d{7}-\d{7}/.test(subject) || /annull|cancel|reso|return|reclam/i.test(subject));
+  if(isAmazonNotification) return false;
 
   // Email patterns tipici di spam/bot
   var spamEmailPatterns=[
