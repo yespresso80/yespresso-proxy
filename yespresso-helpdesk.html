@@ -1831,6 +1831,16 @@ async function selectTicket(tid){
   // sul nuovo ticket finché _updateDataScadutaBtn non viene richiamato.
   var _btnDS = document.getElementById('data-scaduta-btn');
   if(_btnDS) _btnDS.style.display = 'none';
+  // ★ FIX: chiama _updateDataScadutaBtn dopo il caricamento dei dati ordine.
+  // generateReply non viene sempre richiamato (es. ticket già processato), quindi
+  // il bottone potrebbe non essere correttamente aggiornato. Questi setTimeout
+  // multipli coprono i tempi tipici di caricamento Shopify.
+  setTimeout(function(){
+    try { _updateDataScadutaBtn(); } catch(_eDB){}
+  }, 1500);
+  setTimeout(function(){
+    try { _updateDataScadutaBtn(); } catch(_eDB){}
+  }, 3500);
   // Find all open tickets for same customer and redirect to newest
   let base=tickets.find(t=>(t.ID||t.id)===tid);
   if(!base)return;
@@ -5976,6 +5986,17 @@ function _updateDataScadutaBtn(){
   if(!btn) return;
   var order = window._lastShopifyOrder || null;
   var atFermo = false;
+  // ★ FIX: verifica anche che l'ordine corrisponda al ticket corrente.
+  // Se window._lastShopifyOrder è ancora quello del ticket precedente
+  // (race condition durante il cambio ticket), nascondiamo il bottone
+  // per sicurezza fino a che non arrivano i dati corretti.
+  var _curTid = (window.selectedTicket&&(selectedTicket.ID||selectedTicket.id))||null;
+  var _orderTid = window._lastShopifyOrderTid || null;
+  if(_curTid && _orderTid && String(_curTid) !== String(_orderTid)){
+    // Ordine in cache appartiene al ticket precedente
+    btn.style.display = 'none';
+    return;
+  }
   if(order){
     if(order._brtFermopoint === true){
       atFermo = true;
