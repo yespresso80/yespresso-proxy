@@ -6715,8 +6715,49 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   if(isAmazonCustomer){
     const amazonOrderPattern=/\d{3}-\d{7}-\d{7}/;
     const fullText=(t.subject||"")+" "+(fullThread||"")+" "+(lastMsg||"");
-    if(!amazonOrderPattern.test(fullText)){
-      // Nessun numero ordine trovato — mostra box risposta con testo precompilato
+    // ★ FIX: controlla il numero ordine anche in fonti aggiuntive prima di chiederlo al cliente.
+    // Cause comuni del fallimento del primo check:
+    // - Subject troncato/codificato male da HelpDesk
+    // - Ticket aggregati dove il numero è in thread storici non inclusi in fullThread
+    // - Race condition: quando generateReply parte, il subject potrebbe non essere ancora completo
+    var _amazonOrderFound = amazonOrderPattern.test(fullText);
+    if(!_amazonOrderFound){
+      // Fonte 2: ordine già caricato in sessione (sidebar Shopify)
+      try {
+        var _lso = window._lastShopifyOrder;
+        if(_lso){
+          var _lsoText = JSON.stringify(_lso.note_attributes||[])+" "+(_lso.name||"")+" "+(_lso.note||"")+" "+JSON.stringify(_lso.tags||[]);
+          if(amazonOrderPattern.test(_lsoText)){
+            _amazonOrderFound = true;
+            console.log('[AmazonCheck] Numero ordine trovato in _lastShopifyOrder');
+          }
+        }
+      } catch(_e1){}
+      // Fonte 3: tutti gli eventi del ticket (anche storici/aggregati)
+      if(!_amazonOrderFound){
+        try {
+          var _allEventsText = (t.events||[]).map(function(ev){
+            return (ev.message && (ev.message.text||ev.message.html||''))||'';
+          }).join(' ');
+          if(amazonOrderPattern.test(_allEventsText)){
+            _amazonOrderFound = true;
+            console.log('[AmazonCheck] Numero ordine trovato negli eventi storici');
+          }
+        } catch(_e2){}
+      }
+      // Fonte 4: tag del ticket
+      if(!_amazonOrderFound){
+        try {
+          var _tagsText = JSON.stringify(t.tags||[]);
+          if(amazonOrderPattern.test(_tagsText)){
+            _amazonOrderFound = true;
+            console.log('[AmazonCheck] Numero ordine trovato nei tag del ticket');
+          }
+        } catch(_e3){}
+      }
+    }
+    if(!_amazonOrderFound){
+      // Nessun numero ordine trovato in nessuna fonte — mostra box risposta con testo precompilato
       if(genBox){
         genBox.style.display="block";
         genBox.innerHTML='<div style="color:#e67e22;font-size:12px;font-weight:600;padding:4px 0">⚠️ Numero ordine Amazon non trovato nel thread</div>';
