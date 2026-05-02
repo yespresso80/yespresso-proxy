@@ -4510,18 +4510,41 @@ window.openTicketByRef = async function(shortIdRef, brtContextNota){
   if(!shortIdRef) return;
   try {
     // Trova il ticket nella lista corrente: shortID o ID o id
+    // ★ FIX: la variabile globale è 'tickets' (non 'allTickets' che non esiste).
     var tkt = null;
-    if(typeof allTickets !== 'undefined' && Array.isArray(allTickets)){
-      tkt = allTickets.find(function(x){
+    if(typeof tickets !== 'undefined' && Array.isArray(tickets)){
+      tkt = tickets.find(function(x){
         return x && (x.shortID===shortIdRef || x.shortId===shortIdRef || x.ID===shortIdRef || x.id===shortIdRef);
       });
     }
     var tid = tkt ? (tkt.ID || tkt.id) : null;
-    // Se non c'è ID UUID, prova a passare lo shortID direttamente a selectTicket
+
+    // Se non trovato nella lista corrente (es. ticket fuori dalla view filtrata),
+    // prova a recuperarlo via API HelpDesk usando lo shortID.
+    // L'endpoint /v1/tickets/{id} accetta sia UUID sia shortID.
     if(!tid){
-      if(typeof selectTicket === 'function') selectTicket(shortIdRef);
+      try {
+        var fullTk = await hdFetch('/v1/tickets/'+encodeURIComponent(shortIdRef));
+        if(fullTk && (fullTk.ID || fullTk.id)){
+          tid = fullTk.ID || fullTk.id;
+          // Aggiungi a 'tickets' globale se non già presente, così selectTicket lo trova
+          if(typeof tickets !== 'undefined' && Array.isArray(tickets)){
+            var exists = tickets.find(function(t){ return (t.ID||t.id)===tid; });
+            if(!exists) tickets.push(fullTk);
+          }
+          console.log('[openTicketByRef] Ticket recuperato via API:', shortIdRef, '→', tid);
+        }
+      } catch(eApi){
+        console.warn('[openTicketByRef] API resolve fallita:', eApi.message);
+      }
+    }
+
+    if(!tid){
+      console.warn('[openTicketByRef] Ticket '+shortIdRef+' non trovato — apertura come shortID');
+      alert('⚠️ Impossibile trovare il ticket cliente '+shortIdRef+'. Potrebbe essere stato eliminato o spostato in archivio.');
       return;
     }
+
     // Aggiungi nota privata col contesto BRT (se fornito)
     if(brtContextNota){
       try {
