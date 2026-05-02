@@ -4546,12 +4546,23 @@ window.openTicketByRef = async function(shortIdRef, brtContextNota){
     }
 
     // Aggiungi nota privata col contesto BRT (se fornito)
+    // ★ FIX VERIFICATO IN CONSOLE: l'API HelpDesk accetta il campo "isPrivate"
+    // (non "isPrivateNote" come usato precedentemente, che ritorna 422 Validation error).
     if(brtContextNota){
       try {
         var notaTxt = String(brtContextNota||'').replace(/\\n/g,'\n');
-        await hdFetch('/v1/tickets/'+encodeURIComponent(tid)+'/private-notes', {
-          method:'POST',
-          body: JSON.stringify({ message:{ text: '[Nota da BRT]\n'+notaTxt } })
+        var notePayload = {
+          message: { text: '[Nota da BRT]\n'+notaTxt },
+          isPrivate: true
+        };
+        await proxyFetch(PROXY+'/api/v1/tickets/'+encodeURIComponent(tid), {
+          method: 'PATCH',
+          headers: {
+            'Authorization':'Basic '+HD_TOKEN,
+            'Content-Type':'application/json',
+            'User-Agent':'Yespresso/1.0'
+          },
+          body: JSON.stringify(notePayload)
         });
         console.log('[openTicketByRef] Nota privata aggiunta al ticket', shortIdRef);
       } catch(eN){
@@ -17336,8 +17347,9 @@ async function tryAutoReply(replyText, order){
   // Va inviata come nota privata, NON come risposta pubblica al cliente.
   var _isInternalNote = /^\s*NOTA\s+INTERNA[:\s]/i.test(cleanReply);
   try{
+    // ★ FIX VERIFICATO: API HelpDesk accetta "isPrivate" (non "isPrivateNote")
     var _msgBody = _isInternalNote
-      ? {message:{text:cleanReply}, isPrivateNote:true, status:"solved"}
+      ? {message:{text:cleanReply}, isPrivate:true, status:"solved"}
       : {message:{text:cleanReply}, status:"solved"};
     // Invia messaggio E chiudi in una sola chiamata PATCH
     var msgRes=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
@@ -17348,7 +17360,7 @@ async function tryAutoReply(replyText, order){
     if(!msgRes.ok){
       // Fallback: invia separato poi chiudi
       var _msgBody2 = _isInternalNote
-        ? {message:{text:cleanReply}, isPrivateNote:true}
+        ? {message:{text:cleanReply}, isPrivate:true}
         : {message:{text:cleanReply}};
       var msgRes2=await proxyFetch(PROXY+"/api/v1/tickets/"+tid,{
         method:"PATCH",
@@ -20634,7 +20646,8 @@ function showPodSidebar(dataUrl,mime,tn,podUrl){
         const attId=attData.ID||attData.id||(attData.attachment&&(attData.attachment.ID||attData.attachment.id));
         console.log('[POD ATTACH] id=',attId,'resp=',JSON.stringify(attData).substring(0,200));
         // Aggiungi nota privata con allegato
-        const notePayload={message:{text:'POD - Prova di Consegna - Tracking: '+tn},isPrivateNote:true};
+        // ★ FIX VERIFICATO: API HelpDesk accetta "isPrivate" (non "isPrivateNote")
+        const notePayload={message:{text:'POD - Prova di Consegna - Tracking: '+tn},isPrivate:true};
         if(attId) notePayload.message.attachmentIDs=[attId];
         await proxyFetch(PROXY+'/api/v1/tickets/'+tid,{method:'PATCH',headers:{'Authorization':'Basic '+HD_TOKEN,'Content-Type':'application/json','User-Agent':'Yespresso/1.0'},body:JSON.stringify(notePayload)});
         showToast('✅ POD allegato al ticket!');
