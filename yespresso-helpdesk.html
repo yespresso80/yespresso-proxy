@@ -2701,7 +2701,15 @@ async function selectTicket(tid){
   const allMsgs=ticketsToShow.map(tk=>(tk.events||[]).map(e=>e.message&&(e.message.text||"")||"").join(" ")).join(" ");
   // Per AI: costruisci storico completo della conversazione
   const fullThread=ticketsToShow.map(tk=>{
-    const evs=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml));
+    const evs=(tk.events||[]).filter(e=>{
+      if(!e.message||!(e.message.text||e.message.richTextHtml)) return false;
+      // ★ FIX: escludi note private dal contesto AI.
+      // Le note private sono per gli agenti e possono contenere ragionamenti
+      // interni sbagliati o calcoli obsoleti che l'AI replicherebbe.
+      var _evIsPriv = e.private||e.isPrivate||e.type==='private'||e.messageType==='private'||(e.message&&(e.message.private||e.message.isPrivate||e.message.isPrivateNote))||false;
+      if(_evIsPriv) return false;
+      return true;
+    });
     return evs.map(ev=>{
       const isAgent=ev.author&&ev.author.type==="agent";
       const role=isAgent?"AGENTE YESPRESSO":"CLIENTE";
@@ -5968,6 +5976,57 @@ function formatOrderInfo(order){
     info += "\n→ Nei dettagli aggiuntivi NON è presente il campo invoice:yes né dati di fatturazione (P.IVA, ragione sociale).";
     info += "\n→ Se il cliente chiede ORA la fattura: per legge non è possibile emetterla in un secondo momento (art. 21 comma 4 DPR 633/1972). Indica come richiederla per i prossimi ordini.";
   }
+
+  // ═══ CALCOLO CANCELLABILITÀ DETERMINISTICO ═══
+  // Calcoliamo qui se l'ordine è ancora annullabile secondo le regole interne (con festività italiane).
+  // Il risultato viene incluso nel prompt AI come istruzione esplicita, così l'AI non deve
+  // dedurre la regola da sola. Calcolo identico a quello dell'auto-reply.
+  if(order.created_at && !order.cancelled_at){
+    var fStat = order.fulfillment_status || (order.fulfillments&&order.fulfillments[0]&&order.fulfillments[0].shipment_status);
+    var giaSpedito = fStat && (fStat==='fulfilled' || fStat==='in_transit' || fStat==='delivered' || fStat==='out_for_delivery' || fStat==='ready_for_pickup');
+    if(!giaSpedito){
+      try {
+        var _crCS = new Date(order.created_at);
+        var _nwCS = new Date();
+        var _hCS = _crCS.getHours()+_crCS.getMinutes()/60;
+        var _dyCS = _crCS.getDay();
+        var _isHolCS = false;
+        try { _isHolCS = _isItalianHoliday({year:_crCS.getFullYear(), month:_crCS.getMonth()+1, day:_crCS.getDate()}); } catch(_eh){}
+        var _isWdCS = _dyCS>=1&&_dyCS<=5 && !_isHolCS;
+        var _dlCS = null;
+        function _nextWdCS(d){
+          var nd=new Date(d);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);
+          while(true){
+            var dow=nd.getDay();
+            var hol=false; try { hol = _isItalianHoliday({year:nd.getFullYear(),month:nd.getMonth()+1,day:nd.getDate()}); } catch(_eh){}
+            if(dow>=1&&dow<=5&&!hol) break;
+            nd.setDate(nd.getDate()+1);
+          }
+          return nd;
+        }
+        if(!_isWdCS){ var _ndCS=_nextWdCS(_crCS); _ndCS.setHours(9,0,0,0); _dlCS=_ndCS; }
+        else if(_hCS<=9){ var _d1CS=new Date(_crCS); _d1CS.setHours(9,0,0,0); _dlCS=_d1CS; }
+        else if(_hCS<=16){ var _d2CS=new Date(_crCS.getTime()+3600000); var _d3CS=new Date(_crCS); _d3CS.setHours(16,15,0,0); _dlCS=_d2CS<_d3CS?_d2CS:_d3CS; }
+        else if(_hCS<=16.75){ _dlCS=null; }
+        else{ var _nd2CS=_nextWdCS(_crCS); _nd2CS.setHours(9,0,0,0); _dlCS=_nd2CS; }
+        var _canCancel = _dlCS ? (_nwCS<=_dlCS) : false;
+        if(_canCancel){
+          info += "\n\n═══ STATO ANNULLAMENTO (calcolato dal sistema) ═══";
+          info += "\n→ ✅ ORDINE ANCORA ANNULLABILE — il sistema ha verificato le regole temporali interne (incluse festività italiane) e l'ordine è ANCORA NEI TERMINI per essere annullato.";
+          info += "\n→ Se il cliente chiede l'annullamento: conferma che procediamo con l'annullamento dell'ordine. Se pagato con carta/PayPal precisa rimborso 3-5 giorni lavorativi. Se contrassegno non c'è nulla da rimborsare.";
+          info += "\n→ NON menzionare orari, scadenze, regole interne o l'ora di visualizzazione del messaggio. Sii breve, cordiale e diretto.";
+        } else {
+          info += "\n\n═══ STATO ANNULLAMENTO (calcolato dal sistema) ═══";
+          info += "\n→ ❌ ORDINE NON PIÙ ANNULLABILE — il sistema ha verificato le regole temporali interne (incluse festività italiane) e i termini sono scaduti.";
+          info += "\n→ Se il cliente chiede l'annullamento: spiega semplicemente che l'ordine è già stato elaborato dal magazzino e non è più possibile annullarlo. Indica che potrà effettuare un reso al ricevimento del pacco.";
+          info += "\n→ NON menzionare orari, scadenze, calcoli o regole interne. Il cliente non deve sapere a che ora è stato aperto il messaggio o quando era la scadenza.";
+        }
+      } catch(_eCS){
+        console.log('[CANCELSIM] errore calcolo:', _eCS.message);
+      }
+    }
+  }
+
   return info;
 }
 
@@ -6718,11 +6777,23 @@ async function generateReplyWithFermopoint(){
   const lastMsg = events.length ? ((events[events.length-1].message||{}).text||'') : '';
   const fullThread = events.map(ev=>{
     const isAgent=ev.author&&ev.author.type==='agent';
+    const isPrivate=ev.private||ev.isPrivate||ev.type==='private'||ev.messageType==='private'||(ev.message&&(ev.message.private||ev.message.isPrivate))||false;
+    const evText=((ev.message&&(ev.message.text||ev.message.richTextHtml))||'').substring(0,600);
+    // ★ FIX: escludi dal contesto AI le note interne contenenti ragionamenti
+    // automatici precedenti (NOTA INTERNA, fuori orario di annullabilità, ecc.).
+    // Questi possono "contaminare" il prompt e portare l'AI a ripetere
+    // ragionamenti sbagliati invece di usare il calcolo corretto attuale.
+    if(isPrivate || /^\s*NOTA\s+INTERNA[:\s]/i.test(evText)){
+      // Se la nota contiene info utili oggettive (POD, tracking, indirizzo) la teniamo
+      // Altrimenti la escludiamo
+      var _isUseful = /POD|tracking|indirizzo|17901\d{9}|via\s+\w+/i.test(evText);
+      if(!_isUseful) return null;
+    }
     const role=isAgent?'AGENTE YESPRESSO':'CLIENTE';
     const evTs=ev.date||ev.createdAt||ev.created_at||'';
     const evDateStr=evTs?(function(){var d=new Date(evTs);return d.toLocaleDateString('it-IT')+' ore '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');})():'';
-    return role+(evDateStr?' ['+evDateStr+']':'')+': '+((ev.message&&(ev.message.text||ev.message.richTextHtml))||'').substring(0,600);
-  }).join('\n');
+    return role+(evDateStr?' ['+evDateStr+']':'')+': '+evText;
+  }).filter(function(s){ return s !== null; }).join('\n');
   await generateReply(lastMsg, email, fullThread);
 }
 
@@ -16627,6 +16698,10 @@ async function autoProcessTickets(freshTickets){
           }
 
           sorted.forEach(function(ev){
+            // ★ FIX: escludi note private dal contesto AI per evitare che ragionamenti
+            // interni sbagliati (es. nota auto-reply pre-fix-festività) vengano replicati.
+            var _evIsPriv = ev.private||ev.isPrivate||ev.type==='private'||ev.messageType==='private'||(ev.message&&(ev.message.private||ev.message.isPrivate||ev.message.isPrivateNote))||false;
+            if(_evIsPriv) return;
             var txt = (ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'';
             txt = txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().substring(0,600);
             if(!txt) return;
