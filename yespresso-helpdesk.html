@@ -6345,12 +6345,24 @@ window.updateAmazonCancelBox = function(annBoxId, ordNum){
   var nw = new Date();
   var hh = cr.getHours()+cr.getMinutes()/60;
   var dy = cr.getDay();
-  var iswd = dy>=1 && dy<=5;
+  // ★ FIX: considera anche festività italiane come weekend (es. 1 maggio Festa lavoratori)
+  var isHolCr = false;
+  try { isHolCr = _isItalianHoliday({year:cr.getFullYear(), month:cr.getMonth()+1, day:cr.getDate()}); } catch(_eHC){}
+  var iswd = dy>=1 && dy<=5 && !isHolCr;
   var dl = null;
+  // Helper: avanza al prossimo giorno feriale NON festivo
+  function _nextWdAmz(d){
+    var nd=new Date(d);nd.setHours(0,0,0,0);nd.setDate(nd.getDate()+1);
+    while(true){
+      var dow=nd.getDay();
+      var hol=false; try { hol = _isItalianHoliday({year:nd.getFullYear(),month:nd.getMonth()+1,day:nd.getDate()}); } catch(_eHA){}
+      if(dow>=1 && dow<=5 && !hol) break;
+      nd.setDate(nd.getDate()+1);
+    }
+    return nd;
+  }
   if(!iswd){
-    var nd=new Date(cr); nd.setHours(0,0,0,0); nd.setDate(nd.getDate()+1);
-    while(nd.getDay()<1||nd.getDay()>5) nd.setDate(nd.getDate()+1);
-    nd.setHours(9,0,0,0); dl=nd;
+    var nd=_nextWdAmz(cr); nd.setHours(9,0,0,0); dl=nd;
   } else if(hh<=9){
     var dd1=new Date(cr); dd1.setHours(9,0,0,0); dl=dd1;
   } else if(hh<=16){
@@ -6360,9 +6372,7 @@ window.updateAmazonCancelBox = function(annBoxId, ordNum){
   } else if(hh<=16.75){
     dl=null;
   } else {
-    var nd2=new Date(cr); nd2.setHours(0,0,0,0); nd2.setDate(nd2.getDate()+1);
-    while(nd2.getDay()<1||nd2.getDay()>5) nd2.setDate(nd2.getDate()+1);
-    nd2.setHours(9,0,0,0); dl=nd2;
+    var nd2=_nextWdAmz(cr); nd2.setHours(9,0,0,0); dl=nd2;
   }
   var canCancel = dl ? (nw<=dl) : false;
 
