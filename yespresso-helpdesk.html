@@ -6913,10 +6913,11 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
         proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnCheck)).then(async function(brtR){
           if(brtR&&brtR.ok){
             const brtD=await brtR.json();
-            // ★ FIX 2: marca _brtFermopoint=true solo se BRT conferma at_fermopoint
-            // E lo stato attuale Shopify è ancora ready_for_pickup (non già consegnato/ritirato).
-            // Questo previene che pacchi già consegnati restino marcati come "al fermopoint".
-            if((brtD.at_fermopoint||fCheck.shipment_status==='ready_for_pickup') && fCheck.shipment_status!=='delivered'){
+            // ★ FIX 2: marca _brtFermopoint=true SOLO se lo stato Shopify è ready_for_pickup
+            // E BRT conferma at_fermopoint. Per pacchi in altri stati (in_transit, fulfilled,
+            // delivered) NON ci fidiamo di BRT da solo perche' puo' rispondere true per
+            // pacchi che sono PASSATI dal fermopoint nella loro storia.
+            if(fCheck.shipment_status==='ready_for_pickup' && brtD.at_fermopoint){
               order._brtFermopoint=true;
               order._brtScadenza=brtD.scadenza_ritiro||'';
               order._brtPuntoInfo=brtD.punto_info||'';
@@ -7596,10 +7597,40 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
       var _tid=selectedTicket&&String(selectedTicket.ID||selectedTicket.id);
       // Non inviare automaticamente se già processato in questa sessione
       var _alreadyDone=_tid&&_autoProcessedIds[_tid];
+
+      // ★ FIX RIAPERTURA TICKET: controlla anche se l'ULTIMO messaggio del ticket
+      // è già un agente (= abbiamo già risposto). Questo è il check più robusto perché
+      // funziona anche da PC diversi, browser diversi, dopo cache pulita, ecc.
+      // Se _autoProcessedIds è vuoto (es. cache cleared) ma il ticket ha già una risposta
+      // agente come ultimo messaggio, NON dobbiamo rispondere di nuovo.
+      var _lastIsAgentOrPriv = false;
+      try {
+        var _evs = (selectedTicket.events||selectedTicket.messages||[]).filter(function(ev){
+          var t = (ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'';
+          return t.replace(/<[^>]+>/g,'').trim().length > 0;
+        });
+        if(_evs.length){
+          var _lastEv = _evs.sort(function(a,b){
+            return new Date(a.createdAt||a.created_at||0)-new Date(b.createdAt||b.created_at||0);
+          })[_evs.length-1];
+          var _isAg = _lastEv.actor && (_lastEv.actor.type==='agent'||_lastEv.actor.type==='member');
+          var _isPr = _lastEv.private||_lastEv.isPrivate||(_lastEv.message&&(_lastEv.message.private||_lastEv.message.isPrivate||_lastEv.message.isPrivateNote))||false;
+          if(_isAg || _isPr) _lastIsAgentOrPriv = true;
+        }
+      } catch(_eRP){}
+
       if(_needsAction){
         if(lbl3) lbl3.textContent="✨ Risposta AI — ⚠️ Richiede azione manuale (non inviata automaticamente)";
       } else if(_alreadyDone){
         if(lbl3) lbl3.textContent="✨ Risposta AI — già gestito automaticamente";
+      } else if(_lastIsAgentOrPriv){
+        // Ticket riaperto per verifica: l'ultimo messaggio è già un agente, non dobbiamo rispondere
+        if(lbl3) lbl3.textContent="✨ Risposta AI — agente ha già risposto (riapertura per verifica)";
+        // Marca come già processato per evitare future false partenze
+        if(_tid){
+          _autoProcessedIds[_tid] = new Date().toISOString();
+          if(typeof _saveAutoProcessedIds === 'function') _saveAutoProcessedIds();
+        }
       } else {
         if(lbl3) lbl3.textContent="✨ Risposta AI — ⏳ Auto-invio in corso...";
         tryAutoReply(reply,_autoOrder);
@@ -16832,13 +16863,15 @@ async function autoProcessTickets(freshTickets){
               var brtRf = await proxyFetch(PROXY+'/brt/check-fermopoint?nspediz='+encodeURIComponent(tnFp));
               if(brtRf && brtRf.ok){
                 var brtDf = await brtRf.json();
-                // Marca _brtFermopoint solo se BRT conferma E lo stato non e' delivered
-                if((brtDf.at_fermopoint || shipSt === 'ready_for_pickup') && shipSt!=='delivered'){
+                // ★ FIX 2: marca _brtFermopoint=true SOLO se lo stato Shopify è ready_for_pickup.
+                // Per pacchi in_transit, non fidarsi mai di BRT da solo (può rispondere
+                // at_fermopoint=true per pacchi che PRIMA sono stati al fermopoint nella loro
+                // storia, anche se attualmente sono in transito o consegnati altrove).
+                // Lo stato Shopify è la fonte di verità più affidabile.
+                if(shipSt === 'ready_for_pickup' && brtDf.at_fermopoint){
                   order._brtFermopoint = true;
                   order._brtScadenza = brtDf.scadenza_ritiro || '';
                   order._brtPuntoInfo = brtDf.punto_info || '';
-                  // Aggiorna anche shipSt per il check successivo
-                  shipSt = 'ready_for_pickup';
                   console.log('[AUTO-REPLY] BRT check fermopoint OK, scadenza:', order._brtScadenza || 'nd');
                 }
               }
@@ -17224,6 +17257,30 @@ async function tryAutoReply(replyText, order){
   }
   if(needsManualAction(replyText, order)) return false;
 
+  // ★ FIX RIAPERTURA TICKET: ultima linea di difesa.
+  // Se per qualunque motivo siamo arrivati qui ma il ticket ha già una risposta agente
+  // come ultimo messaggio (es. _autoProcessedIds vuoto perché localStorage cleared,
+  // browser diverso, ecc.), NON inviare di nuovo.
+  try {
+    var _lastEvCheck = (selectedTicket.events||selectedTicket.messages||[]).filter(function(ev){
+      var t = (ev.message&&(ev.message.text||ev.message.richTextHtml))||ev.text||'';
+      return t.replace(/<[^>]+>/g,'').trim().length > 0;
+    });
+    if(_lastEvCheck.length){
+      var _le = _lastEvCheck.sort(function(a,b){
+        return new Date(a.createdAt||a.created_at||0)-new Date(b.createdAt||b.created_at||0);
+      })[_lastEvCheck.length-1];
+      var _isAg2 = _le.actor && (_le.actor.type==='agent'||_le.actor.type==='member');
+      var _isPr2 = _le.private||_le.isPrivate||(_le.message&&(_le.message.private||_le.message.isPrivate||_le.message.isPrivateNote))||false;
+      if(_isAg2 || _isPr2){
+        console.log('[AUTO-REPLY] Skip tryAutoReply — l\'ultimo messaggio è già agente/nota privata');
+        var lblAg=document.getElementById("ai-label");
+        if(lblAg) lblAg.textContent="✨ Risposta AI — agente ha già risposto, no auto-invio";
+        return false;
+      }
+    }
+  } catch(_eGuard){}
+
   var tid=selectedTicket.ID||selectedTicket.id;
   // Controllo: già risposto in una sessione precedente?
   if(_autoProcessedIds[String(tid)]){
@@ -17231,6 +17288,19 @@ async function tryAutoReply(replyText, order){
     if(lbl0) lbl0.textContent="✨ Risposta AI — già gestito automaticamente";
     return false;
   }
+  // ★ FIX DOPPIA AUTO-REPLY: lock IN-MEMORY immediato + scrittura flag PRIMA dell'invio.
+  // Se due esecuzioni dell'auto-reply partono in parallelo (refresh batch concorrenti),
+  // entrambe vedrebbero _autoProcessedIds[tid] vuoto e procederebbero. Per evitare questa
+  // race condition, scriviamo subito il flag (con valore '_locked') così la seconda esecuzione
+  // si ferma. Se l'invio fallisce, ripristiniamo il flag a undefined per permettere retry.
+  if(window._tryAutoReplyLocks && window._tryAutoReplyLocks[String(tid)]){
+    console.log('[AUTO-REPLY] Lock in-memory già presente per tid='+tid+', skip');
+    return false;
+  }
+  if(!window._tryAutoReplyLocks) window._tryAutoReplyLocks = {};
+  window._tryAutoReplyLocks[String(tid)] = true;
+  _autoProcessedIds[String(tid)] = '_locked_'+new Date().toISOString();
+  _saveAutoProcessedIds();
   // Rimuovi tag [COPIA_IMPORTO:...] e HTML dei link prima dell'invio
   var cleanReply=replyText
     .replace(/\s*\[COPIA_IMPORTO:[^\]]+\]\s*$/,'')
@@ -17262,7 +17332,13 @@ async function tryAutoReply(replyText, order){
         headers:{"Authorization":"Basic "+HD_TOKEN,"Content-Type":"application/json","User-Agent":"Yespresso/1.0"},
         body:JSON.stringify(_msgBody2)
       });
-      if(!msgRes2.ok) return false;
+      if(!msgRes2.ok){
+        // Invio fallito: rimuovi il lock per permettere retry futuri.
+        if(window._tryAutoReplyLocks) delete window._tryAutoReplyLocks[String(tid)];
+        delete _autoProcessedIds[String(tid)];
+        _saveAutoProcessedIds();
+        return false;
+      }
       for(var _m of ['PUT','PATCH']){
         try{ await hdFetch("/v1/tickets/"+tid,{method:_m,body:JSON.stringify({status:"solved"})}); break; }catch(se){}
       }
