@@ -8230,6 +8230,25 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
   // In questi casi non ci sono allegati IMAP — le immagini sono inline nel testo
   if(firstMsgText&&firstMsgText.includes('Conversation transcript'))return;
   if(firstMsgText&&firstMsgText.includes('cca_platform'))return;
+
+  // ★ PRIORITY 1 — CDN HelpDesk: prova prima a caricare gli allegati direttamente
+  // dagli URL CDN HelpDesk negli events type="attachments". Più affidabile di IMAP.
+  // Se ci sono events tipo attachments e il caricamento riesce, esci subito.
+  try {
+    var _t = (typeof tickets !== 'undefined' && Array.isArray(tickets))
+      ? tickets.find(function(_tt){return (_tt.ID||_tt.id)===tid;}) : null;
+    if(!_t) _t = window.selectedTicket;
+    if(_t && _t.events && _t.events.some(function(ev){
+      return ev.type === 'attachments' && ev.attachments && (ev.attachments.files||[]).length > 0;
+    })){
+      var cdnLoaded = await loadHelpDeskCdnAttachments(_t, tid);
+      if(cdnLoaded){
+        console.log('[loadImapAttachments] CDN HelpDesk ha caricato gli allegati, skip IMAP fetch');
+        return;
+      }
+    }
+  } catch(eCdn){ console.warn('[loadImapAttachments] CDN attempt failed:', eCdn.message); }
+
   try{
     // ★ FIX ALLEGATI AMAZON: estrai numero ordine Amazon da MULTIPLE fonti.
     // Prima cercavamo solo nel subject — bug grave perché molti ticket Amazon
@@ -8380,6 +8399,105 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     console.log("✅ Allegati IMAP caricati:", attachments.length);
   }catch(e){
     console.log("IMAP attachments error:", e.message);
+  }
+}
+
+// ★ Scarica allegati direttamente dagli URL CDN HelpDesk negli events type="attachments".
+// Più affidabile di IMAP perché:
+// - Non dipende da cache server (sempre disponibili)
+// - Non dipende da matching subject/orderNum
+// - Veloce: 2 fetch CDN diretti vs scansione IMAP completa
+// Popola window._ticketAttachments con base64 + owner TID e aggiorna sidebar.
+async function loadHelpDeskCdnAttachments(t, tid){
+  if(!t || !t.events) return false;
+  try {
+    // Trova tutti gli events tipo "attachments" con file immagine
+    var imgUrls = [];
+    (t.events||[]).forEach(function(ev){
+      if(ev.type !== 'attachments' || !ev.attachments || !ev.attachments.files) return;
+      ev.attachments.files.forEach(function(f){
+        var url = f.url || f.href;
+        var ct = (f.type || f.contentType || '').toLowerCase();
+        var fn = f.name || f.filename || '';
+        // Solo immagini (skippiamo video, pdf, ecc.)
+        if(!url) return;
+        if(!ct.startsWith('image/') && !/\.(jpe?g|png|gif|webp)$/i.test(fn)) return;
+        imgUrls.push({ url:url, contentType:ct||'image/jpeg', filename:fn||'image.jpg' });
+      });
+    });
+
+    if(!imgUrls.length){
+      console.log('[CDN attachments] Nessun event tipo attachments con immagini');
+      return false;
+    }
+
+    console.log('[CDN attachments] Trovate '+imgUrls.length+' immagini negli events');
+
+    // Scarica ogni immagine e converti in base64
+    var loaded = [];
+    for(var i=0; i<imgUrls.length; i++){
+      var info = imgUrls[i];
+      try {
+        var r = await fetch(info.url);
+        if(!r.ok){ console.warn('[CDN attachments] Fetch fail '+r.status+' per '+info.filename); continue; }
+        var blob = await r.blob();
+        var b64 = await new Promise(function(res, rej){
+          var rd = new FileReader();
+          rd.onload = function(){
+            // Estrai solo la parte base64 (dopo "data:...;base64,")
+            var dataUrl = rd.result;
+            var commaIdx = dataUrl.indexOf(',');
+            res(commaIdx >= 0 ? dataUrl.substring(commaIdx+1) : dataUrl);
+          };
+          rd.onerror = function(){ rej(rd.error); };
+          rd.readAsDataURL(blob);
+        });
+        loaded.push({
+          filename: info.filename,
+          contentType: info.contentType,
+          data: b64
+        });
+        console.log('[CDN attachments] ✅ '+info.filename+' caricato ('+(b64.length/1024).toFixed(0)+'KB base64)');
+      } catch(e){
+        console.warn('[CDN attachments] Errore '+info.filename+':', e.message);
+      }
+    }
+
+    if(!loaded.length) return false;
+
+    // Popola window._ticketAttachments con owner TID
+    var ownerTid = tid || (window.selectedTicket && (selectedTicket.ID||selectedTicket.id));
+    var keyOf = function(a){ return (a.filename||'')+'|'+(a.data||'').substring(0,50); };
+    var existing = new Set((window._ticketAttachments||[]).map(keyOf));
+    var toAdd = loaded.filter(function(a){ return !existing.has(keyOf(a)); });
+    if(toAdd.length > 0){
+      window._ticketAttachments = (window._ticketAttachments||[]).concat(toAdd);
+      window._ticketAttachmentsOwnerTid = ownerTid;
+      console.log('[CDN attachments] 📎 Aggiunti '+toAdd.length+' allegati a window._ticketAttachments (owner: '+ownerTid+')');
+    }
+
+    // Aggiorna sidebar destra
+    var oArea = document.getElementById("imap-attachments-area") || document.getElementById("order-info-area");
+    if(oArea){
+      var html = '<div style="margin-top:10px;border-top:1px solid #e8eaf0;padding-top:10px">';
+      html += '<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aaa;margin-bottom:8px">📎 ALLEGATI EMAIL ('+loaded.length+')</div>';
+      loaded.forEach(function(att){
+        var dataUrl = "data:"+att.contentType+";base64,"+att.data;
+        html += '<div style="margin-bottom:6px">'+
+          '<img src="'+dataUrl+'" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid #e8eaf0" onclick="openLightbox(this.src)" title="'+att.filename+'">'+
+          '<div style="font-size:10px;color:#888;margin-top:2px">'+att.filename+'</div>'+
+          '</div>';
+      });
+      html += '</div>';
+      window._imapAttachmentsHtml = html;
+      oArea.innerHTML = html;
+      console.log('[CDN attachments] ✅ Sidebar aggiornata con '+loaded.length+' immagini');
+    }
+
+    return true;
+  } catch(e){
+    console.warn('[CDN attachments] errore globale:', e.message);
+    return false;
   }
 }
 
