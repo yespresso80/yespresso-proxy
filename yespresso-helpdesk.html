@@ -2315,7 +2315,16 @@ async function selectTicket(tid){
 
   for(const tk of ticketsToShow){
     const tkId=tk.ID||tk.id;
-    const tkEvents=(tk.events||[]).filter(e=>e.message&&(e.message.text||e.message.richTextHtml||e.message.html));
+    // ★ FIX ALLEGATI: gli events di tipo "attachments" (es. foto inviate dal cliente
+    // via IMAP) non hanno message.text ma hanno ev.attachments.files. Vanno inclusi
+    // nel rendering altrimenti le foto del cliente non sono mai visibili.
+    const tkEvents=(tk.events||[]).filter(e=>{
+      // Eventi messaggio standard
+      if(e.message&&(e.message.text||e.message.richTextHtml||e.message.html)) return true;
+      // Eventi tipo "attachments" con file allegati
+      if(e.type==='attachments' && e.attachments && (e.attachments.files||[]).length>0) return true;
+      return false;
+    });
     const isMain=tkId===tid2;
     // Per il caso aggregato: salva la posizione di partenza in messagesHtml.
     // Alla fine del ticket, se NON è il ticket dell'ultimo messaggio cliente,
@@ -2725,6 +2734,10 @@ async function selectTicket(tid){
   // Per AI: costruisci storico completo della conversazione
   const fullThread=ticketsToShow.map(tk=>{
     const evs=(tk.events||[]).filter(e=>{
+      // ★ FIX ALLEGATI: include events con type=attachments (foto inviate dal cliente).
+      // Senza questo, AI non sa che il cliente ha mandato foto e può rispondere
+      // "non riusciamo a visualizzare gli allegati" anche se le foto ci sono.
+      if(e.type==='attachments' && e.attachments && (e.attachments.files||[]).length>0) return true;
       if(!e.message||!(e.message.text||e.message.richTextHtml)) return false;
       // ★ FIX: escludi note private agenti dal contesto AI MA includi note BRT/POD
       // che contengono info utili sulla spedizione (data consegna, firma, tracking).
@@ -2740,6 +2753,18 @@ async function selectTicket(tid){
     });
     return evs.map(ev=>{
       const isAgent=ev.author&&ev.author.type==="agent";
+      const evTs=ev.date||ev.createdAt||ev.created_at||"";
+      const evDateStr=evTs?(function(){var d=new Date(evTs);return d.toLocaleDateString("it-IT")+" ore "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");})():"";
+      // ★ FIX ALLEGATI: events tipo "attachments" non hanno message.text ma ev.attachments.files.
+      // Costruisci una descrizione esplicita per AI: "[ALLEGATI: 2 foto inviate dal cliente]".
+      if(ev.type==='attachments' && ev.attachments && (ev.attachments.files||[]).length>0){
+        var _files = ev.attachments.files;
+        var _filesDesc = _files.map(function(f){
+          return (f.name||f.filename||'file')+' ('+(f.type||f.contentType||'unknown')+')';
+        }).join(', ');
+        var _whoAtt = isAgent ? "AGENTE YESPRESSO" : "CLIENTE";
+        return _whoAtt+(evDateStr?" ["+evDateStr+"]":"")+" [ALLEGATI: "+_files.length+" file inviati: "+_filesDesc+"]";
+      }
       // Le note BRT/POD le marchiamo distintamente nel ruolo
       var _txtCheck = (ev.message.text||ev.message.richTextHtml||'').replace(/<[^>]+>/g,' ').trim();
       var role;
@@ -2747,9 +2772,6 @@ async function selectTicket(tid){
       else if(_txtCheck.indexOf('POD - Prova di Consegna')>=0) role = "INFO POD (interno)";
       else role = isAgent?"AGENTE YESPRESSO":"CLIENTE";
       const txt=(ev.message.text||ev.message.richTextHtml||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").substring(0,1000).trim();
-      // Aggiungi data e ora del messaggio per permettere all'AI di applicare regole temporali
-      const evTs=ev.date||ev.createdAt||ev.created_at||"";
-      const evDateStr=evTs?(function(){var d=new Date(evTs);return d.toLocaleDateString("it-IT")+" ore "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");})():"";
       return role+(evDateStr?" ["+evDateStr+"]":"")+": "+txt;
     }).join("\n");
   }).filter(Boolean).join("\n---\n");
