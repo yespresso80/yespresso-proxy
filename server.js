@@ -2212,7 +2212,8 @@ async function brtRestPost(path, body) {
   }
 
 
-   // ── ESTENSIONE TEMU V3: Ricerca ordine Shopify da numero Temu ────
+     // ── ESTENSIONE TEMU V3: Ricerca ordine Shopify da numero Temu ────
+  // Replica esatta della logica del HelpDesk (fetchShopifyOrder + findInNoteAttributes + scanAllOrders)
   if (req.url.startsWith('/find-shopify-by-temu')) {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') {
@@ -2248,42 +2249,81 @@ async function brtRestPost(path, body) {
         return;
       }
  
-      // Strategia 1: cerca per name
-      let shopifyUrl = `https://${SHOPIFY_SHOP}/admin/api/2024-01/orders.json?name=${encodeURIComponent(orderTemu)}&status=any&limit=10`;
-      let shopifyRes = await fetch(shopifyUrl, {
-        headers: {'X-Shopify-Access-Token': shopifyToken}
-      });
-      let data = await shopifyRes.json();
-      let order = (data.orders && data.orders.length > 0) ? data.orders[0] : null;
+      // ─── Replica esatta della logica HelpDesk ───────────────────
+      const temuKeys = ["PARENT_ORDER_SN", "Temu Order Id", "temu_order_id", "order_id", "Marketplace Order Id"];
  
-      // Strategia 2: cerca tra ultimi 250 per note_attributes/tags
-      if (!order) {
-        shopifyUrl = `https://${SHOPIFY_SHOP}/admin/api/2024-01/orders.json?status=any&limit=250&fields=id,name,note_attributes,line_items,customer,total_price,currency,fulfillments,shipping_address,created_at,tags`;
-        shopifyRes = await fetch(shopifyUrl, {
+      // Helper: cerca match esatto in note_attributes (come fa HelpDesk)
+      function findInNoteAttributes(orders, keys, value) {
+        if (!orders) return null;
+        const val = (value || "").trim().toLowerCase();
+        if (!val) return null;
+        return orders.find(o => (o.note_attributes || []).some(a => {
+          const aval = String(a.value || "").trim().toLowerCase();
+          const aname = String(a.name || "").trim().toLowerCase();
+          return (keys.some(k => aname === k.toLowerCase())) && (aval === val);
+        })) || null;
+      }
+ 
+      // Helper: shopifyGet con token cached
+      async function shopifyGet(qs) {
+        const r = await fetch(`https://${SHOPIFY_SHOP}/admin/api/2024-01/${qs}`, {
           headers: {'X-Shopify-Access-Token': shopifyToken}
         });
-        data = await shopifyRes.json();
-        for (const o of (data.orders || [])) {
-          for (const attr of (o.note_attributes || [])) {
-            if (attr.value && String(attr.value).indexOf(orderTemu) >= 0) {
-              order = o; break;
-            }
+        if (!r.ok) {
+          console.warn('[find-shopify-by-temu] Shopify error', r.status, qs.substring(0, 100));
+          return null;
+        }
+        const d = await r.json();
+        // Estrai page_info da Link header se presente
+        const linkHeader = r.headers.get('link') || '';
+        const nextMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>; rel="next"/);
+        if (nextMatch) d._nextPageInfo = nextMatch[1];
+        return d;
+      }
+ 
+      // Step 2a — Full-text search (come HelpDesk)
+      let order = null;
+      console.log('[find-shopify-by-temu] Step 2a: full-text search');
+      const dFt = await shopifyGet('orders.json?status=any&limit=10&query=' + encodeURIComponent(orderTemu));
+      if (dFt && dFt.orders && dFt.orders.length) {
+        order = findInNoteAttributes(dFt.orders, temuKeys, orderTemu);
+        if (order) console.log('[find-shopify-by-temu] ✅ Trovato via full-text');
+      }
+ 
+      // Step 2b — Scan paginato completo (come HelpDesk, max 40 pagine = 10000 ordini)
+      if (!order) {
+        console.log('[find-shopify-by-temu] Step 2b: scan paginato completo');
+        let page_info = null;
+        for (let page = 0; page < 40; page++) {
+          const qs = 'orders.json?status=any&limit=250' + (page_info ? '&page_info=' + page_info : '');
+          const d = await shopifyGet(qs);
+          if (!d || !d.orders || !d.orders.length) {
+            console.log('[find-shopify-by-temu] Fine ordini a pagina', page+1);
+            break;
           }
-          if (!order && o.tags && String(o.tags).indexOf(orderTemu) >= 0) {
-            order = o;
+          console.log('[find-shopify-by-temu] Scan pagina', page+1, '— ordini:', d.orders.length);
+          const found = findInNoteAttributes(d.orders, temuKeys, orderTemu);
+          if (found) {
+            order = found;
+            console.log('[find-shopify-by-temu] ✅ Trovato a pagina', page+1);
+            break;
           }
-          if (order) break;
+          page_info = d._nextPageInfo || null;
+          if (!page_info) {
+            console.log('[find-shopify-by-temu] Nessuna pagina successiva dopo', page+1);
+            break;
+          }
         }
       }
  
       if (!order) {
-        console.log('[find-shopify-by-temu] Ordine non trovato');
+        console.log('[find-shopify-by-temu] ❌ Ordine non trovato');
         res.writeHead(404, CORS);
         res.end(JSON.stringify({error:'Ordine non trovato in Shopify', orderTemu: orderTemu}));
         return;
       }
  
-      // Estrai dati
+      // ─── Estrazione dati ─────────────────────────────────────────
       const result = {
         orderTemu: orderTemu,
         orderShopify: {
@@ -2359,7 +2399,7 @@ async function brtRestPost(path, body) {
  
     } catch(e) {
       console.error('[find-shopify-by-temu] errore:', e.message);
-      res.writeHead(500, CORS);
+      res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
       res.end(JSON.stringify({error: e.message}));
       return;
     }
