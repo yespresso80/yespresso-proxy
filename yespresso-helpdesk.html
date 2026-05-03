@@ -1806,6 +1806,29 @@ async function selectTicket(tid){
   window._lastShopifyOrder=null;
   window._brtPickupData={};
   window._allShopifyOrders=[];
+
+  // ★ FIX BRT MARKETPLACE: intercept setter di _lastShopifyOrder per aggiornare
+  // automaticamente i bottoni marketplace dei pannelli BRT in pagina.
+  // Senza questo, il pannello BRT viene renderizzato prima che l'ordine arrivi
+  // e il bottone marketplace non appare mai.
+  try {
+    if(!window._lastShopifyOrder_setterIntercepted){
+      var _privOrderStore = null;
+      Object.defineProperty(window, '_lastShopifyOrder', {
+        get: function(){ return _privOrderStore; },
+        set: function(v){
+          _privOrderStore = v;
+          // Refresh asincrono dei bottoni BRT in pagina
+          if(v && typeof window._refreshBrtMarketplaceButtons === 'function'){
+            setTimeout(window._refreshBrtMarketplaceButtons, 50);
+          }
+        },
+        configurable: true
+      });
+      window._lastShopifyOrder_setterIntercepted = true;
+    }
+  } catch(eIntercept){ console.warn('[setter intercept]', eIntercept.message); }
+
   // FIX CRITICO: _giacenzaData può causare invio WA con ordine/tracking/link
   // del ticket BRT precedente se l'utente cambia ticket e clicca WhatsApp
   // prima che il pannello giacenza del nuovo ticket sia renderizzato.
@@ -4377,6 +4400,63 @@ function parseBrtCcEmail(text){
   return out;
 }
 
+// ★ HELPER: genera HTML del bottone marketplace per box BRT in base a window._lastShopifyOrder
+// Restituisce '' se non c'è ordine (pannello mostrerà nulla finché ordine non arriva).
+// La funzione _refreshBrtMarketplaceButtons() è chiamata dopo il caricamento ordine
+// per aggiornare i pannelli BRT in pagina.
+window._renderBrtMarketplaceBtn = function _renderBrtMarketplaceBtn(){
+  var esc = function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+  try {
+    var _ord = window._lastShopifyOrder;
+    if(!_ord) return ''; // nessun ordine = nessun bottone (verrà ri-renderizzato dopo)
+    var _src = (typeof detectOrderSource === 'function') ? detectOrderSource(_ord) : '';
+    var _attrs = _ord.note_attributes || [];
+    // AMAZON
+    if(_src === 'amazon' || (_attrs.find(function(a){return a.name==='Amazon Order Id' && a.value;}))){
+      var amzAttr = _attrs.find(function(a){return a.name==='Amazon Order Id' && a.value;});
+      var amzId = amzAttr ? amzAttr.value : '';
+      var amzMsgUrl = amzId ? ('https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+encodeURIComponent(amzId)) : 'https://sellercentral.amazon.it/messaging/inbox';
+      return '<button onclick="window.open(\''+amzMsgUrl+'\',\'_blank\')" style="background:#c07800;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Amz'+(amzId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(amzId)+'</span>'):'')+' ↗</button>';
+    }
+    // TEMU
+    if(_src === 'temu' || (_attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id'].indexOf(a.name)>=0 && a.value;}))){
+      var temuAttr = _attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id'].indexOf(a.name)>=0 && a.value;});
+      var temuId = temuAttr ? temuAttr.value : '';
+      var temuMsgUrl = 'https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei';
+      var copyJs = temuId ? ("navigator.clipboard.writeText('"+temuId.replace(/'/g,"\\'")+"');") : '';
+      return '<button onclick="'+copyJs+'window.open(\''+temuMsgUrl+'\',\'_blank\')" style="background:#cc4400;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Temu'+(temuId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(temuId)+'</span>'):'')+' ↗</button>';
+    }
+    // TIKTOK
+    if(_src === 'tiktok' || (_attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value;}))){
+      var ttAttr = _attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value;});
+      var ttId = ttAttr ? ttAttr.value : '';
+      var ttMsgUrl = 'https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT';
+      var copyJsTT = ttId ? ("navigator.clipboard.writeText('"+ttId.replace(/'/g,"\\'")+"');") : '';
+      return '<button onclick="'+copyJsTT+'window.open(\''+ttMsgUrl+'\',\'_blank\')" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Tik'+(ttId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(ttId)+'</span>'):'')+' ↗</button>';
+    }
+    // SITO YESPRESSO
+    if(_ord.id && _ord.name){
+      var shopifyUrl = 'https://admin.shopify.com/store/40f758-3/orders/'+_ord.id;
+      return '<button onclick="window.open(\''+shopifyUrl+'\',\'_blank\')" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">↗ Shopify Admin <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(_ord.name||'')+'</span></button>';
+    }
+  } catch(e){ console.warn('[_renderBrtMarketplaceBtn]', e.message); }
+  return '';
+};
+
+// ★ Aggiorna i bottoni marketplace di tutti i pannelli BRT in pagina.
+// Chiamata automaticamente dopo che window._lastShopifyOrder viene popolato.
+window._refreshBrtMarketplaceButtons = function _refreshBrtMarketplaceButtons(){
+  try {
+    var slots = document.querySelectorAll('.brt-marketplace-btn-slot');
+    if(!slots.length) return;
+    var newBtnHtml = window._renderBrtMarketplaceBtn();
+    slots.forEach(function(slot){
+      slot.innerHTML = newBtnHtml;
+    });
+    if(newBtnHtml) console.log('[BRT marketplace] aggiornati '+slots.length+' bottoni');
+  } catch(e){ console.warn('[_refreshBrtMarketplaceButtons]', e.message); }
+};
+
 // Render pannello BRT Servizio Clienti compatto
 function renderBrtCcPanel(b, origText){
   const uid = 'brtcc_'+Math.random().toString(36).slice(2);
@@ -4444,47 +4524,16 @@ function renderBrtCcPanel(b, origText){
   //   2) Altrimenti, se c'è ordine marketplace nel contesto → Vedi Msg Amz/Temu/Tik
   //   3) Altrimenti, se c'è ordine sito → ↗ Shopify Admin
   //   4) Altrimenti → niente
+  // ★ FIX: il pannello BRT viene renderizzato PRIMA che window._lastShopifyOrder
+  // sia popolato. Quindi se la Priorità 1 non si applica (no Rif.Ticket), generiamo
+  // un placeholder che verrà popolato dopo dalla funzione _refreshBrtMarketplaceButtons.
   var actionBtnHtml = '';
   if(refTicketCliente){
     actionBtnHtml = '<button onclick="openTicketByRef(\''+refTicketCliente+'\',\''+brtContextNotaEsc+'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">🎫 Ticket Cliente <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(refTicketCliente)+'</span> ↗</button>';
   } else {
-    // Determino il canale dell'ordine corrente (se presente in window._lastShopifyOrder)
-    try {
-      var _ord = window._lastShopifyOrder;
-      var _src = '';
-      if(_ord){
-        if(typeof detectOrderSource === 'function') _src = detectOrderSource(_ord);
-        var _attrs = _ord.note_attributes || [];
-        // AMAZON
-        if(_src === 'amazon' || (_attrs.find(function(a){return a.name==='Amazon Order Id' && a.value;}))){
-          var amzAttr = _attrs.find(function(a){return a.name==='Amazon Order Id' && a.value;});
-          var amzId = amzAttr ? amzAttr.value : '';
-          var amzMsgUrl = amzId ? ('https://sellercentral.amazon.it/messaging/inbox?fi=search&ss='+encodeURIComponent(amzId)) : 'https://sellercentral.amazon.it/messaging/inbox';
-          actionBtnHtml = '<button onclick="window.open(\''+amzMsgUrl+'\',\'_blank\')" style="background:#c07800;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Amz'+(amzId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(amzId)+'</span>'):'')+' ↗</button>';
-        }
-        // TEMU
-        else if(_src === 'temu' || (_attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id'].indexOf(a.name)>=0 && a.value;}))){
-          var temuAttr = _attrs.find(function(a){return ['PARENT_ORDER_SN','Temu Order Id','temu_order_id'].indexOf(a.name)>=0 && a.value;});
-          var temuId = temuAttr ? temuAttr.value : '';
-          var temuMsgUrl = 'https://seller-eu.temu.com/chat.html?_x_sessn_id=w911kgymei';
-          var copyJs = temuId ? ("navigator.clipboard.writeText('"+temuId.replace(/'/g,"\\'")+"');") : '';
-          actionBtnHtml = '<button onclick="'+copyJs+'window.open(\''+temuMsgUrl+'\',\'_blank\')" style="background:#cc4400;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Temu'+(temuId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(temuId)+'</span>'):'')+' ↗</button>';
-        }
-        // TIKTOK
-        else if(_src === 'tiktok' || (_attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value;}))){
-          var ttAttr = _attrs.find(function(a){return ['TikTok Order Id','tiktok_order_id'].indexOf(a.name)>=0 && a.value;});
-          var ttId = ttAttr ? ttAttr.value : '';
-          var ttMsgUrl = 'https://seller-it.tiktok.com/chat/inbox/current?from=seller_center_navigation_im&oec_seller_id=7494433229608486332&shop_region=IT&lang=it-IT';
-          var copyJsTT = ttId ? ("navigator.clipboard.writeText('"+ttId.replace(/'/g,"\\'")+"');") : '';
-          actionBtnHtml = '<button onclick="'+copyJsTT+'window.open(\''+ttMsgUrl+'\',\'_blank\')" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Tik'+(ttId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(ttId)+'</span>'):'')+' ↗</button>';
-        }
-        // SITO YESPRESSO
-        else if(_ord.id && _ord.name){
-          var shopifyUrl = 'https://admin.shopify.com/store/40f758-3/orders/'+_ord.id;
-          actionBtnHtml = '<button onclick="window.open(\''+shopifyUrl+'\',\'_blank\')" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">↗ Shopify Admin <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(_ord.name||'')+'</span></button>';
-        }
-      }
-    } catch(eMk){ console.warn('[BRT panel] errore rilevamento marketplace:', eMk.message); }
+    // Genera placeholder che il refresh popola quando l'ordine è disponibile.
+    // _renderBrtMarketplaceBtn cerca window._lastShopifyOrder e genera il bottone giusto.
+    actionBtnHtml = '<span class="brt-marketplace-btn-slot" data-uid="'+uid+'">'+_renderBrtMarketplaceBtn()+'</span>';
   }
   if(actionBtnHtml){
     h += '<div style="margin-top:10px;display:flex;justify-content:center">';
