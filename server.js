@@ -2212,6 +2212,161 @@ async function brtRestPost(path, body) {
   }
 
 
+   // ── ESTENSIONE TEMU V3: Ricerca ordine Shopify da numero Temu ────
+  if (req.url.startsWith('/find-shopify-by-temu')) {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    if (req.method !== 'GET') {
+      res.writeHead(405, CORS);
+      res.end(JSON.stringify({error:'Method not allowed'}));
+      return;
+    }
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      const orderTemu = (url.searchParams.get('orderTemu') || '').trim();
+ 
+      if (!orderTemu) {
+        res.writeHead(400, CORS);
+        res.end(JSON.stringify({error:'Param orderTemu richiesto'}));
+        return;
+      }
+      if (!/^PO-\d{3}-\d+/.test(orderTemu)) {
+        res.writeHead(400, CORS);
+        res.end(JSON.stringify({error:'orderTemu non valido. Atteso formato: PO-098-...'}));
+        return;
+      }
+ 
+      console.log('[find-shopify-by-temu] Cerco ordine Temu:', orderTemu);
+ 
+      const shopifyToken = await getShopifyToken();
+      if (!shopifyToken || !SHOPIFY_SHOP) {
+        res.writeHead(500, CORS);
+        res.end(JSON.stringify({error:'SHOPIFY_SHOP o SHOPIFY_TOKEN non configurati'}));
+        return;
+      }
+ 
+      // Strategia 1: cerca per name
+      let shopifyUrl = `https://${SHOPIFY_SHOP}/admin/api/2024-01/orders.json?name=${encodeURIComponent(orderTemu)}&status=any&limit=10`;
+      let shopifyRes = await fetch(shopifyUrl, {
+        headers: {'X-Shopify-Access-Token': shopifyToken}
+      });
+      let data = await shopifyRes.json();
+      let order = (data.orders && data.orders.length > 0) ? data.orders[0] : null;
+ 
+      // Strategia 2: cerca tra ultimi 250 per note_attributes/tags
+      if (!order) {
+        shopifyUrl = `https://${SHOPIFY_SHOP}/admin/api/2024-01/orders.json?status=any&limit=250&fields=id,name,note_attributes,line_items,customer,total_price,currency,fulfillments,shipping_address,created_at,tags`;
+        shopifyRes = await fetch(shopifyUrl, {
+          headers: {'X-Shopify-Access-Token': shopifyToken}
+        });
+        data = await shopifyRes.json();
+        for (const o of (data.orders || [])) {
+          for (const attr of (o.note_attributes || [])) {
+            if (attr.value && String(attr.value).indexOf(orderTemu) >= 0) {
+              order = o; break;
+            }
+          }
+          if (!order && o.tags && String(o.tags).indexOf(orderTemu) >= 0) {
+            order = o;
+          }
+          if (order) break;
+        }
+      }
+ 
+      if (!order) {
+        console.log('[find-shopify-by-temu] Ordine non trovato');
+        res.writeHead(404, CORS);
+        res.end(JSON.stringify({error:'Ordine non trovato in Shopify', orderTemu: orderTemu}));
+        return;
+      }
+ 
+      // Estrai dati
+      const result = {
+        orderTemu: orderTemu,
+        orderShopify: {
+          id: order.id,
+          name: order.name || '',
+          created_at: order.created_at || '',
+          currency: order.currency || 'EUR'
+        },
+        customer: { name: '', email: '', phone: '' },
+        items: [],
+        total: parseFloat(order.total_price || 0).toFixed(2),
+        shipping: {
+          address: '', city: '', zip: '', country: '',
+          tracking_number: '', tracking_company: '',
+          shipment_status: null,
+          ready_for_pickup: false,
+          delivered: false
+        }
+      };
+ 
+      if (order.customer) {
+        const fn = order.customer.first_name || '';
+        const ln = order.customer.last_name || '';
+        result.customer.name = (fn + ' ' + ln).trim();
+        result.customer.email = order.customer.email || '';
+        result.customer.phone = order.customer.phone || '';
+      }
+      if (!result.customer.name && order.shipping_address) {
+        const sn = (order.shipping_address.first_name || '') + ' ' + (order.shipping_address.last_name || '');
+        result.customer.name = sn.trim();
+      }
+ 
+      for (const item of (order.line_items || [])) {
+        result.items.push({
+          title: item.title || item.name || 'Prodotto',
+          sku: item.sku || '',
+          quantity: item.quantity || 1,
+          price: parseFloat(item.price || 0).toFixed(2)
+        });
+      }
+ 
+      if (order.shipping_address) {
+        const a = order.shipping_address;
+        result.shipping.address = [a.address1, a.address2].filter(Boolean).join(' ');
+        result.shipping.city = a.city || '';
+        result.shipping.zip = a.zip || '';
+        result.shipping.country = a.country || '';
+      }
+ 
+      if (order.fulfillments && order.fulfillments.length > 0) {
+        const f = order.fulfillments[0];
+        result.shipping.tracking_number = f.tracking_number || '';
+        result.shipping.tracking_company = f.tracking_company || 'BRT';
+        result.shipping.shipment_status = f.shipment_status || null;
+        if (f.shipment_status === 'ready_for_pickup') result.shipping.ready_for_pickup = true;
+        if (f.shipment_status === 'delivered') result.shipping.delivered = true;
+      }
+ 
+      if (!result.shipping.tracking_number) {
+        for (const attr of (order.note_attributes || [])) {
+          if (/tracking|spedizione|nspediz/i.test(attr.name) && attr.value) {
+            result.shipping.tracking_number = String(attr.value);
+            break;
+          }
+        }
+      }
+ 
+      console.log('[find-shopify-by-temu] OK:', result.orderShopify.name, 'cliente:', result.customer.name, 'status:', result.shipping.shipment_status);
+ 
+      res.writeHead(200, Object.assign({}, CORS, {'Cache-Control':'private, max-age=60'}));
+      res.end(JSON.stringify(result));
+      return;
+ 
+    } catch(e) {
+      console.error('[find-shopify-by-temu] errore:', e.message);
+      res.writeHead(500, CORS);
+      res.end(JSON.stringify({error: e.message}));
+      return;
+    }
+  }
+  // ── FINE ESTENSIONE TEMU V3 ──────────────────────────────────────
+  
+  
   // ── AI PROMPT ───────────────────────────────────────────────
   if (req.url === '/ai-prompt') {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
