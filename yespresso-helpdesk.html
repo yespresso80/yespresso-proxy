@@ -8119,9 +8119,44 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
   if(firstMsgText&&firstMsgText.includes('Conversation transcript'))return;
   if(firstMsgText&&firstMsgText.includes('cca_platform'))return;
   try{
-    // Estrai numero ordine Amazon dal subject (es. 404-3157788-4736302)
+    // ★ FIX ALLEGATI AMAZON: estrai numero ordine Amazon da MULTIPLE fonti.
+    // Prima cercavamo solo nel subject — bug grave perché molti ticket Amazon
+    // hanno il numero ordine SOLO nel testo del primo messaggio (es. "Re: Re: Domanda
+    // del cliente Amazon Simona relativa ad un ordine" → no numero nel subject).
+    // Senza numero ordine, IMAP non riesce a filtrare e restituisce 0 allegati.
+    var orderNum = '';
+    // Fonte 1: subject
     var orderNumMatch = (subject||'').match(/(\d{3}-\d{7}-\d{7})/);
-    var orderNum = orderNumMatch ? orderNumMatch[1] : '';
+    if(orderNumMatch) orderNum = orderNumMatch[1];
+    // Fonte 2: testo del primo messaggio
+    if(!orderNum && firstMsgText){
+      var m2 = String(firstMsgText).match(/(\d{3}-\d{7}-\d{7})/);
+      if(m2) orderNum = m2[1];
+    }
+    // Fonte 3: window._lastShopifyOrder.note_attributes (Amazon Order Id)
+    if(!orderNum){
+      try {
+        var _lso = window._lastShopifyOrder;
+        if(_lso && _lso.note_attributes){
+          var amzAttr = _lso.note_attributes.find(function(a){return a.name==='Amazon Order Id' && a.value;});
+          if(amzAttr) orderNum = amzAttr.value;
+        }
+      } catch(_e){}
+    }
+    // Fonte 4: tutti gli events del ticket
+    if(!orderNum && tid){
+      try {
+        var _tk = (typeof tickets !== 'undefined' && Array.isArray(tickets))
+          ? tickets.find(function(t){return (t.ID||t.id)===tid;}) : null;
+        if(_tk && _tk.events){
+          var evsText = _tk.events.map(function(ev){
+            return (ev.message&&(ev.message.text||ev.message.richTextHtml||ev.message.html))||'';
+          }).join(' ');
+          var m4 = evsText.match(/(\d{3}-\d{7}-\d{7})/);
+          if(m4) orderNum = m4[1];
+        }
+      } catch(_e2){}
+    }
     // Per ticket BRT: estrai numero ticket BRT (8 cifre dopo "[Ticket]")
     // o numero spedizione BRT (12 cifre, di solito 179...).
     // Nota: nel subject BRT il numero spedizione è preceduto dal prefisso "26"
@@ -8143,6 +8178,7 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     var url = PROXY+"/imap/attachments?email="+encodeURIComponent(email);
     if(orderNum) url += "&ordernum="+encodeURIComponent(orderNum);
     if(subject && !isAmazonEmail && !isBrtEmail) url += "&subject="+encodeURIComponent(subject);
+    console.log('[IMAP attachments] URL:', url.substring(0, 200), '| orderNum:', orderNum||'(non trovato)');
     const imapRes0=await proxyFetch(url);
     const imapData0=await imapRes0.json();
     const imapAtts0=imapData0.attachments||[];
