@@ -4434,8 +4434,15 @@ window._renderBrtMarketplaceBtn = function _renderBrtMarketplaceBtn(){
       var copyJsTT = ttId ? ("navigator.clipboard.writeText('"+ttId.replace(/'/g,"\\'")+"');") : '';
       return '<button onclick="'+copyJsTT+'window.open(\''+ttMsgUrl+'\',\'_blank\')" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">💬 Vedi Msg Tik'+(ttId?(' <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(ttId)+'</span>'):'')+' ↗</button>';
     }
-    // SITO YESPRESSO
+    // SITO YESPRESSO — usa logica "Vedi Ticket" come nei resi: apre ticket più recente del cliente
     if(_ord.id && _ord.name){
+      var customerEmail = _ord.email || (_ord.customer && _ord.customer.email) || '';
+      if(customerEmail){
+        var emailEsc = String(customerEmail).replace(/'/g,"\\'");
+        // Bottone blu "Vedi Ticket" che apre ticket più recente del cliente + aggiunge nota BRT
+        return '<button onclick="openTicketByEmail(\''+emailEsc+'\', window._lastBrtCtxNota||\'\')" style="background:#1a73e8;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">🎫 Vedi Ticket Cliente <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(_ord.name||'')+'</span> ↗</button>';
+      }
+      // Fallback se manca email: apre Shopify Admin come prima
       var shopifyUrl = 'https://admin.shopify.com/store/40f758-3/orders/'+_ord.id;
       return '<button onclick="window.open(\''+shopifyUrl+'\',\'_blank\')" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">↗ Shopify Admin <span style="font-family:monospace;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px;font-size:11px">'+esc(_ord.name||'')+'</span></button>';
     }
@@ -4518,6 +4525,10 @@ function renderBrtCcPanel(b, origText){
   if(b.tracking) brtContextNota += ' · Spedizione: '+b.tracking;
   if(b.corpoPulito) brtContextNota += '\n\n'+b.corpoPulito;
   var brtContextNotaEsc = brtContextNota.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+  // ★ Salva il contesto BRT in variabile globale così _renderBrtMarketplaceBtn
+  // (chiamato in modo asincrono dopo il caricamento ordine) può aggiungerlo
+  // come parametro al bottone "🎫 Vedi Ticket" per ordini sito Yespresso.
+  window._lastBrtCtxNota = brtContextNota;
 
   // Costruisco il bottone azione corretto in base alla regola di priorità:
   //   1) Se c'è Rif. Ticket → 🎫 Ticket Cliente HelpDesk (priorità massima)
@@ -4688,6 +4699,39 @@ window.openTicketByRef = async function(shortIdRef, brtContextNota){
   } catch(err){
     console.error('[openTicketByRef] errore:', err);
     alert('⚠️ Impossibile aprire il ticket '+shortIdRef+': '+err.message);
+  }
+};
+
+// ★ Cerca il ticket più recente del cliente per email e lo apre (con eventuale nota BRT).
+// Stessa logica del bottone "🎫 Vedi Ticket" nei resi sito.
+// Usato dal box BRT quando l'ordine è del sito Yespresso (Shopify).
+window.openTicketByEmail = async function(email, brtContextNota){
+  if(!email) return;
+  try {
+    // Cerca tutti i ticket del cliente per email
+    var clientTickets = (typeof tickets !== 'undefined' && Array.isArray(tickets))
+      ? tickets.filter(function(t){ return (t.requester && t.requester.email) === email; })
+      : [];
+
+    if(!clientTickets.length){
+      alert('⚠️ Nessun ticket trovato per il cliente '+email);
+      return;
+    }
+
+    // Ordina per data decrescente — il più recente prima
+    clientTickets.sort(function(a,b){
+      return new Date(b.lastMessageAt||b.updatedAt||0) - new Date(a.lastMessageAt||a.updatedAt||0);
+    });
+    var lastTicket = clientTickets[0];
+    var shortId = lastTicket.shortID || lastTicket.shortId || (lastTicket.ID || lastTicket.id);
+
+    // Riusa openTicketByRef passando il shortID del ticket più recente.
+    // Questo gestisce automaticamente: lookup, redirect concatenazione,
+    // anti-duplicazione nota BRT, blocco auto-reply, refresh visivo.
+    return await window.openTicketByRef(shortId, brtContextNota || '');
+  } catch(err){
+    console.error('[openTicketByEmail] errore:', err);
+    alert('⚠️ Impossibile aprire ticket per '+email+': '+err.message);
   }
 };
 
