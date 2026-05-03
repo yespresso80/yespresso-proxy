@@ -8299,7 +8299,12 @@ async function loadImapAttachments(email, subject, tid, firstMsgText){
     // (evita doppio rendering ma garantiamo comunque window._ticketAttachments)
     const imapArea=document.getElementById("imap-attachments-area");
     const imapAreaHtml=(imapArea&&imapArea.innerHTML)||"";
-    const alreadyShown=imapAtts0.length>0&&imapAtts0.every(a=>{
+    // ★ FIX FALSO POSITIVO: il check alreadyShown matcha anche se la sidebar è vuota
+    // ma il browser ha ancora la traccia dei base64 in cache da un rendering precedente.
+    // Verifichiamo che la sidebar contenga effettivamente tag <img> visibili (non solo
+    // residui in HTML/cache). Se l'HTML è troppo corto per contenere foto vere → non renderizzato.
+    const _imapAreaHasRealImgs = imapAreaHtml.length > 200 && /<img[^>]+src="data:image/i.test(imapAreaHtml);
+    const alreadyShown = _imapAreaHasRealImgs && imapAtts0.length>0 && imapAtts0.every(a=>{
       return imapAreaHtml.includes("data:"+a.contentType+";base64,"+a.data.substring(0,30));
     });
     if(alreadyShown){
