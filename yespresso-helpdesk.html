@@ -1642,7 +1642,12 @@ function renderTable(){
     const email = (t.requester && t.requester.email) || '';
     if(!email.includes('marketplace.amazon')) return;
     const subj = t.subject || '';
-    const m = subj.match(/(\d{3}-\d{7}-\d{7})/);
+    // Cerca numero ordine prima nel subject, poi nel body del primo messaggio
+    let m = subj.match(/(\d{3}-\d{7}-\d{7})/);
+    if(!m){
+      const tBody = (t.events && t.events[0] && t.events[0].message && t.events[0].message.text) || '';
+      if(tBody) m = tBody.match(/(\d{3}-\d{7}-\d{7})/);
+    }
     if(!m) return;
     const key = email + '|' + m[1];
     if(!amzGroups[key]) amzGroups[key] = [];
@@ -1887,14 +1892,27 @@ async function selectTicket(tid){
   // per OGNI risposta del cliente, con subject "Re: Re: Re: ..." accumulati.
   // Quindi devo raggruppare TUTTI i ticket (anche solved/closed) con:
   //   - stessa email cliente
-  //   - stesso numero ordine Amazon (NNN-NNNNNNN-NNNNNNN nel subject)
+  //   - stesso numero ordine Amazon (NNN-NNNNNNN-NNNNNNN nel subject O NEL BODY)
   // così da mostrarli come una conversazione unica.
   let isAmazonGroup = false;
   let amazonOrderNum = '';
   const baseSubj = base.subject || '';
   const isAmazonTicket = email && email.includes('marketplace.amazon');
   if(isAmazonTicket){
-    const amzMatch = baseSubj.match(/(\d{3}-\d{7}-\d{7})/);
+    // 1. Prova prima nel subject (caso più comune)
+    let amzMatch = baseSubj.match(/(\d{3}-\d{7}-\d{7})/);
+    // 2. FALLBACK: se non trovato nel subject, cerca nel body del primo messaggio
+    //    (Amazon a volte invia email con subject generico "Risposta del cliente"
+    //     ma con il numero ordine NNN-NNNNNNN-NNNNNNN solo nel testo del messaggio)
+    if(!amzMatch){
+      const baseFirstMsg = (base.events && base.events[0] && base.events[0].message && base.events[0].message.text) || '';
+      if(baseFirstMsg){
+        amzMatch = baseFirstMsg.match(/(\d{3}-\d{7}-\d{7})/);
+        if(amzMatch){
+          console.log('[Amazon group] numero ordine '+amzMatch[1]+' trovato nel BODY (non nel subject)');
+        }
+      }
+    }
     if(amzMatch){
       amazonOrderNum = amzMatch[1];
       isAmazonGroup = true;
@@ -1951,7 +1969,11 @@ async function selectTicket(tid){
       const te = (t.requester && t.requester.email) || '';
       if(te !== email) return false;
       const ts = t.subject || '';
-      return ts.includes(amazonOrderNum);
+      // Cerca il numero ordine Amazon sia nel subject che nel body del primo messaggio
+      // (Amazon a volte mette l'ordine solo nel testo del messaggio, non nel subject)
+      if(ts.includes(amazonOrderNum)) return true;
+      const tBody = (t.events && t.events[0] && t.events[0].message && t.events[0].message.text) || '';
+      return tBody.includes(amazonOrderNum);
     });
     if(!openTickets.length) openTickets = [base];
   } else {
@@ -2187,7 +2209,12 @@ async function selectTicket(tid){
   // Banner informativo: ticket chiusi stesso ordine (ultimi 30gg) — contesto per AI
   try{
     const subjForCheck = (t.subject||"");
-    const amzForCheck = subjForCheck.match(/\d{3}-\d{7}-\d{7}/);
+    let amzForCheck = subjForCheck.match(/\d{3}-\d{7}-\d{7}/);
+    // Fallback: cerca anche nel body del primo messaggio se non trovato nel subject
+    if(!amzForCheck){
+      const tBody = (t.events && t.events[0] && t.events[0].message && t.events[0].message.text) || '';
+      if(tBody) amzForCheck = tBody.match(/\d{3}-\d{7}-\d{7}/);
+    }
     let shopForCheck = '';
     if(window._lastShopifyOrder){
       shopForCheck = ((window._lastShopifyOrder.name||'').replace('#','').trim())
