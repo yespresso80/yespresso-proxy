@@ -2437,12 +2437,6 @@ async function brtRestPost(path, body) {
           res.end(JSON.stringify({error:'Campi obbligatori: system, userMsg'}));
           return;
         }
-        // Limiti sicurezza per evitare abuse
-        if (system.length > 50000 || userMsg.length > 50000) {
-          res.writeHead(413, CORS);
-          res.end(JSON.stringify({error:'Payload troppo grande (max 50k char per campo)'}));
-          return;
-        }
         console.log('[temu-generate-reply] system:', system.length, 'char | userMsg:', userMsg.length, 'char');
  
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
