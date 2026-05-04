@@ -2405,7 +2405,100 @@ async function brtRestPost(path, body) {
     }
   }
   // ── FINE ESTENSIONE TEMU V3 ──────────────────────────────────────
-  
+
+    // ── ESTENSIONE TEMU V3: Genera risposta AI per chat acquirente ────
+  // Endpoint pubblico (non richiede x-app-token) che internamente chiama Anthropic.
+  // Riceve: { system: string, userMsg: string }
+  // Restituisce: { reply: string } oppure { error: string }
+  if (req.url === '/temu-generate-reply') {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, CORS);
+      res.end(JSON.stringify({error:'Method not allowed'}));
+      return;
+    }
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', async function(){
+      try {
+        if (!ANTHROPIC_KEY) {
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({error:'ANTHROPIC_KEY non configurata'}));
+          return;
+        }
+        const payload = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+        const { system, userMsg, max_tokens, model } = payload;
+        if (!system || !userMsg) {
+          res.writeHead(400, CORS);
+          res.end(JSON.stringify({error:'Campi obbligatori: system, userMsg'}));
+          return;
+        }
+        // Limiti sicurezza per evitare abuse
+        if (system.length > 50000 || userMsg.length > 50000) {
+          res.writeHead(413, CORS);
+          res.end(JSON.stringify({error:'Payload troppo grande (max 50k char per campo)'}));
+          return;
+        }
+        console.log('[temu-generate-reply] system:', system.length, 'char | userMsg:', userMsg.length, 'char');
+ 
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'anthropic-version': '2023-06-01',
+            'x-api-key': ANTHROPIC_KEY
+          },
+          body: JSON.stringify({
+            model: model || 'claude-sonnet-4-5',
+            max_tokens: max_tokens || 1000,
+            system: system,
+            messages: [{ role: 'user', content: userMsg }]
+          })
+        });
+ 
+        if (!aiRes.ok) {
+          const errText = await aiRes.text();
+          console.error('[temu-generate-reply] Anthropic error', aiRes.status, errText.substring(0, 200));
+          res.writeHead(aiRes.status, CORS);
+          res.end(JSON.stringify({error: 'Anthropic ' + aiRes.status, detail: errText.substring(0, 300)}));
+          return;
+        }
+ 
+        const aiData = await aiRes.json();
+        const reply = aiData.content && aiData.content[0] && aiData.content[0].text;
+        if (!reply || !reply.trim()) {
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({error:'Risposta AI vuota'}));
+          return;
+        }
+ 
+        console.log('[temu-generate-reply] OK:', reply.length, 'char');
+        res.writeHead(200, CORS);
+        res.end(JSON.stringify({
+          reply: reply.trim(),
+          usage: aiData.usage || null
+        }));
+      } catch(e) {
+        console.error('[temu-generate-reply] errore:', e.message);
+        res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
+        res.end(JSON.stringify({error: e.message}));
+      }
+    });
+    req.on('error', function(err){
+      console.error('[temu-generate-reply] req error:', err.message);
+      try {
+        res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
+        res.end(JSON.stringify({error: err.message}));
+      } catch(_) {}
+    });
+    return;
+  }
+  // ── FINE TEMU V3 GENERATE ────────────────────────────────────────
+ 
   
   // ── AI PROMPT ───────────────────────────────────────────────
   if (req.url === '/ai-prompt') {
