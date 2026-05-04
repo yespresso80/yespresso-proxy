@@ -2615,7 +2615,152 @@ async function brtRestPost(path, body) {
     return;
   }
   // ── FINE TEMU V3 BRT ORM WRAPPER ──────────────────────────────────
- 
+  
+   // ── ESTENSIONE V4: Find Shopify order by TikTok order number ──────
+  // Cerca ordine Shopify usando il numero ordine TikTok come "name" (campo Shopify).
+  // Yespresso importa ordini TikTok mantenendo il numero TikTok come name (es. "576887984639416672").
+  // Restituisce: { orderShopify, customer, items, total, shipping, orderTiktok }
+  if (req.url.startsWith('/find-shopify-by-tiktok')) {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    try {
+      const qs = req.url.split('?')[1] || '';
+      const params = new URLSearchParams(qs);
+      const orderTiktok = params.get('orderTiktok') || params.get('orderTikTok') || '';
+      if (!orderTiktok) {
+        res.writeHead(400, CORS);
+        res.end(JSON.stringify({error: 'orderTiktok required'}));
+        return;
+      }
+
+      const shopifyToken = await getShopifyToken();
+      if (!shopifyToken || !SHOPIFY_SHOP) {
+        res.writeHead(500, CORS);
+        res.end(JSON.stringify({error: 'SHOPIFY_SHOP o SHOPIFY_TOKEN non configurati'}));
+        return;
+      }
+
+      // Approccio A: search by name (semplice e veloce)
+      // Yespresso importa ordini TikTok con name = numero TikTok (es. "576887984639416672")
+      const searchUrl = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/orders.json?name=' +
+        encodeURIComponent(orderTiktok) + '&status=any&limit=5';
+
+      console.log('[find-shopify-by-tiktok] Search:', orderTiktok);
+
+      const sr = await fetch(searchUrl, {
+        method: 'GET',
+        headers: {
+          'X-Shopify-Access-Token': shopifyToken,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!sr.ok) {
+        console.error('[find-shopify-by-tiktok] Shopify HTTP', sr.status);
+        res.writeHead(500, CORS);
+        res.end(JSON.stringify({error: 'Shopify HTTP ' + sr.status}));
+        return;
+      }
+
+      const data = await sr.json();
+      const orders = (data && data.orders) || [];
+
+      // Match esatto: il name può essere "576887..." o "#576887..."
+      let match = null;
+      for (const o of orders) {
+        const oName = (o.name || '').replace(/^#/, '');
+        if (oName === orderTiktok) { match = o; break; }
+      }
+
+      // Fallback: query generale se name search non trova
+      if (!match) {
+        console.log('[find-shopify-by-tiktok] Name search no match, trying query');
+        const queryUrl = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/orders.json?query=' +
+          encodeURIComponent(orderTiktok) + '&status=any&limit=10';
+        const qr = await fetch(queryUrl, {
+          method: 'GET',
+          headers: {
+            'X-Shopify-Access-Token': shopifyToken,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (qr.ok) {
+          const qd = await qr.json();
+          const qOrders = (qd && qd.orders) || [];
+          for (const o of qOrders) {
+            const oName = (o.name || '').replace(/^#/, '');
+            if (oName === orderTiktok) { match = o; break; }
+            // Cerca anche in note_attributes (per sicurezza)
+            const attrs = o.note_attributes || [];
+            const ttAttr = attrs.find(a => ['TikTok Order Id','tiktok_order_id'].indexOf(a.name) >= 0 && a.value === orderTiktok);
+            if (ttAttr) { match = o; break; }
+          }
+        }
+      }
+
+      if (!match) {
+        console.log('[find-shopify-by-tiktok] Nessun match per:', orderTiktok);
+        res.writeHead(404, CORS);
+        res.end(JSON.stringify({error: 'Ordine non trovato in Shopify', orderTiktok: orderTiktok}));
+        return;
+      }
+
+      // Costruisci risposta normalizzata (stessa struttura di find-shopify-by-temu)
+      const f = (match.fulfillments && match.fulfillments[0]) || {};
+      const sa = match.shipping_address || match.billing_address || {};
+      const cust = match.customer || {};
+
+      const result = {
+        orderTiktok: orderTiktok,
+        orderShopify: {
+          id: match.id,
+          name: match.name,
+          created_at: match.created_at,
+          financial_status: match.financial_status,
+          fulfillment_status: match.fulfillment_status
+        },
+        customer: {
+          name: ((sa.first_name || cust.first_name || '') + ' ' + (sa.last_name || cust.last_name || '')).trim(),
+          email: match.email || cust.email || '',
+          phone: sa.phone || match.phone || cust.phone || ''
+        },
+        items: (match.line_items || []).map(li => ({
+          title: li.title,
+          name: li.name,
+          quantity: li.quantity,
+          price: li.price,
+          variant_id: li.variant_id,
+          sku: li.sku
+        })),
+        total: match.total_price,
+        shipping: {
+          address: sa.address1 || '',
+          city: sa.city || '',
+          zip: sa.zip || '',
+          province: sa.province_code || '',
+          country: sa.country_code || 'IT',
+          tracking_number: f.tracking_number || '',
+          tracking_company: f.tracking_company || '',
+          shipment_status: f.shipment_status || '',
+          ready_for_pickup: f.shipment_status === 'ready_for_pickup',
+          delivered: f.shipment_status === 'delivered'
+        }
+      };
+
+      res.writeHead(200, CORS);
+      res.end(JSON.stringify(result));
+
+    } catch (e) {
+      console.error('[find-shopify-by-tiktok] Errore:', e.message);
+      res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
+      res.end(JSON.stringify({error: e.message}));
+    }
+    return;
+  }
+  // ── FINE FIND-SHOPIFY-BY-TIKTOK ───────────────────────────────────
   
   // ── AI PROMPT ───────────────────────────────────────────────
   if (req.url === '/ai-prompt') {
