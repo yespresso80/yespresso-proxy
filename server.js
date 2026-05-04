@@ -2616,10 +2616,13 @@ async function brtRestPost(path, body) {
   }
   // ── FINE TEMU V3 BRT ORM WRAPPER ──────────────────────────────────
   
-   // ── ESTENSIONE V4: Find Shopify order by TikTok order number ──────
-  // Cerca ordine Shopify usando il numero ordine TikTok come "name" (campo Shopify).
-  // Yespresso importa ordini TikTok mantenendo il numero TikTok come name (es. "576887984639416672").
-  // Restituisce: { orderShopify, customer, items, total, shipping, orderTiktok }
+  // ── ESTENSIONE V4: Find Shopify order by TikTok order number ──────
+  // VERSIONE 2 — Replica esatta delle 3 strategie HelpDesk searchOrderForAction
+  // Yespresso importa ordini TikTok con name a volte preceduto da spazio o # 
+  // Strategie usate (in sequenza fino a primo match):
+  //   1. GET orders.json?name=<num>&status=any  (cerca by name, normalizza # e spazi)
+  //   2. GET orders/<num>.json                  (cerca by ID Shopify diretto)
+  //   3. GET orders.json?query=<num>            (cerca generica nel testo)
   if (req.url.startsWith('/find-shopify-by-tiktok')) {
     const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
     if (req.method === 'OPTIONS') {
@@ -2635,89 +2638,94 @@ async function brtRestPost(path, body) {
         res.end(JSON.stringify({error: 'orderTiktok required'}));
         return;
       }
-
+ 
       const shopifyToken = await getShopifyToken();
       if (!shopifyToken || !SHOPIFY_SHOP) {
         res.writeHead(500, CORS);
         res.end(JSON.stringify({error: 'SHOPIFY_SHOP o SHOPIFY_TOKEN non configurati'}));
         return;
       }
-
-      // Approccio A: search by name (semplice e veloce)
-      // Yespresso importa ordini TikTok con name = numero TikTok (es. "576887984639416672")
-      const searchUrl = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/orders.json?name=' +
-        encodeURIComponent(orderTiktok) + '&status=any&limit=5';
-
-      console.log('[find-shopify-by-tiktok] Search:', orderTiktok);
-
-      const sr = await fetch(searchUrl, {
-        method: 'GET',
-        headers: {
-          'X-Shopify-Access-Token': shopifyToken,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!sr.ok) {
-        console.error('[find-shopify-by-tiktok] Shopify HTTP', sr.status);
-        res.writeHead(500, CORS);
-        res.end(JSON.stringify({error: 'Shopify HTTP ' + sr.status}));
-        return;
-      }
-
-      const data = await sr.json();
-      const orders = (data && data.orders) || [];
-
-      // Match esatto: il name può essere "576887..." o "#576887..."
+ 
+      // Funzione helper: normalizza il name rimuovendo spazi e # iniziali
+      const normalizeName = (name) => (name || '').toString().replace(/^[\s#]+/, '').trim();
+ 
+      const baseShopify = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01';
+      const shopifyHeaders = {
+        'X-Shopify-Access-Token': shopifyToken,
+        'Content-Type': 'application/json'
+      };
+ 
       let match = null;
-      for (const o of orders) {
-        const oName = (o.name || '').replace(/^#/, '');
-        if (oName === orderTiktok) { match = o; break; }
-      }
-
-      // Fallback: query generale se name search non trova
-      if (!match) {
-        console.log('[find-shopify-by-tiktok] Name search no match, trying query');
-        const queryUrl = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/orders.json?query=' +
-          encodeURIComponent(orderTiktok) + '&status=any&limit=10';
-        const qr = await fetch(queryUrl, {
-          method: 'GET',
-          headers: {
-            'X-Shopify-Access-Token': shopifyToken,
-            'Content-Type': 'application/json'
-          }
+ 
+      // ── Strategia 1: search by name (con e senza # davanti) ─────────
+      console.log('[find-shopify-by-tiktok] Strategia 1: name search');
+      try {
+        const r1 = await fetch(baseShopify + '/orders.json?name=' + encodeURIComponent(orderTiktok) + '&status=any&limit=10', {
+          headers: shopifyHeaders
         });
-        if (qr.ok) {
-          const qd = await qr.json();
-          const qOrders = (qd && qd.orders) || [];
-          for (const o of qOrders) {
-            const oName = (o.name || '').replace(/^#/, '');
-            if (oName === orderTiktok) { match = o; break; }
-            // Cerca anche in note_attributes (per sicurezza)
-            const attrs = o.note_attributes || [];
-            const ttAttr = attrs.find(a => ['TikTok Order Id','tiktok_order_id'].indexOf(a.name) >= 0 && a.value === orderTiktok);
-            if (ttAttr) { match = o; break; }
+        if (r1.ok) {
+          const d1 = await r1.json();
+          const orders = (d1 && d1.orders) || [];
+          for (const o of orders) {
+            if (normalizeName(o.name) === orderTiktok) { match = o; break; }
           }
         }
+      } catch (e) { console.warn('[find-shopify-by-tiktok] strat 1 err:', e.message); }
+ 
+      // ── Strategia 2: GET diretto per ID Shopify ─────────────────────
+      // Solo se il numero TikTok ha lunghezza >= 6 cifre (evita chiamate inutili)
+      if (!match && /^\d{6,}$/.test(orderTiktok)) {
+        console.log('[find-shopify-by-tiktok] Strategia 2: ID diretto');
+        try {
+          const r2 = await fetch(baseShopify + '/orders/' + encodeURIComponent(orderTiktok) + '.json', {
+            headers: shopifyHeaders
+          });
+          if (r2.ok) {
+            const d2 = await r2.json();
+            if (d2 && d2.order) match = d2.order;
+          }
+        } catch (e) { console.warn('[find-shopify-by-tiktok] strat 2 err:', e.message); }
       }
-
+ 
+      // ── Strategia 3: query generica ─────────────────────────────────
+      if (!match) {
+        console.log('[find-shopify-by-tiktok] Strategia 3: query generica');
+        try {
+          const r3 = await fetch(baseShopify + '/orders.json?status=any&limit=10&query=' + encodeURIComponent(orderTiktok), {
+            headers: shopifyHeaders
+          });
+          if (r3.ok) {
+            const d3 = await r3.json();
+            const orders = (d3 && d3.orders) || [];
+            for (const o of orders) {
+              if (normalizeName(o.name) === orderTiktok) { match = o; break; }
+              const attrs = o.note_attributes || [];
+              const ttAttr = attrs.find(a => ['TikTok Order Id','tiktok_order_id'].indexOf(a.name) >= 0 && a.value === orderTiktok);
+              if (ttAttr) { match = o; break; }
+            }
+            // Se ancora non trovato ma l'unica risposta è plausibile (1 risultato), prendila
+            if (!match && orders.length === 1) match = orders[0];
+          }
+        } catch (e) { console.warn('[find-shopify-by-tiktok] strat 3 err:', e.message); }
+      }
+ 
       if (!match) {
         console.log('[find-shopify-by-tiktok] Nessun match per:', orderTiktok);
         res.writeHead(404, CORS);
         res.end(JSON.stringify({error: 'Ordine non trovato in Shopify', orderTiktok: orderTiktok}));
         return;
       }
-
-      // Costruisci risposta normalizzata (stessa struttura di find-shopify-by-temu)
+ 
+      // ── Costruisci risposta normalizzata (stessa struttura find-shopify-by-temu) ──
       const f = (match.fulfillments && match.fulfillments[0]) || {};
       const sa = match.shipping_address || match.billing_address || {};
       const cust = match.customer || {};
-
+ 
       const result = {
         orderTiktok: orderTiktok,
         orderShopify: {
           id: match.id,
-          name: match.name,
+          name: (match.name || '').toString().trim(),  // strippa spazi anche dal name restituito
           created_at: match.created_at,
           financial_status: match.financial_status,
           fulfillment_status: match.fulfillment_status
@@ -2749,10 +2757,10 @@ async function brtRestPost(path, body) {
           delivered: f.shipment_status === 'delivered'
         }
       };
-
+ 
       res.writeHead(200, CORS);
       res.end(JSON.stringify(result));
-
+ 
     } catch (e) {
       console.error('[find-shopify-by-tiktok] Errore:', e.message);
       res.writeHead(500, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'});
