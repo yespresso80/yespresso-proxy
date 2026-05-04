@@ -2493,6 +2493,129 @@ async function brtRestPost(path, body) {
   }
   // ── FINE TEMU V3 GENERATE ────────────────────────────────────────
 
+    // ── ESTENSIONE TEMU V3: Wrapper Shopify pubblico per estensione ────
+  // Endpoint pubblico (no x-app-token) per chiamate Shopify dall'estensione.
+  // Path: /temu-shopify/<resource>?<query>
+  // Es: /temu-shopify/orders/12345.json?fields=id,name
+  if (req.url.startsWith('/temu-shopify/')) {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    try {
+      const shopifyPath = req.url.replace('/temu-shopify/', '');
+      const shopifyToken = await getShopifyToken();
+      if (!shopifyToken || !SHOPIFY_SHOP) {
+        res.writeHead(500, CORS);
+        res.end(JSON.stringify({error:'SHOPIFY_SHOP o SHOPIFY_TOKEN non configurati'}));
+        return;
+      }
+      const targetUrl = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/' + shopifyPath;
+      console.log('[temu-shopify]', req.method, targetUrl.substring(0, 200));
+ 
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', async function(){
+        try {
+          const bodyBuffer = Buffer.concat(chunks);
+          const fetchOpts = {
+            method: req.method,
+            headers: {
+              'X-Shopify-Access-Token': shopifyToken,
+              'Content-Type': 'application/json'
+            }
+          };
+          if (bodyBuffer.length > 0 && req.method !== 'GET' && req.method !== 'HEAD') {
+            fetchOpts.body = bodyBuffer.toString();
+          }
+          const sr = await fetch(targetUrl, fetchOpts);
+          const text = await sr.text();
+          // Forza CORS
+          const headers = Object.assign({}, CORS);
+          if (sr.status === 401) {
+            console.error('[temu-shopify] 401 — Shopify token invalido');
+          }
+          res.writeHead(sr.status, headers);
+          res.end(text);
+        } catch(e2) {
+          console.error('[temu-shopify] errore:', e2.message);
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({error: e2.message}));
+        }
+      });
+      req.on('error', function(err){
+        console.error('[temu-shopify] req error:', err.message);
+        try {
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({error: err.message}));
+        } catch(_) {}
+      });
+    } catch(e) {
+      console.error('[temu-shopify] errore:', e.message);
+      res.writeHead(500, CORS);
+      res.end(JSON.stringify({error: e.message}));
+    }
+    return;
+  }
+  // ── FINE TEMU V3 SHOPIFY WRAPPER ──────────────────────────────────
+ 
+ 
+  // ── ESTENSIONE TEMU V3: Wrapper BRT ORM pubblico per estensione ────
+  // Endpoint pubblico (no x-app-token) per prenotazione ritiri BRT.
+  if (req.url.startsWith('/temu-brt-orm/')) {
+    const CORS = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});
+      res.end(); return;
+    }
+    try {
+      const brtPath = req.url.replace('/temu-brt-orm/', '');
+      const targetUrl = 'https://api.brt.it/orm/' + brtPath;
+      const brtApiKey = process.env.BRT_API_KEY || 'f393e3d3-8402-4614-a90e-8d111fa73ced';
+      console.log('[temu-brt-orm]', req.method, targetUrl.substring(0, 200));
+ 
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', async function(){
+        try {
+          const bodyBuffer = Buffer.concat(chunks);
+          const fetchOpts = {
+            method: req.method,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Api-Key': brtApiKey
+            }
+          };
+          if (bodyBuffer.length > 0 && req.method !== 'GET' && req.method !== 'HEAD') {
+            fetchOpts.body = bodyBuffer.toString();
+          }
+          const br = await fetch(targetUrl, fetchOpts);
+          const text = await br.text();
+          res.writeHead(br.status, CORS);
+          res.end(text);
+        } catch(e2) {
+          console.error('[temu-brt-orm] errore:', e2.message);
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({error: e2.message}));
+        }
+      });
+      req.on('error', function(err){
+        console.error('[temu-brt-orm] req error:', err.message);
+        try {
+          res.writeHead(500, CORS);
+          res.end(JSON.stringify({error: err.message}));
+        } catch(_) {}
+      });
+    } catch(e) {
+      console.error('[temu-brt-orm] errore:', e.message);
+      res.writeHead(500, CORS);
+      res.end(JSON.stringify({error: e.message}));
+    }
+    return;
+  }
+  // ── FINE TEMU V3 BRT ORM WRAPPER ──────────────────────────────────
+ 
   
   // ── AI PROMPT ───────────────────────────────────────────────
   if (req.url === '/ai-prompt') {
