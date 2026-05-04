@@ -2498,7 +2498,7 @@ async function brtRestPost(path, body) {
     return;
   }
   // ── FINE TEMU V3 GENERATE ────────────────────────────────────────
- 
+
   
   // ── AI PROMPT ───────────────────────────────────────────────
   if (req.url === '/ai-prompt') {
