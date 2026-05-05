@@ -7995,6 +7995,22 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
           _autoProcessedIds[_tid] = new Date().toISOString();
           if(typeof _saveAutoProcessedIds === 'function') _saveAutoProcessedIds();
         }
+      } else if(_tid && typeof _autoReplyStatus !== 'undefined' && _autoReplyStatus.needsAction && _autoReplyStatus.needsAction.has(_tid)){
+        // ★ FIX BUG AUTO-INVIO PALLINO ARANCIONE (V_HD_FIX 2026-05):
+        // Il ticket è già stato classificato in precedenza come "needs manual action"
+        // dal background autoProcessTickets (pallino arancione in lista). Quando
+        // l'agente apre il ticket, generateReply rigenera la bozza, ma la nuova
+        // bozza potrebbe non rilevare le stesse keyword del primo passaggio
+        // (varianza output AI), facendo passare _needsAction=false e triggerando
+        // un auto-invio. Il pallino arancione è un verdetto persistente del
+        // sistema: finché c'è, NON auto-inviare. Solo l'agente può rimuoverlo
+        // rispondendo manualmente.
+        if(lbl3) lbl3.textContent="✨ Risposta AI — 🟠 Richiede azione manuale (verdetto persistente)";
+        console.log('[autoReply] Skip auto-invio: ticket '+_tid+' è in _autoReplyStatus.needsAction (pallino arancione persistente)');
+      } else if(_tid && typeof _autoReplyStatus !== 'undefined' && _autoReplyStatus.blocked && _autoReplyStatus.blocked.has(_tid)){
+        // ★ FIX: stesso ragionamento per blocked (pallino rosso = cliente insoddisfatto).
+        if(lbl3) lbl3.textContent="✨ Risposta AI — 🔴 Cliente insoddisfatto (intervento manuale)";
+        console.log('[autoReply] Skip auto-invio: ticket '+_tid+' è in _autoReplyStatus.blocked (pallino rosso persistente)');
       } else {
         if(lbl3) lbl3.textContent="✨ Risposta AI — ⏳ Auto-invio in corso...";
         tryAutoReply(reply,_autoOrder);
