@@ -7242,6 +7242,24 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   const searchText=subject+" "+(lastMsg||"")+(fullBodyText?" "+fullBodyText:"");
   const requesterName=(t.requester&&t.requester.name)||"";
   console.log("🔍 searchText preview:", searchText.substring(0,200));
+
+  // ★ FIX BUG 2026-05-05: estrai PREVENTIVAMENTE il numero ordine Amazon dal thread
+  // così se fetchShopifyOrder fallisce (Shopify non trova l'ordine, timeout, ecc.)
+  // l'AI ha COMUNQUE il numero ordine e non lo richiede al cliente.
+  // Si appende come "Note per AI" nei dati ordine e nel prompt.
+  var _amazonOrderForAI = "";
+  try {
+    if((email||"").includes("marketplace.amazon")){
+      // Cerca in: subject + lastMsg + tutto il thread + tutti gli eventi
+      var _amzSrc = (t.subject||"")+" "+(lastMsg||"")+" "+(fullThread||"")+" "+
+        ((t.events||[]).map(function(ev){
+          return (ev.message&&(ev.message.text||ev.message.html||''))||'';
+        }).join(' '));
+      var _amzMatch = _amzSrc.match(/\d{3}-\d{7}-\d{7}/);
+      if(_amzMatch){ _amazonOrderForAI = _amzMatch[0]; }
+    }
+  } catch(_eAmz){}
+
   const order=await fetchShopifyOrder(searchText,email||"",requesterName);
   // Render banner multi-ordine (se più di 1 ordine Amazon trovato)
   try{ if(typeof renderMultiOrderBanner==='function') renderMultiOrderBanner(); }catch(e){}
@@ -7289,7 +7307,23 @@ async function generateReply(lastMsg,email,fullThread,skipAI=false){ console.log
   // Se c'è un indirizzo fermopoint incollato manualmente, aggiungilo al prompt
   const fpAddr = order && window._fermopointAddrMap && (window._fermopointAddrMap[order.id] || window._fermopointAddrMap[String(order.id)] || window._fermopointAddrMap[Number(order.id)]);
   console.log('[FERMOPOINT] order.id='+( order&&order.id)+' fpAddr='+fpAddr+' mapKeys='+JSON.stringify(Object.keys(window._fermopointAddrMap||{})));
-  const orderInfoFull = orderInfo + (fpAddr ? '\nIndirizzo BRT-Fermopoint (inserito manualmente): '+fpAddr : '');
+  // ★ FIX 2026-05-05: se non abbiamo trovato un ordine Shopify ma abbiamo
+  // estratto il numero Amazon dal thread, includilo comunque nei dati ordine
+  // per evitare che l'AI chieda al cliente un numero che è già nel ticket.
+  var _amzNoteForAI = "";
+  if(_amazonOrderForAI && !orderInfo){
+    _amzNoteForAI = "Numero ordine Amazon (presente nel ticket): "+_amazonOrderForAI+
+      "\nNOTA: ordine non ancora trovato in Shopify, ma il numero ordine Amazon è "+
+      "GIÀ presente nel messaggio del cliente. NON richiedere al cliente di "+
+      "fornire di nuovo il numero ordine. Procedi con la risposta in base al "+
+      "contenuto del messaggio.";
+  } else if(_amazonOrderForAI && orderInfo && orderInfo.indexOf(_amazonOrderForAI) < 0){
+    // Ordine trovato ma il numero Amazon non è citato in formatOrderInfo
+    _amzNoteForAI = "Numero ordine Amazon associato: "+_amazonOrderForAI;
+  }
+  const orderInfoFull = orderInfo
+    + (fpAddr ? '\nIndirizzo BRT-Fermopoint (inserito manualmente): '+fpAddr : '')
+    + (_amzNoteForAI ? '\n'+_amzNoteForAI : '');
 
   // ══ CHECK STATO SPEDIZIONE CRITICO ══
   // attempted_delivery e failure → mostra menu senza generare risposta AI
