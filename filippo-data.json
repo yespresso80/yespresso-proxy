@@ -1,1 +1,1 @@
-{"autoReplyEnabled":true,"autoReplyMode":"always","autoReplySchedule":{"weekdays":[{"startH":15,"startM":0,"endH":9,"endM":0},{"startH":13,"startM":0,"endH":14,"endM":0}],"weekendsAndHolidays24h":true},"yespressoSettings":{"autoReplyMode":"always","autoReplyEnabled":true}}
+{"autoReplyEnabled":false,"autoReplyMode":"off","autoReplySchedule":{"weekdays":[{"startH":15,"startM":0,"endH":9,"endM":0},{"startH":13,"startM":0,"endH":14,"endM":0}],"weekendsAndHolidays24h":true}}
